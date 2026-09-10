@@ -1,0 +1,115 @@
+{
+  "checkedAt": "2026-09-10T23:28:54.639Z",
+  "repository": {
+    "url": "https://github.com/dushaobindoudou/dsh-lingxi",
+    "visibility": "private",
+    "defaultBranch": "main",
+    "issues": true,
+    "wiki": false,
+    "squashMerge": true,
+    "mergeCommit": false,
+    "rebaseMerge": false,
+    "deleteBranchOnMerge": true,
+    "topics": [
+      "ai-agents",
+      "blender",
+      "cat",
+      "desktop-companion",
+      "macos"
+    ]
+  },
+  "branchProtection": {
+    "enabled": false,
+    "reason": "GitHub returned HTTP 403: private repository branch protection requires GitHub Pro or public visibility. Repository remains private."
+  },
+  "dependencySecurity": {
+    "vulnerabilityAlertsEnabled": true,
+    "automatedFixes": {
+      "enabled": true,
+      "paused": false
+    }
+  },
+  "milestones": [
+    {
+      "title": "P0 · 角色与实时桌面验证",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/milestone/1"
+    },
+    {
+      "title": "M1 · 安静陪伴",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/milestone/2"
+    },
+    {
+      "title": "M2 · Agent 观察与个性化",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/milestone/3"
+    }
+  ],
+  "issues": [
+    {
+      "number": 8,
+      "title": "完善图标尺寸、菜单栏符号与设计系统应用",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/issues/8"
+    },
+    {
+      "number": 7,
+      "title": "实现 Codex、Claude、DSH 只读任务观察适配器",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/issues/7"
+    },
+    {
+      "number": 6,
+      "title": "接入生产皮肤与可切换性格",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/issues/6"
+    },
+    {
+      "number": 5,
+      "title": "完成六片段生活闭环与安静陪伴验证",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/issues/5"
+    },
+    {
+      "number": 4,
+      "title": "验证运行时毛发与真实3D桌面透明窗口",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/issues/4"
+    },
+    {
+      "number": 3,
+      "title": "校正灵犀角色视图并完成可变形母版",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/issues/3"
+    }
+  ],
+  "runs": [
+    {
+      "id": 34542323097,
+      "sha": "956be483e0b08d7d4331a0cdf580ebd5912e9bfd",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/actions/runs/34542323097"
+    },
+    {
+      "id": 34542261927,
+      "sha": "aea03de22c0eb5d693a06c963c3cb6e8512e3726",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/actions/runs/34542261927"
+    },
+    {
+      "id": 34542186643,
+      "sha": "aea03de22c0eb5d693a06c963c3cb6e8512e3726",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/actions/runs/34542186643"
+    },
+    {
+      "id": 34541882390,
+      "sha": "ccab6f021229da2c77369ff66165693e25a52fd0",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/actions/runs/34541882390"
+    },
+    {
+      "id": 34541879199,
+      "sha": "ad5a4908ff131b5d694ebccea4fa04333b63c171",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/dushaobindoudou/dsh-lingxi/actions/runs/34541879199"
+    }
+  ]
+}
