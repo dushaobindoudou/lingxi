@@ -1,0 +1,11 @@
+{
+  "source": "https://projects.blender.org/lab/blender_mcp",
+  "commit": "5181fa06d5c601e910eb680a0012d20d1203b8d5",
+  "serverVersion": "1.0.2",
+  "addonVersion": "1.0.0",
+  "blenderVersionTested": "5.2.1",
+  "transport": "stdio",
+  "bridgeHost": "127.0.0.1",
+  "bridgePort": 9877,
+  "autoStart": false
+}

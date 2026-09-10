@@ -1,0 +1,89 @@
+{
+  "server": {
+    "name": "blender-mcp",
+    "title": null,
+    "version": "1.30.0",
+    "websiteUrl": null,
+    "icons": null
+  },
+  "tools": [
+    "execute_blender_code",
+    "execute_blender_code_for_cli",
+    "get_blendfile_summary_datablocks",
+    "get_blendfile_summary_datablocks_for_cli",
+    "get_blendfile_summary_missing_files",
+    "get_blendfile_summary_missing_files_for_cli",
+    "get_blendfile_summary_of_linked_libraries",
+    "get_blendfile_summary_of_linked_libraries_for_cli",
+    "get_blendfile_summary_path_info",
+    "get_blendfile_summary_path_info_for_cli",
+    "get_blendfile_summary_usage_guess",
+    "get_blendfile_summary_usage_guess_for_cli",
+    "get_object_detail_summary",
+    "get_objects_summary",
+    "get_python_api_docs",
+    "get_screenshot_of_area_as_image",
+    "get_screenshot_of_window_as_image",
+    "get_screenshot_of_window_as_json",
+    "jump_to_tab_by_name",
+    "jump_to_tab_by_space_type",
+    "jump_to_view3d_object_by_name",
+    "jump_to_view3d_object_data_by_name",
+    "render_thumbnail_to_path",
+    "render_viewport_to_path",
+    "search_api_docs",
+    "search_manual_docs"
+  ],
+  "tool": "get_blendfile_summary_datablocks",
+  "response": {
+    "meta": null,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"status\": \"ok\",\n  \"result\": {\n    \"status\": \"ok\",\n    \"datablock_counts\": {\n      \"all_ids\": 38,\n      \"cameras\": 1,\n      \"collections\": 1,\n      \"images\": 2,\n      \"lights\": 1,\n      \"linestyles\": 1,\n      \"materials\": 2,\n      \"meshes\": 1,\n      \"objects\": 3,\n      \"palettes\": 1,\n      \"scenes\": 1,\n      \"screens\": 11,\n      \"window_managers\": 1,\n      \"workspaces\": 11,\n      \"worlds\": 1\n    },\n    \"render_engine\": \"BLENDER_EEVEE\",\n    \"scene_name\": \"Scene\",\n    \"workspaces\": [\n      \"Animation\",\n      \"Compositing\",\n      \"Geometry Nodes\",\n      \"Layout\",\n      \"Modeling\",\n      \"Rendering\",\n      \"Scripting\",\n      \"Sculpting\",\n      \"Shading\",\n      \"Texture Paint\",\n      \"UV Editing\"\n    ],\n    \"active_workspace\": \"Layout\"\n  }\n}",
+        "annotations": null,
+        "meta": null
+      }
+    ],
+    "structuredContent": {
+      "status": "ok",
+      "result": {
+        "status": "ok",
+        "datablock_counts": {
+          "all_ids": 38,
+          "cameras": 1,
+          "collections": 1,
+          "images": 2,
+          "lights": 1,
+          "linestyles": 1,
+          "materials": 2,
+          "meshes": 1,
+          "objects": 3,
+          "palettes": 1,
+          "scenes": 1,
+          "screens": 11,
+          "window_managers": 1,
+          "workspaces": 11,
+          "worlds": 1
+        },
+        "render_engine": "BLENDER_EEVEE",
+        "scene_name": "Scene",
+        "workspaces": [
+          "Animation",
+          "Compositing",
+          "Geometry Nodes",
+          "Layout",
+          "Modeling",
+          "Rendering",
+          "Scripting",
+          "Sculpting",
+          "Shading",
+          "Texture Paint",
+          "UV Editing"
+        ],
+        "active_workspace": "Layout"
+      }
+    },
+    "isError": false
+  }
+}

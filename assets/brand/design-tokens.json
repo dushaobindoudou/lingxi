@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "brand": "灵犀 Lingxi",
+  "colors": {
+    "background": "#FBF7F1",
+    "surface": "#FFFDF9",
+    "text": "#423A33",
+    "textSecondary": "#72675C",
+    "border": "#E5D9CA",
+    "accent": "#936746",
+    "accentSoft": "#F4E4CF",
+    "success": "#546D51",
+    "warning": "#92642A",
+    "danger": "#A24D46",
+    "focus": "#5F735C"
+  },
+  "typography": {
+    "family": "system-ui, -apple-system, BlinkMacSystemFont, PingFang SC, sans-serif",
+    "body": 14,
+    "caption": 12,
+    "heading": 22,
+    "lineHeight": 1.6
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48
+  ],
+  "radius": {
+    "control": 10,
+    "panel": 20
+  },
+  "motion": {
+    "controlMs": 160,
+    "panelMs": 220,
+    "petReactionMinMs": 200,
+    "petReactionMaxMs": 1200,
+    "respectReducedMotion": true
+  }
+}

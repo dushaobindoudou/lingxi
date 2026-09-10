@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "curious",
+  "name": "温柔好奇",
+  "traits": {
+    "independence": 0.65,
+    "curiosity": 0.75,
+    "gentleness": 0.85,
+    "playfulness": 0.55,
+    "sleepiness": 0.55
+  },
+  "interactionCooldownSeconds": 40
+}

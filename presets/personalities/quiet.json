@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "quiet",
+  "name": "安静陪伴",
+  "traits": {
+    "independence": 0.8,
+    "curiosity": 0.35,
+    "gentleness": 0.9,
+    "playfulness": 0.2,
+    "sleepiness": 0.8
+  },
+  "interactionCooldownSeconds": 60
+}

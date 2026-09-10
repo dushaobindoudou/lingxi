@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "warm-tabby",
+  "name": "暖绒虎斑",
+  "rigId": "lingxi-cat-v1",
+  "status": "planned",
+  "materials": {
+    "fur": "#F1E5D4",
+    "pattern": "#817467",
+    "iris": "#8D885C",
+    "nose": "#DC9A90"
+  }
+}

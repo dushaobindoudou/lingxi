@@ -1,0 +1,13 @@
+{
+  "name": "dsh-lingxi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "灵犀 — a lifelike, quiet desktop cat companion with extensible agent task observation",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test packages/contracts/test/*.test.mjs",
+    "check": "node scripts/check-project.mjs",
+    "validate": "npm run check && npm test"
+  }
+}

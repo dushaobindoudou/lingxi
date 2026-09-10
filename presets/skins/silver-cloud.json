@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "silver-cloud",
+  "name": "银灰云朵",
+  "rigId": "lingxi-cat-v1",
+  "status": "planned",
+  "materials": {
+    "fur": "#EAE8E4",
+    "pattern": "#777A7D",
+    "iris": "#7E9C91",
+    "nose": "#DC9A90"
+  }
+}

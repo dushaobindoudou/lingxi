@@ -1,0 +1,21 @@
+name: 缺陷报告
+description: 记录可复现的问题
+labels: [bug]
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤与预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 系统、硬件、应用与资产版本
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 实际表现与证据
+      description: 请勿上传密钥、任务正文或私人对话。

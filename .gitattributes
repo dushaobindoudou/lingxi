@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.png binary
+*.blend binary
+*.glb binary
+*.zip binary
+*.icns binary
+# Preserve the user's verbatim archived source, including intentional whitespace.
+docs/source/original-thinking.txt -whitespace

@@ -1,0 +1,16 @@
+name: 功能或设计提议
+description: 从陪伴场景出发描述需求
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户场景与问题
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 希望的体验与验收方式
+    validations:
+      required: true
