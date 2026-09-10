@@ -31,7 +31,7 @@ Codex 下一次建立 MCP 工具连接时加载新配置；当前对话通过标
 
 - [角色工作场景](../assets/characters/lingxi/source/lingxi-reference-studio.blend)：打包三张参考、4 个相机、3 盏灯、毛色/鼻/虹膜/角膜材质基线与分层集合。
 - [角色多视图候选](../assets/characters/lingxi/reference/turnaround-v1.png)：需要进一步对齐姿态、比例和花纹。
-- [MCP 场景创建证据](evidence/blender-design-scene.json)。
+- [MCP 场景创建证据](evidence/blender-design-scene.json)、[场景验证](evidence/blender-verification.json)、[后台重新打开检查](evidence/blender-reopen-check.json)和[工作场景截图](evidence/blender-studio.png)。参考图已打包，因此外部资源检查为 0 个待检查项；结合 packed 标记验证其自包含性。
 
 工作场景以原始主猫为身份依据；场景文字说明明确标注“尚无成品角色网格、毛发、绑定或动作”。参考图片仅用于设计，渲染时隐藏，不能被误当成 3D 猫。
 

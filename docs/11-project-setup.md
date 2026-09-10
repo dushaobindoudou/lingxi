@@ -13,9 +13,9 @@
 
 ## GitHub 设置
 
-创建和配置后以 `docs/evidence/github-settings.json` 记录远端实际状态；该证据未产生前，不视为完成。目标：private、main、issues、关闭空 Wiki、允许 squash、合并后删除分支、启用可用的依赖安全提示、CI 必须通过。
+仓库已创建并推送：[dushaobindoudou/dsh-lingxi](https://github.com/dushaobindoudou/dsh-lingxi)。[远端设置证据](evidence/github-settings.json)记录 private、main、issues 开启、Wiki 关闭、仅 squash 合并、合并后删除分支，以及 3 个里程碑和 6 项后续工作。依赖安全提示与自动修复已启用，初次 CI 通过。
 
-主分支保护取决于账号对私有仓库的功能支持。若平台拒绝，保留具体响应，不修改可见性来规避；记录为发布前待补项。
+**当前限制：主分支保护未启用。** GitHub 返回 HTTP 403：此账号需升级 Pro 或改为公开仓库才可启用。保持私有，不擅自公开。团队流程要求 PR 与绿色 CI，但目前服务器不能强制执行。升级后可启用 Validate 必须通过、禁止强推/删除与线性历史。
 
 ## 用户目标与证据边界
 
