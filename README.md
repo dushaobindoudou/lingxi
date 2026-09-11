@@ -6,7 +6,7 @@
 
 <img src="assets/brand/lingxi-icon-v2.png" width="240" alt="灵犀：灰棕虎斑小猫安静趴着，轻轻歪头" />
 
-**当前阶段：设计与工程基础。** 已有参考图与图标、官方 Blender MCP 集成、Blender 角色设计工作场景、配置与观察契约、测试和项目规范。尚无成品猫模型、完整毛发绑定、可运行桌面应用或三个 Agent 平台的在线观察功能；不能把参考图当成实时 3D 效果。
+**当前阶段：设计、原生 3D 试作与工程基础。** 已有参考图与图标、官方 Blender MCP 集成、三版 Blender 网格与毛发试作、配置与观察契约、测试和项目规范。角色视觉验收未通过，尚无成品猫模型、完整毛发绑定、可运行桌面应用或三个 Agent 平台的在线观察功能；不能把参考图或离线渲染当成实时 3D 效果。
 
 ## 从这里开始
 
@@ -18,6 +18,7 @@
 | [官方 Blender 工作流](docs/10-blender-workflow.md) | 已安装版本、连接、设计源文件和验证证据 |
 | [角色工作场景](assets/characters/lingxi/source/lingxi-reference-studio.blend) | 打包参考、相机、灯光、材质基线与制作集合 |
 | [角色多视图候选](assets/characters/lingxi/reference/turnaround-v1.png) | 供进一步校正的角色设计参考 |
+| [角色试作与视觉验收](docs/12-character-study-review.md) | 三版真实 3D 试作、未通过的问题与后续制作要求 |
 | [项目设置与状态](docs/11-project-setup.md) | 仓库设置、开发约定与交付边界 |
 
 ## 开发
