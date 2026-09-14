@@ -8,6 +8,7 @@
 // The moment something downstream writes `13` for shoulder height, that capability is gone.
 import * as THREE from 'three';
 import skeletonData from '../data/skeleton.json';
+import { computeAtlasLayout, applyAtlasUVs, paintAtlas } from './atlas.ts';
 
 export type Vec3Tuple = [number, number, number];
 
@@ -113,6 +114,27 @@ export function buildRig(skin: VoxelSkin, data: SkeletonData = DEFAULT_SKELETON)
     throw new Error(`skin "${skin.id}" targets rig "${skin.rigId}", but this rig is "${data.id}"`);
   }
 
+  // Apply proportion overrides first so the atlas layout is sized from the FINAL boxes.
+  const specs = data.nodes.map((raw) => applyOverride(raw, skin.proportions?.[raw.id]));
+
+  // One atlas layout for the whole rig. Stable and deterministic, so a hand-painted PNG
+  // replacement can be dropped in and the UV coordinates will line up automatically.
+  const layout = computeAtlasLayout(specs);
+
+  // Paint the atlas on a canvas and wrap it as a Three.js texture. NearestFilter keeps
+  // the blocky look: bilinear interpolation across texel boundaries would blur the stripes
+  // into a gradient, defeating the Minecraft aesthetic.
+  const colorFn = (_nodeId: string, slot: string) => toColour(skin, slot, data.slotFallback);
+  const atlasCanvas = paintAtlas(specs, layout, colorFn);
+  const atlasTexture = new THREE.CanvasTexture(atlasCanvas);
+  atlasTexture.magFilter = THREE.NearestFilter;
+  atlasTexture.minFilter = THREE.NearestFilter;
+  atlasTexture.colorSpace = THREE.SRGBColorSpace;
+
+  // All boxes share a single Lambert material that samples the atlas. One draw call for
+  // the whole cat; markings come from UV coordinates, not from a material-per-box split.
+  const sharedMaterial = new THREE.MeshLambertMaterial({ map: atlasTexture, flatShading: true });
+
   const root = new THREE.Group();
   root.name = 'VoxelCat';
   // Inner group carries the ground lift, so `root` itself stays a clean anchor the renderer
@@ -123,31 +145,20 @@ export function buildRig(skin: VoxelSkin, data: SkeletonData = DEFAULT_SKELETON)
 
   const nodes = new Map<string, THREE.Object3D>();
   const lengths = new Map<string, number>();
-  const materials = new Map<string, THREE.MeshLambertMaterial>();
   const geometries: THREE.BoxGeometry[] = [];
 
-  function materialFor(slot: string): THREE.MeshLambertMaterial {
-    const colour = toColour(skin, slot, data.slotFallback);
-    let material = materials.get(colour);
-    if (!material) {
-      // Lambert + flatShading: the blocky style wants flat faces, not smooth interpolation
-      // across a box's corners (spec §6.1).
-      material = new THREE.MeshLambertMaterial({ color: new THREE.Color(colour), flatShading: true });
-      materials.set(colour, material);
-    }
-    return material;
-  }
-
-  for (const rawSpec of data.nodes) {
-    const spec = applyOverride(rawSpec, skin.proportions?.[rawSpec.id]);
-
+  for (const spec of specs) {
     const pivot = new THREE.Group();
     pivot.name = spec.id;
     pivot.position.set(spec.pivot[0], spec.pivot[1], spec.pivot[2]);
 
     const geometry = new THREE.BoxGeometry(spec.box.size[0], spec.box.size[1], spec.box.size[2]);
     geometries.push(geometry);
-    const mesh = new THREE.Mesh(geometry, materialFor(spec.slot));
+
+    // Remap UV coordinates from the default [0,1]^2 to this box's region in the shared atlas.
+    applyAtlasUVs(geometry, layout.regions[spec.id], layout.size);
+
+    const mesh = new THREE.Mesh(geometry, sharedMaterial);
     mesh.position.set(spec.box.offset[0], spec.box.offset[1], spec.box.offset[2]);
     mesh.name = `${spec.id}:box`;
     pivot.add(mesh);
@@ -195,7 +206,8 @@ export function buildRig(skin: VoxelSkin, data: SkeletonData = DEFAULT_SKELETON)
     boundingRadius: sphere.radius,
     dispose() {
       for (const geometry of geometries) geometry.dispose();
-      for (const material of materials.values()) material.dispose();
+      atlasTexture.dispose();
+      sharedMaterial.dispose();
       root.removeFromParent();
     },
   };
