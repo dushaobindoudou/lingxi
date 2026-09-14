@@ -3,7 +3,9 @@
 // engine's decision-making, only the `Renderer` contract's render/hitTest/resize shape.
 import * as THREE from 'three';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
-import { animatePlaceholderCat, createPlaceholderCat, type PlaceholderCat } from './placeholder-cat.ts';
+import { buildRig, type Rig } from './rig/skeleton.ts';
+import { getSkin, DEFAULT_SKIN_ID } from './rig/skins.ts';
+import { createIdleAnimator } from './anim/idle.ts';
 
 export function createThreeRenderer(): Renderer {
   const scene = new THREE.Scene();
@@ -42,8 +44,17 @@ export function createThreeRenderer(): Renderer {
   key.position.set(-1.2, 2, 1.5);
   scene.add(key);
 
-  let cat: PlaceholderCat = createPlaceholderCat();
-  scene.add(cat.root);
+  // The voxel rig replaces the old hand-assembled placeholder: same box aesthetic, but a
+  // real joint hierarchy with pivots at the joints, built from data/skeleton.json so that
+  // proportion-override skins work. See rig/skeleton.ts.
+  let rig: Rig = buildRig(getSkin(DEFAULT_SKIN_ID));
+  scene.add(rig.root);
+  const idleAnimator = createIdleAnimator();
+
+  // World units per voxel. The rig is authored at ~40 units nose-to-tail; the scene's
+  // frustum is sized in the ~2.6-unit range, so it needs bringing down to scene scale.
+  const VOXEL_TO_WORLD = 0.055;
+  rig.root.scale.setScalar(VOXEL_TO_WORLD);
 
   let container: HTMLElement | null = null;
   let width = 1;
@@ -52,7 +63,7 @@ export function createThreeRenderer(): Renderer {
   let modelScale = 1;
   let gaitPhase = 0;
   let lastPosition: { x: number; y: number } | null = null;
-  let facingAngle = Math.PI; // rotation.y the body is currently holding/turning toward
+  let facingAngle = 0; // rotation.y the body is currently holding/turning toward (rig faces +Z)
   let headYaw = 0; // local head turn beyond the body's own facing, toward the cursor
 
   /** Shortest-path angle interpolation - a naive lerp can spin the long way around
@@ -144,14 +155,14 @@ export function createThreeRenderer(): Renderer {
 
     setScale(scale: number) {
       modelScale = Math.max(0.05, scale);
-      cat.root.scale.setScalar(modelScale);
+      rig.root.scale.setScalar(VOXEL_TO_WORLD * modelScale);
     },
 
     render(state, deltaSeconds: number, cursor: { x: number; y: number } | null) {
       elapsed += deltaSeconds;
 
       // Advance the gait phase by actual distance moved (an odometer, not a clock) so the
-      // legs cycle in proportion to ground covered - see animatePlaceholderCat's doc comment.
+      // legs cycle in proportion to ground covered - see the idle animator's doc comment.
       const dx = lastPosition ? state.position.x - lastPosition.x : 0;
       const dy = lastPosition ? state.position.y - lastPosition.y : 0;
       const moved = Math.hypot(dx, dy);
@@ -161,7 +172,7 @@ export function createThreeRenderer(): Renderer {
       // pose (amplitude 0) rather than freeze mid-stride at whatever phase it stopped at.
       const walking = state.state === 'wander' || state.state === 'follow_cursor' || state.state === 'ai_directed';
       const walkAmount = walking && moved > 0.01 ? 1 : 0;
-      animatePlaceholderCat(cat, elapsed, gaitPhase, walkAmount);
+      idleAnimator.update(rig, elapsed, deltaSeconds, gaitPhase, walkAmount);
 
       // life-engine position is in CSS-pixel space with +y downward (screen space); map onto
       // the ground plane the tilted camera looks down on, using worldPerPixelX/Z (see their
@@ -173,8 +184,8 @@ export function createThreeRenderer(): Renderer {
       // exact factors).
       const px = state.position.x - width / 2;
       const py = state.position.y - height / 2;
-      cat.root.position.x = px * worldPerPixelX;
-      cat.root.position.z = py * worldPerPixelZ;
+      rig.root.position.x = px * worldPerPixelX;
+      rig.root.position.z = py * worldPerPixelZ;
 
       // Face the actual direction of travel, in the full 2D sense - not just left/right.
       // The old version only ever picked between two fixed left/right lean angles (from
@@ -198,7 +209,7 @@ export function createThreeRenderer(): Renderer {
       // too while actively held; keep the gentler ease everywhere else (wander/follow
       // shouldn't spin on a dime, that looks robotic rather than alive).
       const rotationLerp = state.state === 'dragged' ? 1 : Math.min(1, deltaSeconds * 10);
-      cat.root.rotation.y = lerpAngle(cat.root.rotation.y, facingAngle, rotationLerp);
+      rig.root.rotation.y = lerpAngle(rig.root.rotation.y, facingAngle, rotationLerp);
 
       // A subtle, independent head turn toward the cursor - "how should the cat look at
       // me" - layered on top of the body's own facing rather than replacing it, and
@@ -217,7 +228,7 @@ export function createThreeRenderer(): Renderer {
         }
       }
       headYaw += (targetHeadYaw - headYaw) * Math.min(1, deltaSeconds * 6);
-      cat.head.rotation.y = headYaw;
+      rig.node('head').rotation.y = headYaw;
 
       renderer.render(scene, camera);
     },
@@ -226,14 +237,15 @@ export function createThreeRenderer(): Renderer {
       ndc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
       const catWorldPos = new THREE.Vector3();
-      cat.root.getWorldPosition(catWorldPos);
-      const worldRadius = Math.max(cat.boundingRadius * modelScale, MIN_HIT_RADIUS_PX * unitsPerPixelX);
+      rig.root.getWorldPosition(catWorldPos);
+      const worldRadius = Math.max(rig.boundingRadius * VOXEL_TO_WORLD * modelScale, MIN_HIT_RADIUS_PX * unitsPerPixelX);
       const sphere = new THREE.Sphere(catWorldPos, worldRadius);
       const hitPoint = new THREE.Vector3();
       return raycaster.ray.intersectSphere(sphere, hitPoint) !== null;
     },
 
     dispose() {
+      rig.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

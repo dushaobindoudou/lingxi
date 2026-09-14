@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>灵犀 · Rig 预览</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #2a2622; color: #e8ddd2;
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+      #stage { position: absolute; inset: 0; }
+      #panel { position: absolute; top: 12px; left: 12px; z-index: 10; display: flex;
+        flex-direction: column; gap: 8px; background: rgba(0,0,0,0.45); padding: 12px;
+        border-radius: 10px; font-size: 12px; min-width: 200px; }
+      #panel label { display: flex; flex-direction: column; gap: 3px; }
+      #panel select, #panel button { font: inherit; padding: 5px 8px; border-radius: 6px;
+        border: 1px solid #55493f; background: #37302a; color: #e8ddd2; cursor: pointer; }
+      .row { display: flex; gap: 6px; }
+      .row button { flex: 1; }
+      #stats { white-space: pre-line; opacity: 0.75; line-height: 1.5; }
+    </style>
+    <script type="module" src="/src/rig-preview.ts" defer></script>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="panel">
+      <label>
+        <span>皮肤</span>
+        <select id="skin"></select>
+      </label>
+      <div class="row">
+        <button data-view="side">侧视</button>
+        <button data-view="front">正面</button>
+        <button data-view="three">3/4</button>
+      </div>
+      <div class="row">
+        <button id="toggle-walk">开始走</button>
+        <button id="toggle-spin">旋转</button>
+      </div>
+      <div id="stats"></div>
+    </div>
+  </body>
+</html>
