@@ -1,0 +1,6 @@
+# Tauri 2.x's dependency tree (icu_*, serde_with, time, image, plist) requires rustc
+# >= 1.88. Pinning the channel here rather than relying on a machine-local
+# `rustup override` keeps the build reproducible across checkouts - and survives the
+# directory being renamed, which silently orphans a path-keyed override.
+[toolchain]
+channel = "stable"

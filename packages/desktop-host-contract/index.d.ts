@@ -1,6 +1,6 @@
 // Desktop Shell <-> Animation Director contract (docs/05-technical-architecture.md,
 // docs/decisions/001-realtime-desktop.md). Types only, zero runtime, zero dependencies -
-// implementations live per-host (e.g. apps/desktop-shell's Tauri-backed host) and are
+// implementations live per-host (e.g. apps/lingxi's Tauri-backed host) and are
 // swapped in behind this interface so the renderer/life-engine never import a host SDK
 // directly. A future Windows/Linux host, or a plain-browser host for local dev/preview,
 // implements the same shape.
@@ -35,7 +35,7 @@ export interface DesktopHost {
   /**
    * Fires with the OS-level cursor position, polled independently of DOM hit-testing.
    * Required because a click-through window stops receiving ordinary mouse events -
-   * see the Rust-side comment in apps/desktop-shell/src-tauri/src/lib.rs.
+   * see the Rust-side comment in apps/lingxi/src-tauri/src/lib.rs.
    */
   onGlobalCursorMove(handler: (point: CursorPoint) => void): () => void;
 
