@@ -1,11 +1,48 @@
 // Renderer module (docs/05-technical-architecture.md). Owns the Three.js scene and
 // the currently-mounted model; knows nothing about the desktop host or the life
 // engine's decision-making, only the `Renderer` contract's render/hitTest/resize shape.
+//
+// Composition, in the order a frame is assembled:
+//   1. bodyController.reset()  - every node back to its authored rest transform
+//   2. idleAnimator            - the involuntary baseline (breath, blink, tail, gait)
+//   3. expression rig offsets  - ears and head tilt implied by the current face
+//   4. director -> offsets     - the chosen action clip, crossfaded
+//   5. bodyController.apply()  - additive channels, pose expansion, paw IK, ground contact
+//   6. placement               - screen position and facing, applied last because reset()
+//                                zeroes the root transform
 import * as THREE from 'three';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
-import { buildRig, type Rig } from './rig/skeleton.ts';
-import { getSkin, DEFAULT_SKIN_ID } from './rig/skins.ts';
+import { buildRig, type Rig, type SkeletonData } from './rig/skeleton.ts';
+import skeletonData from './data/skeleton.json';
+import catalogue from './data/skins.json';
+import { refineSkeleton } from './rig/anatomy.ts';
+import { paintSkin, paintFace, type ArtSkin, type FaceState } from './rig/art.ts';
+import { createBodyController } from './anim/body-controller.ts';
+import { createDirector } from './anim/director.ts';
 import { createIdleAnimator } from './anim/idle.ts';
+
+/** Refined proportions: boxes overlap at the bending joints so the torso reads as one soft
+ *  body instead of a chain of separate blocks. Same joint topology, so every clip and pose
+ *  authored against the base skeleton still applies. */
+const SKELETON = refineSkeleton(skeletonData as unknown as SkeletonData);
+const SKINS = catalogue as ArtSkin[];
+export const DEFAULT_SKIN_ID = 'honey-mittens';
+
+/** Ear pose implied by each expression's ear layer, in radians. */
+const EAR_ANGLE: Record<FaceState['ear'], number> = {
+  neutral: 0,
+  forward: 0.13,
+  airplane: 0.8,
+  back: -0.48,
+};
+
+/** The face boxes the rig still carries. The painted decal replaces all of them, so their
+ *  meshes are hidden - the pivots stay, because the idle animator still drives them. */
+const FACE_BOX = /^(eye|pupil|brow|nose|mouth|whisker|jaw|tongue)/;
+
+export function listSkins(): readonly ArtSkin[] {
+  return SKINS;
+}
 
 export function createThreeRenderer(): Renderer {
   const scene = new THREE.Scene();
@@ -38,23 +75,83 @@ export function createThreeRenderer(): Renderer {
 
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
   renderer.setClearColor(0x000000, 0);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   scene.add(new THREE.HemisphereLight(0xfff3e0, 0x3a2e26, 1.1));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const key = new THREE.DirectionalLight(0xffffff, 1.0);
   key.position.set(-1.2, 2, 1.5);
   scene.add(key);
 
-  // The voxel rig replaces the old hand-assembled placeholder: same box aesthetic, but a
-  // real joint hierarchy with pivots at the joints, built from data/skeleton.json so that
-  // proportion-override skins work. See rig/skeleton.ts.
-  let rig: Rig = buildRig(getSkin(DEFAULT_SKIN_ID));
-  scene.add(rig.root);
-  const idleAnimator = createIdleAnimator();
-
   // World units per voxel. The rig is authored at ~40 units nose-to-tail; the scene's
   // frustum is sized in the ~2.6-unit range, so it needs bringing down to scene scale.
   const VOXEL_TO_WORLD = 0.055;
-  rig.root.scale.setScalar(VOXEL_TO_WORLD);
+
+  // --- the mounted cat: rig + painted body atlas + painted face decal -------------------
+  const faceCanvas = document.createElement('canvas');
+  faceCanvas.width = faceCanvas.height = 256;
+  const faceTexture = new THREE.CanvasTexture(faceCanvas);
+  faceTexture.colorSpace = THREE.SRGBColorSpace;
+  faceTexture.generateMipmaps = false;
+  faceTexture.minFilter = faceTexture.magFilter = THREE.LinearFilter;
+
+  let skin: ArtSkin = SKINS.find((s) => s.id === DEFAULT_SKIN_ID) ?? SKINS[0];
+  let rig!: Rig;
+  let bodyTexture!: THREE.CanvasTexture;
+  let bodyMaterial!: THREE.MeshStandardMaterial;
+  let faceMaterial!: THREE.MeshBasicMaterial;
+  let faceGeometry!: THREE.PlaneGeometry;
+  let bodyController!: ReturnType<typeof createBodyController>;
+
+  const idleAnimator = createIdleAnimator();
+  const director = createDirector(SKELETON.nodes.map((node) => node.id));
+
+  function mountSkin(next: ArtSkin) {
+    if (rig) {
+      scene.remove(rig.root);
+      rig.dispose();
+      bodyTexture.dispose();
+      bodyMaterial.dispose();
+      faceMaterial.dispose();
+      faceGeometry.dispose();
+    }
+    skin = next;
+    rig = buildRig(skin, SKELETON);
+    scene.add(rig.root);
+    rig.root.scale.setScalar(VOXEL_TO_WORLD * modelScale);
+
+    const atlas = paintSkin(SKELETON.nodes, skin);
+    bodyTexture = new THREE.CanvasTexture(atlas.canvas);
+    bodyTexture.colorSpace = THREE.SRGBColorSpace;
+    bodyTexture.magFilter = bodyTexture.minFilter = THREE.NearestFilter;
+    bodyTexture.generateMipmaps = false;
+    bodyMaterial = new THREE.MeshStandardMaterial({ map: bodyTexture, roughness: 1, metalness: 0 });
+    rig.root.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.material = bodyMaterial;
+    });
+    for (const node of SKELETON.nodes) {
+      if (!FACE_BOX.test(node.id)) continue;
+      for (const child of rig.node(node.id).children) {
+        if (child instanceof THREE.Mesh) child.visible = false;
+      }
+    }
+
+    const headSpec = SKELETON.nodes.find((node) => node.id === 'head')!;
+    const [hx, hy, hz] = headSpec.box.size;
+    faceGeometry = new THREE.PlaneGeometry(hx, hy);
+    // depthWrite off + a polygon offset so the decal never z-fights the head box it sits on.
+    faceMaterial = new THREE.MeshBasicMaterial({
+      map: faceTexture, transparent: true, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    });
+    const faceMesh = new THREE.Mesh(faceGeometry, faceMaterial);
+    faceMesh.position.set(headSpec.box.offset[0], headSpec.box.offset[1], headSpec.box.offset[2] + hz / 2 + 0.025);
+    rig.node('head').add(faceMesh);
+
+    bodyController = createBodyController(rig, SKELETON);
+    paintFace(faceCanvas, skin, director.update(0, 'idle', false).face, false);
+    faceTexture.needsUpdate = true;
+  }
 
   let container: HTMLElement | null = null;
   let width = 1;
@@ -65,6 +162,10 @@ export function createThreeRenderer(): Renderer {
   let lastPosition: { x: number; y: number } | null = null;
   let facingAngle = 0; // rotation.y the body is currently holding/turning toward (rig faces +Z)
   let headYaw = 0; // local head turn beyond the body's own facing, toward the cursor
+  let earAngle = 0;
+  let headTilt = 0;
+
+  mountSkin(skin);
 
   /** Shortest-path angle interpolation - a naive lerp can spin the long way around
    *  when the target crosses the -PI/PI seam, which looks like a wrong-way flip. */
@@ -81,6 +182,11 @@ export function createThreeRenderer(): Renderer {
   // size preset (0.25x) - a hit target that shrinks proportionally with visual scale becomes
   // impractically small to grab (reported as "拖拽也有问题不是很灵敏").
   const MIN_HIT_RADIUS_PX = 40;
+  // How far the body may yaw away from "square to the viewer". The cat is a desktop pet seen
+  // on a flat screen: if it ever turns past profile the face - the entire expressive surface,
+  // and the whole point of the face decal - is pointing at the wallpaper. See the fold in
+  // render() for how rear-facing travel directions get mirrored into this range.
+  const MAX_FACING_YAW = Math.PI * 0.42;
 
   // World units per CSS pixel at the model's depth, recomputed on resize so the
   // life engine's pixel-space position maps onto a stable place in the ortho frustum.
@@ -91,17 +197,17 @@ export function createThreeRenderer(): Renderer {
   // World units of ground-plane travel per logical pixel, along each *logical* axis (x = left/
   // right, y = up/down in screen space, i.e. life-engine's position.x/.y). NOT simply
   // unitsPerPixelX/Y: those describe the frustum's own scale, which only maps 1:1 to on-screen
-  // travel for an axis the camera looks straight down. This camera is tilted (position
-  // (0,1.4,2.6) looking at (0,0.4,0)), so a plain `position.x/.y * unitsPerPixelX/Y` mapping
-  // undershoots badly - moving the cat all the way to a logical screen edge only got it
-  // partway there on screen (reported as "上下左右似乎无法移动到边缘位置"): the frustum's
-  // *half*-width is unitsPerPixelX*width, but a logical pixel offset from center only ever
-  // reaches +-width/2, i.e. half of that half-width again; and vertically, ground-plane travel
-  // (world z) only shows up on screen scaled by groundUp's z-component (~0.36 here, since the
-  // camera's tilt means moving "into the screen" only partly reads as "up/down"), so the same
-  // naive mapping undershot vertical travel far worse than horizontal. Solving for the actual
-  // ground-plane basis (groundRight/groundUp, computed above from the real camera geometry)
-  // fixes both by construction, and keeps working correctly if the camera tilt is ever tuned.
+  // travel for an axis the camera looks straight down. This camera is tilted, so a plain
+  // `position.x/.y * unitsPerPixelX/Y` mapping undershoots badly - moving the cat all the way
+  // to a logical screen edge only got it partway there on screen (reported as "上下左右似乎
+  // 无法移动到边缘位置"): the frustum's *half*-width is unitsPerPixelX*width, but a logical
+  // pixel offset from center only ever reaches +-width/2, i.e. half of that half-width again;
+  // and vertically, ground-plane travel (world z) only shows up on screen scaled by groundUp's
+  // z-component (~0.36 here, since the camera's tilt means moving "into the screen" only partly
+  // reads as "up/down"), so the same naive mapping undershot vertical travel far worse than
+  // horizontal. Solving for the actual ground-plane basis (groundRight/groundUp, computed above
+  // from the real camera geometry) fixes both by construction, and keeps working correctly if
+  // the camera tilt is ever tuned.
   let worldPerPixelX = 0.01;
   let worldPerPixelZ = 0.01;
 
@@ -124,7 +230,7 @@ export function createThreeRenderer(): Renderer {
     locomotion: true,
     facing: true,
     idleAnimation: true,
-    preciseHitTest: false, // bounding-sphere hit test for now; swap in a raycast once the real mesh lands
+    preciseHitTest: true, // real raycast against the rig's boxes (see hitTest)
   };
 
   const raycaster = new THREE.Raycaster();
@@ -172,35 +278,49 @@ export function createThreeRenderer(): Renderer {
       // pose (amplitude 0) rather than freeze mid-stride at whatever phase it stopped at.
       const walking = state.state === 'wander' || state.state === 'follow_cursor' || state.state === 'ai_directed';
       const walkAmount = walking && moved > 0.01 ? 1 : 0;
+
+      // 1. rest pose, 2. involuntary baseline
+      bodyController.reset();
       idleAnimator.update(rig, elapsed, deltaSeconds, gaitPhase, walkAmount);
 
-      // life-engine position is in CSS-pixel space with +y downward (screen space); map onto
-      // the ground plane the tilted camera looks down on, using worldPerPixelX/Z (see their
-      // definition in applyFrustum) rather than the frustum's own unitsPerPixelX/Y - the
-      // latter looked plausible and even got the sign right, but only ever got the cat
-      // partway to a screen edge (reported as "上下左右似乎无法移动到边缘位置": worse
-      // vertically than horizontally, because the camera's tilt foreshortens the z axis on
-      // top of the shared shortfall on both axes - see worldPerPixelX/Z's comment for the
-      // exact factors).
+      // 3. the current expression's implied ear/head pose, eased rather than snapped
+      const frame = director.update(deltaSeconds, state.state, walkAmount > 0);
+      const ease = 1 - Math.exp(-deltaSeconds / 0.16);
+      earAngle += ((EAR_ANGLE[frame.face.ear] ?? 0) - earAngle) * ease;
+      rig.node('earL').rotation.z -= earAngle;
+      rig.node('earR').rotation.z += earAngle;
+      // A questioning or sleepy face reads much better with a slight head cant; it is the
+      // cheapest single cue that turns a static expression into an attitude.
+      const wantTilt = frame.face.symbol === 'question' ? 0.12 : frame.face.eye === 'half' ? 0.07 : 0;
+      headTilt += (wantTilt - headTilt) * ease;
+
+      // 4 + 5. the chosen clip, crossfaded, then applied with pose expansion / IK / contact
+      bodyController.apply(frame.offsets);
+
+      if (frame.faceDirty) {
+        paintFace(faceCanvas, skin, frame.face, frame.blink);
+        faceTexture.needsUpdate = true;
+      }
+
+      // 6. placement - after apply(), because bodyController.reset() zeroes the root
+      // transform and apply() owns root.position.y for ground contact.
       const px = state.position.x - width / 2;
       const py = state.position.y - height / 2;
       rig.root.position.x = px * worldPerPixelX;
       rig.root.position.z = py * worldPerPixelZ;
 
-      // Face the actual direction of travel, in the full 2D sense - not just left/right.
-      // The old version only ever picked between two fixed left/right lean angles (from
-      // `state.facing`, a left/right-only signal), so moving mostly up or down left the
-      // body pointed sideways with no real up/down turn at all (reported: "向上，和向下
-      // 走的时候他身体的方向好像不太对"). Must convert to the same world-space (x,z) the
-      // position mapping above uses, not raw logical (dx,dy), before taking the angle:
-      // worldPerPixelX and worldPerPixelZ are no longer equal (see their comment), so an
-      // angle derived straight from logical pixels would point subtly wrong except when
-      // moving purely horizontally or vertically - this was harmless before that fix (equal
-      // scale factors on both axes leave atan2's angle unchanged) but would silently break
-      // facing again if left as a raw-pixel angle now.
-      // Held (not reset) when not moving, so it doesn't snap to a default when idle/dragged.
+      // Face the direction of travel - but never past profile. The raw ground-plane angle is
+      // geometrically right for a 3D scene and wrong for this one: walking toward the bottom
+      // of the screen maps to travelling away from the camera, which turned the cat's back on
+      // the viewer and hid the face entirely ("他要跟屏幕外的人交互...否则看不到脸了").
+      // Folding - mirroring a rear-facing angle across the screen plane, keeping its left/right
+      // sign - is continuous (unlike a clamp, where a hair's difference around straight-down
+      // would flip the cat ~144 degrees) and reads naturally: the cat simply walks "down" while
+      // still angled toward you.
       if (moved > 0.5) {
-        facingAngle = Math.atan2(dx * worldPerPixelX, dy * worldPerPixelZ);
+        const raw = Math.atan2(dx * worldPerPixelX, dy * worldPerPixelZ);
+        const folded = Math.abs(raw) > Math.PI / 2 ? Math.sign(raw) * (Math.PI - Math.abs(raw)) : raw;
+        facingAngle = Math.max(-MAX_FACING_YAW, Math.min(MAX_FACING_YAW, folded));
       }
       // Position already snaps 1:1 to the cursor while dragged (see main.ts's native
       // mousemove handler) - a slower rotation catch-up during a fast drag makes the body
@@ -228,7 +348,9 @@ export function createThreeRenderer(): Renderer {
         }
       }
       headYaw += (targetHeadYaw - headYaw) * Math.min(1, deltaSeconds * 6);
-      rig.node('head').rotation.y = headYaw;
+      const head = rig.node('head');
+      head.rotation.y += headYaw;
+      head.rotation.z += headTilt;
 
       renderer.render(scene, camera);
     },
@@ -236,16 +358,28 @@ export function createThreeRenderer(): Renderer {
     hitTest(point: { x: number; y: number }) {
       ndc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
+      // Precise: intersect the actual boxes. The old bounding-sphere test treated a
+      // cat-shaped object as a ball, so a click in the empty space beside it still counted
+      // as a grab and teleported the pet ("点击有时候会空白的地方影响整个位置").
+      if (raycaster.intersectObject(rig.root, true).length > 0) return true;
+      // ...but a precise silhouette is impossible to grab at the smallest size presets, so
+      // keep the generous circle as a fallback only while the model really is that small.
+      const worldRadius = rig.boundingRadius * VOXEL_TO_WORLD * modelScale;
+      const minWorldRadius = MIN_HIT_RADIUS_PX * unitsPerPixelX;
+      if (worldRadius >= minWorldRadius) return false;
       const catWorldPos = new THREE.Vector3();
       rig.root.getWorldPosition(catWorldPos);
-      const worldRadius = Math.max(rig.boundingRadius * VOXEL_TO_WORLD * modelScale, MIN_HIT_RADIUS_PX * unitsPerPixelX);
-      const sphere = new THREE.Sphere(catWorldPos, worldRadius);
-      const hitPoint = new THREE.Vector3();
-      return raycaster.ray.intersectSphere(sphere, hitPoint) !== null;
+      const sphere = new THREE.Sphere(catWorldPos, minWorldRadius);
+      return raycaster.ray.intersectSphere(sphere, new THREE.Vector3()) !== null;
     },
 
     dispose() {
       rig.dispose();
+      bodyTexture.dispose();
+      bodyMaterial.dispose();
+      faceTexture.dispose();
+      faceMaterial.dispose();
+      faceGeometry.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

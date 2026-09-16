@@ -1,0 +1,53 @@
+import * as THREE from 'three';
+import type {Rig,SkeletonData} from '../rig/skeleton.ts';
+import {POSES} from './poses.ts';
+
+export function createBodyController(rig:Rig,data:SkeletonData){
+  const original=data.nodes.map(n=>({node:rig.node(n.id),position:rig.node(n.id).position.clone(),rotation:rig.node(n.id).rotation.clone()}));
+  const meshes:THREE.Mesh[]=[];
+  rig.root.traverse(o=>{if(o instanceof THREE.Mesh && o.visible){o.geometry.computeBoundingBox();meshes.push(o);}});
+  const box=new THREE.Box3(),part=new THREE.Box3();
+  const end=new THREE.Vector3(),jointPos=new THREE.Vector3(),toEnd=new THREE.Vector3(),toTarget=new THREE.Vector3();
+  const worldQ=new THREE.Quaternion(),delta=new THREE.Quaternion(),parentQ=new THREE.Quaternion();
+  const head=data.nodes.find(n=>n.id==='head')!;
+  const startPaw=rig.node('pawFL').getWorldPosition(new THREE.Vector3());
+  const target=new THREE.Vector3();
+  function solvePaw(weight:number,wash:number){
+    if(weight<=0)return;
+    rig.root.updateMatrixWorld(true);
+    const paw=rig.node('pawFL');
+    paw.getWorldPosition(startPaw);
+    target.set(wash?head.box.size[0]*.24:0,head.box.offset[1]+(wash?head.box.size[1]*.03:-head.box.size[1]*.32),head.box.offset[2]+head.box.size[2]*.5+.35);
+    rig.node('head').localToWorld(target);target.lerpVectors(startPaw,target,weight);
+    for(let pass=0;pass<10;pass++)for(const id of ['lowerFL','upperFL','scapL']){
+      const joint=rig.node(id);paw.getWorldPosition(end);joint.getWorldPosition(jointPos);
+      toEnd.copy(end).sub(jointPos).normalize();toTarget.copy(target).sub(jointPos).normalize();
+      delta.setFromUnitVectors(toEnd,toTarget);
+      joint.getWorldQuaternion(worldQ);joint.parent!.getWorldQuaternion(parentQ).invert();
+      joint.quaternion.copy(parentQ.multiply(delta.multiply(worldQ)));
+      joint.rotation.x=THREE.MathUtils.clamp(joint.rotation.x,-2.7,2.7);
+      joint.rotation.y=THREE.MathUtils.clamp(joint.rotation.y,-1.2,1.2);
+      joint.rotation.z=THREE.MathUtils.clamp(joint.rotation.z,-1.4,1.4);
+      rig.root.updateMatrixWorld(true);
+    }
+    paw.rotation.x=-.7*weight;
+  }
+  return {
+    reset(){rig.root.position.set(0,0,0);rig.root.rotation.set(0,0,0);for(const frame of original){frame.node.position.copy(frame.position);frame.node.rotation.copy(frame.rotation);}},
+    apply(offsets:Record<string,number>){
+      const expanded={...offsets};
+      for(const [channel,weight] of Object.entries(offsets))if(channel.startsWith('pose.'))for(const [target,value] of Object.entries(POSES[channel.slice(5)]??{}))expanded[target]=(expanded[target]??0)+value*weight;
+      for(const [channel,value] of Object.entries(expanded)){
+        const [id,kind,axis]=channel.split('.');
+        if((kind==='rotation'||kind==='position')&&(axis==='x'||axis==='y'||axis==='z')){
+          const node=id==='root'?rig.root:rig.node(id);node[kind][axis]+=value;
+        }
+      }
+      solvePaw(offsets['groom.paw']??0,offsets['groom.wash']??0);
+      rig.root.updateMatrixWorld(true);box.makeEmpty();
+      for(const mesh of meshes){if(!mesh.visible)continue;part.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld);box.union(part);}
+      // Contact with the floor also applies to rolls and crouches; explicit positive lift = jump.
+      if(!box.isEmpty())rig.root.position.y+=-box.min.y+Math.max(0,offsets['root.position.y']??0);
+    },
+  };
+}

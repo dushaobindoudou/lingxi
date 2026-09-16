@@ -1,19 +1,11 @@
-// Layer 1 of the three-layer animation model: the procedural base that NEVER stops running -
-// breathing, blinking, tail sway, ear twitches. Pose and reaction layers add on top of it
-// rather than replacing it, which is why "dragged while asleep" needs no special case.
-//
-// Two rules from the spec are load-bearing here and easy to lose in a later refactor:
-//   1. The base sines must stay mutually non-harmonic (1.55 / 2.3 / 3.7 Hz). The moment two
-//      of them line up, the cat reads as a machine.
-//   2. Blink intervals must be random. A fixed blink period is one of the clearest tells of
-//      a fake creature.
+// Quiet baseline animation. Standing has no perpetual pelvis sway; occasional tail
+// movement and slow breathing are independent from explicit action clips.
 import * as THREE from 'three';
 import type { Rig } from '../rig/skeleton.ts';
 import { createSpring, stepSpring, SPRING_TUNING, type SpringState } from '../rig/spring.ts';
 
-const BREATH_HZ = 1.55;
-const TAIL_HZ = 2.3;
-const SHIFT_HZ = 3.7;
+const BREATH_HZ = 0.38;
+const TAIL_HZ = 0.28;
 
 const TAIL_SEGMENTS = ['tail0', 'tail1', 'tail2', 'tail3', 'tail4', 'tail5', 'tail6'] as const;
 
@@ -43,14 +35,16 @@ export function createIdleAnimator(): IdleAnimator {
     update(rig, elapsed, dt, gaitPhase, walkAmount) {
       // --- breathing: joint rotation only, never torso scale (principle one) ---
       const breath = Math.sin(elapsed * BREATH_HZ * Math.PI * 2);
-      rig.node('spine2').rotation.x = breath * 0.012;
-      rig.node('spine1').rotation.x = breath * 0.016;
+      rig.node('spine2').rotation.x = breath * 0.002;
+      rig.node('spine1').rotation.x = breath * 0.003;
       // Neck counter-rotates so the head doesn't nod along with the ribcage.
-      rig.node('neck2').rotation.x = -breath * 0.02;
+      rig.node('neck2').rotation.x = -breath * 0.004;
 
       // --- tail: per-segment delay. Segment n chases segment n-1's CURRENT value, with
       // stiffness falling off down the chain, so one driver produces a travelling wave. ---
-      const tailDrive = Math.sin(elapsed * TAIL_HZ * Math.PI * 2) * (0.06 + walkAmount * 0.1);
+      const quietPhase = elapsed % 12;
+      const tailEnvelope = quietPhase < 3 ? Math.sin(quietPhase / 3 * Math.PI) ** 2 : 0;
+      const tailDrive = Math.sin(elapsed * TAIL_HZ * Math.PI * 2) * (0.08 * tailEnvelope + walkAmount * 0.1);
       for (let i = 0; i < TAIL_SEGMENTS.length; i += 1) {
         const t = i / (TAIL_SEGMENTS.length - 1);
         const k = THREE.MathUtils.lerp(SPRING_TUNING.tailRoot.k, SPRING_TUNING.tailTip.k, t);
@@ -87,10 +81,8 @@ export function createIdleAnimator(): IdleAnimator {
       rig.node('earL').rotation.z = ear.side === 'L' && twitching ? -0.28 : 0;
       rig.node('earR').rotation.z = ear.side === 'R' && twitching ? 0.28 : 0;
 
-      // --- weight shift while standing: a barely-visible sway that keeps a standing cat
-      // from looking frozen. Third non-harmonic frequency. ---
-      const shift = Math.sin(elapsed * SHIFT_HZ * Math.PI * 2) * 0.006 * (1 - walkAmount);
-      rig.node('hipC').rotation.z = shift;
+      // Grounded standing: weight shifts belong to named, occasional actions.
+      rig.node('hipC').rotation.z = rig.restRotation('hipC')[2];
 
       // --- legs: placeholder swing, NOT yet foot-planted. Phase 2 replaces this wholesale
       // with world-space planted feet + two-bone IK; until then this exists only so the
