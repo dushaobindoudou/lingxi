@@ -20,9 +20,19 @@ export function createSpring(initial = 0): SpringState {
  * @param dt seconds; clamped by the caller, not here
  */
 export function stepSpring(state: SpringState, target: number, k: number, d: number, dt: number): number {
-  state.v += (target - state.x) * k * dt;
-  state.v -= state.v * d * dt;
-  state.x += state.v * dt;
+  // Sub-stepped. This is explicit integration, which goes unstable once the step is large
+  // relative to the stiffness - and "unstable" here does not mean slightly wrong, it means the
+  // value diverges to infinity within a few frames and takes whatever it drives with it. The
+  // caller capping dt is not enough protection on its own: the stiffest tuning in use (lid,
+  // k=45) needs steps under ~0.05s, which is shorter than a single dropped frame.
+  const MAX_STEP = 1 / 60;
+  const steps = Math.min(8, Math.max(1, Math.ceil(dt / MAX_STEP)));
+  const step = dt / steps;
+  for (let i = 0; i < steps; i += 1) {
+    state.v += (target - state.x) * k * step;
+    state.v -= state.v * d * step;
+    state.x += state.v * step;
+  }
   return state.x;
 }
 

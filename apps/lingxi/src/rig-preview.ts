@@ -56,7 +56,8 @@ faceTexture.colorSpace = THREE.SRGBColorSpace;
 faceTexture.generateMipmaps = false;
 faceTexture.minFilter = faceTexture.magFilter = THREE.LinearFilter;
 
-const idleAnimator = createIdleAnimator();
+// Built in mountSkin, because the gait measures its stride off the rig's real bone lengths.
+let idleAnimator!: ReturnType<typeof createIdleAnimator>;
 const director = createDirector(SKELETON.nodes.map((n) => n.id));
 
 let skin: ArtSkin = SKINS.find((s) => s.id === DEFAULT_SKIN_ID) ?? SKINS[0];
@@ -104,6 +105,7 @@ function mountSkin(next: ArtSkin) {
   rig.node('head').add(faceMesh);
 
   bodyController = createBodyController(rig, SKELETON);
+  idleAnimator = createIdleAnimator(rig);
   refreshStats();
   refit();
 }

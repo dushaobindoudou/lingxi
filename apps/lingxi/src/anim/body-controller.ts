@@ -17,7 +17,12 @@ export function createBodyController(rig:Rig,data:SkeletonData){
     rig.root.updateMatrixWorld(true);
     const paw=rig.node('pawFL');
     paw.getWorldPosition(startPaw);
-    target.set(wash?head.box.size[0]*.24:0,head.box.offset[1]+(wash?head.box.size[1]*.03:-head.box.size[1]*.32),head.box.offset[2]+head.box.size[2]*.5+.35);
+    // The standoff is measured from the FRONT FACE of the head, and it has to clear the paw's
+    // own half-depth or the paw ends up inside the skull. It used to be 0.35 against a paw
+    // ~3 voxels deep, which put roughly 1.2 voxels of paw inside the head - the grooming clips
+    // were the worst offenders in the clip-interpenetration probe for exactly this reason.
+    const pawClearance=data.nodes.find(n=>n.id==='pawFL')!.box.size[2]*.5+.35;
+    target.set(wash?head.box.size[0]*.24:0,head.box.offset[1]+(wash?head.box.size[1]*.03:-head.box.size[1]*.32),head.box.offset[2]+head.box.size[2]*.5+pawClearance);
     rig.node('head').localToWorld(target);target.lerpVectors(startPaw,target,weight);
     for(let pass=0;pass<10;pass++)for(const id of ['lowerFL','upperFL','scapL']){
       const joint=rig.node(id);paw.getWorldPosition(end);joint.getWorldPosition(jointPos);
@@ -44,6 +49,15 @@ export function createBodyController(rig:Rig,data:SkeletonData){
         }
       }
       solvePaw(offsets['groom.paw']??0,offsets['groom.wash']??0);
+
+      // --- ground contact -----------------------------------------------------------------
+      // Measured straight off the posed body again. This used to need the gait subtracted
+      // first, because the old rotation-only walk swung its paws below the floor line and the
+      // contact rule answered by shoving the whole cat upward - 0.70 voxels of travel per
+      // step, all of it inherited by the head. gait.ts removed the cause rather than the
+      // symptom: its paws are SOLVED to sit on the floor line through stance, so the lowest
+      // point of the body is now genuinely constant while walking and this measurement is
+      // stable on its own. (probe-gait.html is the regression check.)
       rig.root.updateMatrixWorld(true);box.makeEmpty();
       for(const mesh of meshes){if(!mesh.visible)continue;part.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld);box.union(part);}
       // Contact with the floor also applies to rolls and crouches; explicit positive lift = jump.

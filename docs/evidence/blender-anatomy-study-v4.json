@@ -1,0 +1,36 @@
+{
+  "mcp_server": "blender-mcp (ahujasid, PyPI blender-mcp 1.9.1, uvx-launched)",
+  "note": "Different MCP package/version than the v1-v3 evidence files in this directory, which were produced through a different 'Blender Lab' MCP build (server v1.30.0, extra _for_cli tools). Same target: the official Blender addon 'MCP for Blender', driven live in this session via execute_blender_code against a running Blender 5.2.1 LTS GUI instance.",
+  "source_scene": "Lingxi • Combed Hair Study v3",
+  "output_scene": "Lingxi • Polish + Rig Study v4",
+  "stage": "Unapproved polish + rig study v4; offline render, functional skeleton with calibrated leg bone roll, fur bound to surface deform, a first-pass keyframed walk cycle exists, mouth cavity present but weak, no facial blend shapes, no run/jump/sit-stand clips yet",
+  "file": "assets/characters/lingxi/source/lingxi-anatomy-study-v4.blend",
+  "render": "assets/characters/lingxi/reference/anatomy-study-v4.png",
+  "verified_by_direct_query_after_save": {
+    "mesh_objects": 32,
+    "hair_curve_objects": 37,
+    "hair_curve_objects_bound_to_surface_deform": 36,
+    "total_hair_curve_strands": 1157937,
+    "armature_bone_count": 24
+  },
+  "changes_from_v3": [
+    "Eyes rebuilt: sclera + radial-fiber iris (proper coordinate-space fix, not object-space texture misuse) + pupil + two eyelid fold curves per eye + baked camera-visible catchlight sprites. Fixed a v2 tilt-matrix bug that had put the two eyes at different heights.",
+    "Face blaze/stripe boundary changed from a hard boolean threshold to a soft MapRange gradient plus edge noise, so the white mask blends into the coat instead of reading as a pasted decal.",
+    "Ears rebuilt from a 4-vertex flat triangle to a 16x11 parametric grid with concave inner bowl, forward lean/curl, variable solidify thickness, subsurf and bevel.",
+    "Fur regrown denser with a layered guard+undercoat pass per surface (~1.16M curve strands total vs 214,819 in v3), per-strand colour baked to a curve attribute (fixes an earlier bug where hair 'Generated' texture coordinates do not behave like mesh coordinates and silently killed the tabby pattern), and curve radius scaled up so strands are not sub-pixel at render resolution.",
+    "Added rear thigh/shin/paw geometry (previously only front legs existed as separate pieces).",
+    "Added a jaw mesh + tongue mesh, both parented to a new Jaw bone, plus a small boolean-cut mouth cavity in the head mesh (see gaps below - the cut degraded the closed-mouth look and needed a patch to cover the resulting bald spot; a thin seam remains).",
+    "Added a 24-bone armature (Hip/Spine01/Neck/Head/Jaw, 5-segment Tail chain with automatic-weight skinning, Ear x2, Eye x2, front leg x2 (2-joint), rear leg x2 (3-joint)); all body meshes bone-parented.",
+    "Fixed the biggest v4-in-progress gap in the same session: fur is now bound to its source mesh via Blender's native surface attachment (per-curve 'surface_uv_coordinate' computed from a BVH nearest-point + barycentric UV lookup, plus a 'Deform Curves on Surface' geometry-nodes modifier). Verified by posing the tail and legs with fur visible and rendering the result - fur follows the deforming mesh with no detachment. This replaces the v3-era limitation noted in docs/12.",
+    "Fixed the leg pose rotation axis problem from the same session (see gap below, now resolved): explicitly set edit-bone roll via align_roll(Vector((0,-1,0))) on all 10 leg bones (FrontUpperLeg/FrontPaw x2, RearThigh/RearShin/RearPaw x2). Verified with three escalating render tests (-25 deg single bone, -55/-60 deg both front+rear, then a full extended-leg pose) - paws now swing down/forward as expected instead of into the face. Legs are confirmed posable; a walk/run/jump/sit cycle can now be authored on top of this, which was not previously true.",
+    "Authored an actual keyframed walk cycle (Action 'LX_v4_WalkCycle', 42 fcurves, 24-frame/1s loop at 24fps, use_cyclic=True): diagonal leg pairs (front-left+rear-right vs front-right+rear-left) swing in a sine-based gait with a knee-bend that increases during each leg's lift phase so the paw clears the ground, plus a small (2 deg, deliberately kept inside the safe range found below) spine undulation, head bob and tail counter-sway. Verified by rendering 4 phases of the cycle (frames 1/7/13/19) - legs visibly cycle through different positions, fur keeps following, eyes stay aligned. This is the first actual motion clip on the rig, not just a static test pose."
+  ],
+  "known_gaps_carried_forward": [
+    "The jaw bone rotates correctly but the boolean-cut mouth cavity is too shallow/small for the jaw+tongue to swing into view - opening the jaw does not read as an open mouth yet. The cut also required a patch mesh (LX_v4_ChinPatch) to cover the bald spot it left behind; a thin seam is still visible close up. This whole area (cavity depth/shape, patch blending) needs another pass, ideally by sculpting the cavity in properly rather than a blunt boolean.",
+    "No facial shape keys (blend shapes) were added for expressions; only rigid part rotation (ears, jaw, head, tail) plus the existing eyelid curve/eye-scale approach used for the three.js preview's blink.",
+    "New constraint discovered while testing the fixed leg rig: rotating Hip/Spine01 by more than a few degrees (tested at -8/+4 deg) drags the Head/Eye bone chain far enough that the eye assemblies (bone-parented to Eye_-1/Eye_1, children of Head) no longer line up with the static boolean-cut eye sockets in the head mesh, exposing the bare socket cavity in render. This is a pose-authoring limit, not a broken rig - eyes track the Head bone correctly, but the socket cut only looks right within a limited head-rotation range around the bind pose. A walk/run cycle that rotates the spine more than that needs either a shallower spine rotation budget or the socket depth reworked.",
+    "A walk cycle now exists (see above) but run, jump, sit-to-stand, and lie-down clips still do not. The walk cycle itself is a first pass authored in one session, not iterated on for gait naturalism (footfall timing, weight shift, ground contact) - treat it as a proof that the rig can carry motion, not as a finished animation.",
+    "The hosted three.js preview (previews/threejs, a separate ChatGPT Sites project) still reflects v3. Republishing it needs the ChatGPT Sites tooling that a different assistant/session used to create it; this Claude Code session has no access to that hosting product.",
+    "A concurrent, apparently unrelated session/tool generated 2D reference sheets in this same repo during this work (docs/14-daily-life-action-atlas.md, assets/characters/lingxi/reference/daily-life/, assets/characters/lingxi/reference/short-fur/ with a user-supplied short-fur photo reference) covering the same walk/run/jump/expression brief via 2D image generation instead of the 3D rig. Direction has not been reconciled between the two approaches."
+  ]
+}

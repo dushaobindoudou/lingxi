@@ -8,7 +8,7 @@
 
 当前颜色配置并不代表完整生产皮肤。正式 `SkinManifest v2` 需要增加受约束的相对资产路径、版本哈希、贴图遮罩、LOD、动画兼容列表和许可证记录。加载器拒绝路径越界和可执行脚本；先验证完整资产再原子替换，失败保留旧皮肤。人格变化应平滑过渡，不重置猫的长期身份与记忆。
 
-接口见 [contracts](../packages/contracts/src/index.d.ts)，数据见 [皮肤](../presets/skins/warm-tabby.json)和[性格](../presets/personalities/quiet.json)。当前没有伪造模型路径来暗示资产已完成。
+接口见 [contracts](../packages/contracts/src/index.d.mts)，数据见 [皮肤](../presets/skins/warm-tabby.json)和[性格](../presets/personalities/quiet.json)。当前没有伪造模型路径来暗示资产已完成。
 
 ## 观察层
 

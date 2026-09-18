@@ -38,11 +38,13 @@ export default defineConfig(() => ({
   },
   build: {
     rollupOptions: {
-      // two windows, two entry points: the transparent companion overlay and the
-      // tray's "管理" settings popup (see WebviewWindowBuilder in src-tauri/src/lib.rs)
+      // three windows, three entry points: the transparent companion overlay, the tray's
+      // "主界面" settings window, and the "调试台" console (see WebviewWindowBuilder in
+      // src-tauri/src/lib.rs)
       input: {
         main: resolve("index.html"),
         management: resolve("management.html"),
+        debug: resolve("debug.html"),
       },
     },
   },

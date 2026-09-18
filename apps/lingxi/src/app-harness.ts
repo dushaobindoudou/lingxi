@@ -5,6 +5,8 @@
 //
 // Dev-only entry: not in vite.config.ts's build inputs.
 import { createThreeRenderer } from './renderer.ts';
+import { createStageFx } from './fx/stage-fx.ts';
+import { createPerformanceRunner } from './fx/performances.ts';
 import { createLifeEngine } from '../../../packages/life-engine/src/index.mjs';
 
 const log = document.getElementById('log')!;
@@ -23,7 +25,9 @@ const t0 = performance.now();
 const renderer = createThreeRenderer();
 say(`renderer created in ${(performance.now() - t0).toFixed(0)}ms`);
 renderer.mount(stage);
-say('renderer mounted');
+const fx = createStageFx();
+fx.mount(stage);
+say('renderer + fx mounted');
 
 const width = stage.clientWidth;
 const height = stage.clientHeight;
@@ -50,6 +54,11 @@ function frame(now: number) {
     lastFrameAt = now;
     const snapshot = engine.tick(now, cursor);
     renderer.render(snapshot, dt, cursor);
+    fx.anchorEffects(snapshot.position.x, snapshot.position.y);
+    if (fx.speaking) {
+      const head = renderer.headScreenPoint?.();
+      if (head) fx.anchorBubble(head.x, head.y - 18);
+    }
     if (first) { first = false; say(`first frame ok, state=${snapshot.state}`); }
     if (cursor) renderer.hitTest(cursor);
   } catch (error) {
@@ -62,3 +71,16 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// Dev probe: lets a driving script (or the console) reach the live objects to measure what
+// actually moves on screen, instead of reasoning about what should. Harness-only.
+const performances = createPerformanceRunner({
+  engine,
+  renderer,
+  fx,
+  viewport: () => ({ width, height }),
+  petPosition: () => engine.position,
+  restoreCamera: () => renderer.setCameraPreset?.('game'),
+  now: () => performance.now(),
+});
+(window as unknown as Record<string, unknown>).__lingxi = { renderer, engine, stage, fx, performances };

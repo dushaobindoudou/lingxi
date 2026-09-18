@@ -15,6 +15,8 @@
 // Everything else - behavior, animation, rendering - lives in the frontend packages and
 // talks to this shell only through the events/commands declared here.
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::NSEvent;
 use serde::{Deserialize, Serialize};
@@ -87,14 +89,49 @@ const SCALE_SMALL: f64 = 0.25;
 const SCALE_MEDIUM: f64 = 0.5;
 const SCALE_LARGE: f64 = 1.0;
 
-const MODE_AUTO: &str = "auto";
-const MODE_PLAY: &str = "play";
+/// There is one mode now (free roaming; playing is "a toy is out"), so the old auto/play
+/// setting is gone. The constant survives only as the value `mode` still reports over the
+/// HTTP bridge, because an agent written against the previous build reads that field.
+const MODE_FREE: &str = "free";
 
 /// The AI coding agents this build knows how to name/select in the "Agent 接入" page.
 /// "none" means no agent is treated as actively connected. This is a *label* today - see
 /// the doc comment on `set_active_agent` for what it does and, honestly, doesn't yet do.
 const KNOWN_AGENTS: [&str; 4] = ["none", "dsh", "codex", "claude"];
 const DEFAULT_CAT_NAME: &str = "灵犀";
+
+/// Visual themes ("主题"). Ids must match apps/lingxi/src/data/skins.json - that file is the
+/// actual asset catalogue (colours, pattern generator, atelier PNG variants); Rust only
+/// persists which one is selected and rejects ids it has never heard of, so a hand-edited
+/// settings.json can't leave the companion window trying to mount a theme that doesn't
+/// exist. Adding a theme means adding it in both places.
+const KNOWN_SKINS: [&str; 9] = [
+    "honey-mittens",
+    "silver-brook",
+    "calico-poem",
+    "apricot-letter",
+    "moon-oat",
+    "mist-blue",
+    "cocoa-snow",
+    "peach-cloud",
+    "ink-sesame",
+];
+const DEFAULT_SKIN: &str = "honey-mittens";
+
+/// Viewing angles ("视角"). Ids must match CAMERA_PRESETS in apps/lingxi/src/renderer.ts,
+/// which owns the actual elevation numbers - same split as KNOWN_SKINS above.
+const KNOWN_CAMERAS: [&str; 6] = ["look-up", "eye-level", "game", "shoulder", "overhead", "auto"];
+const DEFAULT_CAMERA: &str = "game";
+
+/// Toys ("玩具"). Ids must match packages/life-engine's TOY_KINDS - that module owns the
+/// simulation (rolling, bouncing, batting); Rust only routes the request. Unlike the theme and
+/// camera settings these are deliberately NOT persisted: a toy left on the desktop across a
+/// restart would be clutter the user never asked for twice.
+const KNOWN_TOYS: [&str; 3] = ["yarn", "feather", "laser"];
+
+/// Scripted set-pieces ("特效"). Ids must match src/fx/performances.ts's PERFORMANCES, which
+/// owns the actual choreography.
+const KNOWN_PERFORMANCES: [&str; 3] = ["angry-claw", "kiss-rush", "zoomies"];
 
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
 /// stand-in for avoidRadius (and, later, wander speed/rate) until per-trait tuning exists.
@@ -174,6 +211,10 @@ struct PersistedSettings {
     personality_traits: PersonalityTraits,
     #[serde(default = "default_behavior_preset")]
     behavior_preset: String,
+    #[serde(default = "default_skin")]
+    skin: String,
+    #[serde(default = "default_camera")]
+    camera: String,
 }
 
 fn default_cat_name() -> String {
@@ -188,18 +229,28 @@ fn default_behavior_preset() -> String {
     DEFAULT_BEHAVIOR_PRESET.to_string()
 }
 
+fn default_skin() -> String {
+    DEFAULT_SKIN.to_string()
+}
+
+fn default_camera() -> String {
+    DEFAULT_CAMERA.to_string()
+}
+
 impl PersistedSettings {
     fn defaults() -> Self {
         Self {
             version: 1,
             scale: SCALE_LARGE,
             visible: true,
-            mode: MODE_AUTO.to_string(),
+            mode: MODE_FREE.to_string(),
             cat_name: default_cat_name(),
             cat_personality: String::new(),
             active_agent: default_active_agent(),
             personality_traits: PersonalityTraits::defaults(),
             behavior_preset: default_behavior_preset(),
+            skin: default_skin(),
+            camera: default_camera(),
         }
     }
 }
@@ -226,16 +277,20 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
     } else {
         default_behavior_preset()
     };
+    let skin = if KNOWN_SKINS.contains(&settings.skin.as_str()) { settings.skin } else { default_skin() };
+    let camera = if KNOWN_CAMERAS.contains(&settings.camera.as_str()) { settings.camera } else { default_camera() };
     PersistedSettings {
         version: 1,
         scale: if known_scale { settings.scale } else { SCALE_LARGE },
         visible: settings.visible,
-        mode: if settings.mode == MODE_PLAY { MODE_PLAY.to_string() } else { MODE_AUTO.to_string() },
+        mode: MODE_FREE.to_string(),
         cat_name: name,
         cat_personality: personality,
         active_agent: agent,
         personality_traits: settings.personality_traits.clamped(),
         behavior_preset,
+        skin,
+        camera,
     }
 }
 
@@ -255,17 +310,16 @@ struct TrayState {
     size_small: CheckMenuItem<tauri::Wry>,
     size_medium: CheckMenuItem<tauri::Wry>,
     size_large: CheckMenuItem<tauri::Wry>,
-    play_mode: CheckMenuItem<tauri::Wry>,
-    work_mode: CheckMenuItem<tauri::Wry>,
     toggle_visibility: MenuItem<tauri::Wry>,
     visible: AtomicBool,
     current_scale: Mutex<f64>,
-    interaction_mode: Mutex<String>,
     cat_name: Mutex<String>,
     cat_personality: Mutex<String>,
     active_agent: Mutex<String>,
     personality_traits: Mutex<PersonalityTraits>,
     behavior_preset: Mutex<String>,
+    skin: Mutex<String>,
+    camera: Mutex<String>,
     /// Where PersistedSettings is written; None only if the OS config dir is
     /// unavailable, in which case settings simply don't persist (app still works).
     settings_path: Option<PathBuf>,
@@ -292,20 +346,6 @@ impl TrayState {
         }
         let _ = self.toggle_visibility.set_text(if next_visible { "隐藏" } else { "显示" });
         let _ = app.emit("companion-visibility", next_visible);
-        self.persist();
-    }
-
-    /// "auto" (工作模式, default: stays out of the way) or "play" (逗猫模式: actively
-    /// follows the cursor) - see packages/life-engine's INTERACTION_MODES. Driven by the
-    /// tray submenu, the management window, or a future AI driver (AIIntent.mode over the
-    /// HTTP bridge). Two mutually-exclusive named checkmarks read more clearly at a glance
-    /// than one checkbox whose label has to be mentally inverted.
-    fn apply_mode(&self, app: &tauri::AppHandle, mode: &str) {
-        let mode = if mode == MODE_PLAY { MODE_PLAY } else { MODE_AUTO };
-        let _ = self.play_mode.set_checked(mode == MODE_PLAY);
-        let _ = self.work_mode.set_checked(mode == MODE_AUTO);
-        *self.interaction_mode.lock().unwrap() = mode.to_string();
-        let _ = app.emit("set-interaction-mode", mode);
         self.persist();
     }
 
@@ -365,6 +405,26 @@ impl TrayState {
         self.persist();
     }
 
+    /// "外观 / 主题": which of the painted themes the companion window renders. Unlike the
+    /// personality sliders, this one is fully live - the renderer rebuilds the rig and
+    /// repaints both atlases on the event (see renderer.ts's setSkin). An unknown id falls
+    /// back rather than erroring, because settings.json outlives any particular asset list.
+    fn apply_skin(&self, app: &tauri::AppHandle, skin: &str) {
+        let skin = if KNOWN_SKINS.contains(&skin) { skin } else { DEFAULT_SKIN };
+        *self.skin.lock().unwrap() = skin.to_string();
+        let _ = app.emit("set-skin", skin);
+        self.persist();
+    }
+
+    /// "外观 / 视角": the camera angle preset (see renderer.ts's CAMERA_PRESETS). Also live -
+    /// the renderer eases from the current angle to the new one.
+    fn apply_camera(&self, app: &tauri::AppHandle, camera: &str) {
+        let camera = if KNOWN_CAMERAS.contains(&camera) { camera } else { DEFAULT_CAMERA };
+        *self.camera.lock().unwrap() = camera.to_string();
+        let _ = app.emit("set-camera", camera);
+        self.persist();
+    }
+
     /// Snapshot the current state to disk. tmp-file + rename so a crash mid-write
     /// can never leave a half-written settings.json behind.
     fn persist(&self) {
@@ -373,12 +433,14 @@ impl TrayState {
             version: 1,
             scale: *self.current_scale.lock().unwrap(),
             visible: self.visible.load(Ordering::SeqCst),
-            mode: self.interaction_mode.lock().unwrap().clone(),
+            mode: MODE_FREE.to_string(),
             cat_name: self.cat_name.lock().unwrap().clone(),
             cat_personality: self.cat_personality.lock().unwrap().clone(),
             active_agent: self.active_agent.lock().unwrap().clone(),
             personality_traits: self.personality_traits.lock().unwrap().clone(),
             behavior_preset: self.behavior_preset.lock().unwrap().clone(),
+            skin: self.skin.lock().unwrap().clone(),
+            camera: self.camera.lock().unwrap().clone(),
         };
         let Ok(body) = serde_json::to_string_pretty(&settings) else { return };
         if let Some(parent) = path.parent() {
@@ -436,11 +498,6 @@ fn set_companion_visible(app: tauri::AppHandle, state: State<TrayState>, visible
 }
 
 #[tauri::command]
-fn set_interaction_mode(app: tauri::AppHandle, state: State<TrayState>, mode: String) {
-    state.apply_mode(&app, &mode);
-}
-
-#[tauri::command]
 fn set_cat_identity(app: tauri::AppHandle, state: State<TrayState>, name: String, personality: String) {
     state.apply_identity(&app, &name, &personality);
 }
@@ -460,6 +517,16 @@ fn set_behavior_preset(app: tauri::AppHandle, state: State<TrayState>, preset: S
     state.apply_behavior_preset(&app, &preset);
 }
 
+#[tauri::command]
+fn set_skin(app: tauri::AppHandle, state: State<TrayState>, skin: String) {
+    state.apply_skin(&app, &skin);
+}
+
+#[tauri::command]
+fn set_camera(app: tauri::AppHandle, state: State<TrayState>, camera: String) {
+    state.apply_camera(&app, &camera);
+}
+
 /// "重置位置": recenter the cat and drop whatever it was doing. A recovery action, not
 /// persisted state - just forwarded to the frontend's LifeEngine.resetPosition().
 #[tauri::command]
@@ -473,7 +540,7 @@ fn get_status(state: State<TrayState>) -> serde_json::Value {
     serde_json::json!({
         "scale": *state.current_scale.lock().unwrap(),
         "visible": state.visible.load(Ordering::SeqCst),
-        "mode": *state.interaction_mode.lock().unwrap(),
+        "mode": MODE_FREE,
         "catName": *state.cat_name.lock().unwrap(),
         "catPersonality": *state.cat_personality.lock().unwrap(),
         "activeAgent": *state.active_agent.lock().unwrap(),
@@ -483,6 +550,10 @@ fn get_status(state: State<TrayState>) -> serde_json::Value {
         "avoidRadius": avoid_radius_for_preset(&behavior_preset),
         "behaviorPreset": behavior_preset,
         "knownBehaviorPresets": KNOWN_BEHAVIOR_PRESETS,
+        "skin": *state.skin.lock().unwrap(),
+        "knownSkins": KNOWN_SKINS,
+        "camera": *state.camera.lock().unwrap(),
+        "knownCameras": KNOWN_CAMERAS,
     })
 }
 
@@ -496,6 +567,42 @@ struct PerceptionState {
 #[tauri::command]
 fn report_perception(state: State<PerceptionState>, snapshot: serde_json::Value) {
     *state.latest_snapshot.lock().unwrap() = snapshot;
+}
+
+/// What the companion window's renderer can be asked to do - the clip library, the expression
+/// list, the theme catalogue, the camera presets. Pushed up from the frontend at startup
+/// (see main.ts's report_capabilities call) rather than duplicated in Rust, because the
+/// renderer is the thing that actually owns those lists; Rust only needs to be able to hand
+/// them to `GET /capabilities` when the webview isn't in the loop.
+struct CapabilitiesState {
+    latest: Mutex<serde_json::Value>,
+}
+
+#[tauri::command]
+fn report_capabilities(state: State<CapabilitiesState>, capabilities: serde_json::Value) {
+    *state.latest.lock().unwrap() = capabilities;
+}
+
+#[tauri::command]
+fn get_capabilities(state: State<CapabilitiesState>) -> serde_json::Value {
+    state.latest.lock().unwrap().clone()
+}
+
+/// 调试台: play one action clip right now. Same path an agent's `POST /action` takes.
+#[tauri::command]
+fn play_action(app: tauri::AppHandle, id: String) {
+    let _ = app.emit("play-action", serde_json::json!({ "id": id }));
+}
+
+/// 调试台: hold one expression. `hold_ms` is a duration, not a latch - an expression that
+/// never expires would leave the cat stuck with whatever face a debugging session last poked
+/// at, which is exactly the kind of state a debug tool must not be able to create.
+#[tauri::command]
+fn play_expression(app: tauri::AppHandle, name: String, hold_ms: Option<u64>) {
+    let _ = app.emit(
+        "play-expression",
+        serde_json::json!({ "name": name, "holdMs": hold_ms.unwrap_or(4000) }),
+    );
 }
 
 /// Same snapshot GET /perception serves externally, but for the management window's own
@@ -739,6 +846,144 @@ fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Curs
 ///
 /// Bound to 127.0.0.1 only - never 0.0.0.0 - so this never becomes reachable from the
 /// network, only from other processes on the same machine.
+/// Apply whichever control fields a `POST /control` body carries, returning (applied,
+/// rejected) so the caller gets a precise answer instead of a blanket 200.
+///
+/// Validation split: anything Rust owns the vocabulary for (mode, camera, theme, scale) is
+/// checked here and rejected outright if wrong. Clip ids and expression names belong to the
+/// renderer's data files, which Rust deliberately does not duplicate - those are forwarded and
+/// validated on arrival (the frontend logs an unknown id), which is why they report as
+/// "forwarded" rather than "applied".
+fn apply_control_command(
+    app: &tauri::AppHandle,
+    command: &serde_json::Value,
+) -> (Vec<String>, Vec<String>) {
+    let state = app.state::<TrayState>();
+    let mut applied = Vec::new();
+    let mut rejected = Vec::new();
+
+    if command.get("mode").is_some() {
+        // Accepted and ignored rather than rejected: an agent written against the two-mode
+        // build should not have its whole request fail over a setting that no longer exists.
+        applied.push("mode (ignored - there is only one mode now; put a toy out to play)".to_string());
+    }
+    if let Some(camera) = command.get("camera").and_then(|v| v.as_str()) {
+        if KNOWN_CAMERAS.contains(&camera) {
+            state.apply_camera(app, camera);
+            applied.push(format!("camera={camera}"));
+        } else {
+            rejected.push(format!("camera: unknown preset \"{camera}\" (see GET /capabilities)"));
+        }
+    }
+    if let Some(skin) = command.get("skin").and_then(|v| v.as_str()) {
+        if KNOWN_SKINS.contains(&skin) {
+            state.apply_skin(app, skin);
+            applied.push(format!("skin={skin}"));
+        } else {
+            rejected.push(format!("skin: unknown theme \"{skin}\" (see GET /capabilities)"));
+        }
+    }
+    if let Some(scale) = command.get("scale").and_then(|v| v.as_f64()) {
+        if [SCALE_SMALL, SCALE_MEDIUM, SCALE_LARGE].iter().any(|p| (p - scale).abs() < f64::EPSILON) {
+            state.apply_scale(app, scale);
+            applied.push(format!("scale={scale}"));
+        } else {
+            rejected.push(format!("scale: expected one of {SCALE_SMALL}/{SCALE_MEDIUM}/{SCALE_LARGE}, got {scale}"));
+        }
+    }
+    if let Some(visible) = command.get("visible").and_then(|v| v.as_bool()) {
+        state.set_visible(app, visible);
+        applied.push(format!("visible={visible}"));
+    }
+    if let Some(action) = command.get("action").and_then(|v| v.as_str()) {
+        let _ = app.emit("play-action", serde_json::json!({ "id": action }));
+        applied.push(format!("action={action} (forwarded)"));
+    }
+    if let Some(expression) = command.get("expression").and_then(|v| v.as_str()) {
+        let hold_ms = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
+        let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": hold_ms }));
+        applied.push(format!("expression={expression} (forwarded)"));
+    }
+    if let Some(id) = command.get("perform").and_then(|v| v.as_str()) {
+        if KNOWN_PERFORMANCES.contains(&id) {
+            let _ = app.emit("perform", serde_json::json!({ "id": id }));
+            applied.push(format!("perform={id}"));
+        } else {
+            rejected.push(format!("perform: unknown performance \"{id}\" (see GET /capabilities)"));
+        }
+    }
+    if let Some(kind) = command.get("toy").and_then(|v| v.as_str()) {
+        if kind == "none" {
+            let _ = app.emit("clear-toy", ());
+            applied.push("toy=none".to_string());
+        } else if KNOWN_TOYS.contains(&kind) {
+            let _ = app.emit("set-toy", serde_json::json!({ "kind": kind }));
+            applied.push(format!("toy={kind}"));
+        } else {
+            rejected.push(format!("toy: unknown toy \"{kind}\" (expected one of {KNOWN_TOYS:?} or \"none\")"));
+        }
+    }
+    if let Some(text) = command.get("say").and_then(|v| v.as_str()) {
+        let trimmed: String = text.trim().chars().take(140).collect();
+        if trimmed.is_empty() {
+            rejected.push("say: empty text".to_string());
+        } else {
+            let duration = command.get("sayMs").and_then(|v| v.as_u64());
+            let _ = app.emit("say", serde_json::json!({ "text": trimmed, "durationMs": duration }));
+            applied.push("say".to_string());
+        }
+    }
+    if command.get("resetPosition").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let _ = app.emit("reset-position", ());
+        applied.push("resetPosition".to_string());
+    }
+    if applied.is_empty() && rejected.is_empty() {
+        rejected.push(
+            "empty command: expected at least one of camera/skin/scale/visible/action/expression/perform/toy/say/resetPosition"
+                .to_string(),
+        );
+    }
+    (applied, rejected)
+}
+
+/// Check once a minute for reminders that have come due and have the cat bring them up.
+///
+/// A minute of granularity is deliberate. This is a pet mentioning something, not an alarm
+/// clock, and a reminder that fires to the second would feel like a notification - which is the
+/// thing a desktop pet is supposed to be a gentler alternative to.
+fn spawn_reminder_ticker(app: tauri::AppHandle) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(30));
+        let state = app.state::<MemoryState>();
+        let due: Vec<Reminder> = {
+            let mut reminders = state.reminders.lock().unwrap();
+            let now = now_millis();
+            let mut fired = Vec::new();
+            for reminder in reminders.iter_mut() {
+                if !reminder.done && reminder.due <= now {
+                    reminder.done = true;
+                    fired.push(reminder.clone());
+                }
+            }
+            fired
+        };
+        if due.is_empty() {
+            continue;
+        }
+        state.persist_reminders();
+        // One at a time, and only the first if several came due together - a cat that recites a
+        // backlog at you is a todo list, not a pet.
+        if let Some(reminder) = due.first() {
+            let _ = app.emit("play-expression", serde_json::json!({ "name": "好奇", "holdMs": 5000 }));
+            let _ = app.emit("play-action", serde_json::json!({ "id": "notice-you" }));
+            let _ = app.emit(
+                "say",
+                serde_json::json!({ "text": reminder.text.clone(), "durationMs": 6000 }),
+            );
+        }
+    });
+}
+
 fn spawn_perception_server(app: tauri::AppHandle) {
     thread::spawn(move || {
         // A just-killed previous instance can leave the port in TIME_WAIT for a moment -
@@ -771,6 +1016,121 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     let state = app.state::<PerceptionState>();
                     let body = state.latest_snapshot.lock().unwrap().to_string();
                     json_response(200, body)
+                }
+                // Everything the pet can be told to do, as data: the 40 clips (id, name,
+                // category, duration, the expression each one wears), the 30 expressions, the
+                // themes, the camera angles. An agent is expected to GET this once and then
+                // POST ids from it, rather than hardcoding names that only happen to exist in
+                // the build it was written against.
+                (tiny_http::Method::Get, "/capabilities") => {
+                    let state = app.state::<CapabilitiesState>();
+                    let body = state.latest.lock().unwrap().to_string();
+                    json_response(200, body)
+                }
+                // Current settings - the same object the management window reads at open.
+                (tiny_http::Method::Get, "/status") => {
+                    let state = app.state::<TrayState>();
+                    let preset = state.behavior_preset.lock().unwrap().clone();
+                    let body = serde_json::json!({
+                        "scale": *state.current_scale.lock().unwrap(),
+                        "visible": state.visible.load(Ordering::SeqCst),
+                        "mode": MODE_FREE,
+                        "skin": *state.skin.lock().unwrap(),
+                        "camera": *state.camera.lock().unwrap(),
+                        "catName": *state.cat_name.lock().unwrap(),
+                        "activeAgent": *state.active_agent.lock().unwrap(),
+                        "behaviorPreset": preset,
+                    });
+                    json_response(200, body.to_string())
+                }
+                // One control endpoint rather than eight: an agent sends whichever of these
+                // fields it cares about, in any combination, and each is applied through the
+                // exact same path the UI uses (so the tray checkmarks, the management window
+                // and the persisted settings all stay in sync with what an agent did).
+                // Unknown ids are rejected per-field with a message, not silently ignored -
+                // an agent that typo'd a clip name should find out.
+                (tiny_http::Method::Post, "/control") => {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    match serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(command) => {
+                            let (applied, rejected) = apply_control_command(&app, &command);
+                            json_response(
+                                if rejected.is_empty() { 200 } else { 400 },
+                                serde_json::json!({
+                                    "ok": rejected.is_empty(),
+                                    "applied": applied,
+                                    "rejected": rejected,
+                                })
+                                .to_string(),
+                            )
+                        }
+                        Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
+                    }
+                }
+                // --- memory: what the cat knows about its owner ---
+                (tiny_http::Method::Get, "/memory") => {
+                    let state = app.state::<MemoryState>();
+                    let memory = state.memory.lock().unwrap();
+                    json_response(200, serde_json::to_string(&*memory).unwrap_or_else(|_| "{}".into()))
+                }
+                (tiny_http::Method::Post, "/memory") => {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    match serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(value) => {
+                            let text = value.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                            let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                            if text.trim().is_empty() {
+                                json_response(400, "{\"error\":\"text is required\"}".to_string())
+                            } else {
+                                app.state::<MemoryState>().remember(text, kind);
+                                json_response(200, "{\"ok\":true}".to_string())
+                            }
+                        }
+                        Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
+                    }
+                }
+                // --- reminders: things it has promised to bring up later ---
+                (tiny_http::Method::Get, "/reminders") => {
+                    let state = app.state::<MemoryState>();
+                    let reminders = state.reminders.lock().unwrap();
+                    json_response(200, serde_json::to_string(&*reminders).unwrap_or_else(|_| "[]".into()))
+                }
+                (tiny_http::Method::Post, "/reminders") => {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    match serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(value) => {
+                            let text: String =
+                                value.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().chars().take(140).collect();
+                            // Either an absolute time or a delay, whichever the caller finds
+                            // easier - an agent usually knows "in 25 minutes", not a timestamp.
+                            let due = value
+                                .get("dueAt")
+                                .and_then(|v| v.as_u64())
+                                .or_else(|| value.get("inMinutes").and_then(|v| v.as_f64()).map(|m| now_millis() + (m * 60_000.0) as u64));
+                            match (text.is_empty(), due) {
+                                (true, _) => json_response(400, "{\"error\":\"text is required\"}".to_string()),
+                                (_, None) => json_response(400, "{\"error\":\"dueAt or inMinutes is required\"}".to_string()),
+                                (_, Some(due)) => {
+                                    let state = app.state::<MemoryState>();
+                                    let id = format!("r{}", now_millis());
+                                    {
+                                        let mut reminders = state.reminders.lock().unwrap();
+                                        reminders.push(Reminder { id: id.clone(), text, due, done: false });
+                                        let overflow = reminders.len().saturating_sub(REMINDER_CAP);
+                                        if overflow > 0 {
+                                            reminders.drain(0..overflow);
+                                        }
+                                    }
+                                    state.persist_reminders();
+                                    json_response(200, format!("{{\"ok\":true,\"id\":\"{id}\"}}"))
+                                }
+                            }
+                        }
+                        Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
+                    }
                 }
                 (tiny_http::Method::Post, "/intent") => {
                     let mut body = String::new();
@@ -811,6 +1171,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 }
                             }
                             let _ = app.emit("claude-task-event", &event);
+                            react_to_task_event(&app, &event);
                             json_response(200, "{\"ok\":true}".to_string())
                         }
                         Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
@@ -822,6 +1183,178 @@ fn spawn_perception_server(app: tauri::AppHandle) {
             let _ = request.respond(response);
         }
     });
+}
+
+// --- memory and reminders -------------------------------------------------------------------
+//
+// The cat keeps two small, human-readable JSON files next to its settings:
+//
+//   memory.json     what it has learned about you
+//   reminders.json  things it has promised to bring up later
+//
+// Both are deliberately plain files rather than a database. They are the cat's understanding of
+// its owner, and the owner should be able to open them, read them, correct them, and delete
+// them without any tooling - the alternative is a pet that has accumulated opaque state about
+// you, which is exactly the kind of thing people are right to distrust.
+//
+// An agent writes to these through the MCP server (see packages/mcp-server), which is how "根据
+// 任务的内容更新猫咪的记忆" works: the agent, which is the thing that actually read your code and
+// your prompts, decides what is worth remembering and says so in one sentence.
+
+const MEMORY_CAP: usize = 200;
+const REMINDER_CAP: usize = 100;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct MemoryNote {
+    /// Free text, written by an agent or by the user. One fact per note.
+    text: String,
+    /// Loose grouping so the UI can show them apart: "owner" / "project" / "preference" / "moment".
+    #[serde(default)]
+    kind: String,
+    /// Unix millis.
+    at: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Reminder {
+    id: String,
+    text: String,
+    /// Unix millis at which the cat should bring it up.
+    due: u64,
+    #[serde(default)]
+    done: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct MemoryFile {
+    #[serde(default)]
+    notes: Vec<MemoryNote>,
+    /// How many agent tasks the cat has watched through to completion. The only number here
+    /// that grows on its own, and the basis of "培养感情".
+    #[serde(default)]
+    completed_tasks: u64,
+}
+
+struct MemoryState {
+    memory: Mutex<MemoryFile>,
+    reminders: Mutex<Vec<Reminder>>,
+    dir: Option<PathBuf>,
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+impl MemoryState {
+    fn load(dir: Option<PathBuf>) -> Self {
+        let memory = dir
+            .as_ref()
+            .and_then(|d| std::fs::read_to_string(d.join("memory.json")).ok())
+            .and_then(|body| serde_json::from_str::<MemoryFile>(&body).ok())
+            .unwrap_or_default();
+        let reminders = dir
+            .as_ref()
+            .and_then(|d| std::fs::read_to_string(d.join("reminders.json")).ok())
+            .and_then(|body| serde_json::from_str::<Vec<Reminder>>(&body).ok())
+            .unwrap_or_default();
+        Self { memory: Mutex::new(memory), reminders: Mutex::new(reminders), dir }
+    }
+
+    fn persist_memory(&self) {
+        let Some(dir) = &self.dir else { return };
+        let _ = std::fs::create_dir_all(dir);
+        if let Ok(body) = serde_json::to_string_pretty(&*self.memory.lock().unwrap()) {
+            let _ = std::fs::write(dir.join("memory.json"), body);
+        }
+    }
+
+    fn persist_reminders(&self) {
+        let Some(dir) = &self.dir else { return };
+        let _ = std::fs::create_dir_all(dir);
+        if let Ok(body) = serde_json::to_string_pretty(&*self.reminders.lock().unwrap()) {
+            let _ = std::fs::write(dir.join("reminders.json"), body);
+        }
+    }
+
+    fn remember(&self, text: &str, kind: &str) {
+        let text: String = text.trim().chars().take(280).collect();
+        if text.is_empty() {
+            return;
+        }
+        {
+            let mut memory = self.memory.lock().unwrap();
+            // Same fact twice is not two facts. Cheap exact-match dedupe; an agent rephrasing
+            // itself will still get through, which is fine - the cap handles volume.
+            if memory.notes.iter().any(|note| note.text == text) {
+                return;
+            }
+            memory.notes.push(MemoryNote {
+                text,
+                kind: if kind.is_empty() { "moment".to_string() } else { kind.to_string() },
+                at: now_millis(),
+            });
+            let overflow = memory.notes.len().saturating_sub(MEMORY_CAP);
+            if overflow > 0 {
+                memory.notes.drain(0..overflow);
+            }
+        }
+        self.persist_memory();
+    }
+
+    fn record_completion(&self, app: &tauri::AppHandle) {
+        let milestone = {
+            let mut memory = self.memory.lock().unwrap();
+            memory.completed_tasks += 1;
+            let count = memory.completed_tasks;
+            // Round numbers get acknowledged out loud. Rare enough to stay warm rather than
+            // becoming noise.
+            matches!(count, 10 | 50 | 100 | 250 | 500 | 1000).then_some(count)
+        };
+        self.persist_memory();
+        if let Some(count) = milestone {
+            let _ = app.emit(
+                "say",
+                serde_json::json!({ "text": format!("我们一起完成 {count} 件事啦"), "durationMs": 4200 }),
+            );
+            let _ = app.emit("play-action", serde_json::json!({ "id": "head-bump" }));
+        }
+    }
+}
+
+/// Turn an agent's task event into something the cat visibly DOES.
+///
+/// Without this the integration is a list in a settings window, which is not why anyone puts a
+/// cat on their desktop. The point of wiring a coding agent to a pet is that you can tell how
+/// your work is going from the corner of your eye - the cat reacts, so you do not have to go
+/// and look. Deliberately restrained: a short expression, a small action, and at most a single
+/// line of speech, because something that leaps about every time a tool call finishes is a
+/// distraction rather than company.
+fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
+    let (expression, action, line) = match event.state.as_str() {
+        "completed" => ("开心", Some("paw-wave"), Some("搞定啦～")),
+        "failed" => ("不爽", Some("shake-head"), Some("这次没成…")),
+        "waiting_for_user" => ("好奇", Some("notice-you"), Some("在等你哦")),
+        "running" => ("认真", None, None),
+        "queued" => ("清醒", None, None),
+        "cancelled" => ("嫌弃", Some("shake-fur"), None),
+        _ => return,
+    };
+    let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": 4000 }));
+    if let Some(action) = action {
+        let _ = app.emit("play-action", serde_json::json!({ "id": action }));
+    }
+    // Only the states a person actually wants narrated get a bubble. "running" fires constantly.
+    if let Some(line) = line {
+        let _ = app.emit("say", serde_json::json!({ "text": line, "durationMs": 3200 }));
+    }
+    // Every finished task is a small deposit in the relationship - see MemoryState.
+    if event.state == "completed" {
+        let state = app.state::<MemoryState>();
+        state.record_completion(app);
+    }
 }
 
 /// Poll the OS-level cursor position and emit it as "global-cursor" events, independent
@@ -863,13 +1396,30 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     let size_large = CheckMenuItem::with_id(app, "size-large", "大 (1x)", true, true, None::<&str>)?;
     let shape_submenu = Submenu::with_items(app, "形状", true, &[&size_small, &size_medium, &size_large])?;
 
-    let play_mode = CheckMenuItem::with_id(app, "toggle-play-mode", "逗猫模式", true, false, None::<&str>)?;
-    let work_mode = CheckMenuItem::with_id(app, "toggle-work-mode", "工作模式", true, true, None::<&str>)?;
-    let mode_submenu = Submenu::with_items(app, "模式", true, &[&play_mode, &work_mode])?;
+
+    // 玩具 / 特效: plain menu items rather than checkmarks. A toy is a thing you put down and
+    // pick up, and a performance is a one-shot - neither is a persistent mode the tray should
+    // claim to be showing the state of.
+    let toy_yarn = MenuItem::with_id(app, "toy-yarn", "毛线球", true, None::<&str>)?;
+    let toy_feather = MenuItem::with_id(app, "toy-feather", "逗猫棒", true, None::<&str>)?;
+    let toy_laser = MenuItem::with_id(app, "toy-laser", "激光笔", true, None::<&str>)?;
+    let toy_none = MenuItem::with_id(app, "toy-none", "收起玩具", true, None::<&str>)?;
+    let toy_submenu = Submenu::with_items(
+        app,
+        "玩具",
+        true,
+        &[&toy_yarn, &toy_feather, &toy_laser, &PredefinedMenuItem::separator(app)?, &toy_none],
+    )?;
+
+    let fx_angry = MenuItem::with_id(app, "fx-angry-claw", "愤怒抓屏", true, None::<&str>)?;
+    let fx_kiss = MenuItem::with_id(app, "fx-kiss-rush", "飞奔亲亲", true, None::<&str>)?;
+    let fx_zoomies = MenuItem::with_id(app, "fx-zoomies", "半夜暴走", true, None::<&str>)?;
+    let fx_submenu = Submenu::with_items(app, "特效", true, &[&fx_angry, &fx_kiss, &fx_zoomies])?;
 
     // "主界面" first, per the requested layout - it's the primary entry point (identity,
     // agent connection, settings), with the tray itself staying a lean quick-access menu.
     let main_window = MenuItem::with_id(app, "main-window", "主界面", true, None::<&str>)?;
+    let debug_window = MenuItem::with_id(app, "debug-window", "调试台", true, None::<&str>)?;
     let toggle_visibility = MenuItem::with_id(app, "toggle-visibility", "隐藏", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出灵犀", true, None::<&str>)?;
 
@@ -877,9 +1427,11 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         app,
         &[
             &main_window,
+            &debug_window,
             &PredefinedMenuItem::separator(app)?,
             &shape_submenu,
-            &mode_submenu,
+            &toy_submenu,
+            &fx_submenu,
             &PredefinedMenuItem::separator(app)?,
             &toggle_visibility,
             &PredefinedMenuItem::separator(app)?,
@@ -907,9 +1459,15 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
                 "size-small" => state.apply_scale(app, SCALE_SMALL),
                 "size-medium" => state.apply_scale(app, SCALE_MEDIUM),
                 "size-large" => state.apply_scale(app, SCALE_LARGE),
-                "toggle-play-mode" => state.apply_mode(app, MODE_PLAY),
-                "toggle-work-mode" => state.apply_mode(app, MODE_AUTO),
                 "main-window" => open_or_focus_management_window(app),
+                "debug-window" => open_or_focus_debug_window(app),
+                "toy-yarn" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "yarn" })); }
+                "toy-feather" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "feather" })); }
+                "toy-laser" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "laser" })); }
+                "toy-none" => { let _ = app.emit("clear-toy", ()); }
+                "fx-angry-claw" => { let _ = app.emit("perform", serde_json::json!({ "id": "angry-claw" })); }
+                "fx-kiss-rush" => { let _ = app.emit("perform", serde_json::json!({ "id": "kiss-rush" })); }
+                "fx-zoomies" => { let _ = app.emit("perform", serde_json::json!({ "id": "zoomies" })); }
                 "toggle-visibility" => {
                     let next = !state.visible.load(Ordering::SeqCst);
                     state.set_visible(app, next);
@@ -924,12 +1482,11 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         size_small,
         size_medium,
         size_large,
-        play_mode,
-        work_mode,
         toggle_visibility,
         visible: AtomicBool::new(true),
         current_scale: Mutex::new(SCALE_LARGE),
-        interaction_mode: Mutex::new(MODE_AUTO.to_string()),
+        skin: Mutex::new(DEFAULT_SKIN.to_string()),
+        camera: Mutex::new(DEFAULT_CAMERA.to_string()),
         cat_name: Mutex::new(DEFAULT_CAT_NAME.to_string()),
         cat_personality: Mutex::new(String::new()),
         active_agent: Mutex::new(default_active_agent()),
@@ -937,6 +1494,206 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         behavior_preset: Mutex::new(default_behavior_preset()),
         settings_path,
     })
+}
+
+/// 特效: run one scripted set-piece. Fire-and-forget - the performance expires on its own
+/// (every one of them hands the cat back to its own autonomy), so there is no "stop" state to
+/// track here; `stop_performance` exists only for cancelling one early.
+#[tauri::command]
+fn perform(app: tauri::AppHandle, id: String) {
+    let _ = app.emit("perform", serde_json::json!({ "id": id }));
+}
+
+#[tauri::command]
+fn stop_performance(app: tauri::AppHandle) {
+    let _ = app.emit("perform-stop", ());
+}
+
+// --- custom assets ------------------------------------------------------------------------
+//
+// Everything the cat looks like and everything it can do is data, and this is where a user
+// gets to edit that data without building the app. Three optional JSON files plus a folder of
+// PNGs, in the OS config directory:
+//
+//   assets/actions.json      the clip library      (replaces the built-in one wholesale)
+//   assets/expressions.json  the expression set    (same)
+//   assets/skins.json        themes                (same)
+//   assets/textures/*.png    body and face images referenced from skins.json
+//   assets/README.md         written by the app, documenting all of the above
+//
+// Rust deliberately does NOT validate the contents. The frontend owns the schemas (it is the
+// thing that has to render them, and it already has validators with real error messages), so
+// this layer only reads bytes and reports what it found. A file that fails validation leaves
+// the built-in defaults in place rather than breaking the cat.
+
+fn custom_assets_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join("assets"))
+}
+
+fn read_json_file(path: &PathBuf) -> Option<serde_json::Value> {
+    let body = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&body).ok()
+}
+
+/// Every custom asset that exists right now, in one read. PNGs come back as data URLs so the
+/// webview can use them directly - the companion window is a transparent, CSP-restricted
+/// surface and giving it a file:// fetch path would be a far bigger hole than a few hundred KB
+/// of base64.
+#[tauri::command]
+fn get_custom_assets(app: tauri::AppHandle) -> serde_json::Value {
+    let Some(dir) = custom_assets_dir(&app) else {
+        return serde_json::json!({ "available": false });
+    };
+    let mut textures = serde_json::Map::new();
+    let texture_dir = dir.join("textures");
+    if let Ok(entries) = std::fs::read_dir(&texture_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string()) else { continue };
+            match path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+                Some("png") => {
+                    // 8MB is already far larger than any sane voxel atlas; the cap is here so a
+                    // stray file in this folder cannot wedge startup.
+                    if let Ok(bytes) = std::fs::read(&path) {
+                        if bytes.len() <= 8 * 1024 * 1024 {
+                            textures.insert(
+                                name,
+                                serde_json::Value::String(format!(
+                                    "data:image/png;base64,{}",
+                                    BASE64.encode(&bytes)
+                                )),
+                            );
+                        }
+                    }
+                }
+                Some("json") => {
+                    if let Some(value) = read_json_file(&path) {
+                        textures.insert(name, value);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    serde_json::json!({
+        "available": true,
+        "dir": dir.to_string_lossy(),
+        "actions": read_json_file(&dir.join("actions.json")),
+        "expressions": read_json_file(&dir.join("expressions.json")),
+        "skins": read_json_file(&dir.join("skins.json")),
+        "textures": textures,
+    })
+}
+
+/// Write starting points into the assets folder so "customise this" is a matter of editing a
+/// file that already exists rather than authoring one from a spec. The built-in data is passed
+/// in from the frontend, which owns it - duplicating the clip library in Rust just to be able
+/// to write it out would guarantee the two drift apart.
+#[tauri::command]
+fn install_asset_templates(
+    app: tauri::AppHandle,
+    actions: serde_json::Value,
+    expressions: serde_json::Value,
+    skins: serde_json::Value,
+    readme: String,
+    overwrite: bool,
+) -> Result<String, String> {
+    let dir = custom_assets_dir(&app).ok_or("找不到配置目录")?;
+    std::fs::create_dir_all(dir.join("textures")).map_err(|e| e.to_string())?;
+    let write = |name: &str, body: String| -> Result<(), String> {
+        let path = dir.join(name);
+        if path.exists() && !overwrite {
+            return Ok(()); // never clobber someone's edits unless they asked
+        }
+        std::fs::write(path, body).map_err(|e| e.to_string())
+    };
+    write("actions.json", serde_json::to_string_pretty(&actions).map_err(|e| e.to_string())?)?;
+    write("expressions.json", serde_json::to_string_pretty(&expressions).map_err(|e| e.to_string())?)?;
+    write("skins.json", serde_json::to_string_pretty(&skins).map_err(|e| e.to_string())?)?;
+    write("README.md", readme)?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// Reveal the assets folder in the OS file manager.
+#[tauri::command]
+fn open_assets_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = custom_assets_dir(&app).ok_or("找不到配置目录")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    tauri_plugin_opener::open_path(dir.to_string_lossy().to_string(), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Whatever went wrong the last time the companion window read the assets folder, so the
+/// management window can show it. Stored rather than emitted because that window is usually
+/// not open at the moment the load happens.
+struct AssetErrorState {
+    errors: Mutex<Vec<String>>,
+}
+
+#[tauri::command]
+fn report_asset_errors(state: State<AssetErrorState>, errors: Vec<String>) {
+    *state.errors.lock().unwrap() = errors;
+}
+
+#[tauri::command]
+fn get_asset_errors(state: State<AssetErrorState>) -> Vec<String> {
+    state.errors.lock().unwrap().clone()
+}
+
+/// Tell the companion window to re-read the assets folder and re-mount whatever it finds.
+#[tauri::command]
+fn reload_custom_assets(app: tauri::AppHandle) {
+    let _ = app.emit("reload-custom-assets", ());
+}
+
+/// 说话气泡: put one line above the cat's head. Capped in length here rather than trusting the
+/// caller, because this is reachable from an agent's HTTP POST and an unbounded string would
+/// paint a wall of text across the desktop.
+#[tauri::command]
+fn say(app: tauri::AppHandle, text: String, duration_ms: Option<u64>) {
+    let text: String = text.trim().chars().take(140).collect();
+    if text.is_empty() {
+        return;
+    }
+    let _ = app.emit(
+        "say",
+        serde_json::json!({ "text": text, "durationMs": duration_ms }),
+    );
+}
+
+/// 玩具: put a toy on the desktop, or take it away.
+#[tauri::command]
+fn set_toy(app: tauri::AppHandle, kind: String) {
+    let _ = app.emit("set-toy", serde_json::json!({ "kind": kind }));
+}
+
+#[tauri::command]
+fn clear_toy(app: tauri::AppHandle) {
+    let _ = app.emit("clear-toy", ());
+}
+
+/// 调试台: a separate window rather than a sixth page in the management window. It exists to
+/// exercise and inspect the renderer - 40 clips, 30 expressions, every camera angle - which is
+/// a developer/agent surface, not a settings surface, and you usually want it open *beside*
+/// the management window while comparing what a control did.
+#[tauri::command]
+fn open_debug_window(app: tauri::AppHandle) {
+    open_or_focus_debug_window(&app);
+}
+
+fn open_or_focus_debug_window(app: &tauri::AppHandle) {
+    if let Some(existing) = app.get_webview_window("debug") {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return;
+    }
+    let builder = WebviewWindowBuilder::new(app, "debug", WebviewUrl::App("debug.html".into()))
+        .title("灵犀 · 调试台")
+        .inner_size(880.0, 720.0)
+        .resizable(true)
+        .visible(true);
+    if let Err(e) = builder.build() {
+        eprintln!("[lingxi-desktop] failed to open debug window: {e}");
+    }
 }
 
 fn open_or_focus_management_window(app: &tauri::AppHandle) {
@@ -964,11 +1721,28 @@ pub fn run() {
             debug_log,
             set_scale,
             set_companion_visible,
-            set_interaction_mode,
             set_cat_identity,
             set_active_agent,
             set_personality_traits,
             set_behavior_preset,
+            set_skin,
+            set_camera,
+            report_capabilities,
+            get_capabilities,
+            play_action,
+            play_expression,
+            perform,
+            stop_performance,
+            set_toy,
+            clear_toy,
+            say,
+            get_custom_assets,
+            install_asset_templates,
+            open_assets_dir,
+            reload_custom_assets,
+            report_asset_errors,
+            get_asset_errors,
+            open_debug_window,
             reset_position,
             get_status,
             report_perception,
@@ -1059,11 +1833,12 @@ pub fn run() {
                 let state = app.state::<TrayState>();
                 let handle = app.handle();
                 state.apply_scale(handle, saved.scale);
-                state.apply_mode(handle, &saved.mode);
                 state.apply_identity(handle, &saved.cat_name, &saved.cat_personality);
                 state.apply_active_agent(handle, &saved.active_agent);
                 state.apply_personality_traits(handle, saved.personality_traits.clone());
                 state.apply_behavior_preset(handle, &saved.behavior_preset);
+                state.apply_skin(handle, &saved.skin);
+                state.apply_camera(handle, &saved.camera);
                 if !saved.visible {
                     // Same code path as the runtime tray toggle. The companion window
                     // must still be created visible (see the compositing note above);
@@ -1073,6 +1848,10 @@ pub fn run() {
             }
 
             app.manage(PerceptionState { latest_snapshot: Mutex::new(serde_json::json!({})) });
+            app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
+            app.manage(AssetErrorState { errors: Mutex::new(Vec::new()) });
+            app.manage(MemoryState::load(app.path().app_config_dir().ok()));
+            spawn_reminder_ticker(app.handle().clone());
             app.manage(ClaudeHooksState { events: Mutex::new(Vec::new()), sequence: Mutex::new(0) });
             spawn_perception_server(app.handle().clone());
 
@@ -1206,7 +1985,7 @@ mod tests {
         std::fs::write(&path, body.to_string()).unwrap();
         let settings = load_persisted_settings(Some(&path));
         assert_eq!(settings.scale, SCALE_LARGE);
-        assert_eq!(settings.mode, MODE_AUTO);
+        assert_eq!(settings.mode, MODE_FREE);
         // visibility is a plain bool - it round-trips untouched
         assert!(!settings.visible);
         let _ = std::fs::remove_file(&path);
@@ -1216,7 +1995,7 @@ mod tests {
     fn load_accepts_every_tray_preset_exactly() {
         for preset in [SCALE_SMALL, SCALE_MEDIUM, SCALE_LARGE] {
             let path = temp_settings_path("preset");
-            let body = serde_json::json!({ "version": 1, "scale": preset, "visible": true, "mode": MODE_AUTO });
+            let body = serde_json::json!({ "version": 1, "scale": preset, "visible": true, "mode": MODE_FREE });
             std::fs::write(&path, body.to_string()).unwrap();
             assert_eq!(load_persisted_settings(Some(&path)).scale, preset);
             let _ = std::fs::remove_file(&path);
@@ -1226,7 +2005,7 @@ mod tests {
     #[test]
     fn load_defaults_identity_fields_when_absent_from_an_older_settings_file() {
         let path = temp_settings_path("pre-identity");
-        let body = serde_json::json!({ "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_AUTO });
+        let body = serde_json::json!({ "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE });
         std::fs::write(&path, body.to_string()).unwrap();
         let settings = load_persisted_settings(Some(&path));
         assert_eq!(settings.cat_name, DEFAULT_CAT_NAME);
@@ -1241,7 +2020,7 @@ mod tests {
     fn load_rejects_unknown_behavior_preset() {
         let path = temp_settings_path("bad-behavior");
         let body = serde_json::json!({
-            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_AUTO,
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE,
             "behavior_preset": "hyperactive"
         });
         std::fs::write(&path, body.to_string()).unwrap();
@@ -1258,7 +2037,7 @@ mod tests {
         // defensive-only and covered directly by `PersonalityTraits::clamped` below instead.
         let path = temp_settings_path("bad-traits");
         let body = serde_json::json!({
-            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_AUTO,
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE,
             "personality_traits": {
                 "independence": 1.8, "curiosity": -0.5, "gentleness": 0.4,
                 "playfulness": 0.9, "sleepiness": 0.0
@@ -1305,7 +2084,7 @@ mod tests {
     fn load_rejects_unknown_agent_and_blank_name() {
         let path = temp_settings_path("bad-identity");
         let body = serde_json::json!({
-            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_AUTO,
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE,
             "cat_name": "   ", "cat_personality": "好奇", "active_agent": "gpt5"
         });
         std::fs::write(&path, body.to_string()).unwrap();
@@ -1317,13 +2096,47 @@ mod tests {
     }
 
     #[test]
+    fn load_accepts_a_known_theme_and_angle_and_rejects_anything_else() {
+        let path = temp_settings_path("theme");
+        let body = serde_json::json!({
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE,
+            "skin": "calico-poem", "camera": "auto"
+        });
+        std::fs::write(&path, body.to_string()).unwrap();
+        let settings = load_persisted_settings(Some(&path));
+        assert_eq!(settings.skin, "calico-poem");
+        assert_eq!(settings.camera, "auto");
+
+        // A theme id that no longer ships (renamed asset, hand-edited file) must not leave the
+        // companion window mounting nothing - it falls back per-field.
+        let body = serde_json::json!({
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE,
+            "skin": "rainbow-dragon", "camera": "from-orbit"
+        });
+        std::fs::write(&path, body.to_string()).unwrap();
+        let settings = load_persisted_settings(Some(&path));
+        assert_eq!(settings.skin, DEFAULT_SKIN);
+        assert_eq!(settings.camera, DEFAULT_CAMERA);
+
+        // A settings.json written before themes existed at all still loads.
+        let body = serde_json::json!({
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE
+        });
+        std::fs::write(&path, body.to_string()).unwrap();
+        let settings = load_persisted_settings(Some(&path));
+        assert_eq!(settings.skin, DEFAULT_SKIN);
+        assert_eq!(settings.camera, DEFAULT_CAMERA);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn saved_settings_round_trip_through_disk() {
         let path = temp_settings_path("roundtrip");
         let original = PersistedSettings {
             version: 1,
             scale: SCALE_MEDIUM,
             visible: false,
-            mode: MODE_PLAY.to_string(),
+            mode: MODE_FREE.to_string(),
             cat_name: "小灵".to_string(),
             cat_personality: "爱睡觉".to_string(),
             active_agent: "codex".to_string(),
@@ -1335,6 +2148,8 @@ mod tests {
                 sleepiness: 0.2,
             },
             behavior_preset: "quiet".to_string(),
+            skin: "silver-brook".to_string(),
+            camera: "eye-level".to_string(),
         };
         // Serialize the same way TrayState::persist does (tmp file + rename) and load
         // it back through the same loader the app startup uses.

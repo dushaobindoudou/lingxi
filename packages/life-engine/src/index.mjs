@@ -11,31 +11,104 @@
 // walk should just ignore `position` changes and stay in place - the engine does
 // not know or care what capabilities the renderer has.
 
-export const BEHAVIOR_STATES = Object.freeze(['idle', 'wander', 'follow_cursor', 'dragged', 'ai_directed']);
+export const BEHAVIOR_STATES = Object.freeze(['idle', 'wander', 'dragged', 'ai_directed', 'play_toy']);
 
-// 'auto' (default, "工作模式"): the cat stays out of the way - it never chases the cursor on
-// its own, and its idle/wander resting spot is always a corner of the work area on the far
-// side of the cursor from wherever it currently is, so it never sits on top of whatever the
-// user is actually looking at. 'play' ("逗猫模式"): the cat unconditionally seeks out the
-// cursor's position, at any distance, like an actual cat chasing a hand. Switching is exposed
-// both to the tray/management UI and to a future AI driver - see suggestMoveTo's sibling
-// setInteractionMode below and packages/perception-contract's AIIntent.mode.
-export const INTERACTION_MODES = Object.freeze(['auto', 'play']);
+// There is one mode. There used to be two - "工作模式" (stay out of the way) and "逗猫模式"
+// (chase the cursor) - and the split was wrong: it made the user declare in a menu what they
+// already say by their actions. Putting a toy out IS asking to play, and taking it away IS
+// asking to be left alone, so the toy is the switch and the mode setting was redundant
+// ceremony on top of it ("去掉工作模式和逗猫模式，跟猫玩游戏就是逗猫").
+//
+// What remains is free roaming: the cat wanders the desktop doing its own thing and actively
+// keeps clear of wherever the pointer is, because that is where the user is working. The laser
+// pointer covers the one thing the old "play" mode did that a toy did not - chasing the cursor
+// itself - and does it better, because it is a thing on screen rather than an invisible state.
+export const INTERACTION_MODES = Object.freeze(['free']);
+
+/**
+ * Toys ("玩具"). A toy is a second body in the same 2D world as the cat, and it is what turns
+ * the pet from something you watch into something you play with - the cat acquires a goal it
+ * did not choose for itself, and you get to interfere with it.
+ *
+ * The three differ in who moves the toy, which is the whole design axis:
+ *   'yarn'   毛线球  - free physics. You throw it; it rolls, slows, bounces off the screen
+ *                      edges. The cat chases it down and BATS it, which re-launches it. The
+ *                      cat can therefore keep its own game going with no input from you.
+ *   'feather' 逗猫棒 - you move it (it trails the cursor on a lag, like a real wand's tip
+ *                      lagging your hand). The cat chases and pounces but never truly holds
+ *                      it. This is the one that needs a human.
+ *   'laser'  激光笔  - pinned exactly to the cursor, and batting does nothing at all, because
+ *                      that is the joke: it can never be caught.
+ */
+export const TOY_KINDS = Object.freeze(['yarn', 'feather', 'laser']);
 
 const DEFAULTS = Object.freeze({
   bounds: { width: 1280, height: 800 },
   speed: 90, // units/second, autonomous wander pace
-  idleDurationMsRange: [1500, 4500],
+  // How long it rests between trips. Lengthened from 1500-4500: the cat can only perform an
+  // action while it is standing still, and with short rests it spent ~72% of its time walking
+  // and managed something interesting only about once every 19 seconds - which is what "工作
+  // 模式动作也没有随机做" is describing. Longer rests are also simply more in character for a
+  // mode whose whole job is to stay out of your way.
+  idleDurationMsRange: [1800, 5000],
   wanderRadius: 260,
-  followSpeedMultiplier: 2.5, // 'play' mode moves faster than idle wandering, to actually keep up
-  followStandoff: 46, // 'play' mode: stop this far from the cursor, not exactly on top of it
-  avoidRadius: 150, // 'auto' mode: if the cursor closes to within this, retarget away right away
-  // 'auto' mode: how far across the safe half of the work area (as a fraction of that axis's
-  // full range, 0-0.5) the rest point may land, instead of always the exact same corner
-  // pixel. Large enough that the cat visibly roams the desktop rather than parking in place
-  // (reported as "工作模式也不能看不到，需要在桌面上四处游走一下") while still biased to
-  // whichever half is away from the cursor.
-  edgeRestJitterFraction: 0.4,
+  // How close the pointer may get before the cat gets out of the way. This is the core
+  // courtesy of the whole app: the pointer marks where the user is actually working, so it is
+  // the one place on the desktop the cat must not be ("在自由模式的时候不要往这个周围走").
+  avoidRadius: 150,
+  // Rest targets are additionally rejected outright if they fall within this of the pointer -
+  // avoidance used to be purely reactive (flee once it is already too close), which meant the
+  // cat would happily pick a destination right next to the pointer and walk there first.
+  cursorKeepOut: 220,
+  // Extra pick weight for the edge the cat is already standing on, so it patrols
+  // along a border for a while instead of crossing the middle of the screen (i.e. straight
+  // through the user's actual work) on every single hop.
+  edgePatrolBias: 0.55,
+  // The shortest time between two consecutive "the cursor is too close, flee"
+  // retargets. Without it, a cursor parked inside avoidRadius satisfies the flee condition on
+  // EVERY frame, and each frame threw away the escape target and rolled a brand new random
+  // one - so the cat never actually travelled anywhere, it just vibrated in place chasing 60
+  // different directions per second (reported as "在停下的时候一直在晃" / "一直晃眼都要瞎
+  // 了"). Committing to one escape target for at least this long is what makes fleeing read
+  // as walking away rather than as a seizure.
+  avoidRetargetCooldownMs: 1400,
+  // An escape target closer than this isn't worth walking to - it produces a
+  // sub-second shuffle that reads as twitching rather than as moving out of the way. Targets
+  // are re-rolled (bounded attempts) until one is at least this far off.
+  minRetargetDistance: 120,
+  // --- toys (see TOY_KINDS) -------------------------------------------------------------
+  toyChaseSpeedMultiplier: 3.2, // a cat going after a toy sprints; this is not a stroll
+  toyReach: 34, // how close the cat's anchor gets before it can bat the toy
+  toyBatCooldownMs: 520, // one swat per approach, not one per frame
+  toyBatSpeed: 520, // px/s imparted to the yarn ball by a swat
+  toyFriction: 1.9, // per-second exponential decay of the yarn ball's speed
+  toyRestSpeed: 12, // below this the ball counts as stopped
+  toyBounceLoss: 0.62, // speed kept after bouncing off a screen edge
+  // Per-second catch-up rate of the wand tip toward the cursor. High enough that the wand is
+  // effectively ON your pointer (the ask was for the cursor to BE the toy), but not infinite -
+  // the small remaining whip is what the cat overshoots and pounces at.
+  toyFeatherLag: 16,
+  toyChargeMaxMs: 900, // hold this long for a full-power throw
+  toyThrowSpeedMin: 260, // px/s at zero charge
+  toyThrowSpeedMax: 1250, // px/s at full charge
+  // --- steering ---------------------------------------------------------------------------
+  // Radians per second the body can swing its heading. Roughly 170 deg/s: fast enough that a
+  // cat reacting to something does not look sluggish, slow enough that a reversal is visibly a
+  // turn rather than a teleport.
+  turnRate: 3.0,
+  // Tightest circle the cat can carve, in pixels. This is a floor UNDER the turn rate, not a
+  // cap on it: a fixed angular rate means the faster it moves the wider it must swing, and at
+  // the 'play' mode chase speed the resulting circle (225px/s over 3rad/s = 75px radius) was
+  // wider than the standoff it was trying to reach, so it orbited the cursor forever instead
+  // of arriving. Deriving the rate from speed/radius keeps the circle constant instead.
+  minTurnRadius: 28,
+  // Distance at which the cat starts slowing for its destination. Without an arrival taper it
+  // can only ever fly past a close target and come back around.
+  slowingRadius: 120,
+  // Speed retained when the destination is at right angles or behind. Well under 1 so sharp
+  // corners are taken slowly (and a full reversal is close to a pivot in place), which is both
+  // how animals move and what keeps the turning circle from overshooting the target.
+  minTurnSpeedFactor: 0.18,
   dragStaleMs: 700, // release a drag that stops getting updateDrag() calls (a lost mouseup)
   arriveThreshold: 6,
   margin: 24, // keep the cat's anchor point away from the very edge of the work area
@@ -62,6 +135,11 @@ export function createLifeEngine(config = {}) {
   let state = 'idle';
   let position = config.position ?? { x: bounds.width / 2, y: bounds.height / 2 };
   let facing = 1; // +1 = facing +x, -1 = facing -x
+  // The direction the body points, in radians, screen space (0 = +x, +PI/2 = down). This is
+  // the authoritative orientation: the cat can only travel along it, and the renderer reads it
+  // rather than deriving one from position deltas.
+  let heading = Math.PI / 2;
+  let turning = 0; // rad/s actually applied this tick - drives the spine bend in the renderer
   let target = null;
   let idleUntil = null; // lazily set on the first tick, once we know "now"
   let lastTickAt = null;
@@ -69,7 +147,21 @@ export function createLifeEngine(config = {}) {
   let aiIntent = null; // { target: {x,y}, until: msTimestamp } | null
   let dragUpdatedSinceLastTick = false;
   let dragStuckSinceMs = null;
-  let interactionMode = 'auto';
+  let lastAvoidRetargetAt = -Infinity; // see cfg.avoidRetargetCooldownMs
+  let toy = null; // { kind, position:{x,y}, velocity:{x,y} } | null - see TOY_KINDS
+  let lastBatAt = -Infinity;
+  let batThisTick = false; // one-frame flag the renderer turns into a pounce/swat clip
+  let holdUntil = 0; // stand still until this timestamp - see hold()
+  // Yarn ball only: the user is holding it at the cursor and winding up a throw. `since` is
+  // when they pressed; the longer they hold, the harder it goes.
+  let charge = null; // { since:number } | null
+  // True while the ball is in your hand rather than loose on the desktop. It starts held: a
+  // yarn ball you have to go and find is not a game, and the ask was for it to arrive on the
+  // pointer ("默认出现的时候应该跟随鼠标移动"). A throw releases it; clicking it picks it up.
+  let toyHeld = false;
+  // Snapshot-friendly mirror of the charge level. snapshot() has no `now` of its own, and
+  // threading one through every call site would be worse than recomputing it once per tick.
+  let chargeAmount = 0;
 
   function pickWanderTarget() {
     const angle = randomBetween(0, Math.PI * 2);
@@ -82,33 +174,306 @@ export function createLifeEngine(config = {}) {
   }
 
   /**
-   * A point on whichever half of the work area is farthest from `cursor` (or, with no cursor
-   * signal, whichever half the cat is already in, so it doesn't have to cross the whole
-   * screen to "get out of the way") - biased toward that half's outer corner, but roaming
-   * broadly across it rather than always landing on the exact same pixel. This is 'auto'
-   * mode's rest spot: a wander/avoid target picked as a random hop from the *current*
-   * position - the original approach - is bounded by `wanderRadius` and a random angle each
-   * time, so on a screen much larger than that radius it essentially never actually reaches
-   * an edge (reported as "上下左右似乎无法移动到边缘位置"). Anchoring directly to a corner's
-   * coordinates guarantees it gets there; the wide jitter (see `edgeRestJitterFraction`)
-   * keeps it from reading as "always frozen in the same corner" instead of genuinely roaming.
+   * 'auto' mode's rest spot: a point on the work area's border, far enough away to be worth
+   * walking to. A wander target picked as a random hop from the *current* position - the
+   * original approach - is bounded by `wanderRadius` and a random angle, so on a screen much
+   * larger than that radius it essentially never reaches an edge at all (reported as
+   * "上下左右似乎无法移动到边缘位置"); anchoring to the perimeter guarantees it gets there,
+   * and the patrol weighting in rollEdgeRestTarget keeps it roaming along borders
+   * ("我希望它在屏幕的边缘进行游走") rather than parking on one pixel forever.
    */
   function pickEdgeRestTarget(cursor) {
+    // Two things disqualify a candidate rest spot, and re-rolls are bounded so a pathological
+    // screen (a pointer parked in the only safe corner) still terminates with the best of a
+    // handful rather than looping.
+    //
+    //   too close to here     - a rest point a few pixels away makes the cat shuffle rather
+    //                           than travel, and a shuffle is the micro-movement the renderer
+    //                           then has to read a heading out of (it can't).
+    //   too close to the      - avoidance used to be purely REACTIVE: flee once the pointer is
+    //   pointer                 already on top of you. That let the cat cheerfully choose a
+    //                           destination right beside the pointer and walk all the way
+    //                           there before noticing. Rejecting such targets up front is what
+    //                           makes it actually stay out of the user's way.
+    const scoreOf = (point) => {
+      const reach = distance(position, point);
+      const clearance = cursor ? distance(point, cursor) : Infinity;
+      if (clearance < cfg.cursorKeepOut) return -1e9 + clearance; // disqualified, least-bad first
+      return Math.min(reach, 600); // otherwise prefer a target worth the walk
+    };
+    let best = rollEdgeRestTarget(cursor);
+    let bestScore = scoreOf(best);
+    for (let attempt = 0; attempt < 10 && (bestScore < 0 || bestScore < cfg.minRetargetDistance); attempt += 1) {
+      const next = rollEdgeRestTarget(cursor);
+      const score = scoreOf(next);
+      if (score > bestScore) {
+        best = next;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * One point ON the perimeter of the work area - literally on an edge, not merely in the
+   * half-screen nearest one. 'auto' mode is the "I'm working, stay out of my way" mode, and
+   * the desktop's border is the only place on a screen that is reliably not where the user is
+   * looking; a cat parked 300px inside the frame is still sitting on top of a window.
+   *
+   * Edge choice is weighted, not uniform: edges far from the cursor are strongly preferred,
+   * and the edge the cat is already on gets a bonus so it patrols along a border for a while
+   * instead of ping-ponging corner to corner across the middle of the screen every time.
+   */
+  function rollEdgeRestTarget(cursor) {
     const minX = cfg.margin;
     const maxX = Math.max(cfg.margin, bounds.width - cfg.margin);
     const minY = cfg.margin;
     const maxY = Math.max(cfg.margin, bounds.height - cfg.margin);
-    const midX = (minX + maxX) / 2;
-    const midY = (minY + maxY) / 2;
-    const goMinX = cursor ? cursor.x > midX : position.x < midX;
-    const goMinY = cursor ? cursor.y > midY : position.y < midY;
-    const fraction = Math.min(0.5, Math.max(0, cfg.edgeRestJitterFraction));
-    const jitterX = randomBetween(0, (maxX - minX) * fraction);
-    const jitterY = randomBetween(0, (maxY - minY) * fraction);
-    return {
-      x: clamp(goMinX ? minX + jitterX : maxX - jitterX, minX, maxX),
-      y: clamp(goMinY ? minY + jitterY : maxY - jitterY, minY, maxY),
+    const reference = cursor ?? position;
+    // Distance from the reference point to each edge, normalized - bigger is safer.
+    const edges = [
+      { id: 'left', safety: (reference.x - minX) / Math.max(1, maxX - minX) },
+      { id: 'right', safety: (maxX - reference.x) / Math.max(1, maxX - minX) },
+      { id: 'top', safety: (reference.y - minY) / Math.max(1, maxY - minY) },
+      { id: 'bottom', safety: (maxY - reference.y) / Math.max(1, maxY - minY) },
+    ];
+    const currentEdge = nearestEdge(position, minX, maxX, minY, maxY);
+    let total = 0;
+    for (const edge of edges) {
+      // Cubed so "clearly the far side" dominates, plus a floor so no edge is ever impossible
+      // (a cat that can only ever use one border reads as broken, not as polite).
+      edge.weight = Math.max(0.05, edge.safety) ** 3 * (edge.id === currentEdge ? 1 + cfg.edgePatrolBias : 1);
+      total += edge.weight;
+    }
+    let roll = Math.random() * total;
+    let chosen = edges[edges.length - 1];
+    for (const edge of edges) {
+      roll -= edge.weight;
+      if (roll <= 0) { chosen = edge; break; }
+    }
+    // Somewhere along that edge, avoiding the exact corners (a cat wedged in a corner reads
+    // as stuck) - and keeping clear of the cursor's own coordinate on the travel axis.
+    const alongX = randomBetween(minX + (maxX - minX) * 0.08, maxX - (maxX - minX) * 0.08);
+    const alongY = randomBetween(minY + (maxY - minY) * 0.08, maxY - (maxY - minY) * 0.08);
+    switch (chosen.id) {
+      case 'left': return { x: minX, y: alongY };
+      case 'right': return { x: maxX, y: alongY };
+      case 'top': return { x: alongX, y: minY };
+      default: return { x: alongX, y: maxY };
+    }
+  }
+
+  /** Which border the cat is actually standing on, or null if it isn't on one. "Nearest" alone
+   *  is not enough: a cat in the dead centre of the screen is nearest to *some* edge, and
+   *  handing that edge a patrol bonus would tilt the choice toward a border the cat has no
+   *  relationship with - including one the cursor is sitting on. */
+  function nearestEdge(point, minX, maxX, minY, maxY) {
+    const gaps = [
+      ['left', point.x - minX],
+      ['right', maxX - point.x],
+      ['top', point.y - minY],
+      ['bottom', maxY - point.y],
+    ];
+    const [id, gap] = gaps.reduce((best, candidate) => (candidate[1] < best[1] ? candidate : best));
+    const onIt = gap <= Math.min(maxX - minX, maxY - minY) * 0.12;
+    return onIt ? id : null;
+  }
+
+  // --- toys ---------------------------------------------------------------------------
+  // The cat's own drives (wander, avoid, follow) are all "where should I be"; a toy is the
+  // one input that gives it "what am I trying to DO". It therefore outranks every autonomous
+  // behavior below and is outranked only by a drag, which is the user's literal hand.
+
+  /**
+   * Put a toy on the desktop. Spawns clear of the cat so there is something to run at, rather
+   * than materialising under its nose. An unknown kind is ignored rather than throwing - this
+   * is reachable from a tray click and from an agent's HTTP POST.
+   * @param {'yarn'|'feather'|'laser'} kind
+   * @param {{x:number,y:number}|null} [at] where to drop it; defaults to a point across the
+   *   work area from the cat.
+   */
+  function setToy(kind, at = null) {
+    if (!TOY_KINDS.includes(kind)) return;
+    const spawn = at ?? {
+      x: position.x < bounds.width / 2 ? bounds.width * 0.75 : bounds.width * 0.25,
+      y: clamp(position.y + randomBetween(-120, 120), cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
     };
+    toy = {
+      kind,
+      position: {
+        x: clamp(spawn.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
+        y: clamp(spawn.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+      },
+      velocity: { x: 0, y: 0 },
+    };
+    lastBatAt = -Infinity;
+    charge = null;
+    // The yarn ball arrives in your hand; the other two are cursor-driven anyway.
+    toyHeld = kind === 'yarn';
+  }
+
+  /** Take the toy away; the cat goes back to whatever it was doing on the next tick. */
+  function clearToy() {
+    toy = null;
+    charge = null;
+    toyHeld = false;
+    if (state === 'play_toy') {
+      state = 'idle';
+      idleUntil = null;
+      target = null;
+    }
+  }
+
+  /**
+   * Throw the yarn ball (the user flicking it, or an agent). No-op for the wand and the laser,
+   * which are driven by the cursor and have no momentum of their own.
+   */
+  function throwToy(velocity) {
+    if (!toy || toy.kind !== 'yarn') return;
+    charge = null;
+    toyHeld = false;
+    toy.velocity = { x: velocity.x, y: velocity.y };
+  }
+
+  /**
+   * Start winding up a throw: the ball comes to hand and stays at the cursor until released.
+   * This is what makes the yarn ball a game rather than an object - you aim it, and how long
+   * you hold decides how hard it goes ("毛线球跟随鼠标，当我点击，蓄力，然后跑出去").
+   */
+  function beginCharge(now) {
+    if (!toy || toy.kind !== 'yarn') return false;
+    toyHeld = true;
+    charge = { since: now };
+    toy.velocity = { x: 0, y: 0 };
+    return true;
+  }
+
+  /** 0..1, how far the wind-up has got. The renderer draws this. */
+  function chargeLevel(now) {
+    if (!charge) return 0;
+    return Math.min(1, (now - charge.since) / cfg.toyChargeMaxMs);
+  }
+
+  /**
+   * Let go. `aim` is the direction to throw in (usually the cursor's recent travel, falling
+   * back to away-from-the-cat so a motionless release still launches it somewhere useful).
+   */
+  function releaseCharge(now, aim) {
+    if (!toy || !charge) return false;
+    const level = chargeLevel(now);
+    charge = null;
+    toyHeld = false;
+    let angle;
+    if (aim && Math.hypot(aim.x, aim.y) > 1e-3) {
+      angle = Math.atan2(aim.y, aim.x);
+    } else {
+      const dx = toy.position.x - position.x;
+      const dy = toy.position.y - position.y;
+      angle = Math.hypot(dx, dy) < 1e-6 ? randomBetween(0, Math.PI * 2) : Math.atan2(dy, dx);
+    }
+    const speed = cfg.toyThrowSpeedMin + (cfg.toyThrowSpeedMax - cfg.toyThrowSpeedMin) * level;
+    toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
+    return true;
+  }
+
+  /** Move the yarn ball (a drag), or reposition any toy. */
+  function moveToy(point) {
+    if (!toy) return;
+    toy.position = {
+      x: clamp(point.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
+      y: clamp(point.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+    };
+    toy.velocity = { x: 0, y: 0 };
+  }
+
+  /** Advance the toy itself. Who drives it is the whole difference between the three kinds. */
+  function stepToy(deltaSeconds, cursor) {
+    if (!toy) return;
+    const minX = cfg.margin;
+    const maxX = Math.max(cfg.margin, bounds.width - cfg.margin);
+    const minY = cfg.margin;
+    const maxY = Math.max(cfg.margin, bounds.height - cfg.margin);
+
+    // In hand (whether or not you are winding up): the ball sits at the cursor and does not roll.
+    if ((charge || toyHeld) && toy.kind === 'yarn') {
+      if (cursor) {
+        toy.position = { x: clamp(cursor.x, minX, maxX), y: clamp(cursor.y, minY, maxY) };
+      }
+      toy.velocity = { x: 0, y: 0 };
+      return;
+    }
+
+    if (toy.kind === 'laser') {
+      // Pinned to the cursor exactly. With no cursor it simply stays where it last was, which
+      // reads as the dot being held still rather than the toy vanishing.
+      if (cursor) toy.position = { x: clamp(cursor.x, minX, maxX), y: clamp(cursor.y, minY, maxY) };
+      toy.velocity = { x: 0, y: 0 };
+      return;
+    }
+    if (toy.kind === 'feather') {
+      // Trails the cursor with a lag - a wand tip does not teleport with your hand, and the
+      // lag is exactly what gives the cat something to overshoot.
+      if (cursor) {
+        const catchUp = 1 - Math.exp(-deltaSeconds * cfg.toyFeatherLag);
+        toy.position = {
+          x: clamp(toy.position.x + (cursor.x - toy.position.x) * catchUp, minX, maxX),
+          y: clamp(toy.position.y + (cursor.y - toy.position.y) * catchUp, minY, maxY),
+        };
+      }
+      toy.velocity = { x: 0, y: 0 };
+      return;
+    }
+
+    // 'yarn': free physics - roll, slow down, bounce off the edges of the desktop.
+    const decay = Math.exp(-deltaSeconds * cfg.toyFriction);
+    toy.velocity = { x: toy.velocity.x * decay, y: toy.velocity.y * decay };
+    let nx = toy.position.x + toy.velocity.x * deltaSeconds;
+    let ny = toy.position.y + toy.velocity.y * deltaSeconds;
+    if (nx < minX || nx > maxX) {
+      nx = clamp(nx, minX, maxX);
+      toy.velocity.x *= -cfg.toyBounceLoss;
+    }
+    if (ny < minY || ny > maxY) {
+      ny = clamp(ny, minY, maxY);
+      toy.velocity.y *= -cfg.toyBounceLoss;
+    }
+    toy.position = { x: nx, y: ny };
+    if (Math.hypot(toy.velocity.x, toy.velocity.y) < cfg.toyRestSpeed) toy.velocity = { x: 0, y: 0 };
+  }
+
+  /** The cat's half of the game: run the toy down, and swat it when in reach. */
+  function chaseToy(now, deltaSeconds) {
+    state = 'play_toy';
+    target = { ...toy.position };
+    const gap = distance(position, toy.position);
+    if (gap > cfg.toyReach) {
+      // Aim at the toy itself rather than a standoff point: the cat is trying to reach it, not
+      // to keep a polite distance from it.
+      moveToward(toy.position, deltaSeconds, cfg.speed * cfg.toyChaseSpeedMultiplier);
+    }
+    // Face what it is playing with, always - even standing over a stopped ball.
+    if (Math.abs(toy.position.x - position.x) > 1) facing = toy.position.x >= position.x ? 1 : -1;
+
+    // In your hand: the cat gathers itself just short of it rather than batting your fingers,
+    // which is also what builds the anticipation for the throw.
+    if (charge || toyHeld) return;
+
+    if (gap <= cfg.toyReach && now - lastBatAt >= cfg.toyBatCooldownMs) {
+      lastBatAt = now;
+      batThisTick = true;
+      // Only the yarn ball can actually be sent flying. Swatting the wand or the laser plays
+      // the swat animation and achieves nothing, which is correct and is the joke.
+      if (toy.kind === 'yarn') {
+        // Away from the cat, with a wide random spread so the rally never turns into the ball
+        // shuttling along one line forever.
+        const dx = toy.position.x - position.x;
+        const dy = toy.position.y - position.y;
+        const base = Math.hypot(dx, dy) < 1e-6 ? randomBetween(0, Math.PI * 2) : Math.atan2(dy, dx);
+        const angle = base + randomBetween(-0.9, 0.9);
+        const speed = cfg.toyBatSpeed * randomBetween(0.65, 1);
+        toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
+      }
+    }
   }
 
   /** A point `standoff` away from `target`, on the ray from `target` through `fromPos`. */
@@ -121,17 +486,58 @@ export function createLifeEngine(config = {}) {
     return { x: target.x + dx * scale, y: target.y + dy * scale };
   }
 
+  function shortestAngle(radians) {
+    return Math.atan2(Math.sin(radians), Math.cos(radians));
+  }
+
+  /**
+   * Steer toward `dest` and move along the way the body is actually pointing.
+   *
+   * This used to translate straight at the destination on every tick, with the body's
+   * orientation inferred afterwards from where it had ended up. Two things follow from that,
+   * and both were reported: a change of destination teleported the direction of travel, so the
+   * cat slid sideways or straight backwards into its new route rather than turning
+   * ("猫应该会拐弯，现在只会直行和后退"); and since orientation was a derivative of position,
+   * every wobble in position became a wobble in orientation.
+   *
+   * Now the engine owns a `heading` - the way the body points - and that heading is the ONLY
+   * direction it can travel. Turning is therefore a real manoeuvre with a real turning circle:
+   * to get somewhere behind it, the cat has to swing around. The renderer reads the heading
+   * directly instead of differentiating position, which removes the noise path entirely.
+   */
   function moveToward(dest, deltaSeconds, speed = cfg.speed) {
     const d = distance(position, dest);
     if (d <= cfg.arriveThreshold) {
       position = { ...dest };
       return true; // arrived
     }
-    const step = Math.min(d, speed * deltaSeconds);
-    const nx = position.x + ((dest.x - position.x) / d) * step;
-    const ny = position.y + ((dest.y - position.y) / d) * step;
-    facing = dest.x >= position.x ? 1 : -1;
-    position = { x: nx, y: ny };
+
+    const bearing = Math.atan2(dest.y - position.y, dest.x - position.x);
+    const error = shortestAngle(bearing - heading);
+    // Arrival taper first, because the speed it produces is what the turn rate is derived from.
+    const arrival = Math.min(1, d / Math.max(1, cfg.slowingRadius));
+    const alignmentNow = Math.max(0, Math.cos(error));
+    const paceFactor = (cfg.minTurnSpeedFactor + (1 - cfg.minTurnSpeedFactor) * alignmentNow) * arrival;
+    const turnRate = Math.max(cfg.turnRate, (speed * paceFactor) / Math.max(1, cfg.minTurnRadius));
+    const maxTurn = turnRate * deltaSeconds;
+    turning = Math.abs(error) <= maxTurn ? error / Math.max(deltaSeconds, 1e-6) : Math.sign(error) * turnRate;
+    heading = shortestAngle(heading + (Math.abs(error) <= maxTurn ? error : Math.sign(error) * maxTurn));
+
+    // Slow down for the corner. An animal that has to turn sharply cannot also sprint, and
+    // without this the cat carves enormous arcs past its target and has to come back around.
+    // At a right angle it is down to a crawl, which is what lets it pivot on the spot when the
+    // destination is directly behind it.
+    const alignment = Math.max(0, Math.cos(shortestAngle(bearing - heading)));
+    const pace = (cfg.minTurnSpeedFactor + (1 - cfg.minTurnSpeedFactor) * alignment) * arrival;
+    const step = Math.min(d, speed * pace * deltaSeconds);
+    // Clamped, like every other position-setting path. Travelling along a heading rather than
+    // straight at a (already clamped) destination means the arc of a turn can now swing wide of
+    // the target, and without this that arc could carry the cat off the edge of the desktop.
+    position = {
+      x: clamp(position.x + Math.cos(heading) * step, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
+      y: clamp(position.y + Math.sin(heading) * step, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+    };
+    facing = Math.cos(heading) >= 0 ? 1 : -1;
     // the step above can itself cover the remaining distance (large speed or delta),
     // so check again rather than always waiting one more tick to notice arrival
     return distance(position, dest) <= cfg.arriveThreshold;
@@ -165,10 +571,16 @@ export function createLifeEngine(config = {}) {
     // had no such guard - observed carrying the cat far off-bounds during a live test
     // (position (-490, 1400) against a 1470x956 screen) from a cause not yet root-caused;
     // clamping here prevents that outcome regardless of what produces a bad dragOffset.
-    position = {
+    const next = {
       x: clamp(cursor.x + dragOffset.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
       y: clamp(cursor.y + dragOffset.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
     };
+    // Keep the heading pointing the way it is being carried, so putting it down doesn't make
+    // the body snap round to an orientation left over from before the grab.
+    const dx = next.x - position.x;
+    const dy = next.y - position.y;
+    if (Math.hypot(dx, dy) > 2) heading = Math.atan2(dy, dx);
+    position = next;
     dragUpdatedSinceLastTick = true;
   }
 
@@ -189,8 +601,11 @@ export function createLifeEngine(config = {}) {
    * @param {{x:number,y:number}} targetPoint
    * @param {number} now
    * @param {number} [holdMs] how long the suggestion stays valid, default 4000ms
+   * @param {number} [speedMultiplier] 1 = the ordinary wander pace. Higher is a run: the
+   *   scripted performances ("冲向屏幕", "跑过来亲亲") are only legible if the cat actually
+   *   charges, and an ambling 90px/s crossing of a 1500px screen takes 17 seconds.
    */
-  function suggestMoveTo(targetPoint, now, holdMs = 4000) {
+  function suggestMoveTo(targetPoint, now, holdMs = 4000, speedMultiplier = 1) {
     if (state === 'dragged') return; // the user's hands-on control always wins
     aiIntent = {
       target: {
@@ -198,12 +613,28 @@ export function createLifeEngine(config = {}) {
         y: clamp(targetPoint.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
       },
       until: now + holdMs,
+      speed: cfg.speed * (Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1),
     };
   }
 
   /** Cancel any pending AI suggestion and return to autonomous behavior next tick. */
   function clearIntent() {
     aiIntent = null;
+  }
+
+  /**
+   * Stand still for `ms`, without changing what the cat is otherwise doing.
+   *
+   * This exists because an action clip and locomotion both want the body. Playing, say, a
+   * six-second grooming clip while the wander timer decides it is time to cross the desktop
+   * gives you a cat gliding across the screen washing its face - and in 'auto' mode, where the
+   * idle windows are short, it also meant scheduled clips were usually cut off a second in, so
+   * they effectively never played ("工作模式动作也没有随机做"). A hold is deliberately weaker
+   * than an AI intent: it suppresses autonomous movement only, and a drag, a toy or an explicit
+   * intent all still override it.
+   */
+  function hold(ms, now) {
+    holdUntil = Math.max(holdUntil, now + Math.max(0, ms));
   }
 
   /**
@@ -222,22 +653,12 @@ export function createLifeEngine(config = {}) {
   }
 
   /**
-   * Switch between 'auto' ("工作模式": rests at a corner of the work area, out of the
-   * cursor's way) and 'play' ("逗猫模式": unconditionally seeks out and hovers near the
-   * cursor). Callable from the tray/management UI and from an external AI driver
-   * (packages/perception-contract's AIIntent.mode) - both go through this same entry point.
-   * @param {'auto'|'play'} mode
+   * Retained only so an older caller (a persisted setting, an agent written against the
+   * previous build) does not blow up. There is one mode now - see INTERACTION_MODES - and this
+   * does nothing. It is deliberately not an error: silently ignoring a setting that no longer
+   * exists is kinder to an external driver than rejecting its whole request.
    */
-  function setInteractionMode(mode) {
-    if (!INTERACTION_MODES.includes(mode) || mode === interactionMode) return;
-    interactionMode = mode;
-    if (mode === 'auto' && state === 'follow_cursor') {
-      // don't leave it stranded mid-chase when play mode is switched off
-      state = 'idle';
-      idleUntil = null;
-      target = null;
-    }
-  }
+  function setInteractionMode() {}
 
   /**
    * A hard recovery action, not a suggestion: recenter the cat and drop whatever it was
@@ -254,6 +675,8 @@ export function createLifeEngine(config = {}) {
     aiIntent = null;
     dragStuckSinceMs = null;
     dragUpdatedSinceLastTick = false;
+    lastAvoidRetargetAt = -Infinity;
+    holdUntil = 0;
   }
 
   /**
@@ -264,6 +687,13 @@ export function createLifeEngine(config = {}) {
   function tick(now, cursor) {
     const deltaSeconds = lastTickAt == null ? 0 : Math.min(0.25, (now - lastTickAt) / 1000);
     lastTickAt = now;
+    batThisTick = false;
+    turning = 0; // set by moveToward when it actually steers this tick
+    chargeAmount = charge ? Math.min(1, (now - charge.since) / cfg.toyChargeMaxMs) : 0;
+
+    // The toy moves whatever the cat is doing - a thrown ball keeps rolling while the cat is
+    // being held, and the wand still follows your hand.
+    stepToy(deltaSeconds, cursor);
 
     if (state === 'dragged') {
       // Safety net for a lost mouseup: a real drag calls updateDrag() every frame (the
@@ -296,78 +726,58 @@ export function createLifeEngine(config = {}) {
     }
     if (aiIntent) {
       state = 'ai_directed';
-      const arrived = moveToward(aiIntent.target, deltaSeconds);
+      const arrived = moveToward(aiIntent.target, deltaSeconds, aiIntent.speed ?? cfg.speed);
       if (arrived) aiIntent = null; // reached it early; next tick resumes autonomy
       return snapshot();
     }
 
-    if (interactionMode === 'play') {
-      // Unconditional: as long as a cursor position is known, at any distance, seek it.
-      // Previously this only engaged inside `followRadius`, so unless the cursor happened to
-      // wander near the cat first, "play" mode did nothing (reported as "逗猫模式时候，他会
-      // 自动去找鼠标的位置" not actually happening) - an active tease-the-cat mode should
-      // always go looking for the cursor, not wait for it to come close.
-      if (cursor) {
-        if (state !== 'follow_cursor') {
-          state = 'follow_cursor';
-          target = null;
-        }
-      } else if (state === 'follow_cursor') {
+    // A toy outranks every autonomous drive below (wander, edge-avoidance, cursor-following):
+    // while there is something to play with, that IS what the cat wants to do. It is outranked
+    // only by a drag and by an explicit AI intent, both handled above.
+    if (toy) {
+      chaseToy(now, deltaSeconds);
+      return snapshot();
+    }
+
+    // A hold suppresses only the autonomous drives below it. Everything that outranks it -
+    // dragging, an AI intent, a toy - has already returned by this point.
+    if (now < holdUntil) {
+      if (state === 'wander') {
         state = 'idle';
-        idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
         target = null;
       }
-    } else if (state === 'follow_cursor') {
-      // mode was switched away from 'play' mid-chase (should already be handled by
-      // setInteractionMode, this is just a safety net)
-      state = 'idle';
-      idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
-      target = null;
+      // The time spent performing COUNTS as rest - it should not also buy a fresh full idle
+      // window on top. Stacking the two meant every clip cost its own duration plus another
+      // few seconds of standing about, and the cat barely patrolled at all.
+      idleUntil = Math.max(idleUntil ?? 0, holdUntil);
+      return snapshot();
     }
 
-    // 'auto' mode courtesy: if the cursor closes in on the cat's current spot or its rest
-    // target, retarget to a fresh corner right away rather than waiting for the current
-    // wander/idle cycle to finish. Unconditional on cursor presence alone (not "recent mouse
-    // movement") - a cursor sitting still on top of the cat still blocks the view.
-    if (interactionMode === 'auto' && cursor && (state === 'idle' || state === 'wander') && distance(position, cursor) < cfg.avoidRadius) {
-      state = 'wander';
-      target = pickEdgeRestTarget(cursor);
-    } else if (interactionMode === 'auto' && cursor && state === 'wander' && target && distance(target, cursor) < cfg.avoidRadius) {
-      target = pickEdgeRestTarget(cursor);
+    // Courtesy: keep clear of the pointer. This is the cat's one hard social rule - the
+    // pointer is where the user is working, so it is the one part of the desktop the cat must
+    // not occupy. Rate-limited and commitment-based, NOT re-evaluated from scratch every
+    // frame: "the cursor is on top of me" stays true for as long as the cursor sits there, so
+    // re-rolling an escape target on each such frame is what used to make the cat vibrate in
+    // place instead of walking away.
+    if (cursor && (state === 'idle' || state === 'wander')) {
+      const cursorOnTopOfMe = distance(position, cursor) < cfg.avoidRadius;
+      const routeUnsafe = state === 'wander' && target != null && distance(target, cursor) < cfg.avoidRadius;
+      const cooledDown = now - lastAvoidRetargetAt >= cfg.avoidRetargetCooldownMs;
+      if ((cursorOnTopOfMe || routeUnsafe) && cooledDown) {
+        state = 'wander';
+        target = pickEdgeRestTarget(cursor);
+        lastAvoidRetargetAt = now;
+      }
     }
 
-    if (state === 'follow_cursor' && cursor) {
-      // Clamped, same as every other destination-producing path (setBounds, drag,
-      // pickEdgeRestTarget/pickWanderTarget, suggestMoveTo): `cursor` itself is host-reported
-      // and was never guaranteed to be inside bounds (e.g. a second monitor, or a momentary
-      // out-of-range reading), and standoffPoint can overshoot even a valid cursor further
-      // outward. Unclamped, 'play' mode chasing such a cursor walks the cat out of bounds and
-      // leaves it there once it "arrives" (idle has no reason to move again) - this was the
-      // one moveToward() destination with no such guard.
-      const dest = standoffPoint(position, cursor, cfg.followStandoff);
-      const clampedDest = {
-        x: clamp(dest.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-        y: clamp(dest.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
-      };
-      moveToward(clampedDest, deltaSeconds, cfg.speed * cfg.followSpeedMultiplier);
-      // Face the cursor itself, not the standoff destination: once the cat has mostly
-      // arrived, position and the standoff point can sit on nearly the same x, so the
-      // direction moveToward() derives from them gets noisy and the cat flickers which
-      // way it's facing (reported as "方向有时候也有问题"). Facing what it's actually
-      // following is both more correct and numerically stable (cursor and position only
-      // coincide exactly at the one instant it's grabbed).
-      if (Math.abs(cursor.x - position.x) > 1) facing = cursor.x >= position.x ? 1 : -1;
-    } else if (state === 'idle') {
+    if (state === 'idle') {
       if (idleUntil == null) idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
       if (now >= idleUntil) {
         state = 'wander';
-        // 'auto' mode always heads for a corner of the work area (see pickEdgeRestTarget);
-        // 'play' mode only reaches here when the cursor is unknown, so it just fidgets in
-        // place with the original local wander.
-        target = interactionMode === 'auto' ? pickEdgeRestTarget(cursor) : pickWanderTarget();
+        target = pickEdgeRestTarget(cursor);
       }
     } else if (state === 'wander') {
-      if (!target) target = interactionMode === 'auto' ? pickEdgeRestTarget(cursor) : pickWanderTarget();
+      if (!target) target = pickEdgeRestTarget(cursor);
       const arrived = moveToward(target, deltaSeconds);
       if (arrived) {
         state = 'idle';
@@ -380,22 +790,59 @@ export function createLifeEngine(config = {}) {
   }
 
   function snapshot() {
-    return { state, position: { ...position }, facing, target: target ? { ...target } : null, mode: interactionMode };
+    return {
+      state,
+      position: { ...position },
+      facing,
+      heading,
+      turning,
+      target: target ? { ...target } : null,
+      mode: 'free',
+      // Renderers that can draw a toy read this; ones that can't ignore it, same contract as
+      // every other field here.
+      toy: toy
+        ? {
+            kind: toy.kind,
+            position: { ...toy.position },
+            velocity: { ...toy.velocity },
+            /** 0 when not being held, 0..1 while the user winds up a throw. */
+            charge: chargeAmount,
+            /** True while the ball is on the pointer rather than loose on the desktop. */
+            held: toyHeld,
+          }
+        : null,
+      /** True for exactly the one frame the cat swats the toy - drives the swat animation. */
+      batted: batThisTick,
+    };
   }
 
   return {
     get state() { return state; },
     get position() { return { ...position }; },
-    get mode() { return interactionMode; },
+    get mode() { return 'free'; },
+    get heading() { return heading; },
     setBounds,
     beginDrag,
     updateDrag,
     endDrag,
     suggestMoveTo,
     clearIntent,
+    hold,
     setInteractionMode,
     setAvoidRadius,
     resetPosition,
+    setToy,
+    clearToy,
+    throwToy,
+    beginCharge,
+    releaseCharge,
+    chargeLevel,
+    moveToy,
+    get toy() {
+      return toy
+        ? { kind: toy.kind, position: { ...toy.position }, velocity: { ...toy.velocity }, held: toyHeld, charge: chargeAmount }
+        : null;
+    },
     tick,
   };
 }

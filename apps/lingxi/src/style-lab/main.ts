@@ -58,7 +58,7 @@ const bounds=new THREE.Box3().setFromObject(rig.root);
 const focus=bounds.getCenter(new THREE.Vector3());
 const radius=bounds.getBoundingSphere(new THREE.Sphere()).radius*1.2;
 let angle=.18,spin=false,walking=false,t=0,last=performance.now(),phase=0;
-const animator=createIdleAnimator();
+const animator=createIdleAnimator(rig);
 const originalHead=rig.node('head').rotation.clone();
 let blink=false,nextBlink=2.5,blinkEnd=0;
 let earAngle=0,headAngle=0;

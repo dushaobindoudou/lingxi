@@ -1,0 +1,102 @@
+<style>
+#vxwrap{padding:1rem 0}
+#vxrow1,#vxrow2{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#vxcount{font-size:13px;color:var(--text-secondary);margin:14px 0 0}
+#vxlab{font-size:12px;color:var(--text-muted);margin:10px 0 0}
+</style>
+<div id="vxwrap">
+<svg width="100%" viewBox="0 0 680 240" role="img"><title>方块猫表情图层组合器</title><desc>一个正面的方块猫头，眉毛、眼睛、嘴巴、耳朵和情绪符号分别是独立的贴图层，可以任意组合出数千种表情。</desc>
+<g id="l-ear"><polygon points="268,64 282,22 310,60" fill="#E29A46"/><polygon points="416,64 402,22 374,60" fill="#E29A46"/><polygon points="278,58 285,36 298,56" fill="#DE8C8C"/><polygon points="406,58 399,36 386,56" fill="#DE8C8C"/></g>
+<rect x="256" y="58" width="172" height="150" rx="12" fill="#E29A46"/>
+<rect x="306" y="150" width="72" height="36" rx="10" fill="#F3E2C4"/>
+<polygon points="333,155 351,155 342,166" fill="#DE8C8C"/>
+<g stroke="#F3E2C4" stroke-width="2.5" stroke-linecap="round" opacity="0.9">
+<path d="M304 158 L246 148"/><path d="M304 166 L242 166"/><path d="M304 174 L248 184"/>
+<path d="M380 158 L438 148"/><path d="M380 166 L442 166"/><path d="M380 174 L436 184"/>
+</g>
+<g id="l-eye"><rect x="282" y="100" width="32" height="34" rx="7" fill="#F2E7C9"/><rect x="294" y="104" width="8" height="26" rx="4" fill="#2E2118"/><rect x="370" y="100" width="32" height="34" rx="7" fill="#F2E7C9"/><rect x="382" y="104" width="8" height="26" rx="4" fill="#2E2118"/></g>
+<g id="l-brow"><rect x="283" y="86" width="30" height="5" rx="2.5" fill="#A96C24"/><rect x="371" y="86" width="30" height="5" rx="2.5" fill="#A96C24"/></g>
+<g id="l-mouth"><rect x="330" y="190" width="24" height="4" rx="2" fill="#2E2118"/></g>
+<g id="l-sym"></g>
+</svg>
+<div id="vxrow1"></div>
+<p id="vxlab">或者单独换某一层</p>
+<div id="vxrow2"></div>
+<p id="vxcount"></p>
+</div>
+<script>
+(function(){
+var C=342;
+function mx(x){return 2*C-x;}
+function eye(cx,t){
+var s='<rect x="'+(cx-16)+'" y="100" width="32" height="34" rx="7" fill="#F2E7C9"/>';
+if(t==='slit')return s+'<rect x="'+(cx-4)+'" y="104" width="8" height="26" rx="4" fill="#2E2118"/>';
+if(t==='round')return s+'<circle cx="'+cx+'" cy="117" r="11" fill="#2E2118"/>';
+if(t==='wide')return '<rect x="'+(cx-18)+'" y="96" width="36" height="40" rx="8" fill="#F2E7C9"/><circle cx="'+cx+'" cy="118" r="6" fill="#2E2118"/>';
+if(t==='side')return s+'<circle cx="'+(cx+8)+'" cy="117" r="10" fill="#2E2118"/>';
+if(t==='half')return s+'<rect x="'+(cx-16)+'" y="100" width="32" height="16" rx="4" fill="#E29A46"/><circle cx="'+cx+'" cy="124" r="8" fill="#2E2118"/>';
+if(t==='happy')return '<path d="M'+(cx-15)+' 126 Q'+cx+' 102 '+(cx+15)+' 126" fill="none" stroke="#2E2118" stroke-width="5" stroke-linecap="round"/>';
+if(t==='closed')return '<path d="M'+(cx-15)+' 114 Q'+cx+' 128 '+(cx+15)+' 114" fill="none" stroke="#2E2118" stroke-width="5" stroke-linecap="round"/>';
+if(t==='heart')return '<path d="M'+cx+' 132 L'+(cx-14)+' 114 Q'+(cx-14)+' 103 '+(cx-6)+' 106 Q'+cx+' 108 '+cx+' 114 Q'+cx+' 108 '+(cx+6)+' 106 Q'+(cx+14)+' 103 '+(cx+14)+' 114 Z" fill="#DE5A72"/>';
+return s;}
+function brow(cx,f,t){
+if(t==='none')return '';
+var a=cx-16,b=cx+14;if(f){a=cx+16;b=cx-14;}
+if(t==='flat')return '<rect x="'+(cx-15)+'" y="86" width="30" height="5" rx="2.5" fill="#A96C24"/>';
+if(t==='furrow')return '<polygon points="'+a+',82 '+b+',93 '+b+',99 '+a+',88" fill="#A96C24"/>';
+if(t==='raise')return '<polygon points="'+a+',93 '+b+',81 '+b+',87 '+a+',99" fill="#A96C24"/>';
+if(t==='sad')return '<polygon points="'+a+',84 '+b+',94 '+b+',100 '+a+',90" fill="#A96C24"/>';
+return '';}
+function mouth(t){
+if(t==='flat')return '<rect x="330" y="190" width="24" height="4" rx="2" fill="#2E2118"/>';
+if(t==='cat')return '<path d="M326 186 Q334 197 342 187 Q350 197 358 186" fill="none" stroke="#2E2118" stroke-width="4" stroke-linecap="round"/>';
+if(t==='open')return '<ellipse cx="342" cy="194" rx="11" ry="14" fill="#5A2A2A"/>';
+if(t==='frown')return '<path d="M328 197 Q342 184 356 197" fill="none" stroke="#2E2118" stroke-width="4" stroke-linecap="round"/>';
+if(t==='hiss')return '<path d="M322 183 L362 183 L353 208 L331 208 Z" fill="#5A2A2A"/><polygon points="326,184 334,184 330,193" fill="#FFF"/><polygon points="350,184 358,184 354,193" fill="#FFF"/>';
+if(t==='tongue')return '<ellipse cx="342" cy="192" rx="10" ry="11" fill="#5A2A2A"/><rect x="335" y="194" width="14" height="18" rx="7" fill="#E88AA0"/>';
+return '';}
+function ear(t){
+var L,I;
+if(t==='fwd'){L='268,64 284,18 312,58';I='279,57 287,33 300,54';}
+else if(t==='neu'){L='268,64 282,22 310,60';I='278,58 285,36 298,56';}
+else if(t==='air'){L='262,72 232,48 300,56';I='268,67 248,53 291,58';}
+else {L='274,66 264,34 304,62';I='281,62 273,44 296,60';}
+function m(p){return p.split(' ').map(function(q){var a=q.split(',');return mx(+a[0])+','+a[1];}).join(' ');}
+return '<polygon points="'+L+'" fill="#E29A46"/><polygon points="'+m(L)+'" fill="#E29A46"/><polygon points="'+I+'" fill="#DE8C8C"/><polygon points="'+m(I)+'" fill="#DE8C8C"/>';}
+function sym(t){
+if(t==='none')return '';
+if(t==='sweat')return '<path d="M470 52 Q482 72 470 80 Q458 72 470 52 Z" fill="#6FB3E0"/>';
+if(t==='q')return '<text x="466" y="82" font-size="44" font-weight="500" fill="#E8A33C">?</text>';
+if(t==='ex')return '<text x="470" y="82" font-size="44" font-weight="500" fill="#D8452F">!</text>';
+if(t==='heart')return '<path d="M472 84 L454 62 Q454 48 465 52 Q472 55 472 62 Q472 55 479 52 Q490 48 490 62 Z" fill="#DE5A72"/>';
+if(t==='zzz')return '<text x="452" y="72" font-size="22" font-weight="500" fill="#8AA0C0">z</text><text x="472" y="58" font-size="30" font-weight="500" fill="#8AA0C0">Z</text>';
+if(t==='anger')return '<path d="M454 60 L470 48 L486 60 M454 60 L470 72 L486 60" stroke="#D8452F" stroke-width="4.5" fill="none" stroke-linecap="round"/>';
+return '';}
+
+var EY=['slit','round','wide','side','half','happy','closed','heart'];
+var BR=['flat','none','furrow','raise','sad'];
+var MO=['flat','cat','open','frown','hiss','tongue'];
+var EA=['neu','fwd','air','back'];
+var SY=['none','sweat','q','ex','heart','zzz','anger'];
+var st={e:0,b:0,m:0,a:0,s:0};
+var PRE=[['中性',0,0,0,0,0],['好奇',1,3,0,1,2],['满足',5,0,1,0,0],['警觉',2,2,0,1,3],['不爽',3,2,3,2,0],['惊吓',2,3,2,3,1],['困',4,4,0,0,5],['玩心',1,3,1,1,0],['生气',0,2,4,3,6],['撒娇',7,3,1,1,4]];
+
+function render(){
+document.getElementById('l-eye').innerHTML=eye(298,EY[st.e])+eye(386,EY[st.e]);
+document.getElementById('l-brow').innerHTML=brow(298,false,BR[st.b])+brow(386,true,BR[st.b]);
+document.getElementById('l-mouth').innerHTML=mouth(MO[st.m]);
+document.getElementById('l-ear').innerHTML=ear(EA[st.a]);
+document.getElementById('l-sym').innerHTML=sym(SY[st.s]);
+}
+var r1=document.getElementById('vxrow1');
+PRE.forEach(function(p){var b=document.createElement('button');b.textContent=p[0];
+b.onclick=function(){st.e=p[1];st.b=p[2];st.m=p[3];st.a=p[4];st.s=p[5];render();};r1.appendChild(b);});
+var r2=document.getElementById('vxrow2');
+[['眉','b',BR],['眼','e',EY],['嘴','m',MO],['耳','a',EA],['符号','s',SY]].forEach(function(x){
+var b=document.createElement('button');b.textContent='换'+x[0];
+b.onclick=function(){st[x[1]]=(st[x[1]]+1)%x[2].length;render();};r2.appendChild(b);});
+document.getElementById('vxcount').textContent=
+'图层素材 '+(BR.length+EY.length+MO.length+EA.length+SY.length)+' 个，组合数 '+(BR.length*EY.length*MO.length*EA.length*SY.length).toLocaleString()+' 种';
+render();
+})();
+</script>

@@ -3,14 +3,12 @@
 import * as THREE from 'three';
 import type { Rig } from '../rig/skeleton.ts';
 import { createSpring, stepSpring, SPRING_TUNING, type SpringState } from '../rig/spring.ts';
+import { createGait, type Gait } from './gait.ts';
 
 const BREATH_HZ = 0.38;
 const TAIL_HZ = 0.28;
 
 const TAIL_SEGMENTS = ['tail0', 'tail1', 'tail2', 'tail3', 'tail4', 'tail5', 'tail6'] as const;
-
-/** Walk gait phase offsets: hind-left, fore-left, hind-right, fore-right (spec §3.4). */
-const LEG_PHASE = { hindL: 0, foreL: 0.25, hindR: 0.5, foreR: 0.75 };
 
 interface EarTwitch {
   side: 'L' | 'R';
@@ -19,12 +17,19 @@ interface EarTwitch {
 }
 
 export interface IdleAnimator {
-  update(rig: Rig, elapsed: number, dt: number, gaitPhase: number, walkAmount: number): void;
+  /**
+   * @param cycles gait phase in whole cycles - the distance odometer divided by the stride.
+   *   NOT a clock: see gait.ts. Feeding a time-based value here reintroduces foot sliding.
+   */
+  update(rig: Rig, elapsed: number, dt: number, cycles: number, walkAmount: number): void;
+  /** Stride length in voxels, so the caller can convert distance travelled into cycles. */
+  readonly strideVoxels: number;
 }
 
-export function createIdleAnimator(): IdleAnimator {
+export function createIdleAnimator(rig: Rig): IdleAnimator {
   const tailSprings: SpringState[] = TAIL_SEGMENTS.map(() => createSpring(0));
   const lid = createSpring(1);
+  const gait: Gait = createGait(rig);
 
   let scapBaseY: { L: number; R: number } | null = null;
   let blinkUntil = 0;
@@ -32,19 +37,33 @@ export function createIdleAnimator(): IdleAnimator {
   const ear: EarTwitch = { side: 'L', until: 0, next: 2.5 + Math.random() * 5 };
 
   return {
-    update(rig, elapsed, dt, gaitPhase, walkAmount) {
+    strideVoxels: gait.strideVoxels,
+
+    update(rig, elapsed, dt, cycles, walkAmount) {
       // --- breathing: joint rotation only, never torso scale (principle one) ---
       const breath = Math.sin(elapsed * BREATH_HZ * Math.PI * 2);
-      rig.node('spine2').rotation.x = breath * 0.002;
-      rig.node('spine1').rotation.x = breath * 0.003;
+      // Rest-relative, like the tail and legs below: a bare assignment here would silently
+      // discard whatever curve skeleton.json's restPose authored into the spine and neck.
+      rig.node('spine2').rotation.x = rig.restRotation('spine2')[0] + breath * 0.002;
+      rig.node('spine1').rotation.x = rig.restRotation('spine1')[0] + breath * 0.003;
       // Neck counter-rotates so the head doesn't nod along with the ribcage.
-      rig.node('neck2').rotation.x = -breath * 0.004;
+      rig.node('neck2').rotation.x = rig.restRotation('neck2')[0] - breath * 0.004;
 
       // --- tail: per-segment delay. Segment n chases segment n-1's CURRENT value, with
       // stiffness falling off down the chain, so one driver produces a travelling wave. ---
       const quietPhase = elapsed % 12;
       const tailEnvelope = quietPhase < 3 ? Math.sin(quietPhase / 3 * Math.PI) ** 2 : 0;
-      const tailDrive = Math.sin(elapsed * TAIL_HZ * Math.PI * 2) * (0.08 * tailEnvelope + walkAmount * 0.1);
+      // Amplitudes are divided by the segment count because these rotations COMPOUND: every
+      // segment is a child of the one before it, and in steady state they all settle near the
+      // same driven value, so the tip's angle is roughly the sum of all seven. The original
+      // per-segment 0.08/0.10 therefore produced ~0.7rad (40 degrees) of sweep at the tip. The
+      // tail stands straight up, so that sweep sits at the very top of the silhouette and reads
+      // as the whole cat swaying side to side ("还会有左右摇晃的感觉") even though the body and
+      // head are provably motionless. These constants are the intended TIP amplitude.
+      const TAIL_TIP_SWAY_IDLE = 0.13;
+      const TAIL_TIP_SWAY_WALK = 0.26;
+      const perSegment = (TAIL_TIP_SWAY_IDLE * tailEnvelope + walkAmount * TAIL_TIP_SWAY_WALK) / TAIL_SEGMENTS.length;
+      const tailDrive = Math.sin(elapsed * TAIL_HZ * Math.PI * 2) * perSegment;
       for (let i = 0; i < TAIL_SEGMENTS.length; i += 1) {
         const t = i / (TAIL_SEGMENTS.length - 1);
         const k = THREE.MathUtils.lerp(SPRING_TUNING.tailRoot.k, SPRING_TUNING.tailTip.k, t);
@@ -84,38 +103,20 @@ export function createIdleAnimator(): IdleAnimator {
       // Grounded standing: weight shifts belong to named, occasional actions.
       rig.node('hipC').rotation.z = rig.restRotation('hipC')[2];
 
-      // --- legs: placeholder swing, NOT yet foot-planted. Phase 2 replaces this wholesale
-      // with world-space planted feet + two-bone IK; until then this exists only so the
-      // walk doesn't regress relative to the old placeholder model. ---
-      const swing = (phaseOffset: number) => Math.sin((gaitPhase + phaseOffset * Math.PI * 2)) * walkAmount;
-
-      const hindL = swing(LEG_PHASE.hindL);
-      const hindR = swing(LEG_PHASE.hindR);
-      const foreL = swing(LEG_PHASE.foreL);
-      const foreR = swing(LEG_PHASE.foreR);
-
-      const swingJoint = (id: string, amount: number) => {
-        rig.node(id).rotation.x = rig.restRotation(id)[0] + amount;
-      };
-      swingJoint('thighL', hindL * 0.32);
-      swingJoint('shinL', -hindL * 0.22);
-      swingJoint('footL', hindL * 0.18);
-      swingJoint('thighR', hindR * 0.32);
-      swingJoint('shinR', -hindR * 0.22);
-      swingJoint('footR', hindR * 0.18);
-
-      swingJoint('upperFL', foreL * 0.34);
-      swingJoint('lowerFL', -foreL * 0.2);
-      swingJoint('upperFR', foreR * 0.34);
-      swingJoint('lowerFR', -foreR * 0.2);
+      // --- legs: real foot-planted gait (see gait.ts) --------------------------------------
+      // The placeholder that used to live here rotated each joint by sin(phase) and never put a
+      // paw on the ground; that is what made the cat look like it was floating. gait.ts solves
+      // each leg so its paw holds still against the ground through stance.
+      const pose = gait.solve(cycles, walkAmount);
+      for (const [id, angle] of Object.entries(pose.angles)) rig.node(id).rotation.x = angle;
 
       // Scapula slide: the shoulder blade rides up out of the back line as the chest drops.
       // Driven, not authored - see the spec's 肩胛滑动 note.
       if (scapBaseY == null) {
         scapBaseY = { L: rig.node('scapL').position.y, R: rig.node('scapR').position.y };
       }
-      rig.node('scapL').position.y = scapBaseY.L + Math.abs(foreL) * 0.35;
-      rig.node('scapR').position.y = scapBaseY.R + Math.abs(foreR) * 0.35;
+      rig.node('scapL').position.y = scapBaseY.L + pose.scapSlide.L;
+      rig.node('scapR').position.y = scapBaseY.R + pose.scapSlide.R;
     },
   };
 }

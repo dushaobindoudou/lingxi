@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>灵犀 · 调试台</title>
+    <script type="module" src="/src/debug.ts" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="live" id="live-state">读取中…</div>
+      <div class="live-actions">
+        <button id="reset-position" class="ghost">重置位置</button>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="actions">动作</button>
+      <button class="tab" data-tab="expressions">表情</button>
+      <button class="tab" data-tab="play">玩具 / 特效</button>
+      <button class="tab" data-tab="view">视角 / 主题</button>
+      <button class="tab" data-tab="api">Agent 接口</button>
+    </nav>
+
+    <main>
+      <section class="panel active" id="panel-actions">
+        <p class="hint">
+          点一下就立刻播放，绕过导演层自己的排期。走动中的动作会被行走姿态覆盖（这是设计：行走时腿部由步态独占），
+          想看清楚就先让它停下来。
+        </p>
+        <div id="action-groups"></div>
+      </section>
+
+      <section class="panel" id="panel-expressions">
+        <p class="hint">表情和动作是两条独立的轨道：任意表情都能叠在任意动作上。点一下保持 4 秒，然后自动交回导演层。</p>
+        <div class="chip-grid" id="expression-grid"></div>
+      </section>
+
+      <section class="panel" id="panel-play">
+        <h2>玩具</h2>
+        <p class="hint">
+          玩具是第二个实体，和猫在同一个 2D 世界里。放下之后它比所有自主行为优先级都高（只输给你亲手拖猫）——
+          猫会冲过去、够到就拍一爪。毛线球有真的物理：会滚、会减速、会撞边反弹，被拍一下又飞出去，所以它能自己玩下去。
+        </p>
+        <div class="card-grid" id="toy-grid"></div>
+
+        <h2 class="gap">特效编排</h2>
+        <p class="hint">
+          一段几秒的编排，同时指挥四个系统：走位（生命引擎）、身体（动作片段）、脸（表情）、镜头，再加上屏幕玻璃上的特效层。
+          情绪全在时机上——爪痕和震屏必须正好落在爪子挥到最前面的那一帧。特效层全程 <code>pointer-events:none</code>，
+          不会挡住你的任何点击。
+        </p>
+        <div class="card-grid" id="performance-grid"></div>
+        <button id="stop-performance" class="ghost" style="margin-top:10px">停止当前特效</button>
+
+        <h2 class="gap">说话气泡</h2>
+        <p class="hint">漫画式气泡，钉在头顶（跟着头骨投影走，所以蹲下、跳起、换视角、特效缩放都跟得上）。同一时间只有一个。</p>
+        <div class="say-row">
+          <input id="say-text" type="text" maxlength="140" placeholder="想让它说点什么？" />
+          <button id="say-send" class="ghost">说</button>
+          <button id="say-hush" class="ghost">收起</button>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-view">
+        <h2>视角</h2>
+        <p class="hint">摄像机是正交投影，所以角度是自由的——仰角越小脸越大。切换是渐变的，不是硬切。</p>
+        <div class="card-grid" id="camera-grid"></div>
+
+        <h2 class="gap">主题</h2>
+        <div class="card-grid" id="skin-grid"></div>
+
+        <h2 class="gap">大小</h2>
+        <div class="chip-grid" id="scale-grid"></div>
+      </section>
+
+      <section class="panel" id="panel-api">
+        <p class="hint">
+          本地 HTTP 桥，只监听 <code>127.0.0.1:47811</code>（不对外）。任何能发 HTTP 的 Agent 都能驱动它，
+          不需要知道 Tauri 的存在。下面每条都可以直接点「试一下」。
+        </p>
+        <div id="api-list"></div>
+        <h2 class="gap">响应</h2>
+        <pre id="api-output">（还没有请求）</pre>
+      </section>
+    </main>
+  </body>
+</html>

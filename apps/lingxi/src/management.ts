@@ -9,6 +9,22 @@ import './management.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { TaskStore } from '../../../packages/contracts/src/index.mjs';
+// The renderer owns the viewing-angle catalogue and skins.json owns the theme catalogue;
+// importing both here rather than re-listing them keeps this window from drifting out of sync
+// with what the companion window can actually render.
+import { CAMERA_PRESETS } from './rig/cameras.ts';
+import skinCatalogue from './data/skins.json';
+import actionCatalogue from './data/actions.json';
+import { BUILT_IN_EXPRESSIONS } from './rig/art.ts';
+import { ASSETS_README } from './rig/custom-assets.ts';
+
+interface SkinCard {
+  id: string;
+  name: string;
+  description: string;
+  materials: Record<string, string>;
+}
+const SKINS = skinCatalogue as SkinCard[];
 
 type Trait = 'independence' | 'curiosity' | 'gentleness' | 'playfulness' | 'sleepiness';
 type PersonalityTraits = Record<Trait, number>;
@@ -17,7 +33,7 @@ type BehaviorPreset = 'quiet' | 'balanced' | 'lively';
 interface Status {
   scale: number;
   visible: boolean;
-  mode: 'auto' | 'play';
+  mode: string;
   catName: string;
   catPersonality: string;
   activeAgent: string;
@@ -27,6 +43,8 @@ interface Status {
   behaviorPreset: BehaviorPreset;
   knownBehaviorPresets: BehaviorPreset[];
   avoidRadius: number;
+  skin: string;
+  camera: string;
 }
 
 /** Mirrors src-tauri's `TaskEvent` struct / packages/contracts' `TaskEvent` interface. */
@@ -48,7 +66,7 @@ interface TaskEvent {
  *  object may still be `{}`. */
 interface PerceptionSnapshot {
   petState?: string;
-  mode?: 'auto' | 'play';
+  mode?: string;
   activity?: {
     idleMs: number;
     cursorNearPetMs: number;
@@ -61,8 +79,21 @@ interface PerceptionSnapshot {
   };
 }
 
+const TOYS = [
+  { kind: 'yarn', name: '毛线球', description: '会滚会反弹，猫拍一爪又飞出去，能自己玩下去' },
+  { kind: 'feather', name: '逗猫棒', description: '跟着鼠标走，但慢半拍——需要你来逗' },
+  { kind: 'laser', name: '激光笔', description: '钉死在光标上，拍到也抓不住' },
+] as const;
+
+const PERFORMANCES = [
+  { id: 'angry-claw', name: '愤怒抓屏', description: '炸毛冲到屏幕中间，对着你连抓两爪，留下爪痕并震屏' },
+  { id: 'kiss-rush', name: '飞奔亲亲', description: '从另一头跑过来，闭眼亲一下，爱心飘满屏' },
+  { id: 'zoomies', name: '半夜暴走', description: '贴着四角疯跑一圈，跑完自己坐下喘气' },
+] as const;
+
 const PET_STATE_LABELS: Record<string, string> = {
   idle: '安静待着',
+  play_toy: '玩玩具中',
   wander: '四处走走',
   follow_cursor: '追着光标玩',
   dragged: '被抓着呢',
@@ -119,16 +150,6 @@ function setVisibilityButtonLabel(visible: boolean) {
   if (btn) btn.textContent = visible ? '隐藏' : '显示';
 }
 
-function setModeButtonLabel(mode: 'auto' | 'play') {
-  const btn = document.getElementById('topbar-mode');
-  if (btn) btn.textContent = mode === 'play' ? '切换到工作模式' : '切换到逗猫模式';
-  const label = mode === 'play' ? '逗猫模式' : '工作模式';
-  const badge = document.getElementById('home-mode-badge');
-  if (badge) badge.textContent = label;
-  const sidebarStatus = document.getElementById('sidebar-status');
-  if (sidebarStatus) sidebarStatus.textContent = label;
-}
-
 function setIdentityFields(name: string, personality: string) {
   const nameInput = document.getElementById('cat-name-input') as HTMLInputElement | null;
   const personalityInput = document.getElementById('cat-personality-input') as HTMLTextAreaElement | null;
@@ -166,6 +187,118 @@ function setActiveBehaviorPreset(preset: BehaviorPreset) {
   document.querySelectorAll<HTMLButtonElement>('#behavior-preset-options button').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.preset === preset);
   });
+}
+
+/**
+ * 外观 / 主题: the theme cards are generated from the same catalogue the renderer paints from
+ * (src/data/skins.json), not hand-written markup. That file is the single source of truth for
+ * what themes exist, so a page built from it can never again claim a theme is "planned" when
+ * the asset is right there, or offer one that was removed.
+ */
+function renderSkinCards(activeId: string) {
+  const container = document.getElementById('skin-options');
+  if (!container) return;
+  container.replaceChildren(
+    ...SKINS.map((skin) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'skin-card';
+      card.dataset.skin = skin.id;
+      card.classList.toggle('active', skin.id === activeId);
+
+      const name = document.createElement('strong');
+      name.textContent = skin.name;
+
+      const swatches = document.createElement('div');
+      swatches.className = 'skin-swatches';
+      for (const key of ['fur', 'pattern', 'cream', 'iris', 'nose'] as const) {
+        const chip = document.createElement('i');
+        chip.style.background = skin.materials[key];
+        swatches.append(chip);
+      }
+
+      const note = document.createElement('span');
+      note.textContent = skin.id === activeId ? '使用中' : skin.description;
+
+      card.append(name, swatches, note);
+      card.addEventListener('click', () => void invoke('set_skin', { skin: skin.id }));
+      return card;
+    }),
+  );
+  const hint = document.getElementById('skin-hint');
+  const active = SKINS.find((skin) => skin.id === activeId);
+  if (hint) {
+    hint.textContent =
+      `共 ${SKINS.length} 款主题，全部是真实资产（三款 atelier-* 是手绘 PNG，其余由花纹生成器绘制）。` +
+      (active ? `当前：${active.name} — ${active.description}。` : '') +
+      '切换即时生效，不用重启，并且会记住。';
+  }
+}
+
+function renderCameraOptions(activeId: string) {
+  const container = document.getElementById('camera-options');
+  if (!container) return;
+  container.replaceChildren(
+    ...CAMERA_PRESETS.map((preset) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.camera = preset.id;
+      button.classList.toggle('active', preset.id === activeId);
+      const label = document.createElement('b');
+      label.textContent = preset.id === 'auto' ? preset.name : `${preset.name} · ${preset.elevationDeg}°`;
+      const note = document.createElement('span');
+      note.textContent = preset.description;
+      button.append(label, note);
+      button.addEventListener('click', () => void invoke('set_camera', { camera: preset.id }));
+      return button;
+    }),
+  );
+}
+
+/** 玩法 page. Same shape as the camera picker - a labelled card per option, no fake state:
+ *  neither a toy nor a performance is a persistent setting, so nothing here shows as "active". */
+function renderPlayPage() {
+  const toys = document.getElementById('toy-options');
+  if (toys) {
+    toys.replaceChildren(
+      ...TOYS.map((toy) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.append(
+          Object.assign(document.createElement('b'), { textContent: toy.name }),
+          Object.assign(document.createElement('span'), { textContent: toy.description }),
+        );
+        button.addEventListener('click', () => void invoke('set_toy', { kind: toy.kind }));
+        return button;
+      }),
+    );
+  }
+  const shows = document.getElementById('performance-options');
+  if (shows) {
+    shows.replaceChildren(
+      ...PERFORMANCES.map((entry) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.append(
+          Object.assign(document.createElement('b'), { textContent: entry.name }),
+          Object.assign(document.createElement('span'), { textContent: entry.description }),
+        );
+        button.addEventListener('click', () => void invoke('perform', { id: entry.id }));
+        return button;
+      }),
+    );
+  }
+  document.getElementById('clear-toy')?.addEventListener('click', () => void invoke('clear_toy'));
+  const sayInput = document.getElementById('say-input') as HTMLInputElement | null;
+  const say = () => {
+    const text = sayInput?.value ?? '';
+    if (text.trim()) void invoke('say', { text });
+  };
+  document.getElementById('say-button')?.addEventListener('click', say);
+  sayInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') say();
+  });
+  document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
 }
 
 function formatDuration(ms: number): string {
@@ -365,10 +498,12 @@ async function main() {
   const status = await invoke<Status>('get_status');
   setActiveSizeButton(status.scale);
   setVisibilityButtonLabel(status.visible);
-  setModeButtonLabel(status.mode);
   setIdentityFields(status.catName, status.catPersonality);
   setTraitSliders(status.personalityTraits);
   setActiveBehaviorPreset(status.behaviorPreset);
+  renderPlayPage();
+  renderSkinCards(status.skin);
+  renderCameraOptions(status.camera);
   const accEl = document.getElementById('status-accessibility');
   if (accEl) accEl.textContent = status.accessibilityTrusted ? '已授权（未来功能用得上）' : '未授权（不影响当前功能）';
 
@@ -386,9 +521,49 @@ async function main() {
     void invoke('set_companion_visible', { visible: !current.visible });
   });
 
-  document.getElementById('topbar-mode')?.addEventListener('click', async () => {
-    const current = await invoke<Status>('get_status');
-    void invoke('set_interaction_mode', { mode: current.mode === 'play' ? 'auto' : 'play' });
+
+  document.getElementById('open-debug')?.addEventListener('click', () => void invoke('open_debug_window'));
+
+  // --- 自定义资源 ---
+  const assetStatus = document.getElementById('asset-status');
+  async function refreshAssetStatus(extra?: string) {
+    if (!assetStatus) return;
+    const errors = await invoke<string[]>('get_asset_errors').catch(() => [] as string[]);
+    if (errors.length) {
+      assetStatus.className = 'hint asset-error';
+      assetStatus.textContent = `有 ${errors.length} 个文件没能生效（已保留内置版本）：\n${errors.join('\n')}`;
+    } else {
+      assetStatus.className = 'hint';
+      assetStatus.textContent = extra ?? '当前没有检测到问题。';
+    }
+  }
+  void refreshAssetStatus();
+
+  document.getElementById('open-assets')?.addEventListener('click', () => {
+    void invoke('open_assets_dir').catch((error) => {
+      if (assetStatus) assetStatus.textContent = `打开失败：${String(error)}`;
+    });
+  });
+  document.getElementById('install-templates')?.addEventListener('click', async () => {
+    try {
+      // The built-in data is sent from here rather than duplicated in Rust - one copy, so the
+      // templates can never drift from what the app actually ships with.
+      const dir = await invoke<string>('install_asset_templates', {
+        actions: actionCatalogue,
+        expressions: BUILT_IN_EXPRESSIONS,
+        skins: skinCatalogue,
+        readme: ASSETS_README,
+        overwrite: false,
+      });
+      await refreshAssetStatus(`模板已写入：${dir}（已存在的文件不会被覆盖）`);
+    } catch (error) {
+      if (assetStatus) assetStatus.textContent = `导出失败：${String(error)}`;
+    }
+  });
+  document.getElementById('reload-assets')?.addEventListener('click', async () => {
+    await invoke('reload_custom_assets');
+    // The companion window re-reads and reports asynchronously; give it a beat before asking.
+    setTimeout(() => void refreshAssetStatus('已重新加载。'), 700);
   });
 
   for (const id of ['reset-position', 'topbar-reset']) {
@@ -425,11 +600,12 @@ async function main() {
 
   void listen<number>('set-scale', (event) => setActiveSizeButton(event.payload));
   void listen<boolean>('companion-visibility', (event) => setVisibilityButtonLabel(event.payload));
-  void listen<'auto' | 'play'>('set-interaction-mode', (event) => setModeButtonLabel(event.payload));
   void listen<{ name: string; personality: string }>('set-cat-identity', (event) => {
     setIdentityFields(event.payload.name, event.payload.personality);
   });
   void listen<PersonalityTraits>('set-personality-traits', (event) => setTraitSliders(event.payload));
+  void listen<string>('set-skin', (event) => renderSkinCards(event.payload));
+  void listen<string>('set-camera', (event) => renderCameraOptions(event.payload));
   void listen<{ preset: BehaviorPreset; avoidRadius: number }>('set-behavior-preset', (event) =>
     setActiveBehaviorPreset(event.payload.preset),
   );

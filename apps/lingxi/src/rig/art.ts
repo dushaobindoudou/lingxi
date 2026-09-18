@@ -11,7 +11,10 @@ export const layers = {
   symbol: ['none', 'sweat', 'question', 'exclaim', 'heart', 'sleep', 'anger'],
 } as const;
 export type FaceState = { [K in keyof typeof layers]: (typeof layers)[K][number] };
-export const expressions: Record<string, FaceState> = {
+/** The built-in expression set. A user-supplied expressions.json replaces it at runtime via
+ *  `setExpressions` - everything downstream reads `expressions`, so one swap covers the
+ *  director, the debug console and the capability report. */
+export const BUILT_IN_EXPRESSIONS: Record<string, FaceState> = {
   '安然': {eye:'slit',brow:'none',mouth:'cat',ear:'neutral',symbol:'none'},
   '好奇': {eye:'round',brow:'raise',mouth:'flat',ear:'forward',symbol:'question'},
   '满足': {eye:'happy',brow:'none',mouth:'cat',ear:'neutral',symbol:'none'},
@@ -43,6 +46,18 @@ export const expressions: Record<string, FaceState> = {
   '右眼眨': {eye:'wink-right',brow:'raise',mouth:'cat',ear:'neutral',symbol:'none'},
   '闪亮': {eye:'sparkle',brow:'none',mouth:'cat',ear:'forward',symbol:'heart'},
 };
+
+export let expressions: Record<string, FaceState> = { ...BUILT_IN_EXPRESSIONS };
+
+/** Swap in a validated custom expression set (see rig/custom-assets.ts). */
+export function setExpressions(next: Record<string, FaceState>) {
+  expressions = next;
+}
+
+/** Back to the built-in set. */
+export function resetExpressions() {
+  expressions = { ...BUILT_IN_EXPRESSIONS };
+}
 
 /** Top-left pixel rectangles, explicit six-face layout exported alongside every PNG. */
 export function paintSkin(nodes: NodeSpec[], skin: ArtSkin) {

@@ -1,0 +1,64 @@
+{
+  "server": {
+    "name": "blender-mcp",
+    "title": null,
+    "version": "1.30.0",
+    "websiteUrl": null,
+    "icons": null
+  },
+  "tools": [
+    "execute_blender_code",
+    "execute_blender_code_for_cli",
+    "get_blendfile_summary_datablocks",
+    "get_blendfile_summary_datablocks_for_cli",
+    "get_blendfile_summary_missing_files",
+    "get_blendfile_summary_missing_files_for_cli",
+    "get_blendfile_summary_of_linked_libraries",
+    "get_blendfile_summary_of_linked_libraries_for_cli",
+    "get_blendfile_summary_path_info",
+    "get_blendfile_summary_path_info_for_cli",
+    "get_blendfile_summary_usage_guess",
+    "get_blendfile_summary_usage_guess_for_cli",
+    "get_object_detail_summary",
+    "get_objects_summary",
+    "get_python_api_docs",
+    "get_screenshot_of_area_as_image",
+    "get_screenshot_of_window_as_image",
+    "get_screenshot_of_window_as_json",
+    "jump_to_tab_by_name",
+    "jump_to_tab_by_space_type",
+    "jump_to_view3d_object_by_name",
+    "jump_to_view3d_object_data_by_name",
+    "render_thumbnail_to_path",
+    "render_viewport_to_path",
+    "search_api_docs",
+    "search_manual_docs"
+  ],
+  "tool": "execute_blender_code_for_cli",
+  "response": {
+    "meta": null,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"materials\": [\n    \"LX_ShortFur_ClearCornea\",\n    \"LX_ShortFur_CoatBase\",\n    \"LX_ShortFur_HazelIris\",\n    \"LX_ShortFur_PinkMouth\",\n    \"LX_ShortFur_PinkNose\",\n    \"LX_ShortFur_PinkPawPads\",\n    \"LX_ShortFur_Strand\",\n    \"LX_ShortFur_WhiteDownBase\"\n  ],\n  \"packed_images\": 3,\n  \"check\": \"passed\"\n}",
+        "annotations": null,
+        "meta": null
+      }
+    ],
+    "structuredContent": {
+      "materials": [
+        "LX_ShortFur_ClearCornea",
+        "LX_ShortFur_CoatBase",
+        "LX_ShortFur_HazelIris",
+        "LX_ShortFur_PinkMouth",
+        "LX_ShortFur_PinkNose",
+        "LX_ShortFur_PinkPawPads",
+        "LX_ShortFur_Strand",
+        "LX_ShortFur_WhiteDownBase"
+      ],
+      "packed_images": 3,
+      "check": "passed"
+    },
+    "isError": false
+  }
+}

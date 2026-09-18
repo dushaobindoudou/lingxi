@@ -20,6 +20,7 @@
         <button class="nav-item active" data-page="home">首页</button>
         <button class="nav-item" data-page="agent">Agent 接入</button>
         <button class="nav-item" data-page="personality">性格行为</button>
+        <button class="nav-item" data-page="play">玩法</button>
         <button class="nav-item" data-page="appearance">外观</button>
         <button class="nav-item" data-page="settings">设置</button>
         <div class="sidebar-footer">
@@ -30,7 +31,6 @@
       <main>
         <!-- 全局顶栏：docs/18 §4/§5 - 模式/大小/找回猫咪（决策 5 已去掉免打扰） -->
         <div class="topbar">
-          <button id="topbar-mode" class="topbar-button">切换到逗猫模式</button>
           <div class="topbar-sizes" id="topbar-sizes">
             <button data-scale="0.25" title="小 0.25x">小</button>
             <button data-scale="0.5" title="中 0.5x">中</button>
@@ -45,8 +45,7 @@
           <div class="card cat-card">
             <div class="cat-card-row">
               <strong id="home-cat-name">灵犀</strong>
-              <span class="badge" id="home-mode-badge">工作模式</span>
-            </div>
+              </div>
             <p class="cat-card-line" id="home-cat-state">状态：读取中…</p>
             <p class="cat-card-line" id="home-cat-personality-line">性格：还没设定</p>
             <p class="cat-card-line" id="home-growth-line">成长：Lv.0 · 参与度 0/100</p>
@@ -177,6 +176,33 @@
           </div>
         </section>
 
+        <!-- 玩法：玩具 + 特效编排 -->
+        <section class="page" id="page-play">
+          <h2>玩具</h2>
+          <p class="hint">
+            放下玩具后，猫会把它当成当前唯一想做的事——优先级高于游走和避让，只输给你亲手拖它。
+            毛线球有真实物理（会滚、减速、撞边反弹），猫够到就拍一爪把它打飞，所以不用你管它也能自己玩下去。
+          </p>
+          <div class="camera-options" id="toy-options"></div>
+          <button id="clear-toy" class="wide-button secondary">收起玩具</button>
+
+          <h2 class="section-gap">说话</h2>
+          <p class="hint">漫画气泡，钉在头顶。也可以让 Agent 通过本地接口说话（见调试台的 Agent 接口页）。</p>
+          <label class="field">
+            <span>让它说一句</span>
+            <input id="say-input" type="text" maxlength="140" placeholder="比如：该休息一下啦" />
+          </label>
+          <button id="say-button" class="wide-button">说出来</button>
+
+          <h2 class="section-gap">特效</h2>
+          <p class="hint">
+            几秒钟的整屏演出：走位、身体动作、表情、镜头和屏幕特效一起编排。特效层不接收任何鼠标事件，
+            演出期间你照常点按钮、切窗口都不受影响。
+          </p>
+          <div class="camera-options" id="performance-options"></div>
+          <button id="stop-performance" class="wide-button secondary">停止当前特效</button>
+        </section>
+
         <!-- 6.4 外观 -->
         <section class="page" id="page-appearance">
           <h2>大小</h2>
@@ -187,37 +213,29 @@
           </div>
           <p class="hint">自定义滑杆（0.25–1.0 连续）是文档里的提案，需要先放开 Rust 端的取值白名单，这一版还是三档。</p>
 
-          <h2 class="section-gap">皮肤库</h2>
-          <div class="skin-options">
-            <div class="skin-card active">
-              <strong>暖绒虎斑</strong>
-              <span>使用中</span>
-            </div>
-            <div class="skin-card disabled">
-              <strong>银灰云朵</strong>
-              <span class="badge badge-muted">planned</span>
-            </div>
-            <div class="skin-card disabled">
-              <strong>橘白软糖</strong>
-              <span class="badge badge-muted">planned</span>
-            </div>
-            <div class="skin-card disabled">
-              <strong>黑曜影子</strong>
-              <span class="badge badge-muted">planned</span>
-            </div>
-            <div class="skin-card disabled">
-              <strong>奶牛布丁</strong>
-              <span class="badge badge-muted">planned</span>
-            </div>
-            <div class="skin-card disabled">
-              <strong>三花团子</strong>
-              <span class="badge badge-muted">planned</span>
-            </div>
-          </div>
+          <h2 class="section-gap">视角</h2>
+          <div class="camera-options" id="camera-options"></div>
           <p class="hint">
-            只有"暖绒虎斑"是真实生产资产（<code>SkinManifest</code> 契约已有）；其余五款是候选提案，标 planned
-            禁选——不伪造还没做出来的模型/材质。
+            视角决定摄像机离地面多高。以前固定在接近俯拍的角度，基本只看得到猫背和头顶；现在默认「游戏视角」
+            （3/4 斜视），并且可以随时换。选「自动」时：站着/被撸/追鼠标 → 平视对上眼，走动 → 切回 3/4，切换是渐变不是硬切。
           </p>
+
+          <h2 class="section-gap">自定义资源</h2>
+          <p class="hint">
+            动作、表情、主题都是可编辑的 JSON 文件，放在应用配置目录的 <code>assets/</code> 里，改完点「重新加载」即可生效，
+            不用重新编译。<strong>每个文件都会先完整校验再生效</strong>——格式不对时保留内置版本并在下面显示原因，
+            不会出现半张脸或者关节拧断的情况。手绘贴图（身体图集 / 表情图）放 <code>assets/textures/</code>。
+          </p>
+          <div class="asset-actions">
+            <button id="open-assets" class="wide-button secondary">打开资源目录</button>
+            <button id="install-templates" class="wide-button secondary">导出内置资源为模板</button>
+            <button id="reload-assets" class="wide-button secondary">重新加载自定义资源</button>
+          </div>
+          <p class="hint" id="asset-status"></p>
+
+          <h2 class="section-gap">主题（皮肤）</h2>
+          <div class="skin-options" id="skin-options"></div>
+          <p class="hint" id="skin-hint"></p>
         </section>
 
         <!-- 6.5 设置（四个分区合并成一页） -->
@@ -225,6 +243,11 @@
           <h2>通用</h2>
           <button id="toggle-visibility" class="wide-button">隐藏</button>
           <button id="reset-position" class="wide-button secondary">重置位置</button>
+          <button id="open-debug" class="wide-button secondary">打开调试台</button>
+          <p class="hint">
+            调试台里能逐个播放全部动作和表情、切换视角/主题，并且列出了 Agent 可以直接调用的本地 HTTP 接口
+            （<code>127.0.0.1:47811</code>）。托盘菜单里也有同一个入口。
+          </p>
           <ul class="status-list" id="status-list">
             <li>辅助功能权限：<span id="status-accessibility">检查中…</span></li>
           </ul>

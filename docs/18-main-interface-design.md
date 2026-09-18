@@ -2,7 +2,7 @@
 
 状态：**设计提案 v2**（2026-09-13）。v1 评审后用户给出 10 条决策（见 §0），本文档已全部落实；文中区分 ✅ 已存在、◐ 部分存在、⬜ 提案，不把设计当成已实现。
 
-关联文档：[扩展架构](09-extension-architecture.md)（三平台接入路径已核实）、[行为系统](04-life-engine.md)、[品牌与设计系统](08-brand-and-design-system.md)、[桌面壳原型](16-desktop-shell-prototype.md)、[契约](../packages/contracts/src/index.d.ts)、[感知契约](../packages/perception-contract/index.d.ts)。
+关联文档：[扩展架构](09-extension-architecture.md)（三平台接入路径已核实）、[行为系统](04-life-engine.md)、[品牌与设计系统](08-brand-and-design-system.md)、[桌面壳原型](16-desktop-shell-prototype.md)、[契约](../packages/contracts/src/index.d.mts)、[感知契约](../packages/perception-contract/index.d.ts)。
 
 ---
 

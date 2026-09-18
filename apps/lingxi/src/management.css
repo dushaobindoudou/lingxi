@@ -448,21 +448,90 @@ h2.section-gap {
   color: var(--ink);
 }
 
+/* Nine real themes, so: a wrapping grid rather than one row of equal flex children. */
 .skin-options {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 8px;
   margin: 4px 0 4px;
 }
 
 .skin-card {
-  flex: 1;
   padding: 12px;
   border-radius: 10px;
   border: 1.5px solid var(--border);
   background: #fffaf7;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.skin-card:hover {
+  border-color: var(--accent);
+}
+
+/* A row of the theme's actual material colours - the closest thing to a real preview that
+   doesn't require rendering the cat twice. Same values the atlas painter uses. */
+.skin-swatches {
+  display: flex;
   gap: 4px;
+}
+
+.skin-swatches i {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.asset-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.asset-error {
+  color: #b4413c;
+  white-space: pre-wrap;
+}
+
+.camera-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.camera-options button {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: #fffaf7;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: all 0.15s ease;
+}
+
+.camera-options button span {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.camera-options button.active {
+  border-color: var(--accent);
+  background: #fff0f4;
+  color: var(--accent-ink);
 }
 
 .skin-card strong {

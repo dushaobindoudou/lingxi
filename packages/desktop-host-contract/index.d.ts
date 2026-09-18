@@ -83,6 +83,56 @@ export interface Renderer {
   /** Scale the model's on-screen size (1 = default). Also scales the hit-test region. */
   setScale(scale: number): void;
   /**
+   * Switch the visual theme ("主题"/皮肤) by id. Optional: a renderer with a single baked-in
+   * look simply doesn't implement it, and callers must treat an unknown id as a no-op rather
+   * than an error - a persisted theme id can outlive the asset it named.
+   */
+  setSkin?(id: string): void;
+  /**
+   * Replace the renderer's clip library, expression set and theme catalogue with user-supplied
+   * ones. Returns a list of per-file problems; anything that failed validation is NOT applied,
+   * so a bad file leaves the built-in version running rather than breaking the character.
+   * Optional: a renderer with fixed, baked-in assets simply doesn't offer it.
+   */
+  applyCustomAssets?(payload: unknown): string[];
+  /**
+   * Switch the viewing angle ("视角") by preset id. Optional for the same reason as setSkin:
+   * a 2D sprite renderer has no camera to aim. Implementations are expected to ease into the
+   * new angle rather than cut, since the camera also defines where on screen a given logical
+   * position lands.
+   */
+  setCameraPreset?(id: string): void;
+  /**
+   * Multiply the model's size by `multiplier` over `seconds`, on top of whatever setScale set.
+   * Exists so a scripted performance can sell approach and retreat ("从远处跑过来越来越大")
+   * without touching the user's own size preference. Renderers that cannot scale omit it.
+   */
+  setPerformanceZoom?(multiplier: number, seconds?: number): void;
+  /**
+   * Play a named action clip right now, ahead of whatever the renderer's own scheduler would
+   * have chosen. Returns false for an unknown id. Optional: a renderer with no clip library
+   * has nothing to play.
+   */
+  playAction?(id: string): boolean;
+  /** Hold a named expression for `holdMs` (renderer's choice of default). False if unknown. */
+  playExpression?(name: string, holdMs?: number): boolean;
+  /**
+   * The action clip currently playing, if any, and how long is left of it. A host uses this to
+   * keep the character still for the clip's duration - an action and locomotion both want the
+   * body, and a cat that walks out from under its own grooming animation reads as broken.
+   */
+  readonly playingAction?: { id: string; remainingMs: number; legFree: boolean } | null;
+  /** Where the character's head currently is on screen, for anchoring overlays like a speech
+   *  bubble. Same logical pixel space as resize/render. */
+  headScreenPoint?(): { x: number; y: number };
+  /**
+   * Machine-readable description of everything this renderer supports - clips, expressions,
+   * themes, camera angles. Exists so a control surface (debug console, external agent) can be
+   * built from what the renderer actually has, rather than from a hand-maintained list that
+   * drifts. Shape is renderer-defined; callers treat it as opaque data to display or forward.
+   */
+  describeCapabilities?(): unknown;
+  /**
    * Apply one frame of life-engine state. `position` is in the same logical (CSS-pixel)
    * space as `resize` was called with. `cursor` (same space, null if unknown/off-desktop)
    * lets a 3D renderer do something better than pure left/right facing - e.g. a subtle
