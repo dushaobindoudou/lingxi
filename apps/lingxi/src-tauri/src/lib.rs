@@ -812,8 +812,36 @@ fn get_claude_task_events(state: State<ClaudeHooksState>) -> Vec<TaskEvent> {
 ///   from stopping* - this hook must never be able to interfere with the user's actual
 ///   Claude Code session, including when this app isn't running or the port is unreachable.
 /// - `-m 2` bounds how long a hung/unreachable server can delay the user's own hook chain.
-const CLAUDE_HOOK_COMMAND: &str =
-    "curl -s -m 2 -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true";
+/// The hook line written into ~/.claude/settings.json by "一键接入".
+///
+/// It reads the bridge token itself. It did not, until the bridge grew authentication - at which
+/// point every hook silently started getting a 401 and the cat stopped reacting to Claude Code
+/// entirely, with nothing anywhere saying so. A hook that posts into a void is worse than no hook.
+///
+/// Still plain `curl` rather than the node adapter in integrations/adapters, deliberately: this
+/// path has to keep working for someone who installed the .app and has no checkout, so it cannot
+/// depend on a repository path existing. The adapter is the richer option for people who do have
+/// one (see integrations/plugins/), and both post the same schema to the same endpoint.
+///
+/// The token goes into a variable BEFORE curl rather than inline in the header. Inline looks
+/// tidier and does not work: the path contains spaces, so it needs quoting, and quoting inside
+/// $( ) inside an already-quoted -H argument does not survive the shell. Caught by running the
+/// generated line rather than by reading it.
+///
+/// `|| true` at the end, and every failure swallowed: a desktop pet must never be able to make
+/// someone's agent fail.
+const CLAUDE_HOOK_COMMAND: &str = concat!(
+    "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); ",
+    "curl -s -m 2 -X POST http://127.0.0.1:47811/task-event ",
+    "-H 'Content-Type: application/json' -H \"Authorization: Bearer $T\" ",
+    "--data-binary @- >/dev/null 2>&1 || true"
+);
+
+/// Hook lines we have written in the past. Uninstall has to recognise all of them, or an older
+/// install becomes impossible to remove through the UI that created it.
+const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 1] = [
+    "curl -s -m 2 -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true",
+];
 
 const CLAUDE_HOOK_EVENTS: [&str; 3] = ["UserPromptSubmit", "Stop", "StopFailure"];
 
@@ -852,7 +880,13 @@ fn has_our_hook(entries: &[serde_json::Value]) -> bool {
         entry
             .get("hooks")
             .and_then(|h| h.as_array())
-            .map(|inner| inner.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some(CLAUDE_HOOK_COMMAND)))
+            .map(|inner| {
+                inner.iter().any(|h| {
+                    let command = h.get("command").and_then(|c| c.as_str());
+                    command == Some(CLAUDE_HOOK_COMMAND)
+                        || command.is_some_and(|c| LEGACY_CLAUDE_HOOK_COMMANDS.contains(&c))
+                })
+            })
             .unwrap_or(false)
     })
 }

@@ -53,7 +53,27 @@ or add this to your shell profile:
 EOF
 fi
 
+# --- the deterministic half -------------------------------------------------------------------
+#
+# A skill is advisory: the model decides whether to use it, and in most sessions it does not think
+# to. Hooks fire regardless. They cannot know how the work FELT - only lifecycle - so they produce
+# the plain reaction and the skill enriches it when the model does engage.
+#
+#   the plugin is the floor, the skill is the ceiling.
 cat <<EOF
+
+--- the deterministic half (recommended) ---
+
+Skills only fire when the model decides to use one. To have the cat react regardless:
+
+Claude Code - add the plugin (hooks + skill + MCP in one):
+  claude plugin install $REPO/integrations/plugins/claude-code
+or, without plugins, the app's 主界面 -> Agent 接入 -> 安装 Claude Code hooks
+
+Codex - one line in ~/.codex/config.toml:
+  notify = ["node", "$REPO/integrations/adapters/lingxi-emit.mjs", "--host", "codex"]
+  WARNING: notify holds ONE program. If you already have one, fan out instead -
+  see $REPO/integrations/plugins/codex/README.md
 
 Done. Check with:
   lingxi health        # is the cat running, where is its token

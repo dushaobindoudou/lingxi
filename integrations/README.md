@@ -1,6 +1,37 @@
 # 接入灵犀
 
-三条路，按摩擦成本从低到高。**推荐第一条。**
+## 先看这一条：skill 会不会被调用？
+
+**不一定。** skill 是**建议性**的——模型读到了，然后自己决定要不要用。大多数会话里它想不起来。
+
+所以接入分两层，两层都要装：
+
+| | 谁触发 | 会漏吗 | 知道 `state` | 知道 `mood` |
+|---|---|---|---|---|
+| **插件 / hook** | 宿主，确定性 | **不会** | ✅ | ❌ 看不到内容 |
+| **skill / MCP** | 模型自己 | 会 | ✅ | ✅ **核心价值** |
+
+> **插件是下限，skill 是上限。**
+> 插件保证"有事发生猫就有反应"；skill 让那个反应**知道这件事是关于什么的**。
+
+适配器**故意不猜** `mood`——插件编一个出来，就是在瞎编整个设计赖以成立的那一个字段，
+而且会在没人看得见的地方错。它留空，应用按 `focused` 处理，模型真有话说时再覆盖。
+
+```sh
+# Claude Code：hooks + skill + MCP 一起装
+claude plugin install <repo>/integrations/plugins/claude-code
+
+# Codex：一行（注意 notify 只能有一个，见 plugins/codex/README.md）
+notify = ["node", "<repo>/integrations/adapters/lingxi-emit.mjs", "--host", "codex"]
+```
+
+事件的**契约**是 [`schema/task-event.schema.json`](schema/task-event.schema.json)。
+所有接入——hook、notify、MCP、curl——都只产出这一个对象。
+**再接一个新宿主 = 写一个适配器，不需要动应用。**
+
+---
+
+## 下面是手动的三条路，按摩擦成本从低到高
 
 规范见 [`docs/19-agent-integration.md`](../docs/19-agent-integration.md)；
 运行中的应用会用 `GET /integration` 把契约原样吐出来，**以它为准**。

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dushaobindoudou/dsh-lingxi/integrations/schema/task-event.schema.json",
+  "title": "灵犀 task event",
+  "description": "What an agent tells the cat about the work it is doing. This is the ONE surface every integration targets: Claude Code hooks, a Codex notify program, an MCP tool call, a shell script or a bare curl all produce this object and nothing else. Adding a fourth host means writing an adapter that emits this - it never means changing the app. The split that matters: `state` and `kind` describe a PROCESS and a host can supply them from lifecycle events alone. `mood` describes the PERSON, and only something that has read the work can judge it - which is why a plugin can guarantee a baseline reaction while only the model can make it feel like the cat knows what is going on.",
+  "type": "object",
+  "required": ["state"],
+  "additionalProperties": false,
+  "properties": {
+    "state": {
+      "description": "Where the work has got to. The only required field.",
+      "enum": ["queued", "running", "blocked", "needs_input", "completed", "failed", "cancelled"]
+    },
+    "kind": {
+      "description": "What sort of work it is. Lets the cat react differently to a failed deploy than to a failed search.",
+      "enum": ["build", "test", "deploy", "review", "search", "write", "chat", "other"],
+      "default": "other"
+    },
+    "mood": {
+      "description": "How the work FEELS - the dimension that makes this a pet rather than a status light. Someone writing to their mother and someone fighting a flaky test are both running/write. Judge the mood of the WORK, not your own confidence in it: you can be certain about an apology letter and it is still `sad`. The cat ANSWERS the mood rather than mirroring it - failure is met with comfort, not alarm - so reporting a bad mood honestly is safe. Hosts that only see lifecycle events should omit this rather than guess.",
+      "enum": ["focused", "proud", "tender", "sad", "frustrated", "anxious", "weary", "playful", "curious"],
+      "default": "focused"
+    },
+    "progress": {
+      "description": "0..1 where known. Send it freely: `running` updates are swallowed except the first and the crossing of halfway, so a progress stream does not become a reaction stream. Terminal states are never swallowed.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "summary": {
+      "description": "One line, in the user's language, about what just happened. Shown in the cat's speech bubble when the reaction includes one.",
+      "type": "string",
+      "maxLength": 240
+    },
+    "provider": {
+      "description": "Which tool this came from - \"claude-code\", \"codex\", a CI name. Used for grouping in the event log.",
+      "type": "string",
+      "maxLength": 64
+    },
+    "agent": {
+      "description": "The registered agent id this is attributed to (see POST /agents). Determines whose logo appears on the speech bubble when several agents share one cat. Omitted means anonymous, which the user cannot tell apart from any other anonymous caller.",
+      "type": "string",
+      "maxLength": 64
+    },
+    "taskId": {
+      "description": "Stable id for this piece of work across its lifetime. Progress suppression is keyed on it, so reusing one id for unrelated work will silently swallow reactions.",
+      "type": "string",
+      "maxLength": 128
+    }
+  },
+  "examples": [
+    {
+      "state": "failed",
+      "kind": "test",
+      "mood": "frustrated",
+      "summary": "auth/ 里有 3 个测试挂了",
+      "provider": "claude-code",
+      "agent": "claude-code",
+      "taskId": "session-4821"
+    },
+    {
+      "state": "running",
+      "kind": "build",
+      "progress": 0.6,
+      "provider": "codex",
+      "taskId": "turn-12"
+    }
+  ]
+}
