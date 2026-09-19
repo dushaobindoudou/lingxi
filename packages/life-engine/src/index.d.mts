@@ -25,6 +25,12 @@ export interface LifeEngineConfig {
   followDeadband?: number;
   edgePatrolBias?: number;
   avoidRetargetCooldownMs?: number;
+  /**
+   * Source of randomness for every choice the engine makes, defaulting to Math.random. Inject a
+   * seeded generator to replay behaviour exactly - which is what makes it possible to compare
+   * two builds on the same decisions rather than on two different random walks.
+   */
+  random?: () => number;
   minRetargetDistance?: number;
   toyChaseSpeedMultiplier?: number;
   toyReach?: number;
@@ -46,6 +52,17 @@ export interface LifeEngineSnapshot {
   facing: 1 | -1;
   target: Vec2 | null;
   mode: InteractionMode;
+  /**
+   * The pointer's relationship with the character right now.
+   *
+   * `engaged` is contact. `byUser` is the interesting one: it says the USER closed the
+   * distance - they reached over and touched the character - rather than the character having
+   * wandered onto a pointer that was sitting still. The two look identical at the moment of
+   * contact and mean opposite things, so affection should be gated on `byUser`, never on
+   * `engaged` alone. It latches for the duration of one contact, so a hand that arrives and
+   * then rests still counts as having arrived.
+   */
+  pointer: { engaged: boolean; byUser: boolean };
   /** The toy currently on the desktop, if any - renderers that can draw one read this. */
   toy: ToyState | null;
   /** True for exactly the one tick the cat swats the toy; drives the swat animation. */

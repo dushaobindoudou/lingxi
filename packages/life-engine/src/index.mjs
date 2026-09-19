@@ -60,6 +60,18 @@ const DEFAULTS = Object.freeze({
   // avoidance used to be purely reactive (flee once it is already too close), which meant the
   // cat would happily pick a destination right next to the pointer and walk there first.
   cursorKeepOut: 220,
+  // Close enough to count as contact - the pointer is ON the cat, not merely near it. Smaller
+  // than avoidRadius on purpose: there is a band where the cat is politely getting out of the
+  // way, and then there is being touched.
+  pointerEngageRadius: 90,
+  // Recent travel is tracked with this time constant (seconds) for both the pointer and the
+  // cat, so "who closed the gap" is answered over a moment rather than a single frame.
+  pointerAttributionEase: 0.35,
+  // How much more the pointer must have moved than the cat for the contact to be read as the
+  // user reaching out. Above 1 so that a cat walking into a parked pointer never qualifies,
+  // and so a near-tie resolves to "the cat did it" - the conservative answer, since guessing
+  // wrong in that direction merely withholds a purr instead of parking the cat on the cursor.
+  pointerInitiativeRatio: 1.6,
   // Extra pick weight for the edge the cat is already standing on, so it patrols
   // along a border for a while instead of crossing the middle of the screen (i.e. straight
   // through the user's actual work) on every single hop.
@@ -126,8 +138,8 @@ function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function randomBetween(min, max) {
-  return min + Math.random() * (max - min);
+function randomBetween(min, max, random = Math.random) {
+  return min + random() * (max - min);
 }
 
 /**
@@ -135,6 +147,12 @@ function randomBetween(min, max) {
  */
 export function createLifeEngine(config = {}) {
   const cfg = { ...DEFAULTS, ...config };
+  // Injectable so behaviour can be replayed exactly. Every choice the cat makes runs through
+  // here, which is what lets a test pin one seed and compare two builds on the SAME decisions
+  // instead of on two different random walks - the difference between measuring a change and
+  // measuring the weather.
+  const random = typeof config.random === 'function' ? config.random : Math.random;
+  const rand = (min, max) => randomBetween(min, max, random);
   let bounds = cfg.bounds;
   let state = 'idle';
   let position = config.position ?? { x: bounds.width / 2, y: bounds.height / 2 };
@@ -210,6 +228,20 @@ export function createLifeEngine(config = {}) {
   // Which way round the pointer the cat committed to walking: -1, +1, or 0 for "not detouring".
   // Sticky on purpose - see detourAround.
   let detourSide = 0;
+  // --- who started it -----------------------------------------------------------------------
+  // The cat's reaction to the pointer being on it should depend entirely on who moved. A user
+  // reaching over to touch the cat wants affection; a cat that has wandered onto a parked
+  // pointer is standing in the way and should move. Both look identical at the instant of
+  // contact - the only thing that separates them is which of the two closed the distance, so
+  // that is what gets measured ("这样能够比较准确的识别是主动还是被动").
+  let lastCursor = null;
+  let lastPosition = null;
+  let cursorTravel = 0; // decaying recent travel, pixels
+  let catTravel = 0;
+  // Latched for the duration of one contact: once the user has reached out, the cat does not
+  // change its mind about that just because the hand then holds still on top of it.
+  let pointerEngagedByUser = false;
+  let pointerEngaged = false;
   let toy = null; // { kind, position:{x,y}, velocity:{x,y} } | null - see TOY_KINDS
   let lastBatAt = -Infinity;
   let batThisTick = false; // one-frame flag the renderer turns into a pounce/swat clip
@@ -226,8 +258,8 @@ export function createLifeEngine(config = {}) {
   let chargeAmount = 0;
 
   function pickWanderTarget() {
-    const angle = randomBetween(0, Math.PI * 2);
-    const radius = randomBetween(cfg.wanderRadius * 0.3, cfg.wanderRadius);
+    const angle = rand(0, Math.PI * 2);
+    const radius = rand(cfg.wanderRadius * 0.3, cfg.wanderRadius);
     const raw = { x: position.x + Math.cos(angle) * radius, y: position.y + Math.sin(angle) * radius };
     // Roam box: this is the cat choosing where to go, not something forcing it there.
     return {
@@ -307,7 +339,7 @@ export function createLifeEngine(config = {}) {
       edge.weight = Math.max(0.05, edge.safety) ** 3 * (edge.id === currentEdge ? 1 + cfg.edgePatrolBias : 1);
       total += edge.weight;
     }
-    let roll = Math.random() * total;
+    let roll = random() * total;
     let chosen = edges[edges.length - 1];
     for (const edge of edges) {
       roll -= edge.weight;
@@ -315,8 +347,8 @@ export function createLifeEngine(config = {}) {
     }
     // Somewhere along that edge, avoiding the exact corners (a cat wedged in a corner reads
     // as stuck) - and keeping clear of the cursor's own coordinate on the travel axis.
-    const alongX = randomBetween(left + (right - left) * 0.08, right - (right - left) * 0.08);
-    const alongY = randomBetween(top + (bottom - top) * 0.08, bottom - (bottom - top) * 0.08);
+    const alongX = rand(left + (right - left) * 0.08, right - (right - left) * 0.08);
+    const alongY = rand(top + (bottom - top) * 0.08, bottom - (bottom - top) * 0.08);
     switch (chosen.id) {
       case 'left': return { x: left, y: alongY };
       case 'right': return { x: right, y: alongY };
@@ -358,7 +390,7 @@ export function createLifeEngine(config = {}) {
     if (!TOY_KINDS.includes(kind)) return;
     const spawn = at ?? {
       x: position.x < bounds.width / 2 ? bounds.width * 0.75 : bounds.width * 0.25,
-      y: clamp(position.y + randomBetween(-120, 120), cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+      y: clamp(position.y + rand(-120, 120), cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
     };
     toy = {
       kind,
@@ -431,7 +463,7 @@ export function createLifeEngine(config = {}) {
     } else {
       const dx = toy.position.x - position.x;
       const dy = toy.position.y - position.y;
-      angle = Math.hypot(dx, dy) < 1e-6 ? randomBetween(0, Math.PI * 2) : Math.atan2(dy, dx);
+      angle = Math.hypot(dx, dy) < 1e-6 ? rand(0, Math.PI * 2) : Math.atan2(dy, dx);
     }
     const speed = cfg.toyThrowSpeedMin + (cfg.toyThrowSpeedMax - cfg.toyThrowSpeedMin) * level;
     toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
@@ -534,9 +566,9 @@ export function createLifeEngine(config = {}) {
         // shuttling along one line forever.
         const dx = toy.position.x - position.x;
         const dy = toy.position.y - position.y;
-        const base = Math.hypot(dx, dy) < 1e-6 ? randomBetween(0, Math.PI * 2) : Math.atan2(dy, dx);
-        const angle = base + randomBetween(-0.9, 0.9);
-        const speed = cfg.toyBatSpeed * randomBetween(0.65, 1);
+        const base = Math.hypot(dx, dy) < 1e-6 ? rand(0, Math.PI * 2) : Math.atan2(dy, dx);
+        const angle = base + rand(-0.9, 0.9);
+        const speed = cfg.toyBatSpeed * rand(0.65, 1);
         toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
       }
     }
@@ -708,7 +740,7 @@ export function createLifeEngine(config = {}) {
   function endDrag(now) {
     if (state !== 'dragged') return;
     state = 'idle';
-    idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
+    idleUntil = now + rand(...cfg.idleDurationMsRange);
     dragStuckSinceMs = null;
   }
 
@@ -804,12 +836,57 @@ export function createLifeEngine(config = {}) {
    * @param {number} now performance.now()-style milliseconds
    * @param {{x:number,y:number}|null} cursor world-space cursor position, or null if unknown/outside bounds
    */
+  /**
+   * Decide whether the pointer being on the cat is the user reaching out, or the cat having
+   * blundered into a pointer that was sitting still.
+   *
+   * These are the same picture at the moment of contact, and the app was treating them the
+   * same: any pointer inside avoidRadius made the cat bolt, including one the user had just
+   * deliberately moved onto it. The only thing that actually distinguishes them is WHO CLOSED
+   * THE DISTANCE, so both parties' recent travel is tracked and compared.
+   *
+   * Decaying sums rather than per-frame deltas: a single frame is far too short a window to
+   * tell a deliberate reach from sensor noise, and a hand that arrives and then rests would
+   * otherwise stop counting as having arrived at all.
+   *
+   * The verdict LATCHES for the duration of one contact. A user who reaches over, touches the
+   * cat and holds still has not stopped meaning it, and re-deciding as the travel sums decay
+   * would have the cat warm up and then flee without the user doing anything.
+   */
+  function updatePointerInitiative(cursor, deltaSeconds) {
+    if (!cursor) {
+      pointerEngaged = false;
+      pointerEngagedByUser = false;
+      lastCursor = null;
+      cursorTravel = 0;
+      catTravel = 0;
+      return;
+    }
+    const decay = deltaSeconds > 0 ? Math.exp(-deltaSeconds / cfg.pointerAttributionEase) : 1;
+    cursorTravel *= decay;
+    catTravel *= decay;
+    if (lastCursor) cursorTravel += distance(cursor, lastCursor);
+    if (lastPosition) catTravel += distance(position, lastPosition);
+    lastCursor = { ...cursor };
+    lastPosition = { ...position };
+
+    pointerEngaged = distance(position, cursor) < cfg.pointerEngageRadius;
+    if (!pointerEngaged) {
+      pointerEngagedByUser = false;
+      return;
+    }
+    // Already latched - the contact is still the same contact.
+    if (pointerEngagedByUser) return;
+    pointerEngagedByUser = cursorTravel > catTravel * cfg.pointerInitiativeRatio && cursorTravel > 4;
+  }
+
   function tick(now, cursor) {
     const deltaSeconds = lastTickAt == null ? 0 : Math.min(0.25, (now - lastTickAt) / 1000);
     lastTickAt = now;
     batThisTick = false;
     turning = 0; // set by moveToward when it actually steers this tick
     chargeAmount = charge ? Math.min(1, (now - charge.since) / cfg.toyChargeMaxMs) : 0;
+    updatePointerInitiative(cursor, deltaSeconds);
 
     // The toy moves whatever the cat is doing - a thrown ball keeps rolling while the cat is
     // being held, and the wand still follows your hand.
@@ -829,7 +906,7 @@ export function createLifeEngine(config = {}) {
         if (dragStuckSinceMs == null) dragStuckSinceMs = now;
         else if (now - dragStuckSinceMs > cfg.dragStaleMs) {
           state = 'idle';
-          idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
+          idleUntil = now + rand(...cfg.idleDurationMsRange);
           dragStuckSinceMs = null;
           return snapshot();
         }
@@ -841,7 +918,7 @@ export function createLifeEngine(config = {}) {
       aiIntent = null; // suggestion expired; fall through to normal autonomous logic below
       if (state === 'ai_directed') {
         state = 'idle';
-        idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
+        idleUntil = now + rand(...cfg.idleDurationMsRange);
       }
     }
     if (aiIntent) {
@@ -879,7 +956,12 @@ export function createLifeEngine(config = {}) {
     // frame: "the cursor is on top of me" stays true for as long as the cursor sits there, so
     // re-rolling an escape target on each such frame is what used to make the cat vibrate in
     // place instead of walking away.
-    if (cursor && (state === 'idle' || state === 'wander')) {
+    //
+    // The one exception is the user reaching out to touch it. That used to flee too, so
+    // deliberately putting the pointer on the cat made it run away - affectionate clip playing
+    // all the while, because the renderer was reading contact and the engine was reading
+    // proximity and the two disagreed about what was happening.
+    if (cursor && (state === 'idle' || state === 'wander') && !pointerEngagedByUser) {
       const cursorOnTopOfMe = distance(position, cursor) < cfg.avoidRadius;
       const routeUnsafe = state === 'wander' && target != null && distance(target, cursor) < cfg.avoidRadius;
       const cooledDown = now - lastAvoidRetargetAt >= cfg.avoidRetargetCooldownMs;
@@ -890,8 +972,19 @@ export function createLifeEngine(config = {}) {
       }
     }
 
+    // Being petted: stand still and take it. Without this the wander timer eventually fires
+    // mid-stroke and the cat walks out from under the user's hand, which reads as the cat
+    // losing interest at exactly the moment the user was showing some.
+    if (pointerEngagedByUser) {
+      if (state === 'wander') {
+        state = 'idle';
+        target = null;
+      }
+      idleUntil = now + rand(...cfg.idleDurationMsRange);
+    }
+
     if (state === 'idle') {
-      if (idleUntil == null) idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
+      if (idleUntil == null) idleUntil = now + rand(...cfg.idleDurationMsRange);
       if (now >= idleUntil) {
         state = 'wander';
         target = pickEdgeRestTarget(cursor);
@@ -905,7 +998,7 @@ export function createLifeEngine(config = {}) {
       const arrived = moveToward(target, deltaSeconds, cfg.speed, cursor);
       if (arrived) {
         state = 'idle';
-        idleUntil = now + randomBetween(...cfg.idleDurationMsRange);
+        idleUntil = now + rand(...cfg.idleDurationMsRange);
         target = null;
       }
     }
@@ -922,6 +1015,13 @@ export function createLifeEngine(config = {}) {
       turning,
       target: target ? { ...target } : null,
       mode: 'free',
+      /**
+       * The pointer's relationship with the cat right now. `engaged` is contact; `byUser` says
+       * the user brought the pointer here rather than the cat having walked into it. Renderers
+       * gate affection on `byUser`, so a cat that blunders onto a parked cursor does not act
+       * as though it was just petted.
+       */
+      pointer: { engaged: pointerEngaged, byUser: pointerEngagedByUser },
       // Renderers that can draw a toy read this; ones that can't ignore it, same contract as
       // every other field here.
       toy: toy

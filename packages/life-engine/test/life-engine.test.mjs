@@ -6,6 +6,20 @@ function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+/**
+ * A seeded RNG for tests whose assertions depend on which way the cat happened to decide to go.
+ * Without one, those tests re-roll the cat's whole decision sequence on every run and fail a
+ * fifth of the time for no reason - which trains everyone to re-run a red suite instead of
+ * reading it. Pass `random: seeded(n)` into createLifeEngine to pin the behaviour.
+ */
+function seeded(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 test('starts idle and transitions to wander after the idle window elapses', () => {
   const engine = createLifeEngine({ bounds: { width: 1000, height: 1000 }, idleDurationMsRange: [50, 50] });
   assert.equal(engine.state, 'idle');
@@ -57,6 +71,7 @@ test('"auto" mode: a cursor parked on the cat produces ONE escape route, not a n
     position: { x: 1000, y: 1000 },
     avoidRadius: 150,
     speed: 300,
+    random: seeded(7),
   });
   const cursor = { x: 1040, y: 1000 }; // parked inside avoidRadius for the whole run
   const first = engine.tick(0, cursor);
@@ -88,6 +103,7 @@ test('"auto" mode: every step of an escape run moves roughly the same direction'
     position: { x: 1000, y: 1000 },
     avoidRadius: 150,
     speed: 300,
+    random: seeded(7),
   });
   const cursor = { x: 1040, y: 1000 };
   engine.tick(0, cursor);
@@ -740,4 +756,62 @@ test('going around the pointer does not make the cat vibrate', () => {
   // A committed detour sweeps one way. Frame-by-frame re-deciding is what the old reactive
   // avoidance did, and it showed up as exactly this: the turn direction flipping constantly.
   assert.ok(reversals < 120, `turn direction flipped ${reversals} times - the detour is chattering`);
+});
+
+// The pointer arriving on the cat and the cat arriving on the pointer look identical at the
+// moment of contact and mean opposite things. Everything below is about telling them apart.
+test('a pointer the user moves onto the cat is affection - the cat stays', () => {
+  const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 700, y: 450 } });
+  // Walk the pointer in from a distance, the way a hand actually arrives.
+  let snap = engine.tick(0, { x: 1100, y: 450 });
+  for (let f = 1; f <= 60; f += 1) {
+    const x = 1100 - (f / 60) * 400; // 400px of deliberate travel, ending on the cat
+    snap = engine.tick(f * 16, { x, y: 450 });
+  }
+  assert.equal(snap.pointer.engaged, true, 'the pointer should be in contact');
+  assert.equal(snap.pointer.byUser, true, 'the user closed the distance, so this is affection');
+
+  // And it must not run away from it - which is what it used to do.
+  const startedAt = { ...snap.position };
+  for (let f = 61; f < 400; f += 1) snap = engine.tick(f * 16, { x: 700, y: 450 });
+  assert.ok(
+    distance(snap.position, startedAt) < 40,
+    `the cat bolted from a hand that reached for it (moved ${distance(snap.position, startedAt).toFixed(0)}px)`,
+  );
+  assert.equal(snap.pointer.byUser, true, 'the verdict must latch while the hand rests on the cat');
+});
+
+test('a parked pointer the cat wanders into is not affection - the cat moves off', () => {
+  const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 700, y: 450 } });
+  const parked = { x: 700, y: 450 }; // never moves; the cat starts standing on it
+  let sawAffection = false;
+  let snap;
+  for (let f = 0; f < 900; f += 1) {
+    snap = engine.tick(f * 16, parked);
+    if (snap.pointer.byUser) sawAffection = true;
+  }
+  assert.equal(sawAffection, false, 'the cat walking into a parked pointer must never read as being petted');
+  assert.ok(
+    distance(snap.position, parked) > 150,
+    `the cat should have got out of the way of a parked pointer (still ${distance(snap.position, parked).toFixed(0)}px away)`,
+  );
+});
+
+test('the verdict clears when the hand leaves, so the next contact is judged fresh', () => {
+  const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 700, y: 450 } });
+  for (let f = 0; f <= 60; f += 1) engine.tick(f * 16, { x: 1100 - (f / 60) * 400, y: 450 });
+  assert.equal(engine.tick(61 * 16, { x: 700, y: 450 }).pointer.byUser, true);
+  // Hand withdraws.
+  let snap;
+  for (let f = 62; f < 120; f += 1) snap = engine.tick(f * 16, { x: 1300, y: 450 });
+  assert.equal(snap.pointer.engaged, false);
+  assert.equal(snap.pointer.byUser, false, 'the latch must not survive the hand leaving');
+});
+
+test('no cursor at all means no contact and no affection', () => {
+  const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 700, y: 450 } });
+  for (let f = 0; f <= 60; f += 1) engine.tick(f * 16, { x: 1100 - (f / 60) * 400, y: 450 });
+  const snap = engine.tick(61 * 16, null);
+  assert.equal(snap.pointer.engaged, false);
+  assert.equal(snap.pointer.byUser, false);
 });

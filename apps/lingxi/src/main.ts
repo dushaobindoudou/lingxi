@@ -499,7 +499,12 @@ async function main() {
       // Keep any speech bubble parked over the cat's head while it moves. Guarded on
       // `speaking` so the projection cost is only paid when there is actually a bubble.
       // --- pointer affection: noticing you, and being stroked ---------------------------
-      if (cursor && wasHit && !isMouseDown && !isChargingToy) {
+      // `pointer.byUser` is the engine's verdict on who closed the distance. Gating on it is
+      // what makes the affection mean something: the cat purrs because you reached for it, not
+      // because it happened to wander onto a cursor you had parked and forgotten about
+      // ("鼠标主动放到他身上的时候应该是亲近"). The same flag stops it fleeing, so the two
+      // halves of the reaction finally agree with each other.
+      if (cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
         if (hoverSince === 0) {
           hoverSince = now;
           strokeDistance = 0;
