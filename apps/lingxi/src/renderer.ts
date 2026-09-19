@@ -522,14 +522,37 @@ export function createThreeRenderer(): Renderer {
   // So placement is done by unprojecting instead: ask where a given screen point crosses the
   // plane the object lives on. Exact at every camera angle, by construction, and it also means
   // the cat's feet now land exactly on its logical position rather than ~100px below it.
-  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const placement = new THREE.Vector3();
 
   function screenToWorld(screenX: number, screenY: number, planeY: number) {
     ndc.set((screenX / width) * 2 - 1, -(screenY / height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
-    groundPlane.constant = -planeY;
-    return raycaster.ray.intersectPlane(groundPlane, placement) ?? placement.set(0, planeY, 0);
+    const ray = raycaster.ray;
+    // Solved directly rather than through Ray.intersectPlane, which refuses any hit BEHIND the
+    // ray's origin (t < 0) and returns null - and the old `?? placement.set(0, planeY, 0)`
+    // fallback then put the cat at the world origin, which draws at the CENTRE OF THE SCREEN.
+    //
+    // For an orthographic camera the ray origin sits on the near plane, so at low camera
+    // elevations the ground intersection for the bottom rows of pixels falls behind it and this
+    // fired constantly: measured with probe-unproject.html, the bottom ~76px of the screen at
+    // the 'auto' and 'eye-level' angles. The cat vanished from the bottom edge and reappeared in
+    // the middle ("在屏幕最下方的时候闪回到屏幕中间位置").
+    //
+    // Nothing outside the renderer could see it: the life engine's position stayed correct and
+    // /perception reported it correctly - only the drawing jumped. Which is why watching the
+    // bridge for position jumps found nothing at all.
+    //
+    // A negative t is perfectly meaningful here: the camera is orthographic, the ground plane is
+    // infinite, and "behind the near plane" is a statement about clipping, not about geometry.
+    const denominator = ray.direction.y; // the ground plane's normal is (0, 1, 0)
+    if (Math.abs(denominator) < 1e-9) {
+      // Truly edge-on - the ray runs parallel to the ground and there is no intersection at any
+      // t. No camera preset reaches this (elevation is clamped away from the horizon), but if one
+      // ever did, holding the previous placement is the one answer that cannot make the cat jump.
+      return placement;
+    }
+    const t = (planeY - ray.origin.y) / denominator;
+    return placement.copy(ray.origin).addScaledVector(ray.direction, t);
   }
   const headBoxHeight = SKELETON.nodes.find((node) => node.id === 'head')!.box.size[1];
   const raycaster = new THREE.Raycaster();
@@ -695,6 +718,21 @@ export function createThreeRenderer(): Renderer {
         below: Math.max(0, Math.max(...corners.map((c) => c.y)) - base.y),
         halfWidth: Math.max(...corners.map((c) => Math.abs(c.x - base.x))),
       };
+    },
+
+    /**
+     * Dev probe: does unprojecting this screen point onto the ground plane actually work, or
+     * does it hit the give-up path? See probe-unproject.ts. Not part of the host contract.
+     */
+    probeUnproject(screenX: number, screenY: number): boolean {
+      // Round-trips the SHIPPED function: unproject to the ground, project back, and see whether
+      // we land where we started. Testing the raycast directly would have gone stale the moment
+      // screenToWorld stopped using it - this cannot.
+      const world = screenToWorld(screenX, screenY, 0).clone();
+      const back = world.project(camera);
+      const bx = (back.x * 0.5 + 0.5) * width;
+      const by = (-back.y * 0.5 + 0.5) * height;
+      return Math.hypot(bx - screenX, by - screenY) < 1;
     },
 
     /** Where to hang something above the cat's head, in the same logical pixels as

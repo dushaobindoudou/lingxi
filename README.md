@@ -51,6 +51,7 @@ npm run tauri build          # 打包出 .app
 | `/probe-gait.html` | **回归探针**：身体抖动、脚底打滑、自由模式行为统计 |
 | `/probe-clips.html` | 逐个动作检测穿模，按严重程度排序 |
 | `/probe-framing.html` | **回归探针**：各视角 / 各尺寸下屏幕四边各裁掉猫的多少 |
+| `/probe-unproject.html` | **回归探针**：屏幕坐标↔世界坐标是否处处可逆（曾经在屏幕底部失效） |
 | `/rig-preview.html` `/style-lab.html` | 骨架和配色试验 |
 
 `probe-gait.html` 是几个结构性 bug 的回归检查，健康值写在文件头部。改动画系统之前先看它。

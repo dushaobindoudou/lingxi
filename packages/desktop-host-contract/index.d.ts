@@ -151,6 +151,8 @@ export interface Renderer {
    * correct one at every layer above the renderer.
    */
   readonly currentExpression?: { name: string; held: boolean };
+  /** Dev probe only (see apps/lingxi/src/probe-unproject.ts); never called in production. */
+  probeUnproject?(screenX: number, screenY: number): boolean;
   /**
    * Machine-readable description of everything this renderer supports - clips, expressions,
    * themes, camera angles. Exists so a control surface (debug console, external agent) can be

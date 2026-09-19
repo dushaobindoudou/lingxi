@@ -92,6 +92,17 @@ function approachMark(context: PerformanceContext) {
   };
 }
 
+/**
+ * Radians, screen space, for "square on to the person watching". +y is down the screen.
+ *
+ * The charge runs in diagonally from upstage, so it arrives about 37 degrees off-axis, and a clip
+ * played from there is delivered in three-quarter profile - the spine's presentation twist then
+ * cranks the head round to find the camera, which is what the turned-away face after a claw
+ * actually was. Squaring up BEFORE the hit, as a visible turn, is both better looking and the
+ * order a person would expect: face them, then strike.
+ */
+const FACING_VIEWER = Math.PI / 2;
+
 /** Where it ends up: front and centre, close to the viewer's edge of the screen. */
 function stageMark(context: PerformanceContext) {
   const { width, height } = context.viewport();
@@ -102,8 +113,8 @@ export const PERFORMANCES: PerformanceDef[] = [
   {
     id: 'angry-claw',
     name: '愤怒抓屏',
-    description: '从屏幕深处炸毛冲过来，越来越大，对着你连抓两爪（集中线＋闪白＋震屏），然后退回去',
-    durationMs: 9200,
+    description: '从屏幕深处炸毛冲过来，越来越大，站定转身对着你连抓两爪（集中线＋闪白＋震屏），然后退回去',
+    durationMs: 9500,
     beats: [
       {
         atMs: 0,
@@ -132,7 +143,9 @@ export const PERFORMANCES: PerformanceDef[] = [
         // so it grows exactly as fast as it closes.
         atMs: 1900,
         run(context) {
-          context.engine.suggestMoveTo(stageMark(context), context.now(), 1700, 7);
+          // Hold ends BEFORE the claw, not 400ms after it. It used to overrun, so the cat was
+          // still travelling when it started swiping - a strike thrown while walking.
+          context.engine.suggestMoveTo(stageMark(context), context.now(), 1150, 7);
           context.renderer.setPerformanceScale?.(2.7, 1.2);
           const at = context.petPosition();
           context.fx.speedLines(at.x, at.y, { durationMs: 1400, intensity: 0.95, track: true });
@@ -140,14 +153,27 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 3200,
+        // SQUARE UP: planted, and now turning to face the person it is about to swipe at.
+        // A visible turn, at the body's own rate - the whole point is that you see it round on
+        // you before the hit lands, rather than the hit arriving in profile and the head
+        // craning afterwards to find you.
+        atMs: 3100,
+        run(context) {
+          context.engine.clearIntent();
+          context.engine.turnTo(FACING_VIEWER);
+        },
+      },
+      {
+        // 400ms after the turn starts: 90 degrees at the body's turn rate takes ~310ms, so the
+        // cat is square before the first frame of the swipe.
+        atMs: 3500,
         run(context) {
           context.renderer.playAction?.('claw-screen');
         },
       },
       {
         // IMPACT 1 - 1.35s into claw-screen, where the left paw reaches the end of its swipe.
-        atMs: 4550,
+        atMs: 4850,
         run(context) {
           const at = context.petPosition();
           context.fx.impactFrame({ durationMs: 80 });
@@ -159,7 +185,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       {
         // IMPACT 2 - 2.65s in, the right paw. Harder than the first: a second hit that lands
         // softer than the first reads as the scene losing energy.
-        atMs: 5850,
+        atMs: 6150,
         run(context) {
           const at = context.petPosition();
           context.fx.impactFrame({ durationMs: 110, color: '#fff2f5' });
@@ -171,7 +197,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
       {
         // FOLLOW-THROUGH: still cross, still big, breathing it off.
-        atMs: 7100,
+        atMs: 7400,
         run(context) {
           context.renderer.playExpression?.('不爽', 2000);
           context.renderer.playAction?.('shake-fur');
@@ -179,7 +205,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
       {
         // RETREAT: back off and shrink away, the reverse of the opening.
-        atMs: 8000,
+        atMs: 8300,
         run(context) {
           const { width, height } = context.viewport();
           context.renderer.setPerformanceScale?.(null, 0.9);
@@ -187,7 +213,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 9200,
+        atMs: 9500,
         run(context) {
           context.renderer.setPerformanceScale?.(null, 0.4);
           context.restoreCamera();
@@ -195,7 +221,7 @@ export const PERFORMANCES: PerformanceDef[] = [
           // screen, and the spine's presentation twist only recovers about 30 degrees of that -
           // so without this the set piece ends with the expression turned away from the person
           // it was performed for. +PI/2 is down the screen, i.e. toward them.
-          context.engine.turnTo(Math.PI / 2);
+          context.engine.turnTo(FACING_VIEWER);
         },
       },
     ],
@@ -204,7 +230,7 @@ export const PERFORMANCES: PerformanceDef[] = [
     id: 'kiss-rush',
     name: '飞奔亲亲',
     description: '从屏幕深处跑过来，越来越大，凑到最近处闭眼亲一下（粉色集中线＋爱心满屏），再退回去',
-    durationMs: 9400,
+    durationMs: 9700,
     beats: [
       {
         atMs: 0,
@@ -227,7 +253,9 @@ export const PERFORMANCES: PerformanceDef[] = [
       {
         atMs: 1900,
         run(context) {
-          context.engine.suggestMoveTo(stageMark(context), context.now(), 1800, 6);
+          // Ends before the nuzzle, not during it - same reason as the claw: a cat that is still
+          // travelling when the payoff starts delivers it sideways.
+          context.engine.suggestMoveTo(stageMark(context), context.now(), 1250, 6);
           context.renderer.setPerformanceScale?.(2.5, 1.3);
           const at = context.petPosition();
           // Pink lines rather than white: same grammar, different emotion.
@@ -235,7 +263,15 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 3300,
+        // Arrive, then turn to face you. A nuzzle aimed past your shoulder is not a nuzzle.
+        atMs: 3200,
+        run(context) {
+          context.engine.clearIntent();
+          context.engine.turnTo(FACING_VIEWER);
+        },
+      },
+      {
+        atMs: 3600,
         run(context) {
           context.renderer.playExpression?.('撒娇', 3600);
           context.renderer.playAction?.('kiss-nuzzle');
@@ -243,7 +279,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
       {
         // THE KISS - 1.7s into kiss-nuzzle, exactly where the clip shuts its eyes.
-        atMs: 5000,
+        atMs: 5300,
         run(context) {
           const at = context.petPosition();
           context.fx.impactFrame({ durationMs: 150, color: '#ffe3ee' });
@@ -252,7 +288,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 5800,
+        atMs: 6100,
         run(context) {
           const { width, height } = context.viewport();
           context.fx.hearts(width * 0.28, height * 0.5, 7);
@@ -261,7 +297,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 7400,
+        atMs: 7700,
         run(context) {
           const { width, height } = context.viewport();
           context.renderer.setPerformanceScale?.(null, 1.0);
@@ -269,7 +305,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 9400,
+        atMs: 9700,
         run(context) {
           context.renderer.setPerformanceScale?.(null, 0.4);
           context.restoreCamera();
@@ -277,7 +313,7 @@ export const PERFORMANCES: PerformanceDef[] = [
           // screen, and the spine's presentation twist only recovers about 30 degrees of that -
           // so without this the set piece ends with the expression turned away from the person
           // it was performed for. +PI/2 is down the screen, i.e. toward them.
-          context.engine.turnTo(Math.PI / 2);
+          context.engine.turnTo(FACING_VIEWER);
         },
       },
     ],
@@ -333,7 +369,7 @@ export const PERFORMANCES: PerformanceDef[] = [
           context.renderer.playAction?.('sit');
           context.renderer.playExpression?.('困困', 2800);
           // Sit down facing the viewer, not facing wherever the last sprint happened to end.
-          context.engine.turnTo(Math.PI / 2);
+          context.engine.turnTo(FACING_VIEWER);
         },
       },
       {
@@ -401,7 +437,7 @@ export function createPerformanceRunner(context: PerformanceContext): Performanc
       // Put back everything a performance borrows. The zoom especially: leaving it scaled would
       // silently override the user's own size preset until they next changed it.
       context.renderer.setPerformanceScale?.(null, 0.3);
-      context.engine.turnTo(Math.PI / 2);
+      context.engine.turnTo(FACING_VIEWER);
       context.restoreCamera();
     },
   };
