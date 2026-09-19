@@ -123,7 +123,8 @@ json() {
   json_typed "$@"
 }
 
-# Build a JSON object from key=value pairs, folding in `agent` from the environment.
+# Build a JSON object from key=value pairs, folding in `agent` from the environment or
+# ~/.lingxi/agent.json.
 #
 # Values go through jq --arg, never string interpolation: the text is Chinese as often as not and
 # routinely contains quotes, and a hand-rolled printf would produce invalid JSON the moment it did.
@@ -144,7 +145,9 @@ json_typed() {
     [ -n "$value" ] || continue
     add "$key" "$value"
   done
-  [ -n "${LINGXI_AGENT:-}" ] && add agent "$LINGXI_AGENT"
+  local resolved_agent
+  resolved_agent="$(agent_id)"
+  [ -n "$resolved_agent" ] && add agent "$resolved_agent"
   if [ -z "$filter" ]; then printf '{}'; else jq -nc "${args[@]}" "{} | $filter"; fi
 }
 
@@ -180,9 +183,10 @@ case "$cmd" in
 
   task)
     [ $# -ge 1 ] || die "usage: lingxi task <state> [kind] [mood] [summary]   (lingxi help for the vocabularies)"
+    task_provider="$(agent_id)"; [ -n "$task_provider" ] || task_provider="cli"
     request POST /task-event \
       "$(json state="$1" kind="${2:-other}" mood="${3:-focused}" summary="${4:-}" \
-              provider="${LINGXI_AGENT:-cli}" taskId="${LINGXI_TASK_ID:-cli-$$}")" ;;
+              provider="$task_provider" taskId="${LINGXI_TASK_ID:-cli-$$}")" ;;
 
   say)     [ $# -ge 1 ] || die "usage: lingxi say <text>"; request POST /control "$(json say="$*")" ;;
   do)      [ $# -ge 1 ] || die "usage: lingxi do <action>"; request POST /control "$(json action="$1" priority="${LINGXI_PRIORITY:-status}")" ;;

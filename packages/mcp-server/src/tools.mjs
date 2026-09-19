@@ -255,13 +255,14 @@ export const tools = [
     description:
       'Register yourself with the cat: a name, a badge emoji and a colour. That badge is how the '
       + 'user tells your reactions apart from another agent\'s when several drive the same cat, '
-      + "so pick ONE emoji and keep it. If this server was configured with an id to speak as "
-      + '(LINGXI_AGENT), registration already happens automatically before every reaction and you '
-      + 'do not need to call this - reach for it only to change that identity or to set a logo.',
+      + "so pick ONE emoji and keep it. If this server has a configured id to speak as "
+      + '(~/.lingxi/agent.json, or LINGXI_AGENT), registration already happens automatically '
+      + 'before every reaction and you do not need to call this - reach for it only to change '
+      + 'that identity or to set a logo.',
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Stable id for you, e.g. "claude-code". Defaults to the id this server is configured with (LINGXI_AGENT), which is the one your reactions are already signed with.' },
+        id: { type: 'string', description: 'Stable id for you, e.g. "claude-code". Defaults to the id this server is configured with (~/.lingxi/agent.json), which is the one your reactions are already signed with.' },
         name: { type: 'string', maxLength: 24, description: 'Display name.' },
         badge: { type: 'string', description: 'One emoji you choose for yourself. Max 2 characters.' },
         color: { type: 'string', description: 'Badge ring colour, #rgb or #rrggbb.' },
@@ -276,7 +277,7 @@ export const tools = [
     },
     async run({ id, name, badge, color, logo }) {
       const target = (id ?? bridge.agentId() ?? '').trim();
-      if (!target) throw new Error('Give an id, or configure one for this server via LINGXI_AGENT.');
+      if (!target) throw new Error('Give an id, or configure one for this server in ~/.lingxi/agent.json.');
       const result = await bridge.register({ id: target, name, badge, color, logo });
       return ok(
         `Registered as ${result.agent?.badge ?? ''} ${result.agent?.name ?? target}.`,

@@ -45,13 +45,7 @@ MCP 的每个工具调用都是一次**授权面**——不少宿主会逐个工
   "mcpServers": {
     "lingxi": {
       "command": "node",
-      "args": ["<repo>/packages/mcp-server/src/index.mjs"],
-      "env": {
-        "LINGXI_AGENT": "claude-code",        // 你的 id，见下方「署名」
-        "LINGXI_AGENT_NAME": "Claude Code",   // 可选，显示名
-        "LINGXI_AGENT_BADGE": "🅲",           // 可选，自己挑一个 emoji，别每次换
-        "LINGXI_AGENT_COLOR": "#D97757"       // 可选，徽章环的颜色
-      }
+      "args": ["<repo>/packages/mcp-server/src/index.mjs"]
     }
   }
 }
@@ -63,25 +57,38 @@ MCP 的每个工具调用都是一次**授权面**——不少宿主会逐个工
 [mcp_servers.lingxi]
 command = "node"
 args = ["<repo>/packages/mcp-server/src/index.mjs"]
-
-[mcp_servers.lingxi.env]
-LINGXI_AGENT = "codex"
-LINGXI_AGENT_NAME = "Codex"
-LINGXI_AGENT_BADGE = "⌘"
 ```
 
 token 由 server 自己从配置目录读，不用写进配置文件。
+署名也不写在这里 —— 见下方「署名」，写进 `~/.lingxi/agent.json` 一次即可。
 
-### 署名（`LINGXI_AGENT`）
+### 署名（`~/.lingxi/agent.json`，或 `LINGXI_AGENT`）
 
 同一台机器上常常不止一个 agent 在驱同一只猫，而**猫只有一张脸**。应用按调用方自报的
 `agent` 做仲裁并显示徽章，所以不报自己的调用会一律落成 `anonymous`（💻）——
 用户分不清是谁在反应，`report` 也压不过 `anonymous` 的 `alert`。
 
-`LINGXI_AGENT` 就是这件事的一次性配置：设了它，这个 server 的**每一次**调用都会带上它，
-并在争夺舞台前自动 `POST /agents` 补注册（注册表是纯内存的，重启应用就没了，
-而 bridge token 是持久的——所以"缓存一下已经注册过"这种优化在这里是错的）。
-CLI 读的是同一个变量名，两条路因此署名一致。
+**推荐做法：把身份写进机器级文件，一次配好，所有宿主共用。**
+
+```json
+// ~/.lingxi/agent.json
+{ "id": "workbuddy", "name": "WorkBuddy", "badge": "🐧", "color": "#0AC89F" }
+```
+
+MCP server 与 `lingxi` CLI **读的是同一份文件**，所以两条路署名一致。
+设了它，这个 server 的**每一次**调用都会带上这个 id，并在争夺舞台前自动
+`POST /agents` 补注册（注册表是纯内存的，重启应用就没了，而 bridge token 是持久的
+——所以"缓存一下已经注册过"这种优化在这里是错的）。
+
+`LINGXI_AGENT` / `LINGXI_AGENT_NAME` / `LINGXI_AGENT_BADGE` / `LINGXI_AGENT_COLOR`
+仍然有效，**优先级高于文件**，供单个宿主临时覆盖。
+
+> ⚠️ **但不要把它们写进宿主的 MCP 配置里的 `env`。** 有些宿主（WorkBuddy 就是）
+> 把第三方 MCP server 的授权按 `sha256(command|sorted(args)|sorted(env 的【键名】))` 记账，
+> 往 `env` 里增删一个键就会换一个哈希、让已记录的信任失效，宿主于是**拒绝启动这个 server**
+> ——工具在会话里凭空消失，而且因为进程没被拉起来，server 内部任何日志都不会执行，
+> 从表象完全看不出是配置问题。身份放文件里，宿主的 `env` 就能一直留空，哈希永远有效。
+> 细节见 `packages/mcp-server/src/bridge.mjs` 头部注释。
 
 验证：
 

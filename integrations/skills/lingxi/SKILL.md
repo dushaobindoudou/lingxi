@@ -23,8 +23,17 @@ lingxi integration   # 运行中的应用吐出的完整契约，以它为准
 如果命令不存在或 `lingxi health` 连不上，**就说猫没启动**，不要假装做了。
 
 也有 MCP server（`lingxi_*` 工具），宿主想要带类型的 schema 时用。两条路同一个桥，
-**两条路也认同一个署名变量**：设了 `LINGXI_AGENT`，每一次调用都会带上它并自动补注册；
-不设的话两边都会以 `anonymous`（💻）出现，用户分不清是哪个 agent。
+**两条路也认同一个署名**：身份写在 `~/.lingxi/agent.json`，两边读的是同一份，
+所以署同一个名并自动补注册；不设的话两边都会以 `anonymous`（💻）出现，用户分不清是哪个 agent。
+
+```json
+{ "id": "claude-code", "name": "Claude Code", "badge": "🅲", "color": "#D97757" }
+```
+
+`LINGXI_AGENT`（及 `_NAME`/`_BADGE`/`_COLOR`）仍然可用且优先级高于文件，
+但**别把它们写进宿主 MCP 配置的 `env`**——有些宿主把 server 授权按配置哈希记账，
+`env` 键一变信任就失效、server 直接不被启动。原因见 `integrations/README.md` 的「署名」。
+
 MCP 的 `lingxi_task` 同样接受 `mood`——别以为只有 CLI 有。
 
 ---

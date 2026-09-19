@@ -11,6 +11,7 @@
 //
 // 需要灵犀在运行。会真的让猫反应一次（绿灯 + 摇旗）。
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -23,13 +24,50 @@ const TOKEN_FILE =
   process.env.LINGXI_TOKEN_FILE
   ?? join(homedir(), 'Library', 'Application Support', 'com.dushaobin.lingxi-desktop', 'bridge-token');
 
-// 这份身份必须和 ~/.workbuddy/mcp.json 里给 lingxi server 配的 env 一致。
-const PROFILE = {
-  LINGXI_AGENT: 'workbuddy',
-  LINGXI_AGENT_NAME: 'WorkBuddy',
-  LINGXI_AGENT_BADGE: '🐧',
-  LINGXI_AGENT_COLOR: '#0AC89F',
+// 这份身份现在**不通过 mcp.json 的 env 传**，而是读 ~/.lingxi/agent.json —— 见下面「接入
+// 闸门」。探针默认也不注入任何 LINGXI_AGENT_*，走的就是 WorkBuddy 真实的启动形态：一个只有
+// command + args 的 server 配置，身份从机器级文件解析。
+//
+// （`LINGXI_AGENT` 优先级仍然高于文件，供单个宿主临时覆盖；那条支路只有 3 行 pick()，不在此
+// 重复测——真正会静默坏掉的是文件那条。）
+const PROFILE = {};
+
+// ---------------------------------------------------------------- 接入闸门
+//
+// WorkBuddy 把第三方 MCP server 的授权按**配置哈希**记账。stdio 的哈希算法是：
+//
+//   sha256(`${command}|${sorted(args)}|${sorted(env 的 KEY 名字)}`)
+//
+// 注意最后一项是**键名**，不是值。所以往 env 里加一个键、改一个键名，都会换出一个新哈希，
+// 存量的授权记录（~/.workbuddy/mcp-approvals.json 里的 `<hash>::lingxi`）就不再匹配，
+// WorkBuddy 从而拒绝启动这个 server，它提供的 `mcp__lingxi__*` 工具在会话里凭空消失。
+//
+// 这个失败**在 server 内部完全不可见**：进程根本没被拉起来，所以 bridge.mjs 里任何一行日志
+// 都不会执行，探针之外的任何自检也都跑不到。表象只是"猫突然不反应了"，看起来像桌宠坏了，
+// 而不是配置坏了。2026-09-19 就是这么踩的一次：给 mcp.json 加了 4 个 LINGXI_AGENT_* 环境变量，
+// 猫当场失去全部反应，排查绕了一大圈才发现根因在宿主侧的信任闸门。
+//
+// 所以这里显式复算哈希并对账，放在最前面——门都进不去，后面所有检查都没有意义。
+// 顺带把"身份文件在不在"也一起验了：身份现在依赖它，它缺失同样会静默退化成 anonymous。
+const MCP_JSON = join(homedir(), '.workbuddy', 'mcp.json');
+const MCP_APPROVALS = join(homedir(), '.workbuddy', 'mcp-approvals.json');
+const AGENT_FILE = join(homedir(), '.lingxi', 'agent.json');
+
+const readJson = (file) => {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
 };
+
+/** 复刻 WorkBuddy `calculateConfigHash` 的 stdio 分支，一行都不能差。 */
+function workbuddyConfigHash(entry) {
+  const input = `${entry.command ?? ''}|`
+    + `${(entry.args ?? []).map(String).sort().join(',')}|`
+    + `${Object.keys(entry.env ?? {}).sort().join(',')}`;
+  return createHash('sha256').update(input).digest('hex');
+}
 
 let failures = 0;
 const check = (label, pass, detail = '') => {
@@ -89,6 +127,28 @@ const call = async (name, args) => {
 try {
   await send('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'verify', version: '1' } });
   notify('notifications/initialized');
+
+  console.log('\n— 接入闸门（WorkBuddy）');
+  const configured = readJson(MCP_JSON)?.mcpServers?.lingxi ?? null;
+  if (!configured) {
+    check('~/.workbuddy/mcp.json 里配了 lingxi', false, '没配 → WorkBuddy 会话里不会有 mcp__lingxi__* 工具');
+  } else {
+    const hash = workbuddyConfigHash(configured);
+    const approvals = readJson(MCP_APPROVALS) ?? {};
+    const approved = Object.prototype.hasOwnProperty.call(approvals, `${hash}::lingxi`);
+    check('lingxi 的配置哈希已被信任', approved,
+      approved ? hash.slice(0, 16) : `未信任 ${hash.slice(0, 16)} → 打开连接器管理页给 lingxi 点「信任」`);
+    const envKeys = Object.keys(configured.env ?? {});
+    check('mcp.json 里没有 env（哈希才稳定）', envKeys.length === 0,
+      envKeys.length ? `有 ${envKeys.join(', ')} → 每次增删键都会让上面那条失效` : '身份走 ~/.lingxi/agent.json');
+  }
+
+  const fileAgent = readJson(AGENT_FILE);
+  check('~/.lingxi/agent.json 存在且带 id', Boolean(fileAgent?.id),
+    fileAgent?.id ? `${fileAgent.badge ?? ''} ${fileAgent.name ?? ''} (${fileAgent.id})`.trim() : `缺 ${AGENT_FILE}`);
+  if (fileAgent?.id) {
+    check('文件里的 id 是 workbuddy', fileAgent.id === 'workbuddy', `实际 ${fileAgent.id}`);
+  }
 
   console.log('\n— 工具契约');
   const list = await send('tools/list', {});
