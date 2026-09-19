@@ -11,6 +11,36 @@ function ok(summary, data) {
   return { summary, ...(data === undefined ? {} : { data }) };
 }
 
+/**
+ * Append the attribution warning, if the server could not register the identity it speaks for.
+ *
+ * Silent degradation is the thing to avoid: a reaction that shows up with the neutral two-letter
+ * fallback badge instead of the caller's own looks, from the model's side, exactly like success.
+ */
+function attributed(summary) {
+  const warning = bridge.identityWarning();
+  return warning ? `${summary} (${warning})` : summary;
+}
+
+/**
+ * The `priority` knob, mirroring the field the app reads on POST /control.
+ *
+ * The app quietly rewrites an unrecognised value to "status"; declaring the enum here means a
+ * typo is refused by the schema the model reads instead of being silently downgraded. Every
+ * stage-contending tool defaults to the priority that fits it, so the common case needs no
+ * thought - pass one only when this particular reaction is unusually urgent or unusually cheap.
+ */
+const PRIORITY = {
+  type: 'string',
+  enum: ['ambient', 'status', 'report', 'alert'],
+  description:
+    'How much the user needs to see this, when another agent is already driving the cat. ' +
+    'ambient = atmosphere, droppable; status = something changed; report = something finished; ' +
+    'alert = the user must look now. Defaults to the right one for this tool. A reaction that ' +
+    'does not outrank what is already playing is DROPPED rather than queued - that is intended, ' +
+    'do not retry it.',
+};
+
 export const tools = [
   {
     name: 'lingxi_capabilities',
@@ -60,16 +90,25 @@ export const tools = [
       properties: {
         text: { type: 'string', description: 'What the cat says. Max 140 chars; shorter is better.' },
         seconds: { type: 'number', description: 'How long to leave it up. Defaults to a length-based guess.' },
+        priority: PRIORITY,
       },
       required: ['text'],
     },
-    async run({ text, seconds }) {
-      const result = await bridge.control({ say: text, ...(seconds ? { sayMs: Math.round(seconds * 1000) } : {}) });
+    async run({ text, seconds, priority }) {
+      const result = await bridge.control({
+        say: text,
+        ...(seconds ? { sayMs: Math.round(seconds * 1000) } : {}),
+        priority: priority ?? 'status',
+      });
       // The bridge reports what it actually did with the text, including any truncation. This
       // used to echo the caller's own string back unconditionally, so a 150-character line came
       // back in full while the cat displayed 140 - the model then told the user something the
       // cat never said.
-      return ok(`Said: ${result.saidText ?? text}${result.truncated ? ` (truncated to ${result.saidText.length} characters - the bubble holds no more)` : ''}`);
+      return ok(
+        attributed(
+          `Said: ${result.saidText ?? text}${result.truncated ? ` (truncated to ${result.saidText.length} characters - the bubble holds no more)` : ''}`,
+        ),
+      );
     },
   },
   {
@@ -84,15 +123,17 @@ export const tools = [
         expression: { type: 'string', description: 'Expression name, e.g. 开心 / 认真 / 不爽.' },
         action: { type: 'string', description: 'Action clip id, e.g. paw-wave / stretch-front.' },
         seconds: { type: 'number', description: 'How long to hold the expression.' },
+        priority: PRIORITY,
       },
     },
-    async run({ expression, action, seconds }) {
+    async run({ expression, action, seconds, priority }) {
       if (!expression && !action) throw new Error('Give an expression, an action, or both.');
       const result = await bridge.control({
         ...(expression ? { expression, holdMs: Math.round((seconds ?? 4) * 1000) } : {}),
         ...(action ? { action } : {}),
+        priority: priority ?? 'status',
       });
-      return ok(`Applied: ${result.applied?.join(', ')}`);
+      return ok(attributed(`Applied: ${result.applied?.join(', ')}`));
     },
   },
   {
@@ -103,12 +144,15 @@ export const tools = [
       'moments that earn it - a long build finally going green, not every file write.',
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'Performance id from lingxi_capabilities.' } },
+      properties: {
+        id: { type: 'string', description: 'Performance id from lingxi_capabilities.' },
+        priority: PRIORITY,
+      },
       required: ['id'],
     },
-    async run({ id }) {
-      const result = await bridge.control({ perform: id });
-      return ok(`Performing ${id}.`);
+    async run({ id, priority }) {
+      await bridge.control({ perform: id, priority: priority ?? 'report' });
+      return ok(attributed(`Performing ${id}.`));
     },
   },
   {
@@ -119,12 +163,15 @@ export const tools = [
       'the laser is chased and never caught. Good for "you have been at this for two hours".',
     inputSchema: {
       type: 'object',
-      properties: { toy: { type: 'string', enum: ['yarn', 'feather', 'laser', 'none'] } },
+      properties: {
+        toy: { type: 'string', enum: ['yarn', 'feather', 'laser', 'none'] },
+        priority: PRIORITY,
+      },
       required: ['toy'],
     },
-    async run({ toy }) {
-      const result = await bridge.control({ toy });
-      return ok(toy === 'none' ? 'Put the toy away.' : `Put out the ${toy}.`);
+    async run({ toy, priority }) {
+      await bridge.control({ toy, priority: priority ?? 'status' });
+      return ok(attributed(toy === 'none' ? 'Put the toy away.' : `Put out the ${toy}.`));
     },
   },
   {
@@ -206,22 +253,35 @@ export const tools = [
   {
     name: 'lingxi_register',
     description:
-      'Register yourself with the cat, once, at the start of a session. Pick ONE emoji and a '
-      + 'colour that represent you and keep using them - that badge is how the user tells your '
-      + "reactions apart from another agent's when several drive the same cat. Call this first.",
+      'Register yourself with the cat: a name, a badge emoji and a colour. That badge is how the '
+      + 'user tells your reactions apart from another agent\'s when several drive the same cat, '
+      + "so pick ONE emoji and keep it. If this server was configured with an id to speak as "
+      + '(LINGXI_AGENT), registration already happens automatically before every reaction and you '
+      + 'do not need to call this - reach for it only to change that identity or to set a logo.',
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Stable id for you, e.g. "claude-code".' },
+        id: { type: 'string', description: 'Stable id for you, e.g. "claude-code". Defaults to the id this server is configured with (LINGXI_AGENT), which is the one your reactions are already signed with.' },
         name: { type: 'string', maxLength: 24, description: 'Display name.' },
-        badge: { type: 'string', description: 'One emoji you choose for yourself.' },
+        badge: { type: 'string', description: 'One emoji you choose for yourself. Max 2 characters.' },
         color: { type: 'string', description: 'Badge ring colour, #rgb or #rrggbb.' },
+        logo: {
+          type: 'string',
+          description:
+            'A mark to show next to the cat when it speaks for you: a small flat SVG document ' +
+            '(starting with <svg) or a data:image/(svg+xml|png|webp) URI. No <script>, no external ' +
+            'hrefs, no <image> - they are refused. Readable at 22px.',
+        },
       },
-      required: ['id'],
     },
-    async run({ id, name, badge, color }) {
-      const result = await bridge.register({ id, name, badge, color });
-      return ok(`Registered as ${result.agent?.badge ?? ''} ${result.agent?.name ?? id}.`, result.agent);
+    async run({ id, name, badge, color, logo }) {
+      const target = (id ?? bridge.agentId() ?? '').trim();
+      if (!target) throw new Error('Give an id, or configure one for this server via LINGXI_AGENT.');
+      const result = await bridge.register({ id: target, name, badge, color, logo });
+      return ok(
+        `Registered as ${result.agent?.badge ?? ''} ${result.agent?.name ?? target}.`,
+        result.agent,
+      );
     },
   },
   {
@@ -230,7 +290,8 @@ export const tools = [
       'Report what your work is DOING and let the cat decide how to show it. Preferred over '
       + 'picking expressions yourself: the user can retune the state-to-reaction mapping once '
       + 'and have it apply to every agent, and you do not need to know the clip library. Send '
-      + 'one whenever a task changes state.',
+      + 'one whenever a task changes state. Sending `mood` alongside is what separates a status '
+      + 'light from a pet - it is the one thing only you can supply.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -242,25 +303,39 @@ export const tools = [
           type: 'string',
           enum: ['build', 'test', 'deploy', 'review', 'search', 'write', 'chat', 'other'],
         },
+        mood: {
+          type: 'string',
+          enum: ['focused', 'proud', 'tender', 'sad', 'frustrated', 'anxious', 'weary', 'playful', 'curious'],
+          description:
+            'How the work FEELS, in one word. This is the dimension that makes the cat answer a ' +
+            'person rather than a process - and you are the only one who can judge it, because ' +
+            'you have the content. Send it whenever you can. The cat does not mirror the mood: ' +
+            'frustrated is met with comfort, weary with an invitation to stop, anxious with ' +
+            'steadiness. Only the good moods are joined.',
+        },
         taskId: { type: 'string', description: 'Stable id for this piece of work.' },
         summary: { type: 'string', maxLength: 240, description: "One line, in the user's language." },
-        agent: { type: 'string', description: 'Your registered id.' },
+        agent: { type: 'string', description: 'Override who this is reported as. Defaults to the id this server is configured with - only set it to speak as someone else.' },
       },
       required: ['state'],
     },
-    async run({ state, kind, taskId, summary, agent }) {
+    async run({ state, kind, mood, taskId, summary, agent }) {
+      const who = agent ?? bridge.agentId();
       const result = await bridge.taskEvent({
         state,
         kind,
+        mood,
         taskId,
         summary,
         agent,
-        provider: agent ?? 'mcp',
+        provider: who ?? 'mcp',
       });
       return ok(
-        result.recorded === false
-          ? `Not recorded: ${result.reason ?? 'unrecognised event'}`
-          : `Reported ${kind ?? 'other'} ${state}.`,
+        attributed(
+          result.recorded === false
+            ? `Not recorded: ${result.reason ?? 'unrecognised event'}`
+            : `Reported ${kind ?? 'other'} ${state}${mood ? ` (${mood})` : ''}.`,
+        ),
       );
     },
   },

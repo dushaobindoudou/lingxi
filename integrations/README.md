@@ -43,7 +43,16 @@ MCP 的每个工具调用都是一次**授权面**——不少宿主会逐个工
 ```jsonc
 {
   "mcpServers": {
-    "lingxi": { "command": "node", "args": ["<repo>/packages/mcp-server/src/index.mjs"] }
+    "lingxi": {
+      "command": "node",
+      "args": ["<repo>/packages/mcp-server/src/index.mjs"],
+      "env": {
+        "LINGXI_AGENT": "claude-code",        // 你的 id，见下方「署名」
+        "LINGXI_AGENT_NAME": "Claude Code",   // 可选，显示名
+        "LINGXI_AGENT_BADGE": "🅲",           // 可选，自己挑一个 emoji，别每次换
+        "LINGXI_AGENT_COLOR": "#D97757"       // 可选，徽章环的颜色
+      }
+    }
   }
 }
 ```
@@ -54,9 +63,31 @@ MCP 的每个工具调用都是一次**授权面**——不少宿主会逐个工
 [mcp_servers.lingxi]
 command = "node"
 args = ["<repo>/packages/mcp-server/src/index.mjs"]
+
+[mcp_servers.lingxi.env]
+LINGXI_AGENT = "codex"
+LINGXI_AGENT_NAME = "Codex"
+LINGXI_AGENT_BADGE = "⌘"
 ```
 
 token 由 server 自己从配置目录读，不用写进配置文件。
+
+### 署名（`LINGXI_AGENT`）
+
+同一台机器上常常不止一个 agent 在驱同一只猫，而**猫只有一张脸**。应用按调用方自报的
+`agent` 做仲裁并显示徽章，所以不报自己的调用会一律落成 `anonymous`（💻）——
+用户分不清是谁在反应，`report` 也压不过 `anonymous` 的 `alert`。
+
+`LINGXI_AGENT` 就是这件事的一次性配置：设了它，这个 server 的**每一次**调用都会带上它，
+并在争夺舞台前自动 `POST /agents` 补注册（注册表是纯内存的，重启应用就没了，
+而 bridge token 是持久的——所以"缓存一下已经注册过"这种优化在这里是错的）。
+CLI 读的是同一个变量名，两条路因此署名一致。
+
+验证：
+
+```sh
+lingxi agents     # 应看到你的 id 带着你挑的徽章
+```
 
 ---
 

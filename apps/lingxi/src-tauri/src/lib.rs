@@ -1815,7 +1815,7 @@ fn json_type_name(value: &serde_json::Value) -> &'static str {
 /// a second of staleness to every queued reaction, which is most of the budget they have.
 fn spawn_reaction_drain(app: tauri::AppHandle) {
     thread::spawn(move || loop {
-        thread::sleep(Duration::from_millis(250));
+        thread::sleep(app.state::<PowerState>().drain_interval());
         let now = now_millis();
         let registry = app.state::<AgentRegistry>();
         if !registry.stage_free_at(now) {
@@ -2831,6 +2831,52 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
     }
 }
 
+/// How hard the app is currently working, set by the webview's power governor.
+///
+/// A desktop pet runs every hour the machine does, so its IDLE cost is its cost. The 60Hz cursor
+/// thread below is the most expensive thing here when nothing is happening - it wakes sixty times
+/// a second forever, and it was doing that with the lid shut, to track a cursor nobody was moving
+/// for a cat nobody could see.
+///
+/// The webview is the layer that knows: requestAnimationFrame stopping IS the compositor saying
+/// nobody can see this window. So it decides the tier and tells us, and everything on this side
+/// slows to match.
+#[derive(Default)]
+struct PowerState {
+    /// 0 = active, 1 = idle, 2 = dormant. An atomic because the polling threads read it every
+    /// pass and a mutex there would be its own small cost.
+    tier: std::sync::atomic::AtomicU8,
+}
+
+impl PowerState {
+    fn cursor_interval(&self) -> Duration {
+        match self.tier.load(Ordering::Relaxed) {
+            0 => Duration::from_millis(16),  // ~60Hz: dragging has to feel direct
+            1 => Duration::from_millis(100), // 10Hz: enough to notice the user come back
+            _ => Duration::from_millis(500), // nobody can see the cat; just watch for a wake
+        }
+    }
+
+    fn drain_interval(&self) -> Duration {
+        match self.tier.load(Ordering::Relaxed) {
+            2 => Duration::from_millis(1000),
+            _ => Duration::from_millis(250),
+        }
+    }
+}
+
+/// Called by the webview when its power tier changes. See PowerState.
+#[tauri::command]
+fn set_power_tier(state: State<PowerState>, tier: String) {
+    let value = match tier.as_str() {
+        "active" => 0,
+        "idle" => 1,
+        "dormant" => 2,
+        _ => return,
+    };
+    state.tier.store(value, Ordering::Relaxed);
+}
+
 /// Poll the OS-level cursor position and emit it as "global-cursor" events, independent
 /// of window hit-testing (a click-through window receives no ordinary mouse events at all).
 ///
@@ -2854,7 +2900,8 @@ fn spawn_cursor_poller(app: tauri::AppHandle, screen_height_points: f64, scale_f
                 last = (x, y);
                 let _ = app.emit("global-cursor", CursorPayload { x, y });
             }
-            thread::sleep(Duration::from_millis(16)); // ~60Hz
+            // Rate set by the power governor rather than fixed at 60Hz - see PowerState.
+            thread::sleep(app.state::<PowerState>().cursor_interval());
         }
     });
 }
@@ -3229,7 +3276,8 @@ pub fn run() {
             get_claude_task_events,
             install_claude_hooks,
             uninstall_claude_hooks,
-            claude_hooks_installed
+            claude_hooks_installed,
+            set_power_tier
         ])
         .setup(|app| {
             // Show the app in the Dock (user request 2026-09-12: "运行时展示在 dock 中").
@@ -3279,6 +3327,10 @@ pub fn run() {
             // whether the (globally-polled) cursor is over the model's hit region.
             let _ = window.set_ignore_cursor_events(true);
 
+            // Managed BEFORE the threads that read it every pass - Tauri's state() panics on an
+            // unmanaged type, so registering it further down (where the other state lives) meant
+            // the cursor poller took the whole app down on its first tick.
+            app.manage(PowerState::default());
             spawn_cursor_poller(app.handle().clone(), screen_height_points, scale_factor);
             spawn_reaction_drain(app.handle().clone());
 

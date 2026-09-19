@@ -954,3 +954,72 @@ test('a fast mover still arrives instead of orbiting - speed is bounded by the t
     assert.ok(arrived, `speed ${speed} orbited its destination instead of reaching it`);
   }
 });
+
+// Screen edges are not interchangeable. On macOS the right edge is the emptiest strip on a
+// desktop and the top is the worst (menu bar the whole way across, window controls at its left
+// end), so a pet that treats all four the same spends a quarter of its life on the strip the
+// user clicks most.
+test('the cat prefers the edges the host says are free', () => {
+  const engine = createLifeEngine({
+    bounds: { width: 1470, height: 956 }, position: { x: 735, y: 900 }, random: seeded(41),
+  });
+  engine.setMargins({ top: -200, bottom: -200, left: 0, right: 0, roam: { top: 362, bottom: 26, left: 24, right: 24 } });
+  engine.setEdgePreference({ right: 1.6, left: 1.15, bottom: 0.7, top: 0.25, worstCorner: { x: 0, y: 0 } });
+
+  const cursor = { x: 660, y: 380 }; // the user working mid-screen
+  const zone = { right: 0, left: 0, bottom: 0, other: 0 };
+  const frames = 60 * 400;
+  for (let f = 0; f < frames; f += 1) {
+    const { x, y } = engine.tick(f * 16, cursor).position;
+    if (x > 1470 * 0.82) zone.right += 1;
+    else if (x < 1470 * 0.18) zone.left += 1;
+    else if (y > 956 * 0.82) zone.bottom += 1;
+    else zone.other += 1;
+  }
+  assert.ok(zone.right > zone.left, `right (${zone.right}) should beat left (${zone.left})`);
+  assert.ok(zone.right > zone.bottom, `right (${zone.right}) should beat bottom (${zone.bottom})`);
+  // ...and it must still USE the other edges. A cat that only ever sits in one place reads as
+  // broken, not as polite.
+  assert.ok(zone.left > frames * 0.02, 'the left edge should still get used');
+  assert.ok(zone.bottom > frames * 0.02, 'the bottom edge should still get used');
+});
+
+test('edge safety is measured on one scale, not one per axis', () => {
+  // The bug: x was normalised by the box width and y by its height. The roam box is far wider
+  // than tall (the top margin is a whole body height), so the same physical distance scored
+  // ~2.5x higher vertically and the bottom edge won almost every roll on arithmetic alone.
+  // A square box cannot show the bug; a wide one can.
+  const wide = createLifeEngine({
+    bounds: { width: 2000, height: 700 }, position: { x: 1000, y: 650 }, random: seeded(42),
+  });
+  wide.setMargins({ top: 0, bottom: 0, left: 0, right: 0, roam: { top: 400, bottom: 20, left: 20, right: 20 } });
+  wide.setEdgePreference({ right: 1.6, left: 1.15, bottom: 0.7, top: 0.25 });
+  const cursor = { x: 900, y: 430 };
+  let right = 0, bottom = 0;
+  for (let f = 0; f < 60 * 400; f += 1) {
+    const { x, y } = wide.tick(f * 16, cursor).position;
+    if (x > 2000 * 0.82) right += 1;
+    else if (y > 700 * 0.9) bottom += 1;
+  }
+  assert.ok(right > bottom, `the far side should win on real distance: right ${right} vs bottom ${bottom}`);
+});
+
+test('the cat rarely walks the full width of the screen', () => {
+  const engine = createLifeEngine({
+    bounds: { width: 1470, height: 956 }, position: { x: 735, y: 900 }, random: seeded(43),
+  });
+  engine.setMargins({ top: -200, bottom: -200, left: 0, right: 0, roam: { top: 362, bottom: 26, left: 24, right: 24 } });
+  engine.setEdgePreference({ right: 1.6, left: 1.15, bottom: 0.7, top: 0.25 });
+  const cursor = { x: 660, y: 380 };
+  let crossings = 0;
+  let side = null;
+  for (let f = 0; f < 60 * 600; f += 1) {
+    const { x } = engine.tick(f * 16, cursor).position;
+    const now = x < 1470 * 0.35 ? 'L' : x > 1470 * 0.65 ? 'R' : null;
+    if (now && side && now !== side) crossings += 1;
+    if (now) side = now;
+  }
+  // Ten simulated minutes. Was 17 before the opposite-edge penalty and the patrol bias were
+  // tuned; anything near that is the cat marching back and forth through the user's work.
+  assert.ok(crossings <= 12, `crossed the full width ${crossings} times in 10 minutes`);
+});

@@ -51,6 +51,71 @@ function baseUrl() {
   return `http://127.0.0.1:${port}`;
 }
 
+/**
+ * Who this server speaks for.
+ *
+ * The bridge is deliberately agent-agnostic: a reaction is attributed to whoever names itself on
+ * the call, and the app's own integration contract asks every caller to "send `agent` on every
+ * /control call". That makes naming yourself the caller's job - which meant that until this
+ * existed, every reaction from this server was filed under `anonymous` with a neutral badge,
+ * indistinguishable from every other agent sharing the cat.
+ *
+ * So the identity is configuration rather than something each tool call has to remember. The
+ * variable names match the `lingxi` CLI exactly, so the script path and the MCP path attribute
+ * identically and a machine driving both does not end up looking like two different agents.
+ */
+const AGENT_ID = (process.env.LINGXI_AGENT ?? '').trim();
+
+const AGENT_PROFILE = {
+  name: (process.env.LINGXI_AGENT_NAME ?? '').trim() || undefined,
+  badge: (process.env.LINGXI_AGENT_BADGE ?? '').trim() || undefined,
+  color: (process.env.LINGXI_AGENT_COLOR ?? '').trim() || undefined,
+};
+
+/// Only these fields take over the cat's performance, and only these contend for the stage - the
+/// same set the app uses. Registering is only worth a round trip when the call will actually be
+/// attributed to something the user can see.
+const STAGE_FIELDS = ['expression', 'action', 'say', 'perform', 'toy'];
+
+let identityWarning = null;
+
+/** Fold the configured identity into a request body. An explicit `agent` on the call still wins,
+ *  so a caller that wants to speak as someone else can. */
+function stamp(body) {
+  if (!AGENT_ID || body.agent) return body;
+  return { ...body, agent: AGENT_ID };
+}
+
+/**
+ * Make sure the id we are about to speak as actually exists in the app's registry.
+ *
+ * Deliberately called on every stage-claiming call rather than memoised for the process. The
+ * registry is pure in-memory and is lost when the app restarts, while the bridge token is
+ * persisted and reused - so a restart leaves no signal that would let a cached "already
+ * registered" flag notice it had gone stale. `POST /agents` is idempotent and keeps the existing
+ * entry's claim count, so re-sending it costs one loopback round trip and no state.
+ *
+ * Failure is never fatal: the call still goes out and the app attributes it to the id anyway,
+ * just with the fallback two-letter badge. That degradation is recorded and surfaced on the tool
+ * result instead of being swallowed - an unattributed reaction the model believes was attributed
+ * is the failure mode worth avoiding here.
+ */
+async function ensureRegistered() {
+  if (!AGENT_ID) return;
+  try {
+    await call('/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: AGENT_ID, ...AGENT_PROFILE }),
+    });
+    identityWarning = null;
+  } catch (error) {
+    identityWarning =
+      `not registered as "${AGENT_ID}": ${error?.message ?? error} - reactions will show as ` +
+      'anonymous until this is fixed';
+  }
+}
+
 async function call(path, init, { retriedAuth = false } = {}) {
   let response;
   const token = readToken({ refresh: retriedAuth });
@@ -134,20 +199,34 @@ export const bridge = {
       body: JSON.stringify(identity),
     }),
 
-  taskEvent: (event) =>
-    call('/task-event', {
+  taskEvent: async (event) => {
+    const body = stamp(event);
+    // A task event always produces a reaction, so attribution is always worth the round trip.
+    await ensureRegistered();
+    return call('/task-event', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(event),
-    }),
+      body: JSON.stringify(body),
+    });
+  },
   events: () => call('/debug/events'),
 
-  control: (command) =>
-    call('/control', {
+  control: async (command) => {
+    const body = stamp(command);
+    if (STAGE_FIELDS.some((field) => body[field] !== undefined)) {
+      await ensureRegistered();
+    }
+    return call('/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(command),
-    }),
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** The configured identity, for tools that want to say who they speak for. */
+  agentId: () => AGENT_ID || null,
+  /** Why attribution may be degraded, or null. Read after a call, surfaced on the result. */
+  identityWarning: () => identityWarning,
 
   remember: (text, kind) =>
     call('/memory', {

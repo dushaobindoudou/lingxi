@@ -22,7 +22,10 @@ lingxi integration   # 运行中的应用吐出的完整契约，以它为准
 `lingxi` 在仓库的 `integrations/cli/lingxi`。它自己读鉴权 token，不用配置。
 如果命令不存在或 `lingxi health` 连不上，**就说猫没启动**，不要假装做了。
 
-也有 MCP server（`lingxi_*` 工具），宿主想要带类型的 schema 时用。两条路同一个桥。
+也有 MCP server（`lingxi_*` 工具），宿主想要带类型的 schema 时用。两条路同一个桥，
+**两条路也认同一个署名变量**：设了 `LINGXI_AGENT`，每一次调用都会带上它并自动补注册；
+不设的话两边都会以 `anonymous`（💻）出现，用户分不清是哪个 agent。
+MCP 的 `lingxi_task` 同样接受 `mood`——别以为只有 CLI 有。
 
 ---
 

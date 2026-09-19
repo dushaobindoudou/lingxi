@@ -117,6 +117,25 @@ async function main() {
   }
   syncMargins();
 
+  // Which screen edges the cat is welcome on. The engine has no idea where the menu bar, Dock or
+  // taskbar are; this layer does, and it is platform-specific.
+  //
+  // macOS: the right edge is the emptiest strip on a desktop, the left nearly as free, the
+  // bottom has the Dock, and the top is the worst by a distance - the menu bar runs the whole
+  // way across it and the window controls sit at its LEFT end, which is why that corner is
+  // called out separately.
+  //
+  // Windows is a different shape and is left here rather than in a comment elsewhere, so that
+  // whoever ports it has the reasoning next to the numbers: the taskbar is usually along the
+  // bottom (often with the clock and tray at bottom-right), and the window controls are at the
+  // TOP RIGHT - so the bottom becomes the worst edge and the worst corner moves to top-right.
+  const isWindows = navigator.userAgent.includes('Windows');
+  engine.setEdgePreference(
+    isWindows
+      ? { right: 1.2, left: 1.6, bottom: 0.2, top: 0.6, worstCorner: { x: 1, y: 0 } }
+      : { right: 1.6, left: 1.15, bottom: 0.7, top: 0.25, worstCorner: { x: 0, y: 0 } },
+  );
+
   // Pull the Rust-side current state once at startup instead of relying only on
   // broadcast events: persisted settings are restored (and the tray's checkmarks
   // set) during Rust setup, before this webview exists, so those events are lost.
@@ -329,10 +348,12 @@ async function main() {
   // buttons or from an agent's HTTP POST - arrives here as an event and is applied the same
   // way. See src-tauri's spawn_perception_server for the HTTP half.
   void listen<{ id: string }>('play-action', (event) => {
+    markInteresting();
     const ok = renderer.playAction?.(event.payload.id) ?? false;
     if (!ok) dlog(`play-action: unknown clip ${event.payload.id}`);
   });
   void listen<{ name: string; holdMs?: number }>('play-expression', (event) => {
+    markInteresting();
     const ok = renderer.playExpression?.(event.payload.name, event.payload.holdMs) ?? false;
     if (!ok) dlog(`play-expression: unknown expression ${event.payload.name}`);
   });
@@ -350,11 +371,13 @@ async function main() {
   });
 
   void listen<{ id: string }>('perform', (event) => {
+    markInteresting();
     if (!performances.play(event.payload.id)) dlog(`perform: unknown performance ${event.payload.id}`);
   });
   void listen('perform-stop', () => performances.stop());
 
   void listen<{ kind: string }>('set-toy', (event) => {
+    markInteresting();
     // Validated here rather than trusted: this event can originate from an agent's HTTP POST,
     // and the engine treats an unknown kind as a no-op, which would look like a silent failure.
     const kind = event.payload.kind as (typeof TOY_KINDS)[number];
@@ -368,6 +391,7 @@ async function main() {
 
   // 说话气泡: one line at a time, above the head, anchored every frame in frame() below.
   void listen<{ text: string; durationMs?: number }>('say', (event) => {
+    markInteresting();
     fx.say(event.payload.text, event.payload.durationMs);
   });
 
@@ -383,6 +407,7 @@ async function main() {
   }).catch((error) => dlog(`report_capabilities failed: ${String(error)}`));
 
   void listen<number>('set-scale', (event) => {
+    markInteresting();
     renderer.setScale(event.payload);
     syncMargins();
     engineRecorder.record({ type: 'scale_changed', at: performance.now(), scale: event.payload });
@@ -491,8 +516,15 @@ async function main() {
   // Push a perception snapshot to Rust twice a second. Not every frame - that would be 60 IPC
   // calls a second for data nobody reads that fast - but the old two-second interval was too
   // coarse to even observe a short action clip through, let alone react to one.
+  let lastPerceptionAt = 0;
   setInterval(() => {
     const now = performance.now();
+    // While dormant nothing is moving, so re-sending the same snapshot twice a second is pure
+    // IPC for no reader. Once every 5s is enough for an agent polling /perception to see a
+    // live-but-quiet cat rather than a stale one.
+    const minInterval = tier === 'dormant' ? 5000 : 0;
+    if (now - lastPerceptionAt < minInterval) return;
+    lastPerceptionAt = now;
     const snapshot = {
       observedAt: Date.now(),
       cursor,
@@ -519,6 +551,8 @@ async function main() {
       activeAgent,
       activity: engineRecorder.summary(now),
       growth: engineRecorder.growth(),
+      /** What the app is currently spending. See the power governor. */
+      power: tier,
     };
     void invoke('report_perception', { snapshot }).catch(() => {});
   }, 500);
@@ -526,17 +560,24 @@ async function main() {
   let lastFrameAt: number | null = null;
   let loggedFirstFrame = false;
   let frameErrorCount = 0;
-  let lastStepAt = 0;
-  let warnedAboutStalledRaf = false;
+  /** When requestAnimationFrame last ran, regardless of whether we drew. See the governor. */
+  let lastRafAt = 0;
   let wasHit = false;
   let heldForAction: string | null = null;
   function frame(now: number) {
-    step(now);
+    // Recorded before any early return: this timestamp is the evidence that the compositor is
+    // still drawing us, which is what separates 'idle' from 'dormant'.
+    lastRafAt = performance.now();
+    if (tier === 'dormant') setTier('active'); // the compositor came back
+    const interval = FRAME_INTERVAL[tier];
+    if (interval === 0 || lastRafAt - lastRenderAt >= interval) {
+      lastRenderAt = lastRafAt;
+      step(now);
+    }
     requestAnimationFrame(frame);
   }
 
   function step(now: number) {
-    lastStepAt = performance.now();
     try {
       const deltaSeconds = lastFrameAt == null ? 0 : Math.min(0.1, (now - lastFrameAt) / 1000);
       lastFrameAt = now;
@@ -676,7 +717,11 @@ async function main() {
   // same reason as the watchdog below: timers keep running when the compositor stops drawing.
   const RECONCILE_INTERVAL_MS = 1500;
   let lastStatusJson = '';
+  let lastReconcileAt = 0;
   setInterval(() => {
+    const now = performance.now();
+    if (tier === 'dormant' && now - lastReconcileAt < 10_000) return;
+    lastReconcileAt = now;
     void invoke<HostStatus>('get_status')
       .then((status) => {
         // Compare before applying: setSkin rebuilds the rig and repaints both atlases, so
@@ -691,20 +736,96 @@ async function main() {
       .catch(() => {});
   }, RECONCILE_INTERVAL_MS);
 
-  const WATCHDOG_INTERVAL_MS = 100;
-  const STALL_THRESHOLD_MS = 400;
-  setInterval(() => {
-    const idleFor = performance.now() - lastStepAt;
-    if (idleFor < STALL_THRESHOLD_MS) return;
-    if (!warnedAboutStalledRaf) {
-      warnedAboutStalledRaf = true;
-      dlog(`requestAnimationFrame stalled for ${idleFor.toFixed(0)}ms - driving the simulation from a timer instead`);
+  // --- power governor -----------------------------------------------------------------------
+  //
+  // A desktop pet is running every hour the machine is, so its idle cost IS its cost. Before
+  // this, the app woke roughly 137 times a second forever: 60Hz cursor polling in Rust, 60fps
+  // rendering, plus four timers - and it kept doing all of it with the lid shut.
+  //
+  // The watchdog below used to make that WORSE on purpose. It existed so the simulation would
+  // not freeze when the compositor stopped calling requestAnimationFrame, and it did that by
+  // driving the simulation from a timer instead. But rAF stopping is the compositor telling us
+  // nobody can see this window, and the right response to "nobody is looking" is not to keep
+  // animating from a different clock - it is to stop, and catch up when someone looks again.
+  //
+  // Three tiers, each justified by something the app can actually observe:
+  //
+  //   active   rAF is being called and the user is around. Full rate.
+  //   idle     rAF is being called but nothing has happened for a while. The cat still breathes
+  //            and blinks, so rendering cannot stop - but it can halve. A cat breathing at 20fps
+  //            is indistinguishable from one breathing at 60fps, and it is two thirds less GPU.
+  //   dormant  rAF has stopped: screen off, locked, another window covering us, or the pet
+  //            hidden from the tray. Nothing is drawn at all, and Rust slows its polling too.
+  //
+  // The gait survives all of this because it is DISTANCE-driven rather than clock-driven: a
+  // longer frame advances the stride by exactly the ground it covered, so a lower frame rate
+  // changes how smooth it looks and not what it does.
+  type PowerTier = 'active' | 'idle' | 'dormant';
+  let tier: PowerTier = 'active';
+  /** Frame interval per tier, ms. 0 = draw on every rAF callback. */
+  const FRAME_INTERVAL: Record<PowerTier, number> = { active: 0, idle: 1000 / 30, dormant: Infinity };
+  /** No interaction and nothing happening for this long drops to `idle`. */
+  const IDLE_AFTER_MS = 45_000;
+  /** rAF quiet for this long means the compositor has stopped drawing us. */
+  const DORMANT_AFTER_MS = 1_000;
+  let lastInterestingAt = performance.now();
+  let lastRenderAt = 0;
+
+  /** Anything that means the user is present, or the cat is mid-something worth seeing. */
+  function markInteresting() {
+    lastInterestingAt = performance.now();
+    if (tier !== 'active') setTier('active');
+  }
+
+  function setTier(next: PowerTier) {
+    if (next === tier) return;
+    const previous = tier;
+    tier = next;
+    dlog(`power: ${previous} -> ${next}`);
+    // Rust slows its own polling to match - the 60Hz cursor thread is the single most expensive
+    // thing in the app when nothing is happening, and it is pure waste while nobody can see.
+    void invoke('set_power_tier', { tier: next }).catch(() => {});
+    if (next === 'active') {
+      // Coming back: re-anchor the clock so the first frame after a long sleep is a normal
+      // frame and not a multi-hour delta. The engine clamps it anyway, but the fx layer and
+      // the camera ease read it too.
+      lastFrameAt = null;
     }
-    step(performance.now());
+  }
+
+  const WATCHDOG_INTERVAL_MS = 250;
+  setInterval(() => {
+    const now = performance.now();
+    const rafQuietFor = now - lastRafAt;
+    if (rafQuietFor >= DORMANT_AFTER_MS) {
+      // Nobody is compositing this window. Do not draw, and do not simulate - there is nothing
+      // to be accurate FOR, and the cat picks up wherever it was the moment anyone looks again.
+      setTier('dormant');
+      return;
+    }
+    // Dropping the frame rate is only free while nothing is actually MOVING. A stationary cat
+    // breathing and blinking at 30fps is indistinguishable from one at 60; a walking cat is not,
+    // and "don't reduce the experience" has to mean something. So the idle tier needs both: the
+    // user away from the mouse AND the cat with nothing on screen to smooth.
+    const catIsStill =
+      lastEngineSnapshot != null
+      && (lastEngineSnapshot.state === 'idle' || lastEngineSnapshot.state === 'dragged')
+      && !renderer.playingAction
+      && lastEngineSnapshot.toy == null;
+    if (tier === 'active' && catIsStill && now - lastInterestingAt > IDLE_AFTER_MS) setTier('idle');
+    if (tier === 'idle' && !catIsStill) setTier('active');
   }, WATCHDOG_INTERVAL_MS);
 
+  // A direct signal, when the platform gives us one. rAF stalling is the general case (it covers
+  // the screen turning off and another window covering us), but visibilitychange is immediate and
+  // unambiguous, so use it when it fires rather than waiting out the stall threshold.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) setTier('dormant');
+    else markInteresting();
+  });
+
   dlog('starting frame loop');
-  lastStepAt = performance.now();
+  lastRafAt = performance.now();
   requestAnimationFrame(frame);
 }
 

@@ -119,6 +119,19 @@ export interface LifeEngine {
    * to compensate. `bottom` may be negative, which lets the feet cross the bottom edge.
    * Any edge left out keeps its current value.
    */
+  /**
+   * Which screen edges the character is welcome on, as multipliers (1 = neutral), plus the one
+   * corner to stay out of in normalised coordinates (0,0 = top-left).
+   *
+   * The engine cannot know this - it has no idea where the menu bar, Dock or taskbar are, and
+   * they differ by platform and by user. The host does, so the host says. On macOS the right
+   * edge is the emptiest part of a desktop and the top is the worst (menu bar the whole way
+   * across, window controls at its left end); Windows reverses much of that.
+   */
+  setEdgePreference(preference: {
+    top?: number; bottom?: number; left?: number; right?: number;
+    worstCorner?: { x: number; y: number };
+  }): void;
   setMargins(margins: {
     top?: number; bottom?: number; left?: number; right?: number;
     /**

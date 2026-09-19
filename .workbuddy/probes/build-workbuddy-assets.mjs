@@ -145,8 +145,48 @@ const bubble = {
 };
 fs.writeFileSync(path.join(OUT, 'bubble.json'), JSON.stringify(bubble, null, 2) + '\n');
 
+// ---------------------------------------------------------------- 任务 → 反应
+// 为什么这个文件非有不可：上面那份 expressions.json 定义了 WorkBuddy 的词汇
+// （绿灯 / 红灯 / 上线 / 构建中 / 待你确认…），但**没有 reactions.json 时它们一个都不会被用到** ——
+// 猫走的是内置映射，显示的是内置表情。词汇和映射是两件事，这是把它们接上的那一环。
+//
+// 只覆盖「具体到 kind」的键。内置映射里有 5 条是按 mood 细分的（上线时紧张该被安抚、
+// 全绿时疲惫该被劝去休息），而自定义映射的查找顺序是
+// state:kind:mood → state:mood → state:kind → state → mood → 内置，
+// 意味着一条 state:kind 会盖掉同一条内置的 state:kind:mood。所以那 5 条必须原样钉在
+// 最具体的那一层 —— 否则这次「品牌化」会顺手删掉猫对情绪的回应，而那恰恰是整个设计里
+// 最值钱的部分：猫不镜像你的情绪，它回应你的情绪。
+const pinned = {
+  'completed:deploy:anxious': { expression: '放松', action: 'purr-settle', say: '上线了，没事的～' },
+  'completed:deploy:proud': { expression: '得意', action: 'stretch-front', say: '上线啦！' },
+  'completed:test:weary': { expression: '满足', action: 'purr-settle', say: '全绿了，可以歇啦' },
+  'failed:test:frustrated': { expression: '委屈', action: 'paw-reach', say: '又红了…先喝口水？' },
+  'failed:deploy:anxious': { expression: '安心', action: 'notice-you', say: '回滚就好，我看着呢' },
+};
+
+// WorkBuddy 自己的词汇。动作与表情成对使用（wb-deploy 本身就带「上线」、
+// wb-wave-flag 带「绿灯」），所以这里不另选动作。
+//
+// running 不带 say：一次长任务会反复上报，给它配台词就是把陪伴变成播报 ——
+// 应用侧的 should_react 也会把 running 的重复上报吞掉，这里配合那个设计。
+const reactions = {
+  ...pinned,
+  'queued': { expression: '排队中', action: 'wb-suspend' },
+  'running:build': { expression: '构建中' },
+  'running:test': { expression: '构建中' },
+  'blocked': { expression: '超时', action: 'wb-suspend', say: '卡住了…' },
+  'needs_input': { expression: '待你确认', action: 'wb-review', say: '在等你点头哦' },
+  'completed:test': { expression: '绿灯', action: 'wb-wave-flag', say: '测试全绿～' },
+  'completed:deploy': { expression: '上线', action: 'wb-deploy', say: '上线啦！' },
+  'completed:chat': { expression: '收工', action: 'wb-wave-flag', say: '这轮完了，我歇会儿～' },
+  'failed:test': { expression: '红灯', action: 'shake-head', say: '有测试挂了' },
+  'failed:deploy': { expression: '红灯', action: 'shake-head', say: '部署没过，我看着呢' },
+};
+fs.writeFileSync(path.join(OUT, 'reactions.json'), JSON.stringify(reactions, null, 2) + '\n');
+
 console.log('写入目录:', OUT);
 console.log('  动作  :', builtInActionCount, '内置 +', wbActions.length, '新增 =', actions.actions.length);
 console.log('  表情  :', builtInCount, '内置 +', Object.keys(wbExpressions).length, '新增 =', Object.keys(expressions).length);
 console.log('  皮肤  :', skins.length, '款新增（合并到内置 9 款之上）');
 console.log('  气泡  :', Object.keys(bubble).length, '个字段');
+console.log('  反应  :', Object.keys(reactions).length, '条（含', Object.keys(pinned).length, '条钉住的内置情绪响应）');
