@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hardened Runtime entitlements.
+
+  Notarisation REQUIRES the hardened runtime, and the hardened runtime denies several things by
+  default that a WebKit-based app needs. Each entry below is here because something breaks
+  without it - an entitlement you cannot name a reason for is one to delete, because every one
+  widens what a compromised process is allowed to do.
+
+  Deliberately NOT present:
+    com.apple.security.network.server   the bridge binds 127.0.0.1 only; loopback needs no
+                                        entitlement, and asking for the server entitlement would
+                                        let a compromised build listen on the LAN.
+    com.apple.security.network.client   nothing here makes outbound connections. No telemetry,
+                                        no update check, no asset fetching.
+    com.apple.security.device.camera / .audio-input / .personal-information.*
+                                        never used.
+    com.apple.security.automation.apple-events
+                                        the cursor is read with NSEvent.mouseLocation, which is a
+                                        plain property read - see the accessibility note in lib.rs.
+-->
+<plist version="1.0">
+<dict>
+    <!-- JavaScriptCore compiles JS at runtime. Without this the webview cannot start at all. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- WebKit maps writable-then-executable pages for its JIT tiers. Required alongside
+         allow-jit for the same reason: the UI does not load without it. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- The user's own assets/ directory lives outside the bundle, and the whole customisation
+         story depends on reading it: actions.json, expressions.json, skins.json, face.json,
+         reactions.json and hand-painted PNGs. Not sandboxed, so this is about the hardened
+         runtime's file checks rather than a sandbox container. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

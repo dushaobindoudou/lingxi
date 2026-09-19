@@ -114,12 +114,17 @@ export interface Renderer {
    * without touching the user's own size preference. Renderers that cannot scale omit it.
    */
   /**
-   * Ease the model to an ABSOLUTE size (1 = the app's default), or pass null to hand the body
-   * back to whatever size the user has chosen. Absolute rather than a multiple of the user's
-   * size on purpose: a set piece designed to fill the screen must fill the screen whether the
-   * pet is set to tiny or large.
+   * Ease the model so its body fills `heightFraction` of the viewport height, or pass null to
+   * hand the body back to whatever size the user has chosen.
+   *
+   * A fraction of the SCREEN rather than a multiple of any size: a set piece has to read the
+   * same whether the pet is set to tiny or large (which a multiple of the user's size does not),
+   * and it has to FIT (which a multiple of the default size does not - 2.7x default is 110% of
+   * a 956px screen at eye level and 159% at the overhead angle, which puts the cat's face above
+   * the top of the display). Solved against the body's measured extent at the live camera, so it
+   * also survives a camera change and a custom skin with different proportions.
    */
-  setPerformanceScale?(absolute: number | null, seconds?: number): void;
+  setPerformanceScale?(heightFraction: number | null, seconds?: number): void;
   /**
    * Play a named action clip right now, ahead of whatever the renderer's own scheduler would
    * have chosen. Returns false for an unknown id. Optional: a renderer with no clip library

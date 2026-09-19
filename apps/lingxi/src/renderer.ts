@@ -382,6 +382,54 @@ export function createThreeRenderer(): Renderer {
     return -Math.sign(bodyYaw) * past * PRESENT_MAX_TWIST;
   }
 
+  /**
+   * How far the drawn body reaches from its anchor at a given scale, in screen pixels.
+   *
+   * Measured from the rig's rest bounding box rather than the live pose: margins should not
+   * twitch because the cat happened to be mid-stretch when they were recomputed.
+   */
+  function measureExtent(scale: number) {
+    const anchor = screenToWorld(width / 2, height / 2, 0).clone();
+    const project = (world: THREE.Vector3) => {
+      const p = world.clone().project(camera);
+      return { x: (p.x * 0.5 + 0.5) * width, y: (-p.y * 0.5 + 0.5) * height };
+    };
+    const base = project(anchor);
+    const corners: { x: number; y: number }[] = [];
+    for (const dy of [restBox.min.y, restBox.max.y]) {
+      for (const dx of [restBox.min.x, restBox.max.x]) {
+        for (const dz of [restBox.min.z, restBox.max.z]) {
+          corners.push(
+            project(new THREE.Vector3(anchor.x + dx * scale, dy * scale, anchor.z + dz * scale)),
+          );
+        }
+      }
+    }
+    return {
+      above: Math.max(0, base.y - Math.min(...corners.map((c) => c.y))),
+      below: Math.max(0, Math.max(...corners.map((c) => c.y)) - base.y),
+      halfWidth: Math.max(...corners.map((c) => Math.abs(c.x - base.x))),
+    };
+  }
+
+  /**
+   * What `modelScale` has to be for the cat's body to fill `fraction` of the viewport height.
+   *
+   * Solved from the rest box through the live camera, so it accounts for the angle (an overhead
+   * camera foreshortens the body to two thirds of what eye-level shows) and for whatever skin is
+   * mounted. Clamped to something a screen can hold: asking for 1.4 would be asking for a cat
+   * taller than the display, which is how the head ended up off the top.
+   */
+  function scaleForHeightFraction(fraction: number) {
+    const wanted = Math.max(0.05, Math.min(0.92, fraction));
+    // Measure the body at scale 1 and scale linearly - orthographic projection is linear in the
+    // model's size, so one measurement is enough.
+    const probe = measureExtent(VOXEL_TO_WORLD);
+    const heightAtOne = probe.above + probe.below;
+    if (!(heightAtOne > 0)) return modelScale;
+    return Math.max(0.15, Math.min(6, (wanted * height) / heightAtOne));
+  }
+
   /** The scalar actually applied to the rig: the user's size, or a performance's own. */
   function effectiveScale() {
     return VOXEL_TO_WORLD * (performanceScale ?? modelScale);
@@ -640,17 +688,28 @@ export function createThreeRenderer(): Renderer {
     },
 
     /**
-     * Ramp the model toward an ABSOLUTE size over `seconds` - 1 being the app's default size,
-     * whatever the user has chosen in the tray. Used by performances to fake approach and
-     * retreat under an orthographic camera, which cannot dolly.
+     * Ramp the model so its body fills `heightFraction` of the viewport, over `seconds`. Used by
+     * performances to fake approach and retreat under an orthographic camera, which cannot dolly.
+     *
+     * A FRACTION OF THE SCREEN, not a multiple of anything. It was a multiple of the user's size
+     * first, which made the same set piece a wiggle at 0.25 and screen-filling at 1.4; then an
+     * absolute multiple of the default size, which fixed that and introduced a worse bug - 2.7x
+     * default is 110% of a 956px screen at the eye-level camera and 159% at the overhead one, so
+     * the cat's head ended up between 331 and 800 pixels ABOVE the top of the display and the
+     * face, which is the entire point of the performance, could not be seen at all.
+     *
+     * A fraction cannot have that failure mode: it is solved against the body's measured extent
+     * at the live camera and scale, so it means the same thing on any screen, at any angle, with
+     * any skin - and "fill two thirds of the height" is a directorial instruction, which is what
+     * the caller actually wants to say.
      *
      * Pass null to hand the body back: the model eases to the user's own size and then stops
      * being performance-driven. Handing back by easing rather than by dropping the override is
      * what stops the cat popping to a different size on the last frame of a set piece.
      */
-    setPerformanceScale(absolute: number | null, seconds = 0.5) {
+    setPerformanceScale(heightFraction: number | null, seconds = 0.5) {
       performanceScaleTau = Math.max(0.05, seconds);
-      if (absolute == null) {
+      if (heightFraction == null) {
         performanceScaleTarget = modelScale;
         // Stay performance-driven until the ease actually lands - see render().
         if (performanceScale == null) performanceScale = modelScale;
@@ -658,7 +717,7 @@ export function createThreeRenderer(): Renderer {
         return;
       }
       performanceReleasing = false;
-      performanceScaleTarget = Math.max(0.15, Math.min(6, absolute));
+      performanceScaleTarget = scaleForHeightFraction(heightFraction);
       if (performanceScale == null) performanceScale = modelScale; // start from where we are
     },
 
@@ -694,30 +753,7 @@ export function createThreeRenderer(): Renderer {
      * to decide how close to each screen edge it may go.
      */
     screenExtent() {
-      const scale = effectiveScale();
-      // Measured from the rig's rest bounding box rather than the live pose: margins should not
-      // twitch because the cat happened to be mid-stretch when they were recomputed.
-      const anchor = screenToWorld(width / 2, height / 2, 0).clone();
-      const project = (world: THREE.Vector3) => {
-        const p = world.clone().project(camera);
-        return { x: (p.x * 0.5 + 0.5) * width, y: (-p.y * 0.5 + 0.5) * height };
-      };
-      const base = project(anchor);
-      const corners: { x: number; y: number }[] = [];
-      for (const dy of [restBox.min.y, restBox.max.y]) {
-        for (const dx of [restBox.min.x, restBox.max.x]) {
-          for (const dz of [restBox.min.z, restBox.max.z]) {
-            corners.push(
-              project(new THREE.Vector3(anchor.x + dx * scale, dy * scale, anchor.z + dz * scale)),
-            );
-          }
-        }
-      }
-      return {
-        above: Math.max(0, base.y - Math.min(...corners.map((c) => c.y))),
-        below: Math.max(0, Math.max(...corners.map((c) => c.y)) - base.y),
-        halfWidth: Math.max(...corners.map((c) => Math.abs(c.x - base.x))),
-      };
+      return measureExtent(effectiveScale());
     },
 
     /**

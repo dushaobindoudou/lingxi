@@ -103,10 +103,36 @@ function approachMark(context: PerformanceContext) {
  */
 const FACING_VIEWER = Math.PI / 2;
 
-/** Where it ends up: front and centre, close to the viewer's edge of the screen. */
+/**
+ * How much of the screen's height the cat's body fills at each end of a charge, as a fraction.
+ *
+ * Fractions rather than size multipliers because a multiplier cannot know whether it fits. The
+ * previous value, 2.7x the default size, is 110% of a 956px screen at the eye-level camera and
+ * 159% at the overhead one - so the climax of the set piece put the cat's face several hundred
+ * pixels above the top of the display, which is the opposite of what a close-up is for.
+ *
+ * 0.62 is close enough to fill the frame and still leave the whole animal, ears included, on
+ * screen at every camera angle.
+ */
+const FAR_HEIGHT = 0.16;
+// 0.55 rather than 0.62 so the face is still on screen even when the charge runs out of travel
+// time and the cat stops short of its mark - which it does, because the speed is bounded by the
+// turning circle. A close-up that only works when everything arrives on schedule is not a
+// close-up, it is a coin flip.
+const CLOSE_HEIGHT = 0.55;
+
+/**
+ * Where it ends up: front and centre, close to the viewer's edge of the screen.
+ *
+ * The anchor is the cat's FEET, so this has to sit low enough that a body filling CLOSE_HEIGHT of
+ * the screen still has its head on it. At 0.62 height the body is ~593px on a 956px screen, so an
+ * anchor at 0.88 leaves the face around a quarter of the way down - which is where you want a
+ * close-up, and is also why 0.75 was wrong the moment the climax started actually filling the
+ * frame.
+ */
 function stageMark(context: PerformanceContext) {
   const { width, height } = context.viewport();
-  return { x: width * 0.5, y: height * 0.75 };
+  return { x: width * 0.5, y: height * 0.9 };
 }
 
 export const PERFORMANCES: PerformanceDef[] = [
@@ -114,7 +140,7 @@ export const PERFORMANCES: PerformanceDef[] = [
     id: 'angry-claw',
     name: '愤怒抓屏',
     description: '从屏幕深处炸毛冲过来，越来越大，站定转身对着你连抓两爪（集中线＋闪白＋震屏），然后退回去',
-    durationMs: 9500,
+    durationMs: 9950,
     beats: [
       {
         atMs: 0,
@@ -124,7 +150,7 @@ export const PERFORMANCES: PerformanceDef[] = [
           context.renderer.setCameraPreset?.('eye-level');
           context.renderer.playExpression?.('警觉', 1400);
           // Retreat upstage and shrink - this is the "far away" the whole shot is built on.
-          context.renderer.setPerformanceScale?.(0.4, 0.45);
+          context.renderer.setPerformanceScale?.(FAR_HEIGHT, 0.45);
           context.engine.suggestMoveTo(approachMark(context), context.now(), 1400, 6);
           context.fx.vignette(8600, 0.6);
         },
@@ -143,10 +169,12 @@ export const PERFORMANCES: PerformanceDef[] = [
         // so it grows exactly as fast as it closes.
         atMs: 1900,
         run(context) {
-          // Hold ends BEFORE the claw, not 400ms after it. It used to overrun, so the cat was
-          // still travelling when it started swiping - a strike thrown while walking.
-          context.engine.suggestMoveTo(stageMark(context), context.now(), 1150, 7);
-          context.renderer.setPerformanceScale?.(2.7, 1.2);
+          // Long enough to ARRIVE, and still ending before the claw. 1150ms was not: the cat
+          // travels at most ~630px/s (the speed bound that keeps its turning circle navigable),
+          // and the charge is over 600px, so it was stopping a third of the way short and
+          // swiping from there - which put its head back off the top of the screen.
+          context.engine.suggestMoveTo(stageMark(context), context.now(), 1600, 7);
+          context.renderer.setPerformanceScale?.(CLOSE_HEIGHT, 1.2);
           const at = context.petPosition();
           context.fx.speedLines(at.x, at.y, { durationMs: 1400, intensity: 0.95, track: true });
           context.fx.tilt(2.2, 1500);
@@ -157,7 +185,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         // A visible turn, at the body's own rate - the whole point is that you see it round on
         // you before the hit lands, rather than the hit arriving in profile and the head
         // craning afterwards to find you.
-        atMs: 3100,
+        atMs: 3550,
         run(context) {
           context.engine.clearIntent();
           context.engine.turnTo(FACING_VIEWER);
@@ -166,14 +194,14 @@ export const PERFORMANCES: PerformanceDef[] = [
       {
         // 400ms after the turn starts: 90 degrees at the body's turn rate takes ~310ms, so the
         // cat is square before the first frame of the swipe.
-        atMs: 3500,
+        atMs: 3950,
         run(context) {
           context.renderer.playAction?.('claw-screen');
         },
       },
       {
         // IMPACT 1 - 1.35s into claw-screen, where the left paw reaches the end of its swipe.
-        atMs: 4850,
+        atMs: 5300,
         run(context) {
           const at = context.petPosition();
           context.fx.impactFrame({ durationMs: 80 });
@@ -185,7 +213,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       {
         // IMPACT 2 - 2.65s in, the right paw. Harder than the first: a second hit that lands
         // softer than the first reads as the scene losing energy.
-        atMs: 6150,
+        atMs: 6600,
         run(context) {
           const at = context.petPosition();
           context.fx.impactFrame({ durationMs: 110, color: '#fff2f5' });
@@ -197,7 +225,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
       {
         // FOLLOW-THROUGH: still cross, still big, breathing it off.
-        atMs: 7400,
+        atMs: 7850,
         run(context) {
           context.renderer.playExpression?.('不爽', 2000);
           context.renderer.playAction?.('shake-fur');
@@ -205,7 +233,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
       {
         // RETREAT: back off and shrink away, the reverse of the opening.
-        atMs: 8300,
+        atMs: 8750,
         run(context) {
           const { width, height } = context.viewport();
           context.renderer.setPerformanceScale?.(null, 0.9);
@@ -213,7 +241,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 9500,
+        atMs: 9950,
         run(context) {
           context.renderer.setPerformanceScale?.(null, 0.4);
           context.restoreCamera();
@@ -230,14 +258,14 @@ export const PERFORMANCES: PerformanceDef[] = [
     id: 'kiss-rush',
     name: '飞奔亲亲',
     description: '从屏幕深处跑过来，越来越大，凑到最近处闭眼亲一下（粉色集中线＋爱心满屏），再退回去',
-    durationMs: 9700,
+    durationMs: 10150,
     beats: [
       {
         atMs: 0,
         run(context) {
           context.renderer.setCameraPreset?.('eye-level');
           context.renderer.playExpression?.('期待', 3400);
-          context.renderer.setPerformanceScale?.(0.42, 0.45);
+          context.renderer.setPerformanceScale?.(FAR_HEIGHT, 0.45);
           context.engine.suggestMoveTo(approachMark(context), context.now(), 1400, 6);
           context.fx.vignette(8800, 0.45);
         },
@@ -254,9 +282,9 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 1900,
         run(context) {
           // Ends before the nuzzle, not during it - same reason as the claw: a cat that is still
-          // travelling when the payoff starts delivers it sideways.
-          context.engine.suggestMoveTo(stageMark(context), context.now(), 1250, 6);
-          context.renderer.setPerformanceScale?.(2.5, 1.3);
+          // travelling when the payoff starts delivers it sideways. Long enough to arrive, too.
+          context.engine.suggestMoveTo(stageMark(context), context.now(), 1700, 6);
+          context.renderer.setPerformanceScale?.(CLOSE_HEIGHT, 1.3);
           const at = context.petPosition();
           // Pink lines rather than white: same grammar, different emotion.
           context.fx.speedLines(at.x, at.y, { durationMs: 1500, intensity: 0.7, color: 'rgba(255,190,214,0.9)', track: true });
@@ -264,14 +292,14 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
       {
         // Arrive, then turn to face you. A nuzzle aimed past your shoulder is not a nuzzle.
-        atMs: 3200,
+        atMs: 3650,
         run(context) {
           context.engine.clearIntent();
           context.engine.turnTo(FACING_VIEWER);
         },
       },
       {
-        atMs: 3600,
+        atMs: 4050,
         run(context) {
           context.renderer.playExpression?.('撒娇', 3600);
           context.renderer.playAction?.('kiss-nuzzle');
@@ -279,7 +307,7 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
       {
         // THE KISS - 1.7s into kiss-nuzzle, exactly where the clip shuts its eyes.
-        atMs: 5300,
+        atMs: 5750,
         run(context) {
           const at = context.petPosition();
           context.fx.impactFrame({ durationMs: 150, color: '#ffe3ee' });
@@ -288,7 +316,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 6100,
+        atMs: 6550,
         run(context) {
           const { width, height } = context.viewport();
           context.fx.hearts(width * 0.28, height * 0.5, 7);
@@ -297,7 +325,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 7700,
+        atMs: 8150,
         run(context) {
           const { width, height } = context.viewport();
           context.renderer.setPerformanceScale?.(null, 1.0);
@@ -305,7 +333,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 9700,
+        atMs: 10150,
         run(context) {
           context.renderer.setPerformanceScale?.(null, 0.4);
           context.restoreCamera();

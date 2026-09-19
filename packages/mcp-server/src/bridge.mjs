@@ -63,13 +63,61 @@ function baseUrl() {
  * So the identity is configuration rather than something each tool call has to remember. The
  * variable names match the `lingxi` CLI exactly, so the script path and the MCP path attribute
  * identically and a machine driving both does not end up looking like two different agents.
+ *
+ * ## Why the environment is not the only place this can live
+ *
+ * An `env` block in a host's MCP config is the obvious way to set this, and for most hosts it is
+ * fine. But some hosts gate third-party MCP servers behind an approval that is keyed by a hash of
+ * the server's own config - WorkBuddy hashes `command|sorted(args)|sorted(env KEY NAMES)` and
+ * stores the result in `~/.workbuddy/mcp-approvals.json`. Adding or renaming a single `env` key
+ * therefore produces a new hash, the old approval stops matching, the host refuses to launch the
+ * server, and every tool it offered vanishes until the user re-trusts it by hand.
+ *
+ * That failure is invisible from inside this file: the host never spawns the process, so nothing
+ * here - no log line, no thrown error - ever runs. The symptom is "the cat stopped reacting",
+ * which reads as a pet problem rather than a config-hash problem.
+ *
+ * So identity is ALSO readable from a machine-level file, and the file is the recommended place
+ * to put it:
+ *
+ *   ~/.lingxi/agent.json    { "id": "workbuddy", "name": "WorkBuddy",
+ *                             "badge": "🐧", "color": "#0AC89F" }
+ *
+ * With the identity living there, a host config needs nothing but `command` and `args` - and
+ * those never change, so its approval hash stays valid forever. Set it once, and no host has to
+ * carry an `env` block at all.
+ *
+ * Precedence is environment first, then the file, so a single host can still override the
+ * machine default for one invocation without touching shared state.
  */
-const AGENT_ID = (process.env.LINGXI_AGENT ?? '').trim();
+const AGENT_FILE = join(homedir(), '.lingxi', 'agent.json');
+
+/** Best-effort read: a missing or malformed file just means "no file identity", never a crash.
+ *  An MCP server that refuses to start because of a typo in an identity file would take the
+ *  whole integration down over cosmetics. */
+function readAgentFile() {
+  try {
+    const parsed = JSON.parse(readFileSync(AGENT_FILE, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function pick(envValue, fileValue) {
+  if (typeof envValue === 'string' && envValue.trim()) return envValue.trim();
+  if (typeof fileValue === 'string' && fileValue.trim()) return fileValue.trim();
+  return '';
+}
+
+const fileAgent = readAgentFile();
+
+const AGENT_ID = pick(process.env.LINGXI_AGENT, fileAgent.id);
 
 const AGENT_PROFILE = {
-  name: (process.env.LINGXI_AGENT_NAME ?? '').trim() || undefined,
-  badge: (process.env.LINGXI_AGENT_BADGE ?? '').trim() || undefined,
-  color: (process.env.LINGXI_AGENT_COLOR ?? '').trim() || undefined,
+  name: pick(process.env.LINGXI_AGENT_NAME, fileAgent.name) || undefined,
+  badge: pick(process.env.LINGXI_AGENT_BADGE, fileAgent.badge) || undefined,
+  color: pick(process.env.LINGXI_AGENT_COLOR, fileAgent.color) || undefined,
 };
 
 /// Only these fields take over the cat's performance, and only these contend for the stage - the
