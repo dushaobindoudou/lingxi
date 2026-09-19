@@ -77,6 +77,46 @@
 所以"猫什么时候消失的、为什么回来"无法还原。NaN 经 JSON 序列化成 `null`，
 外部无法与"字段缺失"区分。`/intent` 只有写没有读。
 
+**边界要说准（2026-09-19 09:20 修正）**：不是"什么都看不到"。`GET /status` 暴露
+`skin` / `camera` / `scale` / `visible` / `mode` / `activeAgent` / `behaviorPreset`；
+`/perception` 暴露 `petState` / `petPosition` / `action` / `toy` / `activity`。
+**真正的盲区只有三项：`expression`、`heading`、`aiIntent`。**
+其中 `expression` 最致命 —— 它是唯一"能改但改完无法验证"的控制项，
+拼错和正确返回一模一样的 `200 (forwarded)`，所以假成功在表情上**不可检测**。
+`/status.skin` 能读还让 #13 更刺眼：**用户能选、接口能读，只有写入口被硬编码挡住。**
+
+### 自定义资源：位置正确，但皮肤谁也够不到
+
+**资源位置**：`~/Library/Application Support/<bundle-id>/assets/`（本机 `com.dushaobin.lingxi-desktop`）。
+安装版与源码构建版**共用同一 bundle id，因此共用同一目录** —— 写进 `.app` 包内反而会被下次构建覆盖。
+判断"应用到底读哪"的可靠姿势：`lsof -nP -i :47811` 拿 PID → `lsof -p <PID> -a -d txt` 拿可执行路径
+→ 对照 `Info.plist` 的 `CFBundleIdentifier`。（sandbox 下 `ps aux` 读不到进程，`lsof` 可以。）
+
+**自定义资源的三种可达性完全不同**（真实资源上实测）：
+
+| 资源 | agent 能否用 | 用户能否用 | 备注 |
+|---|---|---|---|
+| 动作 `actions.json` | ✅ 能，真播 | ❌ 无手动触发入口 | `category:"特效"` 永不自动播 |
+| 表情 `expressions.json` | ⚠️ 发得出去，无法验证 | ❌ 无界面显示 | `200 (forwarded)` 与拼错无法区分 |
+| **皮肤 `skins.json`（新 id）** | ❌ | ❌ | **四道门全关** |
+
+**自定义皮肤的四道门**（任何一道都足以挡死）：
+
+1. 外观页卡片列表读**编译期打包**的 `apps/lingxi/src/data/skins.json`（9 条内置）
+   → 自定义皮肤**不生成卡片**，用户根本看不见（`management.ts:16/27/202`）。
+2. UI 点击 → `set_skin` → `apply_skin`（`lib.rs:399`）`KNOWN_SKINS` 校验失败 → **静默回落默认皮肤**。
+3. `/control`（agent 路径，`lib.rs:865`）→ **400**，错误信息还让调用方去查 `GET /capabilities`，
+   而那个接口**恰好列出了这个 id** —— 自相矛盾。
+4. 启动读 `settings.json`（`lib.rs:266`）→ 不在白名单 → 回落 `default_skin()` —— **活不过重启**。
+
+`management.html:225` 承诺"动作、表情、主题…改完点「重新加载」即可生效" ——
+**对主题不成立**，会让用户白点一次并以为应用坏了。
+
+**重载本身是有效的**（`reload_custom_assets` 只让渲染层重读 `assets/*.json`，不重新编译/安装），
+动作能立刻播 —— 但三样东西都没有用户可见入口，所以体感是"什么都没发生"。
+
+复用**内置 id** 覆盖配色是通的（合并语义 + id 在白名单里）；**新增 id 的皮肤当前版本别做。**
+
 ## 多 agent 共用一个桥（2026-09-19 确认的问题）
 
 两个入口写同一个「当前值」，**单 agent 今天就会重复反应**：
@@ -86,7 +126,8 @@
 
 三阶段解法与取舍见 `~/.workbuddy/skills/lingxi-desktop-cat/references/multi-agent.md`。
 **决定做不做仲裁队列前，先加 reaction/event ratio 计数器**（目标 0.2–0.4，>0.8 一定烦人）。
-待修复清单见 `2026-09-19.md` 末尾（6 条任务）。
+完整待修复清单：`ISSUES-2026-09-19.md` + TaskList #1–#15（用户明确"先记录，一会再修复"，
+且在修复前要求"只测不修"）。
 
 ## 测试
 

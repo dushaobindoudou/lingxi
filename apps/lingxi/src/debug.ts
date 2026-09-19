@@ -13,12 +13,13 @@ import { listen } from '@tauri-apps/api/event';
 const BRIDGE = 'http://127.0.0.1:47811';
 
 interface Capabilities {
-  actions?: { id: string; name: string; category: string; duration: number; expression: string; description: string }[];
-  expressions?: string[];
-  skins?: { id: string; name: string; description: string }[];
+  actions?: { id: string; name: string; category: string; duration: number; expression: string; description: string; source?: string }[];
+  expressions?: { name: string; source?: string }[];
+  skins?: { id: string; name: string; description: string; source?: string }[];
   performances?: { id: string; name: string; description: string; durationMs: number }[];
   toys?: { kind: string; name: string; description: string }[];
-  cameras?: { id: string; name: string; description: string; elevationDeg: number }[];
+  cameras?: { id: string; name: string; description: string; elevationDeg: number; fixed?: boolean }[];
+  assets?: { active?: Record<string, string>; lastLoadedAt?: number | null; lastErrors?: string[] };
 }
 
 interface Status {
@@ -114,10 +115,11 @@ function renderExpressions(capabilities: Capabilities) {
   const host = document.getElementById('expression-grid');
   if (!host) return;
   host.replaceChildren(
-    ...(capabilities.expressions ?? []).map((name) => {
-      const chip = el('button', 'chip', name);
+    ...(capabilities.expressions ?? []).map((entry) => {
+      const chip = el('button', `chip${entry.source === 'custom' ? ' chip-custom' : ''}`, entry.name);
+      if (entry.source === 'custom') chip.title = '自定义表情';
       chip.addEventListener('click', () => {
-        void invoke('play_expression', { name, holdMs: 4000 });
+        void invoke('play_expression', { name: entry.name, holdMs: 4000 });
         flash(chip);
       });
       return chip;

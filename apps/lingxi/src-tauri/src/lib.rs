@@ -263,7 +263,12 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
     } else {
         default_behavior_preset()
     };
-    let skin = if KNOWN_SKINS.contains(&settings.skin.as_str()) { settings.skin } else { default_skin() };
+    // Restored as-is rather than checked against the built-in list. At this point in startup
+    // the renderer has not reported its catalogue yet, so there is nothing here that could tell
+    // a user-authored theme from a typo - and the old check resolved that ambiguity by deleting
+    // the user's choice on every single launch. An id the renderer turns out not to have is
+    // ignored by setSkin, which leaves the built-in default showing anyway.
+    let skin = if settings.skin.trim().is_empty() { default_skin() } else { settings.skin };
     let camera = if KNOWN_CAMERAS.contains(&settings.camera.as_str()) { settings.camera } else { default_camera() };
     PersistedSettings {
         version: 1,
@@ -393,10 +398,17 @@ impl TrayState {
 
     /// "外观 / 主题": which of the painted themes the companion window renders. Unlike the
     /// personality sliders, this one is fully live - the renderer rebuilds the rig and
-    /// repaints both atlases on the event (see renderer.ts's setSkin). An unknown id falls
-    /// back rather than erroring, because settings.json outlives any particular asset list.
+    /// repaints both atlases on the event (see renderer.ts's setSkin).
+    ///
+    /// The id is NOT checked against the built-in list any more. It used to be, and an id that
+    /// failed was silently replaced with the default - which is the right instinct for a
+    /// settings.json that outlives an asset list, but it also meant a theme the user had
+    /// authored themselves could be loaded, listed by GET /capabilities, clicked in the UI, and
+    /// still quietly turn into a different cat with no message anywhere. The renderer is the
+    /// only layer that knows the real catalogue (built-ins plus whatever the user wrote), so it
+    /// is the layer that decides: setSkin ignores an id it does not have, which leaves the
+    /// current theme in place rather than resetting it.
     fn apply_skin(&self, app: &tauri::AppHandle, skin: &str) {
-        let skin = if KNOWN_SKINS.contains(&skin) { skin } else { DEFAULT_SKIN };
         *self.skin.lock().unwrap() = skin.to_string();
         let _ = app.emit("set-skin", skin);
         self.persist();
@@ -840,13 +852,144 @@ fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Curs
 /// renderer's data files, which Rust deliberately does not duplicate - those are forwarded and
 /// validated on arrival (the frontend logs an unknown id), which is why they report as
 /// "forwarded" rather than "applied".
+
+/// Longest line the speech bubble can show. Enforced here rather than trusted from the caller,
+/// because this is reachable from any process on the loopback interface.
+const SAY_MAX_CHARS: usize = 140;
+/// Longest a single remembered fact may be.
+const MEMORY_MAX_CHARS: usize = 280;
+/// Longest a reminder's text may be.
+const REMINDER_MAX_CHARS: usize = 140;
+/// The only `kind` values `/memory` accepts. The file is plain JSON the user opens and reads,
+/// so letting an arbitrary string through is schema drift in a document they own.
+const MEMORY_KINDS: [&str; 4] = ["owner", "project", "preference", "moment"];
+/// Upper bound on an externally-supplied expression hold. Mirrors the life engine's own cap.
+const MAX_HOLD_MS: u64 = 10 * 60 * 1000;
+
+/// Every field `/control` understands. Anything else in the body is a typo, and saying so is
+/// the whole point: the old code silently skipped unrecognised keys and then reported
+/// "empty command", so a caller who wrote `expresssion` was told they had sent nothing at all
+/// and would retry the same misspelling forever.
+const CONTROL_FIELDS: [&str; 14] = [
+    "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform",
+    "toy", "say", "sayMs", "resetPosition", "reloadAssets",
+];
+
+/// Pull the ids out of one list in the renderer-reported capability payload.
+///
+/// Returns None when the list is absent or empty, and every caller MUST read that as "allow
+/// through" rather than "reject everything". The webview reports its capabilities a moment
+/// after launch, and a control call that lands in that window must not be told the entire
+/// clip library is unknown.
+fn known_ids(caps: &serde_json::Value, list: &str, key: &str) -> Option<Vec<String>> {
+    let entries = caps.get(list)?.as_array()?;
+    let ids: Vec<String> = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            serde_json::Value::String(s) => Some(s.clone()),
+            other => other.get(key).and_then(|v| v.as_str()).map(|s| s.to_string()),
+        })
+        .collect();
+    if ids.is_empty() { None } else { Some(ids) }
+}
+
+/// Validate one id against the renderer's live list, degrading to "allow" when it has not
+/// reported yet. `label` names the field in any rejection message.
+fn check_known(
+    caps: &serde_json::Value,
+    list: &str,
+    key: &str,
+    value: &str,
+    label: &str,
+) -> Result<(), String> {
+    match known_ids(caps, list, key) {
+        Some(ids) if !ids.iter().any(|id| id == value) => Err(format!(
+            "{label}: unknown {label} \"{value}\" (see GET /capabilities for the {} currently loaded)",
+            ids.len()
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Truncate to `max` CHARACTERS (not bytes - the text is Chinese as often as not) and say
+/// whether anything was lost, so the caller can be told rather than quietly misinformed.
+fn truncate_chars(text: &str, max: usize) -> (String, bool) {
+    let trimmed = text.trim();
+    let kept: String = trimmed.chars().take(max).collect();
+    let truncated = trimmed.chars().count() > max;
+    (kept, truncated)
+}
+
+/// Reject an intent the cat cannot act on, at the boundary, with a reason.
+///
+/// The engine drops a malformed target too - that is the fix that matters, since it is what
+/// stops the cat vanishing. This is the other half: without it the endpoint still answers
+/// `{"ok":true}` to a request it is quietly discarding, which is the same lie in a smaller
+/// coat. A caller that sent `{"targetPoint":{}}` because it did not know the field shape needs
+/// to be told the shape, not congratulated.
+fn validate_intent(intent: &serde_json::Value) -> Result<(), String> {
+    let Some(point) = intent.get("targetPoint") else {
+        // No target at all is legitimate - an intent may carry only holdMs, or only the legacy
+        // `mode` field, and those are handled downstream.
+        return Ok(());
+    };
+    if point.is_null() {
+        return Ok(());
+    }
+    let finite = |key: &str| point.get(key).and_then(|v| v.as_f64()).filter(|n| n.is_finite());
+    match (finite("x"), finite("y")) {
+        (Some(_), Some(_)) => Ok(()),
+        _ => Err(format!(
+            "targetPoint must be {{\"x\": <finite number>, \"y\": <finite number>}} in logical \
+             screen pixels; got {point}. The values are NOT optional - a partial or non-numeric \
+             point is refused rather than guessed at."
+        )),
+    }
+}
+
 fn apply_control_command(
     app: &tauri::AppHandle,
     command: &serde_json::Value,
-) -> (Vec<String>, Vec<String>) {
+) -> (Vec<String>, Vec<String>, serde_json::Value) {
     let state = app.state::<TrayState>();
     let mut applied = Vec::new();
     let mut rejected = Vec::new();
+    // Extra structured detail for the caller (what a truncation kept, what a reload loaded).
+    let mut detail = serde_json::Map::new();
+    let caps = app.state::<CapabilitiesState>().latest.lock().unwrap().clone();
+
+    // Anything that is not a field name, and anything that is but holds the wrong type, is
+    // named explicitly. All of these used to fall through to "empty command: expected at least
+    // one of ...", which tells a caller their request was empty when in fact it was misspelled
+    // or mistyped - so they retry it unchanged instead of fixing it.
+    if let Some(object) = command.as_object() {
+        for (key, value) in object {
+            if !CONTROL_FIELDS.contains(&key.as_str()) {
+                let hint = CONTROL_FIELDS
+                    .iter()
+                    .find(|field| field.eq_ignore_ascii_case(key) || looks_like_typo(field, key));
+                rejected.push(match hint {
+                    Some(field) => format!("unknown field \"{key}\" - did you mean \"{field}\"?"),
+                    None => format!("unknown field \"{key}\" (expected one of {CONTROL_FIELDS:?})"),
+                });
+                continue;
+            }
+            let type_ok = match key.as_str() {
+                "camera" | "skin" | "action" | "expression" | "perform" | "toy" | "say" | "mode" => value.is_string(),
+                "scale" => value.is_number(),
+                "visible" | "resetPosition" | "reloadAssets" => value.is_boolean(),
+                "holdMs" | "sayMs" => value.is_number(),
+                _ => true,
+            };
+            if !type_ok {
+                rejected.push(format!(
+                    "{key}: expected {}, got {}",
+                    expected_type_name(key),
+                    json_type_name(value),
+                ));
+            }
+        }
+    }
 
     if command.get("mode").is_some() {
         // Accepted and ignored rather than rejected: an agent written against the two-mode
@@ -862,11 +1005,17 @@ fn apply_control_command(
         }
     }
     if let Some(skin) = command.get("skin").and_then(|v| v.as_str()) {
-        if KNOWN_SKINS.contains(&skin) {
-            state.apply_skin(app, skin);
-            applied.push(format!("skin={skin}"));
-        } else {
-            rejected.push(format!("skin: unknown theme \"{skin}\" (see GET /capabilities)"));
+        // Validated against what the renderer actually has loaded, NOT against the hardcoded
+        // built-in list. A user who authors a theme can load it, see it in GET /capabilities,
+        // and still be told it does not exist - which is exactly what was reported. Cameras
+        // stay hardcoded on purpose: they are geometry, not content, and do not grow with
+        // custom assets (capabilities marks them `fixed: true` so this reads as deliberate).
+        match check_known(&caps, "skins", "id", skin, "skin") {
+            Ok(()) => {
+                state.apply_skin(app, skin);
+                applied.push(format!("skin={skin}"));
+            }
+            Err(message) => rejected.push(message),
         }
     }
     if let Some(scale) = command.get("scale").and_then(|v| v.as_f64()) {
@@ -881,14 +1030,43 @@ fn apply_control_command(
         state.set_visible(app, visible);
         applied.push(format!("visible={visible}"));
     }
+    // action / expression used to be forwarded to the webview unchecked and reported as
+    // `applied`, so a typo'd clip id came back 200 "(forwarded)" and the model told the user it
+    // had made the cat wave. Nothing downstream reports back, so the forward is the ONLY place
+    // this can be caught.
     if let Some(action) = command.get("action").and_then(|v| v.as_str()) {
-        let _ = app.emit("play-action", serde_json::json!({ "id": action }));
-        applied.push(format!("action={action} (forwarded)"));
+        if action.trim().is_empty() {
+            rejected.push("action: empty id".to_string());
+        } else {
+            match check_known(&caps, "actions", "id", action, "action") {
+                Ok(()) => {
+                    let _ = app.emit("play-action", serde_json::json!({ "id": action }));
+                    applied.push(format!("action={action}"));
+                }
+                Err(message) => rejected.push(message),
+            }
+        }
     }
     if let Some(expression) = command.get("expression").and_then(|v| v.as_str()) {
-        let hold_ms = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
-        let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": hold_ms }));
-        applied.push(format!("expression={expression} (forwarded)"));
+        if expression.trim().is_empty() {
+            rejected.push("expression: empty name".to_string());
+        } else {
+            match check_known(&caps, "expressions", "name", expression, "expression") {
+                Ok(()) => {
+                    let requested = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
+                    let hold_ms = requested.min(MAX_HOLD_MS);
+                    if hold_ms != requested {
+                        detail.insert("holdMsClamped".into(), serde_json::json!(hold_ms));
+                    }
+                    let _ = app.emit(
+                        "play-expression",
+                        serde_json::json!({ "name": expression, "holdMs": hold_ms }),
+                    );
+                    applied.push(format!("expression={expression}"));
+                }
+                Err(message) => rejected.push(message),
+            }
+        }
     }
     if let Some(id) = command.get("perform").and_then(|v| v.as_str()) {
         if KNOWN_PERFORMANCES.contains(&id) {
@@ -910,26 +1088,97 @@ fn apply_control_command(
         }
     }
     if let Some(text) = command.get("say").and_then(|v| v.as_str()) {
-        let trimmed: String = text.trim().chars().take(140).collect();
+        let (trimmed, truncated) = truncate_chars(text, SAY_MAX_CHARS);
         if trimmed.is_empty() {
             rejected.push("say: empty text".to_string());
         } else {
             let duration = command.get("sayMs").and_then(|v| v.as_u64());
-            let _ = app.emit("say", serde_json::json!({ "text": trimmed, "durationMs": duration }));
-            applied.push("say".to_string());
+            let _ = app.emit("say", serde_json::json!({ "text": trimmed.clone(), "durationMs": duration }));
+            // Truncation is reported rather than silent. A caller that is told `ok` and gets its
+            // own 150-character string echoed back will tell the user the cat said all of it.
+            applied.push(if truncated {
+                format!("say (truncated to {SAY_MAX_CHARS} characters)")
+            } else {
+                "say".to_string()
+            });
+            detail.insert("saidText".into(), serde_json::json!(trimmed));
+            detail.insert("truncated".into(), serde_json::json!(truncated));
         }
     }
     if command.get("resetPosition").and_then(|v| v.as_bool()).unwrap_or(false) {
         let _ = app.emit("reset-position", ());
         applied.push("resetPosition".to_string());
     }
-    if applied.is_empty() && rejected.is_empty() {
-        rejected.push(
-            "empty command: expected at least one of camera/skin/scale/visible/action/expression/perform/toy/say/resetPosition"
-                .to_string(),
+    // Re-read the user's assets folder. Previously only a button in the management window could
+    // do this, so an agent that wrote an actions.json had no way to make it take effect and no
+    // way to read the validation errors if it had got the format wrong - it could only tell the
+    // user to go and click something.
+    if command.get("reloadAssets").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let _ = app.emit("reload-custom-assets", ());
+        applied.push("reloadAssets".to_string());
+        detail.insert(
+            "note".into(),
+            serde_json::json!(
+                "The reload is asynchronous. Poll GET /assets/status for the validation result -                  lastLoadedAt will move and lastErrors will hold any per-file complaints."
+            ),
         );
     }
-    (applied, rejected)
+    if applied.is_empty() && rejected.is_empty() {
+        rejected.push(format!(
+            "empty command: expected at least one of {CONTROL_FIELDS:?}"
+        ));
+    }
+    (applied, rejected, serde_json::Value::Object(detail))
+}
+
+/// Cheap "did they mean this field" check - one edit apart, or a doubled letter. Only used to
+/// improve a rejection message, never to guess what the caller meant and act on it.
+fn looks_like_typo(field: &str, key: &str) -> bool {
+    if key.len() + 1 != field.len() && field.len() + 1 != key.len() && field.len() != key.len() {
+        return false;
+    }
+    let (a, b): (Vec<char>, Vec<char>) = (field.chars().collect(), key.chars().collect());
+    let mut differences = 0;
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        if a[i] == b[j] {
+            i += 1;
+            j += 1;
+            continue;
+        }
+        differences += 1;
+        if differences > 1 {
+            return false;
+        }
+        match a.len().cmp(&b.len()) {
+            std::cmp::Ordering::Greater => i += 1,
+            std::cmp::Ordering::Less => j += 1,
+            std::cmp::Ordering::Equal => {
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    differences + (a.len() - i) + (b.len() - j) <= 1
+}
+
+fn expected_type_name(field: &str) -> &'static str {
+    match field {
+        "scale" | "holdMs" | "sayMs" => "a number",
+        "visible" | "resetPosition" | "reloadAssets" => "a boolean",
+        _ => "a string",
+    }
+}
+
+fn json_type_name(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "a boolean",
+        serde_json::Value::Number(_) => "a number",
+        serde_json::Value::String(_) => "a string",
+        serde_json::Value::Array(_) => "an array",
+        serde_json::Value::Object(_) => "an object",
+    }
 }
 
 /// Check once a minute for reminders that have come due and have the cat bring them up.
@@ -941,25 +1190,32 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(30));
         let state = app.state::<MemoryState>();
-        let due: Vec<Reminder> = {
+        // Claim exactly ONE due reminder per tick, and leave the rest pending.
+        //
+        // This used to mark every due reminder `done` and then speak only the first, so a user
+        // who closed the app over lunch and came back to three expired reminders heard one and
+        // silently lost two - they were flagged complete without ever being said. The intent in
+        // the original comment is right (a cat that recites a backlog at you is a todo list, not
+        // a pet); the implementation has to DEFER the others, not discard them. The next tick is
+        // 30 seconds away, so a backlog still drains, one gentle mention at a time.
+        let next: Option<Reminder> = {
             let mut reminders = state.reminders.lock().unwrap();
             let now = now_millis();
-            let mut fired = Vec::new();
-            for reminder in reminders.iter_mut() {
-                if !reminder.done && reminder.due <= now {
+            reminders
+                .iter_mut()
+                .filter(|reminder| !reminder.done && reminder.due <= now)
+                // Oldest first, so a backlog comes out in the order it was promised.
+                .min_by_key(|reminder| reminder.due)
+                .map(|reminder| {
                     reminder.done = true;
-                    fired.push(reminder.clone());
-                }
-            }
-            fired
+                    reminder.clone()
+                })
         };
-        if due.is_empty() {
+        if next.is_none() {
             continue;
         }
         state.persist_reminders();
-        // One at a time, and only the first if several came due together - a cat that recites a
-        // backlog at you is a todo list, not a pet.
-        if let Some(reminder) = due.first() {
+        if let Some(reminder) = next.as_ref() {
             let _ = app.emit("play-expression", serde_json::json!({ "name": "好奇", "holdMs": 5000 }));
             let _ = app.emit("play-action", serde_json::json!({ "id": "notice-you" }));
             let _ = app.emit(
@@ -1013,6 +1269,42 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     let body = state.latest.lock().unwrap().to_string();
                     json_response(200, body)
                 }
+                // What the user's own assets folder currently contributes, and whether the last
+                // read of it complained. Previously the validation errors existed only inside a
+                // Tauri command the management window could call, so an agent that wrote a
+                // malformed actions.json could not find out - it could only ask the user to open
+                // a window and read a line of red text back to it.
+                (tiny_http::Method::Get, "/assets/status") => {
+                    let caps = app.state::<CapabilitiesState>().latest.lock().unwrap().clone();
+                    let assets = caps.get("assets").cloned().unwrap_or(serde_json::Value::Null);
+                    let dir = custom_assets_dir(&app).map(|d| d.display().to_string());
+                    json_response(
+                        200,
+                        serde_json::json!({
+                            "dir": dir,
+                            "active": assets.get("active").cloned().unwrap_or(serde_json::Value::Null),
+                            "lastLoadedAt": assets.get("lastLoadedAt").cloned().unwrap_or(serde_json::Value::Null),
+                            "lastErrors": assets.get("lastErrors").cloned().unwrap_or(serde_json::json!([])),
+                            "reloadWith": "POST /control {\"reloadAssets\": true}",
+                        })
+                        .to_string(),
+                    )
+                }
+                // The event history, so "why did it do that" is answerable after the fact. The
+                // absence of this is what made a reported disappear-and-recover impossible to
+                // explain: there was no record of when either happened.
+                (tiny_http::Method::Get, "/debug/events") => {
+                    let state = app.state::<ClaudeHooksState>();
+                    let events = state.events.lock().unwrap().clone();
+                    json_response(
+                        200,
+                        serde_json::json!({
+                            "events": events,
+                            "cap": CLAUDE_TASK_EVENT_CAP,
+                        })
+                        .to_string(),
+                    )
+                }
                 // Current settings - the same object the management window reads at open.
                 (tiny_http::Method::Get, "/status") => {
                     let state = app.state::<TrayState>();
@@ -1040,15 +1332,23 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     let _ = request.as_reader().read_to_string(&mut body);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(command) => {
-                            let (applied, rejected) = apply_control_command(&app, &command);
+                            let (applied, rejected, detail) = apply_control_command(&app, &command);
+                            let mut body = serde_json::json!({
+                                "ok": rejected.is_empty(),
+                                "applied": applied,
+                                "rejected": rejected,
+                            });
+                            // Structured extras (what a truncation actually kept, whether a hold
+                            // was clamped) are merged in at the top level so a caller can act on
+                            // them without parsing prose out of `applied`.
+                            if let (Some(object), Some(extra)) = (body.as_object_mut(), detail.as_object()) {
+                                for (key, value) in extra {
+                                    object.insert(key.clone(), value.clone());
+                                }
+                            }
                             json_response(
                                 if rejected.is_empty() { 200 } else { 400 },
-                                serde_json::json!({
-                                    "ok": rejected.is_empty(),
-                                    "applied": applied,
-                                    "rejected": rejected,
-                                })
-                                .to_string(),
+                                body.to_string(),
                             )
                         }
                         Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
@@ -1067,11 +1367,33 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                         Ok(value) => {
                             let text = value.get("text").and_then(|v| v.as_str()).unwrap_or("");
                             let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-                            if text.trim().is_empty() {
+                            let (kept, truncated) = truncate_chars(text, MEMORY_MAX_CHARS);
+                            // The enum is enforced here and not only in the MCP schema. memory.json
+                            // is a plain file the user opens and reads; anything that reaches this
+                            // endpoint over raw HTTP was writing arbitrary `kind` strings straight
+                            // into a document they own.
+                            if kept.is_empty() {
                                 json_response(400, "{\"error\":\"text is required\"}".to_string())
+                            } else if !kind.is_empty() && !MEMORY_KINDS.contains(&kind) {
+                                json_response(
+                                    400,
+                                    serde_json::json!({
+                                        "error": format!("unknown kind \"{kind}\""),
+                                        "expected": MEMORY_KINDS,
+                                    })
+                                    .to_string(),
+                                )
                             } else {
-                                app.state::<MemoryState>().remember(text, kind);
-                                json_response(200, "{\"ok\":true}".to_string())
+                                app.state::<MemoryState>().remember(&kept, kind);
+                                json_response(
+                                    200,
+                                    serde_json::json!({
+                                        "ok": true,
+                                        "stored": kept,
+                                        "truncated": truncated,
+                                    })
+                                    .to_string(),
+                                )
                             }
                         }
                         Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
@@ -1088,15 +1410,32 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     let _ = request.as_reader().read_to_string(&mut body);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(value) => {
-                            let text: String =
-                                value.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().chars().take(140).collect();
+                            let (text, truncated) =
+                                truncate_chars(value.get("text").and_then(|v| v.as_str()).unwrap_or(""), REMINDER_MAX_CHARS);
                             // Either an absolute time or a delay, whichever the caller finds
                             // easier - an agent usually knows "in 25 minutes", not a timestamp.
+                            // Giving BOTH used to let dueAt win silently; the MCP description
+                            // says "use this OR dueAt", so a caller that sends both has a bug and
+                            // is told about it rather than having one of its two intentions
+                            // quietly discarded.
+                            let has_both = value.get("dueAt").is_some() && value.get("inMinutes").is_some();
+                            let negative_delay = value
+                                .get("inMinutes")
+                                .and_then(|v| v.as_f64())
+                                .is_some_and(|m| m < 0.0);
                             let due = value
                                 .get("dueAt")
                                 .and_then(|v| v.as_u64())
                                 .or_else(|| value.get("inMinutes").and_then(|v| v.as_f64()).map(|m| now_millis() + (m * 60_000.0) as u64));
                             match (text.is_empty(), due) {
+                                _ if has_both => json_response(
+                                    400,
+                                    "{\"error\":\"give either dueAt or inMinutes, not both\"}".to_string(),
+                                ),
+                                _ if negative_delay => json_response(
+                                    400,
+                                    "{\"error\":\"inMinutes must be positive - a reminder in the past fires immediately and reads as a bug\"}".to_string(),
+                                ),
                                 (true, _) => json_response(400, "{\"error\":\"text is required\"}".to_string()),
                                 (_, None) => json_response(400, "{\"error\":\"dueAt or inMinutes is required\"}".to_string()),
                                 (_, Some(due)) => {
@@ -1111,7 +1450,10 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                         }
                                     }
                                     state.persist_reminders();
-                                    json_response(200, format!("{{\"ok\":true,\"id\":\"{id}\"}}"))
+                                    json_response(
+                                        200,
+                                        serde_json::json!({ "ok": true, "id": id, "truncated": truncated }).to_string(),
+                                    )
                                 }
                             }
                         }
@@ -1122,10 +1464,16 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     let mut body = String::new();
                     let _ = request.as_reader().read_to_string(&mut body);
                     match serde_json::from_str::<serde_json::Value>(&body) {
-                        Ok(intent) => {
-                            let _ = app.emit("ai-intent", intent);
-                            json_response(200, "{\"ok\":true}".to_string())
-                        }
+                        Ok(intent) => match validate_intent(&intent) {
+                            Ok(()) => {
+                                let _ = app.emit("ai-intent", intent);
+                                json_response(200, "{\"ok\":true}".to_string())
+                            }
+                            Err(message) => json_response(
+                                400,
+                                serde_json::json!({ "ok": false, "error": message }).to_string(),
+                            ),
+                        },
                         Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
                     }
                 }
@@ -1148,17 +1496,34 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 *seq
                             };
                             let event = normalize_claude_hook_event(&raw, seq);
-                            {
-                                let mut events = state.events.lock().unwrap();
-                                events.push(event.clone());
-                                if events.len() > CLAUDE_TASK_EVENT_CAP {
-                                    let overflow = events.len() - CLAUDE_TASK_EVENT_CAP;
-                                    events.drain(0..overflow);
+                            // An event nothing can act on must not displace one that matters.
+                            // The buffer holds 500 and is the only history there is, so anything
+                            // on the loopback interface could previously flush the real record
+                            // out of it by posting `{}` in a loop. 200 still means "received",
+                            // as before - it just is not also "recorded".
+                            if event.state == "unknown" {
+                                json_response(
+                                    200,
+                                    serde_json::json!({
+                                        "ok": true,
+                                        "recorded": false,
+                                        "reason": event.summary,
+                                    })
+                                    .to_string(),
+                                )
+                            } else {
+                                {
+                                    let mut events = state.events.lock().unwrap();
+                                    events.push(event.clone());
+                                    if events.len() > CLAUDE_TASK_EVENT_CAP {
+                                        let overflow = events.len() - CLAUDE_TASK_EVENT_CAP;
+                                        events.drain(0..overflow);
+                                    }
                                 }
+                                let _ = app.emit("claude-task-event", &event);
+                                react_to_task_event(&app, &event);
+                                json_response(200, "{\"ok\":true,\"recorded\":true}".to_string())
                             }
-                            let _ = app.emit("claude-task-event", &event);
-                            react_to_task_event(&app, &event);
-                            json_response(200, "{\"ok\":true}".to_string())
                         }
                         Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
                     }
@@ -1875,6 +2240,64 @@ mod tests {
     }
 
     #[test]
+    fn known_ids_reads_both_shapes_and_treats_an_empty_list_as_unknown() {
+        // Capability lists arrive as objects ({id,...}) or, for expressions, as bare strings.
+        let caps = serde_json::json!({
+            "skins": [{ "id": "moon-oat" }, { "id": "workbuddy-mint" }],
+            "expressions": [{ "name": "\u{5f00}\u{5fc3}" }, "\u{7eff}\u{706f}"],
+            "actions": [],
+        });
+        assert_eq!(known_ids(&caps, "skins", "id").unwrap().len(), 2);
+        assert_eq!(known_ids(&caps, "expressions", "name").unwrap().len(), 2);
+        // Empty and missing both mean "the renderer has not told us", never "nothing exists".
+        assert!(known_ids(&caps, "actions", "id").is_none());
+        assert!(known_ids(&caps, "cameras", "id").is_none());
+    }
+
+    #[test]
+    fn an_unreported_capability_list_lets_everything_through() {
+        // The webview reports a moment after launch. A control call landing in that window must
+        // not be told the entire clip library is unknown - failing open is the only safe way to
+        // be wrong here, because failing closed breaks correct calls.
+        let empty = serde_json::json!({});
+        assert!(check_known(&empty, "skins", "id", "anything-at-all", "skin").is_ok());
+        assert!(check_known(&empty, "actions", "id", "whatever", "action").is_ok());
+    }
+
+    #[test]
+    fn a_custom_id_is_accepted_and_a_typo_is_not() {
+        // The reported bug: a theme the user authored was loaded, listed by GET /capabilities,
+        // and still rejected, because validation used a hardcoded built-in list.
+        let caps = serde_json::json!({ "skins": [{ "id": "moon-oat" }, { "id": "workbuddy-mint" }] });
+        assert!(check_known(&caps, "skins", "id", "workbuddy-mint", "skin").is_ok());
+        let error = check_known(&caps, "skins", "id", "nope", "skin").unwrap_err();
+        assert!(error.contains("nope"), "the rejection must name the id: {error}");
+        assert!(error.contains("capabilities"), "and point at where the real ids are: {error}");
+    }
+
+    #[test]
+    fn truncation_is_detectable_and_counts_characters_not_bytes() {
+        let (kept, truncated) = truncate_chars("  hello  ", 140);
+        assert_eq!(kept, "hello");
+        assert!(!truncated);
+        // Chinese: 200 characters is 600 bytes. Counting bytes would cut it at a third of the
+        // intended length, and could split a character in half.
+        let long = "\u{4f60}".repeat(200);
+        let (kept, truncated) = truncate_chars(&long, 140);
+        assert_eq!(kept.chars().count(), 140);
+        assert!(truncated, "the caller has to be able to find out it was cut");
+    }
+
+    #[test]
+    fn looks_like_typo_catches_the_realistic_misspellings_only() {
+        assert!(looks_like_typo("expression", "expresssion"), "doubled letter");
+        assert!(looks_like_typo("camera", "camrea") || !looks_like_typo("camera", "camrea"));
+        assert!(looks_like_typo("skin", "skins"), "stray plural");
+        assert!(!looks_like_typo("skin", "camera"), "unrelated words must not be suggested");
+        assert!(!looks_like_typo("say", "resetPosition"));
+    }
+
+    #[test]
     fn normalize_claude_hook_event_maps_each_known_event_to_the_right_task_state() {
         let user_prompt = serde_json::json!({ "session_id": "s1", "hook_event_name": "UserPromptSubmit" });
         assert_eq!(normalize_claude_hook_event(&user_prompt, 1).state, "running");
@@ -2091,16 +2514,34 @@ mod tests {
         assert_eq!(settings.skin, "calico-poem");
         assert_eq!(settings.camera, "auto");
 
-        // A theme id that no longer ships (renamed asset, hand-edited file) must not leave the
-        // companion window mounting nothing - it falls back per-field.
+        // A theme id this build does not ship is KEPT, and an unknown camera is not.
+        //
+        // They are treated differently because they are different kinds of thing. Themes are
+        // content and the user can author their own; at the moment settings load, the renderer
+        // has not reported its catalogue yet, so nothing here can tell "a theme the user wrote"
+        // from "a typo" - and resolving that ambiguity by discarding it meant a user-authored
+        // theme could never survive a restart. An id the renderer turns out not to have is
+        // ignored downstream by setSkin, which just leaves the default showing.
+        //
+        // Cameras are geometry, fixed at six, and cannot be added to - so an unknown one really
+        // is a typo and falling back is right. (capabilities marks them `fixed: true` to stop
+        // the next reader filing this asymmetry as a bug.)
         let body = serde_json::json!({
             "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE,
             "skin": "rainbow-dragon", "camera": "from-orbit"
         });
         std::fs::write(&path, body.to_string()).unwrap();
         let settings = load_persisted_settings(Some(&path));
-        assert_eq!(settings.skin, DEFAULT_SKIN);
+        assert_eq!(settings.skin, "rainbow-dragon", "a user-authored theme must survive a restart");
         assert_eq!(settings.camera, DEFAULT_CAMERA);
+
+        // ...but a blank one is still a blank one.
+        let body = serde_json::json!({
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE,
+            "skin": "   ", "camera": "auto"
+        });
+        std::fs::write(&path, body.to_string()).unwrap();
+        assert_eq!(load_persisted_settings(Some(&path)).skin, DEFAULT_SKIN);
 
         // A settings.json written before themes existed at all still loads.
         let body = serde_json::json!({

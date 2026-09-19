@@ -16,7 +16,7 @@ import { createLifeEngine, TOY_KINDS } from '../../../packages/life-engine/src/i
 import { createActivityRecorder } from '../../../packages/perception/src/index.mjs';
 import type { WorkArea } from '../../../packages/desktop-host-contract/index.d.ts';
 import type { AIIntent } from '../../../packages/perception-contract/index.d.ts';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 // TEMPORARY: mirrors checkpoints into the Rust process's stdout, since the real
@@ -32,6 +32,13 @@ function dlog(message: string) {
  * vertical margins from what this one produces.
  */
 const EDGE_MARGIN = 24;
+
+/** Shared by the startup report and every post-reload republish, so the two cannot drift. */
+const TOY_CATALOGUE = [
+  { kind: 'yarn', name: '毛线球', description: '会滚、会撞墙反弹；猫追上去拍一爪又飞出去，能自己玩下去' },
+  { kind: 'feather', name: '逗猫棒', description: '跟着你的鼠标走，但慢半拍——需要你来逗' },
+  { kind: 'laser', name: '激光笔', description: '死死钉在光标上，拍到也抓不住（这就是笑点）' },
+];
 
 async function main() {
   dlog('main() start');
@@ -195,6 +202,8 @@ async function main() {
   let aim: { x: number; y: number } | null = null;
   // Pointer affection state. `strokeDistance` is pointer TRAVEL over the cat, not time spent
   // there - a hand moving back and forth is a stroke, a parked mouse is not.
+  // The most recent snapshot the frame loop produced, for the reporting interval to read.
+  let lastEngineSnapshot: ReturnType<typeof engine.tick> | null = null;
   let hoverSince = 0;
   let strokeDistance = 0;
   let lastHoverSample: { x: number; y: number } | null = null;
@@ -249,6 +258,16 @@ async function main() {
       // back rather than applying it.
       fx.setBubbleStyle(renderer.customBubbleStyle ?? {});
       await invoke('report_asset_errors', { errors }).catch(() => {});
+      // Re-publish the capability lists: a reload can add actions, expressions and themes, and
+      // GET /capabilities is what an agent validates its ids against. Without this the bridge
+      // would keep rejecting a clip the user had just successfully installed.
+      void invoke('report_capabilities', {
+        capabilities: {
+          ...(renderer.describeCapabilities?.() ?? {}),
+          performances: performances.list(),
+          toys: TOY_CATALOGUE,
+        },
+      }).catch(() => {});
       if (errors.length) dlog(`custom assets had problems: ${errors.join(' | ')}`);
       else if (payload?.available) dlog('custom assets loaded');
     } catch (error) {
@@ -259,6 +278,9 @@ async function main() {
   void listen('reload-custom-assets', () => {
     void loadCustomAssets().then(() => {
       renderer.setSkin?.(currentSkinId);
+      // Tells the management window to rebuild its theme cards. Without it a user who adds a
+      // theme and reloads is told it worked and still has nothing to click.
+      void emit('custom-assets-reloaded', {});
     });
   });
 
@@ -330,11 +352,7 @@ async function main() {
     capabilities: {
       ...(renderer.describeCapabilities?.() ?? {}),
       performances: performances.list(),
-      toys: [
-        { kind: 'yarn', name: '毛线球', description: '会滚、会撞墙反弹；猫追上去拍一爪又飞出去，能自己玩下去' },
-        { kind: 'feather', name: '逗猫棒', description: '跟着你的鼠标走，但慢半拍——需要你来逗' },
-        { kind: 'laser', name: '激光笔', description: '死死钉在光标上，拍到也抓不住（这就是笑点）' },
-      ],
+      toys: TOY_CATALOGUE,
     },
   }).catch((error) => dlog(`report_capabilities failed: ${String(error)}`));
 
@@ -459,6 +477,17 @@ async function main() {
       // is playing with. Both are things an agent (or the debug console, or a person watching
       // the 首页 card) genuinely wants to know and previously had no way to see.
       action: renderer.playingAction?.id ?? null,
+      // The three fields a driver previously had no way to read back. `expression` is the one
+      // that mattered most: it could be set but never observed, so a typo'd name and a correct
+      // one produced identical, successful-looking responses.
+      expression: renderer.currentExpression?.name ?? null,
+      expressionHeld: renderer.currentExpression?.held ?? false,
+      heading: lastEngineSnapshot?.heading ?? null,
+      intent: lastEngineSnapshot?.intent ?? null,
+      // Non-null only if the engine has had to repair its own state. A driver seeing this move
+      // knows something fed the cat a value it could not represent - previously that showed up
+      // as `{"x":null,"y":null}`, indistinguishable from a missing field.
+      recoveredAt: lastEngineSnapshot?.recoveredAt ?? null,
       toy: engine.toy ? { kind: engine.toy.kind, position: engine.toy.position } : null,
       catName,
       activeAgent,
@@ -489,6 +518,10 @@ async function main() {
       // Drag position updates now come from the native mousemove listener above (faster,
       // no relay round-trip) - nothing to do here for dragging specifically.
       const snapshot = engine.tick(now, cursor);
+      // Kept for the reporting interval below. It must NOT call tick() itself: that would
+      // advance the simulation a second time, off the animation clock, and every distance the
+      // gait integrates would be wrong.
+      lastEngineSnapshot = snapshot;
       renderer.render(snapshot, deltaSeconds, cursor);
 
       // Whenever a clip starts, pin the cat in place for as long as it runs. The renderer owns

@@ -19,12 +19,54 @@ import { BUILT_IN_EXPRESSIONS } from './rig/art.ts';
 import { ASSETS_README } from './rig/custom-assets.ts';
 
 interface SkinCard {
+  /** True for a theme that came from the user's own assets/skins.json rather than the bundle. */
+  custom?: boolean;
   id: string;
   name: string;
   description: string;
   materials: Record<string, string>;
 }
-const SKINS = skinCatalogue as SkinCard[];
+const BUILT_IN_SKINS = skinCatalogue as SkinCard[];
+/**
+ * Built-ins plus whatever the user has authored, refreshed from the running renderer.
+ *
+ * This page used to build its cards straight from the compile-time JSON, which by definition
+ * cannot contain a theme the user wrote after the build. So "改完点重新加载即可生效" was true
+ * for actions and expressions and simply false for themes: the file loaded, the id appeared in
+ * GET /capabilities, and the appearance page still had no card to click. There was no entry
+ * point at all - the user was told to reload, reloaded, and nothing visibly happened.
+ */
+let SKINS: SkinCard[] = [...BUILT_IN_SKINS];
+/** The theme showing right now, so a rebuild of the card list keeps the right one marked. */
+let activeSkinId = BUILT_IN_SKINS[0]?.id ?? '';
+
+/** Pull the live catalogue from the renderer and merge it over the built-ins. */
+async function refreshSkinCatalogue(): Promise<void> {
+  try {
+    const capabilities = await invoke<{ skins?: { id: string; name: string; description?: string; source?: string }[] }>(
+      'get_capabilities',
+    );
+    const live = capabilities?.skins ?? [];
+    if (!live.length) return; // renderer has not reported yet - keep the built-ins rather than blanking the page
+    const byId = new Map(BUILT_IN_SKINS.map((skin) => [skin.id, skin]));
+    for (const entry of live) {
+      const existing = byId.get(entry.id);
+      if (existing) continue;
+      // A custom theme has no swatch colours here (they live in the renderer's own copy), so
+      // it borrows the default's for the chips and is labelled as the user's own.
+      byId.set(entry.id, {
+        ...BUILT_IN_SKINS[0],
+        id: entry.id,
+        name: entry.name ?? entry.id,
+        description: entry.description ?? '来自你的 assets/skins.json',
+        custom: true,
+      } as SkinCard);
+    }
+    SKINS = [...byId.values()];
+  } catch {
+    // Leave the built-ins in place; an appearance page with nine themes beats an empty one.
+  }
+}
 
 type Trait = 'independence' | 'curiosity' | 'gentleness' | 'playfulness' | 'sleepiness';
 type PersonalityTraits = Record<Trait, number>;
@@ -196,6 +238,7 @@ function setActiveBehaviorPreset(preset: BehaviorPreset) {
  * the asset is right there, or offer one that was removed.
  */
 function renderSkinCards(activeId: string) {
+  activeSkinId = activeId;
   const container = document.getElementById('skin-options');
   if (!container) return;
   container.replaceChildren(
@@ -219,6 +262,10 @@ function renderSkinCards(activeId: string) {
 
       const note = document.createElement('span');
       note.textContent = skin.id === activeId ? '使用中' : skin.description;
+      if (skin.custom) {
+        card.classList.add('skin-card-custom');
+        card.title = '你自己定义的主题（assets/skins.json）';
+      }
 
       card.append(name, swatches, note);
       card.addEventListener('click', () => void invoke('set_skin', { skin: skin.id }));
@@ -229,7 +276,8 @@ function renderSkinCards(activeId: string) {
   const active = SKINS.find((skin) => skin.id === activeId);
   if (hint) {
     hint.textContent =
-      `共 ${SKINS.length} 款主题，全部是真实资产（三款 atelier-* 是手绘 PNG，其余由花纹生成器绘制）。` +
+      `共 ${SKINS.length} 款主题（内置 ${BUILT_IN_SKINS.length} 款` +
+      `${SKINS.length > BUILT_IN_SKINS.length ? ` + 你自己的 ${SKINS.length - BUILT_IN_SKINS.length} 款` : ''}）。` +
       (active ? `当前：${active.name} — ${active.description}。` : '') +
       '切换即时生效，不用重启，并且会记住。';
   }
@@ -502,7 +550,7 @@ async function main() {
   setTraitSliders(status.personalityTraits);
   setActiveBehaviorPreset(status.behaviorPreset);
   renderPlayPage();
-  renderSkinCards(status.skin);
+  void refreshSkinCatalogue().then(() => renderSkinCards(status.skin));
   renderCameraOptions(status.camera);
   const accEl = document.getElementById('status-accessibility');
   if (accEl) accEl.textContent = status.accessibilityTrusted ? '已授权（未来功能用得上）' : '未授权（不影响当前功能）';
@@ -605,6 +653,11 @@ async function main() {
   });
   void listen<PersonalityTraits>('set-personality-traits', (event) => setTraitSliders(event.payload));
   void listen<string>('set-skin', (event) => renderSkinCards(event.payload));
+  // A reload can add themes, so the card list has to be rebuilt after one - otherwise the user
+  // reloads, is told it worked, and still sees no new card.
+  void listen('custom-assets-reloaded', () => {
+    void refreshSkinCatalogue().then(() => renderSkinCards(activeSkinId));
+  });
   void listen<string>('set-camera', (event) => renderCameraOptions(event.payload));
   void listen<{ preset: BehaviorPreset; avoidRadius: number }>('set-behavior-preset', (event) =>
     setActiveBehaviorPreset(event.payload.preset),

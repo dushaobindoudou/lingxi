@@ -23,12 +23,16 @@ export const tools = [
     async run() {
       const caps = await bridge.capabilities();
       return ok('The cat\'s current capability set.', {
-        actions: (caps.actions ?? []).map((a) => ({ id: a.id, name: a.name, category: a.category, duration: a.duration })),
+        actions: (caps.actions ?? []).map((a) => ({ id: a.id, name: a.name, category: a.category, duration: a.duration, source: a.source })),
+        // `source` says which of these the USER wrote. It matters because actions.json and
+        // expressions.json are replaced wholesale: an agent adding a clip has to start from the
+        // user's file if there is one, or it silently deletes everything they authored.
         expressions: caps.expressions ?? [],
+        assets: caps.assets ?? null,
         performances: (caps.performances ?? []).map((p) => ({ id: p.id, name: p.name, description: p.description })),
         toys: caps.toys ?? [],
         cameras: (caps.cameras ?? []).map((c) => c.id),
-        skins: (caps.skins ?? []).map((s) => ({ id: s.id, name: s.name })),
+        skins: (caps.skins ?? []).map((s) => ({ id: s.id, name: s.name, source: s.source })),
       });
     },
   },
@@ -60,8 +64,12 @@ export const tools = [
       required: ['text'],
     },
     async run({ text, seconds }) {
-      await bridge.control({ say: text, ...(seconds ? { sayMs: Math.round(seconds * 1000) } : {}) });
-      return ok(`Said: ${text}`);
+      const result = await bridge.control({ say: text, ...(seconds ? { sayMs: Math.round(seconds * 1000) } : {}) });
+      // The bridge reports what it actually did with the text, including any truncation. This
+      // used to echo the caller's own string back unconditionally, so a 150-character line came
+      // back in full while the cat displayed 140 - the model then told the user something the
+      // cat never said.
+      return ok(`Said: ${result.saidText ?? text}${result.truncated ? ` (truncated to ${result.saidText.length} characters - the bubble holds no more)` : ''}`);
     },
   },
   {
@@ -84,7 +92,6 @@ export const tools = [
         ...(expression ? { expression, holdMs: Math.round((seconds ?? 4) * 1000) } : {}),
         ...(action ? { action } : {}),
       });
-      if (result.rejected?.length) throw new Error(result.rejected.join('; '));
       return ok(`Applied: ${result.applied?.join(', ')}`);
     },
   },
@@ -101,7 +108,6 @@ export const tools = [
     },
     async run({ id }) {
       const result = await bridge.control({ perform: id });
-      if (result.rejected?.length) throw new Error(result.rejected.join('; '));
       return ok(`Performing ${id}.`);
     },
   },
@@ -118,7 +124,6 @@ export const tools = [
     },
     async run({ toy }) {
       const result = await bridge.control({ toy });
-      if (result.rejected?.length) throw new Error(result.rejected.join('; '));
       return ok(toy === 'none' ? 'Put the toy away.' : `Put out the ${toy}.`);
     },
   },
@@ -195,7 +200,6 @@ export const tools = [
     async run({ camera, skin }) {
       if (!camera && !skin) throw new Error('Give a camera, a skin, or both.');
       const result = await bridge.control({ ...(camera ? { camera } : {}), ...(skin ? { skin } : {}) });
-      if (result.rejected?.length) throw new Error(result.rejected.join('; '));
       return ok(`Applied: ${result.applied?.join(', ')}`);
     },
   },

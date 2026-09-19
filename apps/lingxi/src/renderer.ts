@@ -35,6 +35,20 @@ const SKELETON = refineSkeleton(skeletonData as unknown as SkeletonData);
 const BUILT_IN_SKINS = catalogue as ArtSkin[];
 /** Built-ins plus whatever the user's skins.json adds; a custom skin with a built-in id wins. */
 let SKINS: CustomSkin[] = BUILT_IN_SKINS as CustomSkin[];
+/**
+ * Which capability lists the user has replaced, and which ids within them came from the user.
+ *
+ * Reported alongside the lists themselves so an agent can tell its own additions from the
+ * built-ins. This matters more than it looks: actions.json and expressions.json are replaced
+ * WHOLESALE, so an agent that wants to tweak one built-in clip has to know whether the user has
+ * already edited that file - otherwise "add my clip" silently discards everything they wrote.
+ */
+const BUILT_IN_ACTION_IDS = new Set<string>();
+const BUILT_IN_EXPRESSION_NAMES = new Set<string>();
+const BUILT_IN_SKIN_IDS = new Set((BUILT_IN_SKINS as CustomSkin[]).map((entry) => entry.id));
+let assetSources = { actions: 'builtin', expressions: 'builtin', skins: 'builtin', bubble: 'builtin' };
+let lastAssetLoadAt: number | null = null;
+let lastAssetErrors: string[] = [];
 export const DEFAULT_SKIN_ID = 'honey-mittens';
 
 /** Ear pose implied by each expression's ear layer, in radians. */
@@ -159,6 +173,12 @@ export function createThreeRenderer(): Renderer {
   const bodyFlex = createBodyFlex();
   const nodeIds = SKELETON.nodes.map((node) => node.id);
   let director = createDirector(nodeIds);
+  // Recorded HERE, at construction, from the bundled library - NOT lazily on the first
+  // describeCapabilities() call. Custom assets are loaded during startup, before anything asks
+  // for capabilities, so a lazy seed would sample the already-merged list and label every one
+  // of the user's own clips "builtin" - which is precisely the distinction this exists to draw.
+  for (const action of director.actions) BUILT_IN_ACTION_IDS.add(action.id);
+  for (const name of director.expressionNames) BUILT_IN_EXPRESSION_NAMES.add(name);
   // A hand-drawn face sheet, if the active theme supplies one. Replaces the procedural face
   // painter entirely for that theme.
   let faceSheetImage: HTMLImageElement | null = null;
@@ -544,6 +564,14 @@ export function createThreeRenderer(): Renderer {
       });
       if (loaded.expressions) setExpressions(loaded.expressions);
       else resetExpressions();
+      assetSources = {
+        actions: loaded.actions ? 'custom' : 'builtin',
+        expressions: loaded.expressions ? 'custom' : 'builtin',
+        skins: loaded.skins?.length ? 'merged' : 'builtin',
+        bubble: loaded.bubble ? 'custom' : 'builtin',
+      };
+      lastAssetLoadAt = Date.now();
+      lastAssetErrors = loaded.errors;
       // Handed back to the caller rather than applied here: the fx layer belongs to the host,
       // not to the renderer, and the renderer has no business reaching into it.
       lastLoadedBubbleStyle = loaded.bubble ?? null;
@@ -657,6 +685,11 @@ export function createThreeRenderer(): Renderer {
       return director.playExpression(name, holdMs);
     },
 
+    /** The face the cat is wearing right now - the one control that was write-only. */
+    get currentExpression() {
+      return director.currentExpression;
+    },
+
     /** Everything this renderer can be asked to do, as data. Pushed to the Rust side at
      *  startup so `GET /capabilities` can answer an agent without the webview being involved,
      *  and used to build the debug console's grids. */
@@ -669,15 +702,33 @@ export function createThreeRenderer(): Renderer {
           duration: action.duration,
           expression: action.expression,
           description: action.description ?? '',
+          source: BUILT_IN_ACTION_IDS.has(action.id) ? 'builtin' : 'custom',
         })),
-        expressions: director.expressionNames,
-        skins: SKINS.map((entry) => ({ id: entry.id, name: entry.name, description: entry.description })),
+        expressions: director.expressionNames.map((name) => ({
+          name,
+          source: BUILT_IN_EXPRESSION_NAMES.has(name) ? 'builtin' : 'custom',
+        })),
+        skins: SKINS.map((entry) => ({
+          id: entry.id,
+          name: entry.name,
+          description: entry.description,
+          source: BUILT_IN_SKIN_IDS.has(entry.id) ? 'builtin' : 'custom',
+        })),
         cameras: CAMERA_PRESETS.map((preset) => ({
           id: preset.id,
           name: preset.name,
           description: preset.description,
           elevationDeg: preset.elevationDeg,
+          // Cameras are the one list that does NOT grow with custom assets - they are geometry,
+          // not content. Said explicitly so the next reader does not file the hardcoded
+          // validation as the same bug as the skin one.
+          fixed: true,
         })),
+        assets: {
+          active: { ...assetSources },
+          lastLoadedAt: lastAssetLoadAt,
+          lastErrors: [...lastAssetErrors],
+        },
       };
     },
 

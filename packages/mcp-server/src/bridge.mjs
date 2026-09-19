@@ -39,6 +39,20 @@ async function call(path, init) {
     body = { raw: text };
   }
   if (!response.ok) {
+    // The bridge speaks a structured rejection - `rejected` is a list of human-readable
+    // reasons, one per field. Dumping the raw JSON at the model instead of using it was the
+    // cause of the two-styles-of-error problem: tools carefully wrote
+    // `throw new Error(result.rejected.join('; '))`, but this line threw FIRST, every time, so
+    // those branches were unreachable and their wording never once reached a model.
+    const reasons = Array.isArray(body?.rejected) ? body.rejected.filter((r) => typeof r === 'string') : [];
+    if (reasons.length) {
+      // A request can be partly applied - `{skin, camera}` with only the camera wrong leaves the
+      // skin changed. Saying so matters: a model told only "camera: unknown preset" will retry
+      // the whole call and set the skin twice, or report to the user that nothing happened.
+      const applied = Array.isArray(body?.applied) ? body.applied.filter((a) => typeof a === 'string') : [];
+      const suffix = applied.length ? ` (but these DID apply: ${applied.join(', ')} - do not resend them)` : '';
+      throw new BridgeError(`${reasons.join('; ')}${suffix}`);
+    }
     throw new BridgeError(`${path} returned ${response.status}: ${text.slice(0, 300)}`);
   }
   return body;
@@ -50,6 +64,16 @@ export const bridge = {
   perception: () => call('/perception'),
   memory: () => call('/memory'),
   reminders: () => call('/reminders'),
+
+  reloadAssets: () =>
+    call('/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reloadAssets: true }),
+    }),
+
+  assets: () => call('/assets/status'),
+  events: () => call('/debug/events'),
 
   control: (command) =>
     call('/control', {

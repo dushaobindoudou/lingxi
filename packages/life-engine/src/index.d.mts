@@ -50,6 +50,10 @@ export interface LifeEngineSnapshot {
   state: BehaviorState;
   position: Vec2;
   facing: 1 | -1;
+  /** The way the body points, radians. The character travels along this and nothing else. */
+  heading: number;
+  /** Radians/second the heading is sweeping through this tick; 0 when not steering. */
+  turning: number;
   target: Vec2 | null;
   mode: InteractionMode;
   /**
@@ -63,6 +67,14 @@ export interface LifeEngineSnapshot {
    * then rests still counts as having arrived.
    */
   pointer: { engaged: boolean; byUser: boolean };
+  /** What an outside driver is currently asking for, and when it lapses. Null if nothing is. */
+  intent: { target: Vec2; until: number; speed: number } | null;
+  /**
+   * Timestamp of the last time the engine had to repair its own non-finite state, or null if it
+   * never has. Serialising a broken position as `null` left callers unable to tell a broken cat
+   * from a missing field; this says so outright.
+   */
+  recoveredAt: number | null;
   /** The toy currently on the desktop, if any - renderers that can draw one read this. */
   toy: ToyState | null;
   /** True for exactly the one tick the cat swats the toy; drives the swat animation. */
@@ -77,7 +89,12 @@ export interface LifeEngine {
   updateDrag(cursor: Vec2): void;
   endDrag(now: number): void;
   /** An external ("AI") driver suggests a place to walk to; expires on its own after holdMs. */
-  suggestMoveTo(targetPoint: Vec2, now: number, holdMs?: number, speedMultiplier?: number): void;
+  /**
+   * Ask the character to walk somewhere. Returns false, and changes nothing, if the point is
+   * not a pair of finite numbers - a malformed target used to be clamped instead, and clamp is
+   * Math.min/Math.max, which propagate NaN rather than rejecting it.
+   */
+  suggestMoveTo(targetPoint: Vec2, now: number, holdMs?: number, speedMultiplier?: number): boolean;
   /** Cancel any pending AI suggestion early. */
   clearIntent(): void;
   /** Stand still for `ms` without otherwise changing behaviour - used to stop the cat walking

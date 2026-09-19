@@ -815,3 +815,95 @@ test('no cursor at all means no contact and no affection', () => {
   assert.equal(snap.pointer.engaged, false);
   assert.equal(snap.pointer.byUser, false);
 });
+
+// ISSUES-2026-09-19 #1: `POST /intent {"targetPoint":{}}` made the cat vanish from the desktop
+// while every API call reported success, and "重置位置" could not bring it back. The defence
+// was a clamp, and clamp is Math.min/Math.max, which propagate NaN instead of rejecting it.
+test('a malformed intent is dropped, not clamped into NaN', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(3) });
+  const before = { ...engine.position };
+
+  for (const bad of [{}, { x: 1 }, { y: 1 }, { x: null, y: null }, { x: 'a', y: 'b' }, { x: NaN, y: 0 }, { x: Infinity, y: 0 }, null, undefined]) {
+    assert.equal(engine.suggestMoveTo(bad, 0), false, `should have refused ${JSON.stringify(bad)}`);
+  }
+  const snap = engine.tick(16, null);
+  assert.ok(Number.isFinite(snap.position.x) && Number.isFinite(snap.position.y), 'position must stay finite');
+  assert.ok(Number.isFinite(snap.heading), 'heading must stay finite');
+  assert.deepEqual(snap.intent, null, 'no malformed intent may be left in force');
+  assert.equal(snap.position.x, before.x);
+  assert.equal(snap.position.y, before.y);
+
+  // ...and a well-formed one still works, so the guard has not just disabled the feature.
+  assert.equal(engine.suggestMoveTo({ x: 200, y: 300 }, 32), true);
+  assert.deepEqual(engine.tick(48, null).intent.target, { x: 200, y: 300 });
+});
+
+test('a non-finite cursor is treated as no cursor', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(4) });
+  for (let f = 0; f < 200; f += 1) {
+    const snap = engine.tick(f * 16, { x: NaN, y: 0 });
+    assert.ok(Number.isFinite(snap.position.x) && Number.isFinite(snap.position.y), `frame ${f}`);
+    assert.equal(snap.pointer.engaged, false);
+  }
+});
+
+test('the engine repairs itself if its state ever goes non-finite, and says so', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: NaN, y: NaN }, random: seeded(5) });
+  const snap = engine.tick(0, null);
+  assert.ok(Number.isFinite(snap.position.x) && Number.isFinite(snap.position.y), 'should have repaired itself');
+  assert.equal(snap.recoveredAt, 0, 'and must report that it did, rather than hiding it');
+});
+
+test('resetPosition clears heading too, so a broken cat actually comes back', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(6) });
+  engine.resetPosition();
+  assert.equal(engine.heading, 0);
+  for (let f = 0; f < 600; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    assert.ok(Number.isFinite(snap.position.x) && Number.isFinite(snap.heading), `went non-finite on frame ${f}`);
+  }
+});
+
+test('an outside driver cannot park the cat for 27 hours', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(8) });
+  engine.suggestMoveTo({ x: 100, y: 100 }, 0, 99999999);
+  assert.ok(engine.tick(16, null).intent.until <= 10 * 60 * 1000 + 1, 'holdMs must be bounded');
+  engine.hold(99999999, 0);
+  engine.clearIntent();
+  // Still alive well before the 27 hours the report measured.
+  let moved = false;
+  let last = { ...engine.position };
+  for (let f = 1; f < 60 * 60 * 20; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    if (distance(snap.position, last) > 1) { moved = true; break; }
+  }
+  assert.ok(moved, 'the cat must come back to life within the hold cap');
+});
+
+// An intent ends three ways and all three must hand the body back. Only expiry used to.
+test('the cat resumes living after an intent ARRIVES, not just after it expires', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(11) });
+  engine.suggestMoveTo({ x: 520, y: 400 }, 0, 60000); // close by, so it arrives long before expiry
+  let arrivedAt = -1;
+  for (let f = 0; f < 600; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    if (snap.intent === null && arrivedAt < 0) arrivedAt = f;
+  }
+  assert.ok(arrivedAt > 0, 'sanity: it should have arrived well before the 60s expiry');
+  const snap = engine.tick(600 * 16, null);
+  assert.notEqual(snap.state, 'ai_directed', 'stuck in ai_directed after arriving');
+});
+
+test('the cat resumes living after an intent is CANCELLED', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(12) });
+  engine.suggestMoveTo({ x: 100, y: 100 }, 0, 60000);
+  engine.tick(16, null);
+  engine.clearIntent();
+  let moved = false;
+  const start = { ...engine.position };
+  for (let f = 2; f < 4000 && !moved; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    if (distance(snap.position, start) > 5) moved = true;
+  }
+  assert.ok(moved, 'stuck in ai_directed after the intent was cancelled');
+});

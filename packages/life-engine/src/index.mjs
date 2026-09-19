@@ -123,6 +123,10 @@ const DEFAULTS = Object.freeze({
   minTurnSpeedFactor: 0.18,
   dragStaleMs: 700, // release a drag that stops getting updateDrag() calls (a lost mouseup)
   arriveThreshold: 6,
+  // Upper bound on an externally-supplied hold. Without one, `holdMs: 99999999` parks the cat
+  // for 27 hours and nothing short of a restart brings it back - a caller typo should not be
+  // able to take the pet away for a day.
+  maxHoldMs: 10 * 60 * 1000,
   // Fallback keep-out from each edge, used until the host measures the character (see
   // setMargins). A single number cannot be right for all four edges: the cat's anchor is its
   // FEET, so the body extends upward from it and nothing extends below, which means the same
@@ -132,6 +136,11 @@ const DEFAULTS = Object.freeze({
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+/** True only for a point whose coordinates are both real numbers. See suggestMoveTo. */
+function isFinitePoint(point) {
+  return !!point && Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
 function distance(a, b) {
@@ -228,6 +237,8 @@ export function createLifeEngine(config = {}) {
   // Which way round the pointer the cat committed to walking: -1, +1, or 0 for "not detouring".
   // Sticky on purpose - see detourAround.
   let detourSide = 0;
+  // Timestamp of the last time enforceInvariants() had to repair the simulation, or null.
+  let recoveredAt = null;
   // --- who started it -----------------------------------------------------------------------
   // The cat's reaction to the pointer being on it should depend entirely on who moved. A user
   // reaching over to touch the cat wants affection; a cat that has wandered onto a parked
@@ -758,15 +769,24 @@ export function createLifeEngine(config = {}) {
    *   charges, and an ambling 90px/s crossing of a 1500px screen takes 17 seconds.
    */
   function suggestMoveTo(targetPoint, now, holdMs = 4000, speedMultiplier = 1) {
-    if (state === 'dragged') return; // the user's hands-on control always wins
+    if (state === 'dragged') return false; // the user's hands-on control always wins
+    // Validated, not clamped. This used to lean on clamp() to sanitise the input, which does
+    // not work at all for the case that actually happens: clamp is Math.min/Math.max, and
+    // those propagate NaN rather than rejecting it, so `{"targetPoint":{}}` turned position
+    // and heading into NaN and the cat vanished from the desktop - with every API call still
+    // reporting success. NaN is self-sustaining once it reaches heading, so there is no later
+    // point at which this could be caught. An intent that cannot be honoured is dropped.
+    if (!isFinitePoint(targetPoint)) return false;
+    const holdFor = Number.isFinite(holdMs) ? clamp(holdMs, 0, cfg.maxHoldMs) : 4000;
     aiIntent = {
       target: {
         x: clamp(targetPoint.x, minX(), maxX()),
         y: clamp(targetPoint.y, minY(), maxY()),
       },
-      until: now + holdMs,
+      until: now + holdFor,
       speed: cfg.speed * (Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1),
     };
+    return true;
   }
 
   /** Cancel any pending AI suggestion and return to autonomous behavior next tick. */
@@ -786,7 +806,8 @@ export function createLifeEngine(config = {}) {
    * intent all still override it.
    */
   function hold(ms, now) {
-    holdUntil = Math.max(holdUntil, now + Math.max(0, ms));
+    if (!Number.isFinite(ms)) return;
+    holdUntil = Math.max(holdUntil, now + clamp(ms, 0, cfg.maxHoldMs));
   }
 
   /**
@@ -829,6 +850,34 @@ export function createLifeEngine(config = {}) {
     dragUpdatedSinceLastTick = false;
     lastAvoidRetargetAt = -Infinity;
     holdUntil = 0;
+    // Everything below was missing, and that is why "重置位置" did not rescue a cat that had
+    // been fed a NaN: heading feeds straight back into moveToward, so a NaN left here
+    // regenerates a NaN position on the very next tick and the reset appears to do nothing.
+    heading = 0;
+    turning = 0;
+    facing = 1;
+    detourSide = 0;
+    lastCursor = null;
+    lastPosition = null;
+    cursorTravel = 0;
+    catTravel = 0;
+    pointerEngaged = false;
+    pointerEngagedByUser = false;
+  }
+
+  /**
+   * Last line of defence: if the simulation's own state has gone non-finite, put it back.
+   *
+   * Every known way in is now guarded at the input, so reaching this means something
+   * unanticipated got through - and the failure mode is the worst one the app has, a cat that
+   * silently ceases to exist while every API call still returns ok. Self-healing beats
+   * preserving a broken state that nothing can inspect: `degraded` on the snapshot is how the
+   * outside world finds out it happened, rather than being told a comforting `null`.
+   */
+  function enforceInvariants() {
+    if (isFinitePoint(position) && Number.isFinite(heading)) return false;
+    resetPosition();
+    return true;
   }
 
   /**
@@ -881,6 +930,13 @@ export function createLifeEngine(config = {}) {
   }
 
   function tick(now, cursor) {
+    // Before anything reads position or heading. A recovery here is recorded rather than
+    // hidden, because "the cat vanished and then came back and nobody could say why" is
+    // exactly the report this is meant to make impossible to file again.
+    if (enforceInvariants()) recoveredAt = now;
+    // A cursor is an input from outside and gets the same treatment as any other: a malformed
+    // one is treated as "no cursor", never fed into the simulation.
+    if (!isFinitePoint(cursor)) cursor = null;
     const deltaSeconds = lastTickAt == null ? 0 : Math.min(0.25, (now - lastTickAt) / 1000);
     lastTickAt = now;
     batThisTick = false;
@@ -914,18 +970,23 @@ export function createLifeEngine(config = {}) {
       return snapshot();
     }
 
-    if (aiIntent && now >= aiIntent.until) {
-      aiIntent = null; // suggestion expired; fall through to normal autonomous logic below
-      if (state === 'ai_directed') {
-        state = 'idle';
-        idleUntil = now + rand(...cfg.idleDurationMsRange);
-      }
-    }
+    if (aiIntent && now >= aiIntent.until) aiIntent = null; // suggestion expired
     if (aiIntent) {
       state = 'ai_directed';
       const arrived = moveToward(aiIntent.target, deltaSeconds, aiIntent.speed ?? cfg.speed);
-      if (arrived) aiIntent = null; // reached it early; next tick resumes autonomy
+      if (arrived) aiIntent = null; // reached it early; autonomy resumes next tick
       return snapshot();
+    }
+    // An intent ends three ways - it expires, it is cancelled, or the cat ARRIVES - and all
+    // three have to hand the body back. Only the expiry path used to, so a cat that reached
+    // its destination, or whose intent was cleared, was left standing in 'ai_directed'
+    // forever: nothing below this line handles that state, so it simply stopped living. That
+    // is one frame after every successful intent, which makes it the most reachable way to
+    // freeze the cat in the whole engine.
+    if (state === 'ai_directed') {
+      state = 'idle';
+      idleUntil = now + rand(...cfg.idleDurationMsRange);
+      target = null;
     }
 
     // A toy outranks every autonomous drive below (wander, edge-avoidance, cursor-following):
@@ -1022,6 +1083,22 @@ export function createLifeEngine(config = {}) {
        * as though it was just petted.
        */
       pointer: { engaged: pointerEngaged, byUser: pointerEngagedByUser },
+      /**
+       * What the engine is currently being asked to do by an outside driver, and when that
+       * expires. Previously write-only: an agent could post an intent but nothing could read
+       * back what intent was in force, so "why does it keep walking that way" was unanswerable.
+       */
+      intent: aiIntent
+        ? { target: { ...aiIntent.target }, until: aiIntent.until, speed: aiIntent.speed }
+        : null,
+      /**
+       * Non-null only when the engine has had to repair its own state (see enforceInvariants).
+       * The value is the timestamp of the last repair. Callers that see it move have proof
+       * something fed the engine a value it could not represent - which beats the previous
+       * behaviour of serialising NaN to `null` and leaving the driver unable to tell a broken
+       * cat from a missing field.
+       */
+      recoveredAt,
       // Renderers that can draw a toy read this; ones that can't ignore it, same contract as
       // every other field here.
       toy: toy

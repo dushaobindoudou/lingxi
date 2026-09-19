@@ -114,6 +114,15 @@ export interface Director {
   readonly actions: readonly Motion[];
   readonly expressionNames: readonly string[];
   readonly currentAction: Motion | null;
+  /**
+   * The face the cat is actually wearing this frame, and whether it is being held by an
+   * explicit request or merely implied by the clip that is playing.
+   *
+   * This was the one control in the whole app that could be SET but never READ, which made a
+   * misspelled expression indistinguishable from a correct one from the outside - both came
+   * back "ok" and nothing anywhere could tell them apart.
+   */
+  readonly currentExpression: { name: string; held: boolean };
 }
 
 function isPetState(value: string): value is PetState {
@@ -183,6 +192,18 @@ export function createDirector(nodeIds: readonly string[], custom?: readonly Mot
     expressionNames: Object.keys(expressions),
     get currentAction() {
       return active?.motion ?? null;
+    },
+
+    get currentExpression() {
+      const held = !!expressionOverride && clock < expressionOverride.until;
+      return {
+        name: held
+          ? expressionOverride!.name
+          : active && expressions[active.motion.expression]
+            ? active.motion.expression
+            : DEFAULT_EXPRESSION,
+        held,
+      };
     },
 
     get playing() {

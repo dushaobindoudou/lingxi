@@ -139,6 +139,13 @@ export interface Renderer {
    */
   screenExtent?(): { above: number; below: number; halfWidth: number };
   /**
+   * The expression showing right now, and whether it is explicitly held or implied by the clip
+   * that happens to be playing. Needed so a driver can verify that the face it asked for is the
+   * face on screen - without it, a misspelled expression name is indistinguishable from a
+   * correct one at every layer above the renderer.
+   */
+  readonly currentExpression?: { name: string; held: boolean };
+  /**
    * Machine-readable description of everything this renderer supports - clips, expressions,
    * themes, camera angles. Exists so a control surface (debug console, external agent) can be
    * built from what the renderer actually has, rather than from a hand-maintained list that
