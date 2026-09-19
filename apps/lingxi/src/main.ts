@@ -541,6 +541,9 @@ async function main() {
       expression: renderer.currentExpression?.name ?? null,
       expressionHeld: renderer.currentExpression?.held ?? false,
       heading: lastEngineSnapshot?.heading ?? null,
+      // How far the HEAD is turned relative to the body. Separate from `heading`, which is the
+      // body: the cat can be facing you squarely and still be looking off to one side.
+      headYaw: renderer.headYaw ?? null,
       intent: lastEngineSnapshot?.intent ?? null,
       // Non-null only if the engine has had to repair its own state. A driver seeing this move
       // knows something fed the cat a value it could not represent - previously that showed up

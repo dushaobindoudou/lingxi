@@ -156,6 +156,12 @@ export interface Renderer {
    * correct one at every layer above the renderer.
    */
   readonly currentExpression?: { name: string; held: boolean };
+  /**
+   * How far the head is turned relative to the body, radians. The body's heading and the head's
+   * glance are independent - a character can be facing you squarely and still looking sideways -
+   * so reading one tells you nothing about the other.
+   */
+  readonly headYaw?: number;
   /** Dev probe only (see apps/lingxi/src/probe-unproject.ts); never called in production. */
   probeUnproject?(screenX: number, screenY: number): boolean;
   /**

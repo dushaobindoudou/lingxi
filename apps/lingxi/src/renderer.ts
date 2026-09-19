@@ -797,6 +797,17 @@ export function createThreeRenderer(): Renderer {
       return director.currentExpression;
     },
 
+    /**
+     * How far the head is turned relative to the body, radians. Positive is the cat's left.
+     *
+     * Exposed because head orientation has been wrong twice now and there was no way to see it
+     * from outside the renderer - both times it had to be diagnosed by reading code and guessing.
+     * A number that can be sampled is worth more than a comment explaining what should happen.
+     */
+    get headYaw() {
+      return headYaw;
+    },
+
     /** Everything this renderer can be asked to do, as data. Pushed to the Rust side at
      *  startup so `GET /capabilities` can answer an agent without the webview being involved,
      *  and used to build the debug console's grids. */
@@ -1078,7 +1089,16 @@ export function createThreeRenderer(): Renderer {
       // walking away while glancing back over its shoulder is both what cats do and what keeps
       // the face on screen. Only overridden when there is a cursor worth watching instead.
       let targetHeadYaw = Math.max(-0.55, Math.min(0.55, -facingAngle * 0.7));
-      if (cursor) {
+      // ...except during a performance, when the head looks straight down the lens.
+      //
+      // A set piece is the one time the framing is deliberate: the cat has been walked to a mark
+      // and turned to face the viewer precisely so its expression is readable. The cursor glance
+      // below then pulled the head up to 31 degrees off that, toward wherever the mouse happened
+      // to be resting - which is the whole reason the claw kept coming out with its head cocked
+      // to one side. Good behaviour in general; wrong while the camera is rolling.
+      const performing = performanceScale != null;
+      if (performing) targetHeadYaw = 0; // square to the lens, not merely un-glanced
+      if (cursor && !performing) {
         const toCursorX = cursor.x - state.position.x;
         const toCursorY = cursor.y - state.position.y;
         const reach = Math.hypot(toCursorX, toCursorY);
