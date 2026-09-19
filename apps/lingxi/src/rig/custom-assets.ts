@@ -7,12 +7,14 @@
 // through its own body. So every loader here returns either a fully-checked value or an error
 // string; there is no partial application.
 //
-// Why these three files and not one: they are edited for different reasons and by different
+// Why separate files and not one: they are edited for different reasons and by different
 // people. Someone adding a theme should not have to scroll past two thousand lines of
-// keyframes, and someone retiming an animation should not risk breaking the face.
+// keyframes, someone retiming an animation should not risk breaking the face, and someone who
+// just wants a darker speech bubble should not have to open either.
 import { layers, expressions as builtInExpressions, type FaceState } from './art.ts';
 import type { ArtSkin } from './art.ts';
 import { parseMotions, type Motion } from '../anim/motion.ts';
+import type { BubbleStyle } from '../fx/stage-fx.ts';
 
 export interface CustomAssetPayload {
   available?: boolean;
@@ -20,6 +22,7 @@ export interface CustomAssetPayload {
   actions?: unknown;
   expressions?: unknown;
   skins?: unknown;
+  bubble?: unknown;
   /** filename -> data URL (PNG) or parsed JSON (a sidecar texture config). */
   textures?: Record<string, unknown>;
 }
@@ -28,6 +31,7 @@ export interface LoadedAssets {
   actions?: Motion[];
   expressions?: Record<string, FaceState>;
   skins?: ArtSkin[];
+  bubble?: Partial<BubbleStyle>;
   /** Problems found, one per file. Surfaced in the UI rather than swallowed. */
   errors: string[];
   dir?: string;
@@ -63,6 +67,68 @@ export function parseExpressions(value: unknown): Record<string, FaceState> {
     result[name] = built as FaceState;
   }
   return result;
+}
+
+/**
+ * Speech-bubble styling. Every field is optional - a file that only sets a colour keeps the
+ * defaults for everything else, because the common case is wanting one thing different rather
+ * than wanting to specify a whole design system.
+ */
+export function parseBubbleStyle(value: unknown): Partial<BubbleStyle> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('气泡样式必须是一个对象');
+  }
+  const raw = value as Record<string, unknown>;
+  const out: Partial<BubbleStyle> = {};
+
+  for (const key of ['background', 'text', 'border'] as const) {
+    if (raw[key] === undefined) continue;
+    const colour = raw[key];
+    // Any CSS colour is allowed (named, rgb(), gradients would not work on a border but do on a
+    // background), so this only rejects the obviously-not-a-colour.
+    if (typeof colour !== 'string' || !colour.trim() || colour.length > 120) {
+      throw new Error(`${key} 必须是 CSS 颜色字符串`);
+    }
+    out[key] = colour.trim();
+  }
+
+  const numbers: [keyof BubbleStyle, number, number][] = [
+    ['borderWidth', 0, 12],
+    ['radius', 0, 60],
+    ['fontSize', 9, 48],
+    ['fontWeight', 100, 900],
+  ];
+  for (const [key, min, max] of numbers) {
+    if (raw[key] === undefined) continue;
+    const n = Number(raw[key]);
+    if (!Number.isFinite(n) || n < min || n > max) throw new Error(`${key} 需要在 ${min}–${max} 之间`);
+    (out as Record<string, number>)[key] = n;
+  }
+
+  if (raw.fontFamily !== undefined) {
+    const family = raw.fontFamily;
+    if (typeof family !== 'string' || !family.trim() || family.length > 200) {
+      throw new Error('fontFamily 必须是 CSS font-family 字符串');
+    }
+    // Rejected because it would escape the declaration and let a font name inject CSS.
+    if (/[;{}]/.test(family)) throw new Error('fontFamily 不能包含 ; { }');
+    out.fontFamily = family.trim();
+  }
+
+  if (raw.shape !== undefined) {
+    const shapes = ['round', 'rect', 'cloud', 'spiky'];
+    if (typeof raw.shape !== 'string' || !shapes.includes(raw.shape)) {
+      throw new Error(`shape 只能是：${shapes.join(' / ')}`);
+    }
+    out.shape = raw.shape as BubbleStyle['shape'];
+  }
+
+  if (raw.shadow !== undefined) {
+    if (typeof raw.shadow !== 'boolean') throw new Error('shadow 必须是 true 或 false');
+    out.shadow = raw.shadow;
+  }
+
+  return out;
 }
 
 /** A custom face image, laid out as a grid of expression cells. */
@@ -205,6 +271,14 @@ export function loadCustomAssets(
     }
   }
 
+  if (payload.bubble != null) {
+    try {
+      loaded.bubble = parseBubbleStyle(payload.bubble);
+    } catch (error) {
+      loaded.errors.push(`bubble.json：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   if (payload.skins != null) {
     try {
       loaded.skins = parseSkins(payload.skins, textures, context.rigId);
@@ -268,6 +342,33 @@ export const ASSETS_README = `# 灵犀 · 自定义资源
 \`\`\`
 
 可选值在调试台的「表情」页里可以逐个点开看实际效果。
+
+## bubble.json —— 说话气泡的样式
+
+只写你想改的字段，其余保持默认：
+
+\`\`\`json
+{
+  "background": "#1e1e28",
+  "text": "#f0e6ff",
+  "border": "#8f7fd8",
+  "borderWidth": 3,
+  "radius": 20,
+  "fontFamily": "\"LXGW WenKai\", \"PingFang SC\", sans-serif",
+  "fontSize": 16,
+  "fontWeight": 500,
+  "shape": "round",
+  "shadow": true
+}
+\`\`\`
+
+\`shape\` 可选：
+- \`round\` 普通气泡（默认）
+- \`rect\` 直角框
+- \`cloud\` 思考气泡（尾巴是两个小圆点）
+- \`spiky\` 爆炸框（喊话／生气）
+
+颜色接受任意 CSS 颜色写法。字体用系统里装好的字体名即可。
 
 ## skins.json —— 主题（皮肤）
 

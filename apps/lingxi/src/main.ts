@@ -180,6 +180,9 @@ async function main() {
     try {
       const payload = await invoke<Record<string, unknown>>('get_custom_assets');
       const errors = renderer.applyCustomAssets?.(payload) ?? [];
+      // The bubble lives in the fx layer, which is the host's, so the renderer hands the style
+      // back rather than applying it.
+      fx.setBubbleStyle(renderer.customBubbleStyle ?? {});
       await invoke('report_asset_errors', { errors }).catch(() => {});
       if (errors.length) dlog(`custom assets had problems: ${errors.join(' | ')}`);
       else if (payload?.available) dlog('custom assets loaded');

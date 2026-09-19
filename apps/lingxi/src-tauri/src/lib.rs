@@ -1581,6 +1581,7 @@ fn get_custom_assets(app: tauri::AppHandle) -> serde_json::Value {
         "actions": read_json_file(&dir.join("actions.json")),
         "expressions": read_json_file(&dir.join("expressions.json")),
         "skins": read_json_file(&dir.join("skins.json")),
+        "bubble": read_json_file(&dir.join("bubble.json")),
         "textures": textures,
     })
 }

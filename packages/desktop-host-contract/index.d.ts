@@ -96,6 +96,12 @@ export interface Renderer {
    */
   applyCustomAssets?(payload: unknown): string[];
   /**
+   * Styling for host-drawn UI (the speech bubble) that came out of the last applyCustomAssets.
+   * Handed back rather than applied by the renderer: the overlay belongs to the host, and a
+   * renderer reaching into the host's DOM would invert the dependency this contract exists for.
+   */
+  readonly customBubbleStyle?: Record<string, unknown> | null;
+  /**
    * Switch the viewing angle ("视角") by preset id. Optional for the same reason as setSkin:
    * a 2D sprite renderer has no camera to aim. Implementations are expected to ease into the
    * new angle rather than cut, since the camera also defines where on screen a given logical

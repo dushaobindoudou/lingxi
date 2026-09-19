@@ -22,7 +22,12 @@ export function createBodyController(rig:Rig,data:SkeletonData){
     // ~3 voxels deep, which put roughly 1.2 voxels of paw inside the head - the grooming clips
     // were the worst offenders in the clip-interpenetration probe for exactly this reason.
     const pawClearance=data.nodes.find(n=>n.id==='pawFL')!.box.size[2]*.5+.35;
-    target.set(wash?head.box.size[0]*.24:0,head.box.offset[1]+(wash?head.box.size[1]*.03:-head.box.size[1]*.32),head.box.offset[2]+head.box.size[2]*.5+pawClearance);
+    // Lateral offset on BOTH grooming poses, not just the face-wash. Bringing the paw straight
+    // up the midline runs the forearm through the chin and the skull (measured 2.6-3.1 voxels);
+    // approaching from the paw's own side keeps the elbow outside the head, which is also how a
+    // cat actually holds a paw it is licking. pawFL is the front-left paw, and the cat's left
+    // is +x.
+    target.set(head.box.size[0]*(wash?.24:.34),head.box.offset[1]+(wash?head.box.size[1]*.03:-head.box.size[1]*.32),head.box.offset[2]+head.box.size[2]*.5+pawClearance);
     rig.node('head').localToWorld(target);target.lerpVectors(startPaw,target,weight);
     for(let pass=0;pass<10;pass++)for(const id of ['lowerFL','upperFL','scapL']){
       const joint=rig.node(id);paw.getWorldPosition(end);joint.getWorldPosition(jointPos);

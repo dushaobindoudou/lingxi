@@ -55,10 +55,44 @@ export interface StageFx {
   readonly speaking: boolean;
   /** Take any bubble down immediately. */
   hush(): void;
+  /** Restyle the speech bubble. See BubbleStyle; a partial object leaves the rest alone. */
+  setBubbleStyle(style: Partial<BubbleStyle>): void;
   /** Remove everything currently playing (a performance being cancelled). */
   clear(): void;
   dispose(): void;
 }
+
+/**
+ * How the speech bubble looks. Every value is a CSS custom property on the bubble element, so a
+ * user-supplied bubble.json reaches the rendering without any of this code knowing what is in
+ * it - which is what makes "colours, fonts and shapes" one mechanism rather than three.
+ */
+export interface BubbleStyle {
+  background: string;
+  text: string;
+  border: string;
+  borderWidth: number;
+  radius: number;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  /** round = a normal bubble, rect = square corners, cloud = a thought bubble, spiky = a shout. */
+  shape: 'round' | 'rect' | 'cloud' | 'spiky';
+  shadow: boolean;
+}
+
+export const DEFAULT_BUBBLE_STYLE: BubbleStyle = {
+  background: '#fffdf8',
+  text: '#2f2a33',
+  border: '#2f2a33',
+  borderWidth: 2.5,
+  radius: 16,
+  fontFamily: '"PingFang SC", "Hiragino Sans GB", system-ui, sans-serif',
+  fontSize: 15,
+  fontWeight: 600,
+  shape: 'round',
+  shadow: true,
+};
 
 const STYLE_ID = 'lingxi-fx-styles';
 
@@ -150,32 +184,65 @@ const CSS = `
   transform: translate(-50%, -100%);
   max-width: 280px;
   padding: 10px 14px;
-  border-radius: 16px;
-  border: 2.5px solid #2f2a33;
-  background: #fffdf8;
-  color: #2f2a33;
-  font: 600 15px/1.45 "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  border-radius: var(--bubble-radius);
+  border: var(--bubble-border-width) solid var(--bubble-border);
+  background: var(--bubble-bg);
+  color: var(--bubble-text);
+  font-family: var(--bubble-font);
+  font-size: var(--bubble-size);
+  font-weight: var(--bubble-weight);
+  line-height: 1.45;
   text-align: center;
   white-space: pre-wrap;
   word-break: break-word;
-  box-shadow: 0 6px 0 rgba(47, 42, 51, 0.18), 0 10px 22px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--bubble-shadow);
   animation: lingxi-bubble-in 240ms cubic-bezier(.2,1.5,.4,1) forwards;
   transform-origin: 50% 100%;
 }
+/* The tail. A rotated square rather than a triangle so it inherits the same border and
+   background as the body and always joins it cleanly, whatever the shape. */
 .lingxi-fx-bubble::after {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: -9px;
+  bottom: calc(var(--bubble-border-width) * -3.6);
   width: 15px;
   height: 15px;
   margin-left: -7px;
-  background: #fffdf8;
-  border-right: 2.5px solid #2f2a33;
-  border-bottom: 2.5px solid #2f2a33;
+  background: var(--bubble-bg);
+  border-right: var(--bubble-border-width) solid var(--bubble-border);
+  border-bottom: var(--bubble-border-width) solid var(--bubble-border);
   border-bottom-right-radius: 3px;
   transform: rotate(45deg);
 }
+/* A thought bubble trails little puffs instead of a pointer. */
+.lingxi-fx-bubble.shape-cloud::after {
+  width: 11px;
+  height: 11px;
+  margin-left: -5px;
+  bottom: -14px;
+  border: var(--bubble-border-width) solid var(--bubble-border);
+  border-radius: 50%;
+  transform: none;
+  box-shadow: -10px 13px 0 calc(var(--bubble-border-width) * -0.8) var(--bubble-bg),
+    -10px 13px 0 calc(var(--bubble-border-width) * 0.2) var(--bubble-border);
+}
+/* A shout: the outline itself is jagged, so the tail is folded into the clip path. */
+.lingxi-fx-bubble.shape-spiky {
+  border: none;
+  border-radius: 0;
+  padding: 16px 22px 22px;
+  filter: drop-shadow(0 0 0 var(--bubble-border)) drop-shadow(0 3px 0 var(--bubble-border))
+    drop-shadow(0 -3px 0 var(--bubble-border)) drop-shadow(3px 0 0 var(--bubble-border))
+    drop-shadow(-3px 0 0 var(--bubble-border));
+  clip-path: polygon(
+    0% 22%, 7% 14%, 4% 4%, 16% 9%, 22% 0%, 32% 8%, 42% 2%, 50% 10%, 58% 2%, 68% 8%,
+    78% 0%, 84% 9%, 96% 4%, 93% 14%, 100% 22%, 93% 32%, 100% 44%, 92% 52%, 98% 62%,
+    88% 68%, 92% 80%, 56% 78%, 48% 100%, 42% 78%, 10% 80%, 14% 68%, 3% 62%, 9% 52%,
+    0% 44%, 7% 32%
+  );
+}
+.lingxi-fx-bubble.shape-spiky::after { display: none; }
 .lingxi-fx-bubble.leaving { animation: lingxi-bubble-out 260ms ease-in forwards; }
 @keyframes lingxi-bubble-in {
   0%   { opacity: 0; transform: translate(-50%, -100%) scale(.5); }
@@ -211,6 +278,7 @@ const HEART_GLYPHS = ['💗', '💖', '❤️', '💕', '💞'];
 export function createStageFx(): StageFx {
   let layer: HTMLDivElement | null = null;
   let shakeTarget: HTMLElement | null = null;
+  let bubbleStyle: BubbleStyle = { ...DEFAULT_BUBBLE_STYLE };
   let bubble: HTMLDivElement | null = null;
   let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Effects that follow the cat rather than staying where they were fired. */
@@ -425,7 +493,19 @@ export function createStageFx(): StageFx {
       // Long lines need longer on screen; short ones should not linger.
       const hold = durationMs ?? Math.min(9000, 1800 + trimmed.length * 130);
       const node = document.createElement('div');
-      node.className = 'lingxi-fx-bubble';
+      node.className = `lingxi-fx-bubble shape-${bubbleStyle.shape}`;
+      node.style.setProperty('--bubble-bg', bubbleStyle.background);
+      node.style.setProperty('--bubble-text', bubbleStyle.text);
+      node.style.setProperty('--bubble-border', bubbleStyle.border);
+      node.style.setProperty('--bubble-border-width', `${bubbleStyle.borderWidth}px`);
+      node.style.setProperty('--bubble-radius', bubbleStyle.shape === 'rect' ? '2px' : `${bubbleStyle.radius}px`);
+      node.style.setProperty('--bubble-font', bubbleStyle.fontFamily);
+      node.style.setProperty('--bubble-size', `${bubbleStyle.fontSize}px`);
+      node.style.setProperty('--bubble-weight', String(bubbleStyle.fontWeight));
+      node.style.setProperty(
+        '--bubble-shadow',
+        bubbleStyle.shadow ? '0 6px 0 rgba(47, 42, 51, 0.18), 0 10px 22px rgba(0, 0, 0, 0.28)' : 'none',
+      );
       node.textContent = trimmed;
       layer.append(node);
       bubble = node;
@@ -436,6 +516,10 @@ export function createStageFx(): StageFx {
           if (bubble === node) bubble = null;
         }, 280);
       }, hold);
+    },
+
+    setBubbleStyle(style) {
+      bubbleStyle = { ...bubbleStyle, ...style };
     },
 
     anchorEffects(x, y) {

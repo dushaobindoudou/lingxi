@@ -274,6 +274,7 @@ export function createThreeRenderer(): Renderer {
   let bodyYaw = 0; // the hips' yaw; the spine curve in bodyFlex is layered on top of it
   let cameraHeadPitch = 0; // chin lift that belongs to the current camera preset
   let groundedRootY = 0; // lowest root height seen - the reference for 'is it airborne'
+  let lastLoadedBubbleStyle: Record<string, unknown> | null = null;
 
   // The currently-mounted toy prop, if any. Kept in the same scene and scaled with the cat, so
   // a toy is always the right size relative to it at every size preset.
@@ -297,6 +298,14 @@ export function createThreeRenderer(): Renderer {
   let performanceZoom = 1;
   let performanceZoomTarget = 1;
   let performanceZoomTau = 0.5; // seconds; the ease time constant
+
+  /** Squash the rear hemisphere so the cat never turns fully away, without mirroring it. */
+  function biasTowardViewer(angle: number) {
+    const magnitude = Math.abs(angle);
+    if (magnitude <= VIEWER_BIAS_FROM) return angle;
+    const past = (magnitude - VIEWER_BIAS_FROM) / (Math.PI - VIEWER_BIAS_FROM);
+    return Math.sign(angle) * (VIEWER_BIAS_FROM + past * (VIEWER_BIAS_MAX - VIEWER_BIAS_FROM));
+  }
 
   /** The scalar actually applied to the rig: user preset * whatever a performance is doing. */
   function effectiveScale() {
@@ -347,7 +356,21 @@ export function createThreeRenderer(): Renderer {
   /** How long the cat stands still before it bothers turning back to face the viewer. Long
    *  enough that a brief pause mid-route doesn't make it pirouette, short enough that a cat
    *  that has settled somewhere is looking at you rather than away. */
-  const SETTLE_DELAY_SECONDS = 0.9;
+  const SETTLE_DELAY_SECONDS = 0.5;
+  /**
+   * How far the body may turn away from the viewer before further turning is compressed.
+   *
+   * The face is the entire expressive surface of this thing - expressions are the interaction,
+   * not decoration - so a cat that spends half its time showing you its back has thrown away
+   * most of what it is for ("猫咪依然记得要尽量多时候屏幕，表情互动是核心").
+   *
+   * This is NOT the old fold, which mirrored rear angles and made walking away look identical
+   * to walking toward you (the "只会后退" complaint). Compression is monotonic: the direction
+   * it is heading still reads correctly and turning stays continuous, the rear hemisphere is
+   * just squashed so "directly away" is never quite reached.
+   */
+  const VIEWER_BIAS_FROM = Math.PI * 0.55;
+  const VIEWER_BIAS_MAX = Math.PI * 0.78;
   /** Below this distance the cat does not turn its head toward the cursor at all, and between
    *  here and GLANCE_FADE_FAR the glance fades in. See the comment at the glance itself. */
   const GLANCE_FADE_NEAR = 70;
@@ -405,6 +428,31 @@ export function createThreeRenderer(): Renderer {
   };
 
   const headProjection = new THREE.Vector3();
+  // --- exact screen -> world placement ----------------------------------------------------
+  // worldPerPixelX/Z describe how much world travel a pixel of screen travel is worth. That is
+  // a DIFFERENTIAL relationship and it is correct as one, but it says nothing about the origin:
+  // multiplying a logical offset by it and calling the result a position quietly assumed that
+  // the ground point for screen-centre projects to screen-centre, and it does not - the camera
+  // aims at `lookAtY`, above the floor, so the whole ground plane lands lower on screen than
+  // its logical coordinates say. Measured at 103px of error at the default camera angle and
+  // 139px at 仰视 (see probe-projection.html).
+  //
+  // Anything with volume hides that: the cat's body still covers roughly the right area. A
+  // laser dot or a yarn ball meant to sit exactly under the pointer does not hide it at all,
+  // which is how it surfaced ("原点在鼠标的正下方" / "毛线球应该始终在鼠标的位置").
+  //
+  // So placement is done by unprojecting instead: ask where a given screen point crosses the
+  // plane the object lives on. Exact at every camera angle, by construction, and it also means
+  // the cat's feet now land exactly on its logical position rather than ~100px below it.
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const placement = new THREE.Vector3();
+
+  function screenToWorld(screenX: number, screenY: number, planeY: number) {
+    ndc.set((screenX / width) * 2 - 1, -(screenY / height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    groundPlane.constant = -planeY;
+    return raycaster.ray.intersectPlane(groundPlane, placement) ?? placement.set(0, planeY, 0);
+  }
   const headBoxHeight = SKELETON.nodes.find((node) => node.id === 'head')!.box.size[1];
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
@@ -438,6 +486,7 @@ export function createThreeRenderer(): Renderer {
       // The toy keeps the user's size and ignores the performance zoom - a performance is the
       // cat rushing the camera, not the whole world changing size.
       toyProp?.object.scale.setScalar(VOXEL_TO_WORLD * modelScale);
+      toyProp?.setWorldScale?.(VOXEL_TO_WORLD * modelScale);
     },
 
     /**
@@ -453,6 +502,9 @@ export function createThreeRenderer(): Renderer {
       });
       if (loaded.expressions) setExpressions(loaded.expressions);
       else resetExpressions();
+      // Handed back to the caller rather than applied here: the fx layer belongs to the host,
+      // not to the renderer, and the renderer has no business reaching into it.
+      lastLoadedBubbleStyle = loaded.bubble ?? null;
 
       // The director caches the expression names it validates against, so it is rebuilt rather
       // than mutated whenever either file changes.
@@ -497,6 +549,11 @@ export function createThreeRenderer(): Renderer {
 
     playAction(id: string) {
       return director.play(id);
+    },
+
+    /** Bubble styling from the last applyCustomAssets, for the host to hand to its fx layer. */
+    get customBubbleStyle() {
+      return lastLoadedBubbleStyle;
     },
 
     /** The clip playing right now, so the host can hold the cat still for its duration. */
@@ -630,7 +687,11 @@ export function createThreeRenderer(): Renderer {
 
       // The swat fires on the one frame the engine reports contact - an explicit trigger, not
       // something the idle scheduler could ever have rolled at the right moment.
-      if ((state as { batted?: boolean }).batted) director.play('toy-swat');
+      if ((state as { batted?: boolean }).batted) {
+        director.play('toy-swat');
+        // Let the toy itself react to being hit, not just the cat.
+        toyProp?.struck?.();
+      }
 
       // 5b. the toy, if there is one. Mounted/unmounted here rather than through a setter so
       // the renderer simply follows whatever the life engine says exists - there is no second
@@ -641,6 +702,7 @@ export function createThreeRenderer(): Renderer {
       if (toyState?.kind !== toyKind) {
         if (toyProp) {
           scene.remove(toyProp.object);
+          if (toyProp.worldLayer) scene.remove(toyProp.worldLayer);
           toyProp.dispose();
           toyProp = null;
         }
@@ -648,23 +710,30 @@ export function createThreeRenderer(): Renderer {
         if (toyKind) {
           toyProp = createToyProp(toyKind);
           toyProp.object.scale.setScalar(VOXEL_TO_WORLD * modelScale);
+          toyProp.setWorldScale?.(VOXEL_TO_WORLD * modelScale);
           scene.add(toyProp.object);
+          // World layers are added unscaled and unmoved - see ToyProp.worldLayer.
+          if (toyProp.worldLayer) scene.add(toyProp.worldLayer);
         }
       }
       if (toyProp && toyState) {
-        toyProp.object.position.x = (toyState.position.x - width / 2) * worldPerPixelX;
-        toyProp.object.position.z = (toyState.position.y - height / 2) * worldPerPixelZ;
-        toyProp.update(deltaSeconds, Math.hypot(toyState.velocity.x, toyState.velocity.y), toyState.charge ?? 0);
+        // Placed so the toy's own anchor height lands exactly on its logical screen point -
+        // which for the cursor-driven toys means exactly on the pointer.
+        const at = screenToWorld(toyState.position.x, toyState.position.y, toyProp.anchorHeight * effectiveScale());
+        toyProp.object.position.copy(at);
+        const toySpeed = Math.hypot(toyState.velocity.x, toyState.velocity.y);
+        toyProp.update(deltaSeconds, toySpeed, toyState.charge ?? 0, {
+          // Logical velocity mapped onto the ground plane, so a ball rolls the way it travels.
+          x: toyState.velocity.x * worldPerPixelX,
+          z: toyState.velocity.y * worldPerPixelZ,
+          scale: 1 / Math.max(1e-6, effectiveScale()),
+        });
       }
 
       // 5c. contact shadow, sized to the cat and faded by how far off the ground it is.
       {
         const spread = rig.boundingRadius * effectiveScale() * 2.1;
-        shadow.position.set(
-          (state.position.x - width / 2) * worldPerPixelX,
-          0.004,
-          (state.position.y - height / 2) * worldPerPixelZ,
-        );
+        shadow.position.copy(screenToWorld(state.position.x, state.position.y, 0.004));
         // root.position.y is whatever the ground-contact rule computed. The lowest value it
         // ever settles at is "standing"; anything above that means the cat is genuinely off
         // the floor (a jump, a rear-up, the claw lunge).
@@ -677,10 +746,9 @@ export function createThreeRenderer(): Renderer {
 
       // 6. placement - after apply(), because bodyController.reset() zeroes the root
       // transform and apply() owns root.position.y for ground contact.
-      const px = state.position.x - width / 2;
-      const py = state.position.y - height / 2;
-      rig.root.position.x = px * worldPerPixelX;
-      rig.root.position.z = py * worldPerPixelZ;
+      const stand = screenToWorld(state.position.x, state.position.y, 0);
+      rig.root.position.x = stand.x;
+      rig.root.position.z = stand.z;
 
       // --- facing -------------------------------------------------------------------------
       // Read straight off the engine's own heading. It used to be DERIVED here, by smoothing
@@ -694,7 +762,9 @@ export function createThreeRenderer(): Renderer {
       if (headingScreen !== undefined && speed > FACING_SPEED_THRESHOLD) {
         // Screen heading -> ground-plane angle. Full 360 degrees, no fold and no clamp: folding
         // is what used to make the cat moonwalk away from the viewer instead of turning round.
-        facingAngle = Math.atan2(Math.cos(headingScreen) * worldPerPixelX, Math.sin(headingScreen) * worldPerPixelZ);
+        facingAngle = biasTowardViewer(
+          Math.atan2(Math.cos(headingScreen) * worldPerPixelX, Math.sin(headingScreen) * worldPerPixelZ),
+        );
         settledSince = null;
       } else if (headingScreen === undefined && speed > FACING_SPEED_THRESHOLD) {
         // A host whose engine predates headings still gets the old behaviour rather than none.
@@ -755,20 +825,26 @@ export function createThreeRenderer(): Renderer {
       // 晃"). Fading the glance to nothing as the cursor closes in fixes both: there is no
       // boundary to flicker across, and by the time the bearing gets unstable the weight that
       // would apply it is already zero.
-      let targetHeadYaw = 0;
+      // Default: look back at the viewer, by however much the body is turned away. A cat
+      // walking away while glancing back over its shoulder is both what cats do and what keeps
+      // the face on screen. Only overridden when there is a cursor worth watching instead.
+      let targetHeadYaw = Math.max(-0.55, Math.min(0.55, -facingAngle * 0.7));
       if (cursor) {
         const toCursorX = cursor.x - state.position.x;
         const toCursorY = cursor.y - state.position.y;
         const reach = Math.hypot(toCursorX, toCursorY);
         const weight = Math.min(1, Math.max(0, (reach - GLANCE_FADE_NEAR) / (GLANCE_FADE_FAR - GLANCE_FADE_NEAR)));
         if (weight > 0) {
+          // A cursor to watch outranks the look-back, blended by the same distance weight so
+          // there is no discontinuity where one takes over from the other.
           // Shortest-angle difference against the body's actual heading. Both are world-space
           // ground-plane angles in the same convention - differencing a raw cursor angle
           // against a folded body angle is what used to pin the head at its limit and flip its
           // sign the moment the cat crossed the cursor's x.
           const rawYaw = Math.atan2(toCursorX * worldPerPixelX, toCursorY * worldPerPixelZ);
           const delta = Math.atan2(Math.sin(rawYaw - facingAngle), Math.cos(rawYaw - facingAngle));
-          targetHeadYaw = Math.max(-0.5, Math.min(0.5, delta)) * weight;
+          const toCursor = Math.max(-0.5, Math.min(0.5, delta));
+          targetHeadYaw = toCursor * weight + targetHeadYaw * (1 - weight);
         }
       }
       headYaw += (targetHeadYaw - headYaw) * (1 - Math.exp(-deltaSeconds / 0.24));
