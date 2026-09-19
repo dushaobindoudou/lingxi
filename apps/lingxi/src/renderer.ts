@@ -299,12 +299,21 @@ export function createThreeRenderer(): Renderer {
   let performanceZoomTarget = 1;
   let performanceZoomTau = 0.5; // seconds; the ease time constant
 
-  /** Squash the rear hemisphere so the cat never turns fully away, without mirroring it. */
-  function biasTowardViewer(angle: number) {
-    const magnitude = Math.abs(angle);
-    if (magnitude <= VIEWER_BIAS_FROM) return angle;
-    const past = (magnitude - VIEWER_BIAS_FROM) / (Math.PI - VIEWER_BIAS_FROM);
-    return Math.sign(angle) * (VIEWER_BIAS_FROM + past * (VIEWER_BIAS_MAX - VIEWER_BIAS_FROM));
+  /**
+   * How much the UPPER body should twist back toward the viewer, given where the hips point.
+   *
+   * This used to rotate the root instead, and that was a real regression: the legs stride along
+   * the body's own forward axis, so turning the whole body away from the direction of travel
+   * makes the cat crab sideways - up to 64% of its speed when walking directly away, which is
+   * foot sliding by another name and was spotted immediately. The hips and legs must point
+   * exactly where the cat is going; presenting the face is the spine and neck's job, which is
+   * also how an actual cat looks back over its shoulder.
+   */
+  function presentationTwist(bodyYaw: number) {
+    const magnitude = Math.abs(bodyYaw);
+    if (magnitude <= PRESENT_FROM) return 0;
+    const past = Math.min(1, (magnitude - PRESENT_FROM) / (Math.PI - PRESENT_FROM));
+    return -Math.sign(bodyYaw) * past * PRESENT_MAX_TWIST;
   }
 
   /** The scalar actually applied to the rig: user preset * whatever a performance is doing. */
@@ -369,8 +378,11 @@ export function createThreeRenderer(): Renderer {
    * it is heading still reads correctly and turning stays continuous, the rear hemisphere is
    * just squashed so "directly away" is never quite reached.
    */
-  const VIEWER_BIAS_FROM = Math.PI * 0.55;
-  const VIEWER_BIAS_MAX = Math.PI * 0.78;
+  const PRESENT_FROM = Math.PI * 0.45;
+  /** Total extra yaw laid along the spine when the cat is heading away. Anatomically this is a
+   *  lot already - a cat can look most of the way behind itself - and going further starts to
+   *  read as a broken neck rather than a glance. */
+  const PRESENT_MAX_TWIST = 0.55;
   /** Below this distance the cat does not turn its head toward the cursor at all, and between
    *  here and GLANCE_FADE_FAR the glance fades in. See the comment at the glance itself. */
   const GLANCE_FADE_NEAR = 70;
@@ -762,9 +774,12 @@ export function createThreeRenderer(): Renderer {
       if (headingScreen !== undefined && speed > FACING_SPEED_THRESHOLD) {
         // Screen heading -> ground-plane angle. Full 360 degrees, no fold and no clamp: folding
         // is what used to make the cat moonwalk away from the viewer instead of turning round.
-        facingAngle = biasTowardViewer(
-          Math.atan2(Math.cos(headingScreen) * worldPerPixelX, Math.sin(headingScreen) * worldPerPixelZ),
-        );
+        // INVARIANT: while travelling, the root's yaw IS the direction of travel, with nothing
+        // applied in between. The legs stride along the root's forward axis, so any transform
+        // inserted here makes the cat crab sideways by sin(error) of its speed and the foot
+        // planting silently stops working. Presenting the face toward the viewer is the spine's
+        // job (see presentationTwist), never the root's.
+        facingAngle = Math.atan2(Math.cos(headingScreen) * worldPerPixelX, Math.sin(headingScreen) * worldPerPixelZ);
         settledSince = null;
       } else if (headingScreen === undefined && speed > FACING_SPEED_THRESHOLD) {
         // A host whose engine predates headings still gets the old behaviour rather than none.
@@ -812,7 +827,13 @@ export function createThreeRenderer(): Renderer {
       const yawRate = deltaSeconds > 0
         ? Math.atan2(Math.sin(bodyYaw - previousBodyYaw), Math.cos(bodyYaw - previousBodyYaw)) / deltaSeconds
         : 0;
-      bodyFlex.update(rig, yawRate, Math.max(walkAmount, state.state === 'dragged' ? 1 : 0), deltaSeconds);
+      bodyFlex.update(
+        rig,
+        yawRate,
+        Math.max(walkAmount, state.state === 'dragged' ? 1 : 0),
+        deltaSeconds,
+        presentationTwist(bodyYaw),
+      );
 
       // A subtle, independent head turn toward the cursor - "how should the cat look at
       // me" - layered on top of the body's own facing rather than replacing it, and

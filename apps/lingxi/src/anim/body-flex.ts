@@ -60,20 +60,42 @@ export interface BodyFlex {
    * @param engagement 0..1 - how much the cat is actually moving. A stationary cat whose
    *   facing is being nudged should not throw its whole spine into it.
    */
-  update(rig: Rig, turnRate: number, engagement: number, deltaSeconds: number): void;
+  update(
+    rig: Rig,
+    turnRate: number,
+    engagement: number,
+    deltaSeconds: number,
+    /**
+     * Extra steady twist toward the viewer, laid along the same chain. Separate from the turn
+     * bend because it is not a turn: it is the cat keeping its face on you while its body goes
+     * somewhere else, and it must NEVER be applied to the root - the legs stride along the
+     * root's forward axis, so rotating that away from the travel direction makes the feet skate.
+     */
+    presentation?: number,
+  ): void;
   /** Current curve, radians, for anything that wants to react to it (e.g. the gait). */
   readonly bend: number;
 }
 
+/** Where the look-back twist is spent. Far more neck than spine, unlike a turn. */
+const PRESENT_SHARE: [string, number][] = [
+  ['spine2', 0.06],
+  ['spine1', 0.12],
+  ['neck2', 0.26],
+  ['neck1', 0.30],
+  ['head', 0.26],
+];
+
 export function createBodyFlex(): BodyFlex {
   let bend = 0;
+  let twist = 0;
 
   return {
     get bend() {
       return bend;
     },
 
-    update(rig, turnRate, engagement, deltaSeconds) {
+    update(rig, turnRate, engagement, deltaSeconds, presentation = 0) {
       const wanted = Math.max(
         -MAX_BEND,
         Math.min(MAX_BEND, turnRate * BEND_PER_TURN_RATE * Math.max(0, Math.min(1, engagement))),
@@ -81,12 +103,17 @@ export function createBodyFlex(): BodyFlex {
       // Eased rather than applied directly: turnRate is a per-frame quantity, and feeding it
       // straight into the pose would put frame-rate noise into the spine.
       bend += (wanted - bend) * (1 - Math.exp(-deltaSeconds / BEND_EASE));
-      if (Math.abs(bend) < 1e-4) {
+      twist += (presentation - twist) * (1 - Math.exp(-deltaSeconds / BEND_EASE));
+      if (Math.abs(bend) < 1e-4 && Math.abs(twist) < 1e-4) {
         bend = 0;
+        twist = 0;
         return;
       }
 
+      // The turn bend and the look-back twist ride the same chain, but the twist is weighted
+      // toward the neck: a cat glancing behind itself moves its head and shoulders, not its hips.
       for (const [id, share] of BEND_SHARE) rig.node(id).rotation.y += bend * share;
+      for (const [id, share] of PRESENT_SHARE) rig.node(id).rotation.y += twist * share;
       for (const [id, share] of TAIL_COUNTER) rig.node(id).rotation.y += bend * share;
       // Negative, because positive rotation.y turns the nose toward the cat's left while
       // positive rotation.z tips its top toward its right - banking into the turn needs them
