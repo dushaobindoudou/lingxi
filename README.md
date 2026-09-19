@@ -169,6 +169,24 @@ cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
 
 ---
 
+## 文档索引
+
+| 入口 | 内容 |
+| --- | --- |
+| [接入 Agent 的完整规范](docs/19-agent-integration.md) | **写接入先看这个**：词汇表、优先级、定制、自证生效 |
+| [技术架构](docs/05-technical-architecture.md) | 三层分工与契约 |
+| [行为系统](docs/04-life-engine.md) | 纯状态机的行为设计 |
+| [主界面设计](docs/18-main-interface-design.md) | 管理窗口的信息架构 |
+| [扩展架构](docs/09-extension-architecture.md) | 换肤 / 性格 / Agent 观察的接口边界 |
+| [品牌与设计系统](docs/08-brand-and-design-system.md) | 名字、视觉基准、图标与界面变量 |
+| [决策 001：实时桌面方案](docs/decisions/001-realtime-desktop.md) | 为什么是实时 3D 而不是预渲染 |
+| [决策 002：物理与游戏库](docs/decisions/002-physics-and-game-libraries.md) | 为什么不引入 Rapier / 游戏框架 |
+| [决策 003：多 Agent 仲裁](docs/decisions/003-multi-agent-arbitration.md) | 优先级、归属、鉴权的取舍 |
+| [配置目录](apps/lingxi/src-tauri/README-config.md) | 运行时数据都放在哪 |
+| [早期文档存档](docs/archive/README.md) | 已过期但有参考价值的设计与试作记录 |
+
+---
+
 ## 许可
 
 见 [LICENSE.md](LICENSE.md)。
