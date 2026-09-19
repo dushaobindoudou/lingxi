@@ -212,18 +212,30 @@ test('"auto" mode: wandering to the rest spot actually arrives at the work-area 
     position: { x: 1500, y: 1000 },
     idleDurationMsRange: [1, 1],
     margin: 24,
-    speed: 100000, // effectively teleport so the test does not depend on many frames
+    // A brisk but real speed. This used to pass 100000 to "effectively teleport so the test does
+    // not depend on many frames", which no longer works and should not: speed is now bounded so
+    // the turning circle stays navigable (see maxTurnRadius), because a body that cannot turn
+    // inside its own approach orbits its destination forever. Walking there is what the cat
+    // actually does, so the test walks there.
+    speed: 900,
+    random: seeded(31),
   });
   const cursor = { x: 100, y: 100 };
   engine.tick(0, cursor);
   engine.tick(10, cursor); // idle window elapsed -> now wandering toward the far edge
   assert.equal(engine.state, 'wander');
-  // tick()'s deltaSeconds is capped at 0.25s per frame, so give it one full capped frame
-  const snap = engine.tick(300, cursor);
-  assert.equal(snap.state, 'idle');
+  let snap = engine.tick(26, cursor);
+  for (let frame = 2; frame < 1200 && snap.state === 'wander'; frame += 1) {
+    snap = engine.tick(10 + frame * 16, cursor);
+  }
+  assert.equal(snap.state, 'idle', 'it should have arrived and settled');
+  // Within the arrival threshold of a border, not exactly on it. A cat that walks to its
+  // destination stops when it is close enough (arriveThreshold, 6px); only the old teleport
+  // speed could land on the exact pixel.
+  const ARRIVE = 6;
   const atEdge =
-    Math.abs(snap.position.x - 24) < 1 || Math.abs(snap.position.x - (3000 - 24)) < 1 ||
-    Math.abs(snap.position.y - 24) < 1 || Math.abs(snap.position.y - (2000 - 24)) < 1;
+    Math.abs(snap.position.x - 24) <= ARRIVE || Math.abs(snap.position.x - (3000 - 24)) <= ARRIVE ||
+    Math.abs(snap.position.y - 24) <= ARRIVE || Math.abs(snap.position.y - (2000 - 24)) <= ARRIVE;
   assert.ok(atEdge, `expected to end up on a border, got ${JSON.stringify(snap.position)}`);
 });
 
@@ -294,7 +306,12 @@ test('resetPosition recenters and cancels a drag, an AI intent, and a mid-wander
 });
 
 test('an AI-suggested destination moves the cat and expires on its own', () => {
-  const engine = createLifeEngine({ bounds: { width: 1000, height: 1000 }, position: { x: 100, y: 100 }, speed: 100000 });
+  // A high but not absurd speed. This used to pass 100000, which no longer arrives and should
+  // not: the body now has a turning-rate ceiling, so speed is bounded to keep the turning circle
+  // navigable (see maxTurnRadius). At 100000px/s the circle would be 20000px wide on a 1000px
+  // screen and the cat would orbit its destination forever - which is a bug this engine has
+  // already had once, from the other direction.
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 1000 }, position: { x: 100, y: 100 }, speed: 1500 });
   engine.tick(0, null); // establish a baseline "now" so the next tick has a non-zero delta
   engine.suggestMoveTo({ x: 800, y: 800 }, 0, 5000);
   assert.equal(engine.tick(10, null).state, 'ai_directed');
@@ -906,4 +923,34 @@ test('the cat resumes living after an intent is CANCELLED', () => {
     if (distance(snap.position, start) > 5) moved = true;
   }
   assert.ok(moved, 'stuck in ai_directed after the intent was cancelled');
+});
+
+// "猫咪会闪回到一个固定位置" - not a teleport. A performance flings the cat to a stage mark at
+// 6-7x speed, and the turn rate was derived from speed with a floor but no CEILING, so the body
+// pivoted at 1130 deg/s (three rotations a second) and shot off. Too fast to read as a turn.
+test('the body never pivots faster than an animal could, however fast it is sent', () => {
+  for (const multiplier of [1, 3, 7, 40]) {
+    const engine = createLifeEngine({
+      bounds: { width: 1470, height: 956 }, position: { x: 200, y: 800 }, random: seeded(21),
+    });
+    engine.suggestMoveTo({ x: 1100, y: 300 }, 0, 4000, multiplier);
+    let peak = 0;
+    for (let f = 1; f < 400; f += 1) peak = Math.max(peak, Math.abs(engine.tick(f * 16, null).turning));
+    const degrees = (peak * 180) / Math.PI;
+    assert.ok(degrees <= 290, `${multiplier}x pivoted at ${degrees.toFixed(0)} deg/s - that reads as a flash, not a turn`);
+  }
+});
+
+test('a fast mover still arrives instead of orbiting - speed is bounded by the turning circle', () => {
+  for (const speed of [90, 630, 5000, 100000]) {
+    const engine = createLifeEngine({
+      bounds: { width: 1470, height: 956 }, position: { x: 200, y: 800 }, speed, random: seeded(22),
+    });
+    engine.suggestMoveTo({ x: 1100, y: 300 }, 0, 60000);
+    let arrived = false;
+    for (let f = 1; f < 2000 && !arrived; f += 1) {
+      if (distance(engine.tick(f * 16, null).position, { x: 1100, y: 300 }) < 12) arrived = true;
+    }
+    assert.ok(arrived, `speed ${speed} orbited its destination instead of reaching it`);
+  }
 });

@@ -11,7 +11,7 @@
 // people. Someone adding a theme should not have to scroll past two thousand lines of
 // keyframes, someone retiming an animation should not risk breaking the face, and someone who
 // just wants a darker speech bubble should not have to open either.
-import { layers, expressions as builtInExpressions, type FaceState } from './art.ts';
+import { layers, expressions as builtInExpressions, DEFAULT_FACE_GEOMETRY, type FaceGeometry, type FaceState } from './art.ts';
 import type { ArtSkin } from './art.ts';
 import { parseMotions, type Motion } from '../anim/motion.ts';
 import type { BubbleStyle } from '../fx/stage-fx.ts';
@@ -23,6 +23,7 @@ export interface CustomAssetPayload {
   expressions?: unknown;
   skins?: unknown;
   bubble?: unknown;
+  face?: unknown;
   /** filename -> data URL (PNG) or parsed JSON (a sidecar texture config). */
   textures?: Record<string, unknown>;
 }
@@ -32,6 +33,7 @@ export interface LoadedAssets {
   expressions?: Record<string, FaceState>;
   skins?: ArtSkin[];
   bubble?: Partial<BubbleStyle>;
+  face?: FaceGeometry;
   /** Problems found, one per file. Surfaced in the UI rather than swallowed. */
   errors: string[];
   dir?: string;
@@ -243,6 +245,53 @@ export function parseSkins(value: unknown, textures: Record<string, unknown>, ri
  * skins.json does not stop custom actions from loading, and every failure is reported rather
  * than silently dropped.
  */
+/**
+ * Face geometry - where the eyes, nose, mouth and whiskers sit and how big they are.
+ *
+ * Every field is optional and falls back to the built-in value, so a file that only widens the
+ * eye spacing is a two-line file. Ranges are generous but bounded: the face texture is 256x256
+ * and a value outside it does not produce an interesting cat, it produces an invisible feature
+ * and a confused user.
+ */
+function parseFaceGeometry(raw: unknown): FaceGeometry {
+  if (typeof raw !== 'object' || raw == null || Array.isArray(raw)) {
+    throw new Error('应该是一个对象，可以只写想改的部分');
+  }
+  const input = raw as Record<string, Record<string, unknown> | undefined>;
+  const known = ['muzzle', 'eyes', 'nose', 'mouth', 'whiskers'];
+  for (const key of Object.keys(input)) {
+    if (!known.includes(key)) {
+      throw new Error(`未知的部位 "${key}"，可用的是：${known.join(' / ')}`);
+    }
+  }
+  const out: FaceGeometry = structuredClone(DEFAULT_FACE_GEOMETRY);
+  for (const group of known as (keyof FaceGeometry)[]) {
+    const supplied = input[group];
+    if (supplied == null) continue;
+    if (typeof supplied !== 'object' || Array.isArray(supplied)) {
+      throw new Error(`${group} 应该是一个对象`);
+    }
+    const target = out[group] as Record<string, number>;
+    for (const [field, value] of Object.entries(supplied)) {
+      if (!(field in target)) {
+        throw new Error(`${group}.${field} 不是可调项，可用的是：${Object.keys(target).join(' / ')}`);
+      }
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(`${group}.${field} 应该是一个数字，收到 ${JSON.stringify(value)}`);
+      }
+      // The face texture is 256x256; anything outside that draws off the head.
+      if (value < -128 || value > 256) {
+        throw new Error(`${group}.${field} = ${value} 超出脸部贴图范围（-128 到 256）`);
+      }
+      target[field] = value;
+    }
+  }
+  if (out.whiskers.rows < 0 || out.whiskers.rows > 8) {
+    throw new Error(`whiskers.rows = ${out.whiskers.rows}，应该在 0 到 8 之间`);
+  }
+  return out;
+}
+
 export function loadCustomAssets(
   payload: CustomAssetPayload,
   context: { nodeIds: readonly string[]; poseNames: readonly string[]; rigId: string },
@@ -276,6 +325,14 @@ export function loadCustomAssets(
       loaded.bubble = parseBubbleStyle(payload.bubble);
     } catch (error) {
       loaded.errors.push(`bubble.json：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (payload.face != null) {
+    try {
+      loaded.face = parseFaceGeometry(payload.face);
+    } catch (error) {
+      loaded.errors.push(`face.json：${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -113,7 +113,13 @@ export interface Renderer {
    * Exists so a scripted performance can sell approach and retreat ("从远处跑过来越来越大")
    * without touching the user's own size preference. Renderers that cannot scale omit it.
    */
-  setPerformanceZoom?(multiplier: number, seconds?: number): void;
+  /**
+   * Ease the model to an ABSOLUTE size (1 = the app's default), or pass null to hand the body
+   * back to whatever size the user has chosen. Absolute rather than a multiple of the user's
+   * size on purpose: a set piece designed to fill the screen must fill the screen whether the
+   * pet is set to tiny or large.
+   */
+  setPerformanceScale?(absolute: number | null, seconds?: number): void;
   /**
    * Play a named action clip right now, ahead of whatever the renderer's own scheduler would
    * have chosen. Returns false for an unknown id. Optional: a renderer with no clip library

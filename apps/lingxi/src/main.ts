@@ -132,17 +132,29 @@ async function main() {
   let userCamera = 'game';
   let currentSkinId = 'honey-mittens';
 
-  try {
-    const status = await invoke<{
-      scale: number;
-      visible: boolean;
-      mode: string;
-      catName: string;
-      activeAgent: string;
-      avoidRadius: number;
-      skin: string;
-      camera: string;
-    }>('get_status');
+  interface HostStatus {
+    scale: number;
+    visible: boolean;
+    mode: string;
+    catName: string;
+    activeAgent: string;
+    avoidRadius: number;
+    skin: string;
+    camera: string;
+  }
+
+  /**
+   * Bring the renderer in line with the Rust side's authoritative settings.
+   *
+   * Called at startup AND periodically (see the reconcile timer below), because the tray's
+   * effects reach here as broadcast events and an event is a one-shot: if the webview is not in
+   * a state to process it - the compositor suspends webviews it considers not worth drawing,
+   * which is the same condition the frame watchdog exists for - the click is simply lost, and
+   * the user sees "sometimes the tray menu needs clicking twice". Rust already holds the truth
+   * and persists it, so the robust fix is to stop depending on the delivery of any one event
+   * and reconcile against that truth instead.
+   */
+  function applyStatus(status: HostStatus): void {
     renderer.setScale(status.scale);
     currentSkinId = status.skin;
     renderer.setSkin?.(status.skin);
@@ -151,6 +163,11 @@ async function main() {
     // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
     syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
+  }
+
+  try {
+    const status = await invoke<HostStatus>('get_status');
+    applyStatus(status);
     catName = status.catName;
     activeAgent = status.activeAgent;
     dlog(`initial status applied: ${JSON.stringify(status)}`);
@@ -275,11 +292,13 @@ async function main() {
     }
   }
   await loadCustomAssets();
-  // Which agent is driving right now. Shown as a badge beside the cat for the duration of the
-  // reaction, so a user running several agents can tell whose work they are looking at.
-  void listen<{ badge: string; color: string; name: string; holdMs: number }>('agent-stage', (event) => {
-    const { badge, color, name, holdMs } = event.payload;
-    fx.showAgentBadge(badge, color, name, holdMs);
+  // Who the cat is currently speaking for. Applied to the NEXT bubble rather than drawn beside
+  // the cat: a mark pinned to the body is a HUD with no natural moment to leave, while a bubble
+  // already has one. Arrives before the `say` that follows it, because the Rust side claims the
+  // stage before it applies the rest of the command.
+  void listen<{ name: string; logo: string | null; color: string }>('agent-stage', (event) => {
+    const { name, logo, color } = event.payload;
+    fx.setBubbleAttribution(logo ? { name, logo, color } : null);
   });
 
   void listen('reload-custom-assets', () => {
@@ -601,9 +620,6 @@ async function main() {
         const head = renderer.headScreenPoint?.();
         if (head) fx.anchorBubble(head.x, head.y - 18);
       }
-      // The agent badge sits at the cat's shoulder rather than over its head, so it never
-      // competes with a speech bubble for the same space.
-      fx.anchorBadge(snapshot.position.x + 26, snapshot.position.y - 30);
 
       const playing = renderer.playingAction ?? null;
       if (playing && playing.id !== heldForAction) {
@@ -652,6 +668,29 @@ async function main() {
   // desktop all day, so the simulation gets a floor: if no frame has run for a while, drive it
   // from a timer instead. Rendering while nothing is composited costs nothing visible, and the
   // cat is in the right place when the window comes back.
+  // Settings reconcile. A tray click reaches this webview as a broadcast event, and an event is
+  // a one-shot: if it is not processed the change is lost, and the user has to click again -
+  // reported as "有时候托盘菜单需要点击两次才能有效果". Rust holds the authoritative,
+  // persisted state, so rather than trying to make one-shot delivery perfect, the renderer
+  // checks it periodically and applies anything it missed. On a timer rather than rAF for the
+  // same reason as the watchdog below: timers keep running when the compositor stops drawing.
+  const RECONCILE_INTERVAL_MS = 1500;
+  let lastStatusJson = '';
+  setInterval(() => {
+    void invoke<HostStatus>('get_status')
+      .then((status) => {
+        // Compare before applying: setSkin rebuilds the rig and repaints both atlases, so
+        // calling it every 1.5s because nothing changed would be genuinely expensive.
+        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius]);
+        if (json === lastStatusJson) return;
+        const missed = lastStatusJson !== '';
+        lastStatusJson = json;
+        applyStatus(status);
+        if (missed) dlog(`reconciled settings the event path missed: ${json}`);
+      })
+      .catch(() => {});
+  }, RECONCILE_INTERVAL_MS);
+
   const WATCHDOG_INTERVAL_MS = 100;
   const STALL_THRESHOLD_MS = 400;
   setInterval(() => {

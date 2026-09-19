@@ -16,7 +16,7 @@ import { buildRig, type Rig, type SkeletonData } from './rig/skeleton.ts';
 import skeletonData from './data/skeleton.json';
 import catalogue from './data/skins.json';
 import { refineSkeleton } from './rig/anatomy.ts';
-import { paintSkin, paintFace, setExpressions, resetExpressions, type ArtSkin, type FaceState } from './rig/art.ts';
+import { paintSkin, paintFace, setExpressions, resetExpressions, DEFAULT_FACE_GEOMETRY, type ArtSkin, type FaceGeometry, type FaceState } from './rig/art.ts';
 import { loadCustomAssets, type CustomAssetPayload, type CustomSkin } from './rig/custom-assets.ts';
 import { POSES } from './anim/poses.ts';
 import { createBodyController } from './anim/body-controller.ts';
@@ -46,7 +46,15 @@ let SKINS: CustomSkin[] = BUILT_IN_SKINS as CustomSkin[];
 const BUILT_IN_ACTION_IDS = new Set<string>();
 const BUILT_IN_EXPRESSION_NAMES = new Set<string>();
 const BUILT_IN_SKIN_IDS = new Set((BUILT_IN_SKINS as CustomSkin[]).map((entry) => entry.id));
-let assetSources = { actions: 'builtin', expressions: 'builtin', skins: 'builtin', bubble: 'builtin' };
+let assetSources = {
+  actions: 'builtin', expressions: 'builtin', skins: 'builtin', bubble: 'builtin', face: 'builtin',
+};
+/**
+ * Where the eyes, nose, mouth and whiskers sit. Replaceable via assets/face.json.
+ * Named `faceLayout` rather than `faceGeometry` because that name is already taken by the
+ * THREE.PlaneGeometry the face decal is drawn on - two very different meanings of "geometry".
+ */
+let faceLayout: FaceGeometry = DEFAULT_FACE_GEOMETRY;
 let lastAssetLoadAt: number | null = null;
 let lastAssetErrors: string[] = [];
 export const DEFAULT_SKIN_ID = 'honey-mittens';
@@ -299,7 +307,7 @@ export function createThreeRenderer(): Renderer {
       ctx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
       ctx.drawImage(faceSheetImage, sx, sy, cw, ch, 0, 0, faceCanvas.width, faceCanvas.height);
     } else {
-      paintFace(faceCanvas, skin, lastFrame.face, lastFrame.blink);
+      paintFace(faceCanvas, skin, lastFrame.face, lastFrame.blink, faceLayout);
     }
     faceTexture.needsUpdate = true;
   }
@@ -344,10 +352,18 @@ export function createThreeRenderer(): Renderer {
   // changed. Scaling the model leaves that mapping exactly intact.
   //
   // Separate from `modelScale` on purpose: a performance must never overwrite the size the
-  // user picked in the tray. It multiplies, and it always returns to 1.
-  let performanceZoom = 1;
-  let performanceZoomTarget = 1;
-  let performanceZoomTau = 0.5; // seconds; the ease time constant
+  // user picked in the tray - it takes the body over for a few seconds and hands it back.
+  //
+  // ABSOLUTE, not a multiple of the user's size. It used to multiply, which meant the same
+  // performance was a tiny wiggle at 0.25 and filled the screen at 1.4 - the drama depended
+  // entirely on a setting that has nothing to do with the performance. A set piece is a set
+  // piece: it should travel from wherever the cat happens to be sized, out to the size the
+  // choreography was designed for, and back again.
+  let performanceScale: number | null = null; // null = not performing; follow the user's size
+  let performanceScaleTarget = 1;
+  let performanceScaleTau = 0.5; // seconds; the ease time constant
+  /** True while easing back to the user's size at the end of a performance. */
+  let performanceReleasing = false;
 
   /**
    * How much the UPPER body should twist back toward the viewer, given where the hips point.
@@ -366,9 +382,9 @@ export function createThreeRenderer(): Renderer {
     return -Math.sign(bodyYaw) * past * PRESENT_MAX_TWIST;
   }
 
-  /** The scalar actually applied to the rig: user preset * whatever a performance is doing. */
+  /** The scalar actually applied to the rig: the user's size, or a performance's own. */
   function effectiveScale() {
-    return VOXEL_TO_WORLD * modelScale * performanceZoom;
+    return VOXEL_TO_WORLD * (performanceScale ?? modelScale);
   }
 
   let cameraId = DEFAULT_CAMERA_ID;
@@ -564,11 +580,13 @@ export function createThreeRenderer(): Renderer {
       });
       if (loaded.expressions) setExpressions(loaded.expressions);
       else resetExpressions();
+      faceLayout = loaded.face ?? DEFAULT_FACE_GEOMETRY;
       assetSources = {
         actions: loaded.actions ? 'custom' : 'builtin',
         expressions: loaded.expressions ? 'custom' : 'builtin',
         skins: loaded.skins?.length ? 'merged' : 'builtin',
         bubble: loaded.bubble ? 'custom' : 'builtin',
+        face: loaded.face ? 'custom' : 'builtin',
       };
       lastAssetLoadAt = Date.now();
       lastAssetErrors = loaded.errors;
@@ -598,12 +616,27 @@ export function createThreeRenderer(): Renderer {
       mountSkin(next);
     },
 
-    /** Ramp the model toward `multiplier` times the user's own size over `seconds`. Used by
-     *  performances to fake approach and retreat under an orthographic camera; always returned
-     *  to 1 when the performance ends. */
-    setPerformanceZoom(multiplier: number, seconds = 0.5) {
-      performanceZoomTarget = Math.max(0.15, Math.min(6, multiplier));
-      performanceZoomTau = Math.max(0.05, seconds);
+    /**
+     * Ramp the model toward an ABSOLUTE size over `seconds` - 1 being the app's default size,
+     * whatever the user has chosen in the tray. Used by performances to fake approach and
+     * retreat under an orthographic camera, which cannot dolly.
+     *
+     * Pass null to hand the body back: the model eases to the user's own size and then stops
+     * being performance-driven. Handing back by easing rather than by dropping the override is
+     * what stops the cat popping to a different size on the last frame of a set piece.
+     */
+    setPerformanceScale(absolute: number | null, seconds = 0.5) {
+      performanceScaleTau = Math.max(0.05, seconds);
+      if (absolute == null) {
+        performanceScaleTarget = modelScale;
+        // Stay performance-driven until the ease actually lands - see render().
+        if (performanceScale == null) performanceScale = modelScale;
+        performanceReleasing = true;
+        return;
+      }
+      performanceReleasing = false;
+      performanceScaleTarget = Math.max(0.15, Math.min(6, absolute));
+      if (performanceScale == null) performanceScale = modelScale; // start from where we are
     },
 
     /** Switch the viewing angle ("视角"). See CAMERA_PRESETS; the change is eased in over
@@ -741,8 +774,15 @@ export function createThreeRenderer(): Renderer {
       // stops doing anything. Easing on the ANGLE (not cutting between cameras) is what keeps
       // a switch from teleporting the cat on screen, since the pixel->world mapping is
       // derived from the angle.
-      if (Math.abs(performanceZoom - performanceZoomTarget) > 1e-4) {
-        performanceZoom += (performanceZoomTarget - performanceZoom) * (1 - Math.exp(-deltaSeconds / performanceZoomTau));
+      if (performanceScale != null) {
+        // While releasing, the target tracks the user's size, so changing the size mid-handback
+        // does not strand the cat at the size it had when the performance started.
+        if (performanceReleasing) performanceScaleTarget = modelScale;
+        performanceScale += (performanceScaleTarget - performanceScale) * (1 - Math.exp(-deltaSeconds / performanceScaleTau));
+        if (performanceReleasing && Math.abs(performanceScale - modelScale) < 1e-3) {
+          performanceScale = null; // arrived; the user's size owns the body again
+          performanceReleasing = false;
+        }
         rig.root.scale.setScalar(effectiveScale());
       }
 

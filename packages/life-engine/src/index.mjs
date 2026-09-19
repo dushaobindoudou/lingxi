@@ -114,6 +114,24 @@ const DEFAULTS = Object.freeze({
   // wider than the standoff it was trying to reach, so it orbited the cursor forever instead
   // of arriving. Deriving the rate from speed/radius keeps the circle constant instead.
   minTurnRadius: 28,
+  // Ceiling on how fast the body may swing, radians/second. There was only a FLOOR before, and
+  // the rate is derived from speed/turnRadius - so an agent or a performance asking for a 7x
+  // dash got 1130 deg/s, three full rotations a second. The body snapped round and shot off,
+  // which is what "猫咪会闪回到一个固定位置" actually is: not a teleport, a pivot too fast to
+  // read as a turn. 5 rad/s is ~286 deg/s, brisk for a cat and still legible. Cornering already
+  // drops the pace to minTurnSpeedFactor while the turn is happening, so capping the rate makes
+  // it turn on the spot and then go, rather than carving a wide arc at speed.
+  maxTurnRate: 5,
+  // Widest turning circle we are willing to let a fast mover have, in pixels. Speed is clamped
+  // so that speed/maxTurnRate never exceeds this.
+  //
+  // Capping the turn rate without capping speed reintroduces a bug this codebase has already
+  // had once: the turn rate used to be a fixed angular rate, which meant the faster the cat
+  // moved the wider it had to swing, and at chase speed the circle was wider than the standoff
+  // it was aiming for - so it orbited its target forever instead of arriving. The two limits
+  // have to move together, and expressing the pair as "a turning circle no wider than this" is
+  // what keeps them consistent.
+  maxTurnRadius: 200,
   // Distance at which the cat starts slowing for its destination. Without an arrival taper it
   // can only ever fly past a close target and come back around.
   slowingRadius: 120,
@@ -239,6 +257,8 @@ export function createLifeEngine(config = {}) {
   let detourSide = 0;
   // Timestamp of the last time enforceInvariants() had to repair the simulation, or null.
   let recoveredAt = null;
+  /** Where the body is being asked to point while standing still, radians, or null. */
+  let turnTarget = null;
   // --- who started it -----------------------------------------------------------------------
   // The cat's reaction to the pointer being on it should depend entirely on who moved. A user
   // reaching over to touch the cat wants affection; a cat that has wandered onto a parked
@@ -668,20 +688,26 @@ export function createLifeEngine(config = {}) {
    * to get somewhere behind it, the cat has to swing around. The renderer reads the heading
    * directly instead of differentiating position, which removes the noise path entirely.
    */
-  function moveToward(dest, deltaSeconds, speed = cfg.speed, avoid = null) {
+  function moveToward(dest, deltaSeconds, requestedSpeed = cfg.speed, avoid = null) {
+    // Bounded by what the body can actually steer at - see maxTurnRadius.
+    const speed = Math.min(requestedSpeed, cfg.maxTurnRate * cfg.maxTurnRadius);
     const d = distance(position, dest);
     if (d <= cfg.arriveThreshold) {
       position = { ...dest };
       return true; // arrived
     }
 
+    turnTarget = null; // walking sets its own heading; a pending stand-still turn is moot
     const bearing = detourAround(Math.atan2(dest.y - position.y, dest.x - position.x), avoid);
     const error = shortestAngle(bearing - heading);
     // Arrival taper first, because the speed it produces is what the turn rate is derived from.
     const arrival = Math.min(1, d / Math.max(1, cfg.slowingRadius));
     const alignmentNow = Math.max(0, Math.cos(error));
     const paceFactor = (cfg.minTurnSpeedFactor + (1 - cfg.minTurnSpeedFactor) * alignmentNow) * arrival;
-    const turnRate = Math.max(cfg.turnRate, (speed * paceFactor) / Math.max(1, cfg.minTurnRadius));
+    const turnRate = Math.min(
+      cfg.maxTurnRate,
+      Math.max(cfg.turnRate, (speed * paceFactor) / Math.max(1, cfg.minTurnRadius)),
+    );
     const maxTurn = turnRate * deltaSeconds;
     turning = Math.abs(error) <= maxTurn ? error / Math.max(deltaSeconds, 1e-6) : Math.sign(error) * turnRate;
     heading = shortestAngle(heading + (Math.abs(error) <= maxTurn ? error : Math.sign(error) * maxTurn));
@@ -789,6 +815,22 @@ export function createLifeEngine(config = {}) {
     return true;
   }
 
+  /**
+   * Turn on the spot to face `angle` (radians, screen space) without walking anywhere.
+   *
+   * Exists because a performance ends with the cat retreating, and retreating means walking
+   * away, and walking away means the heading - and therefore the face - points into the screen.
+   * The spine's presentation twist only recovers about 30 degrees of that, so the set piece
+   * finished with the cat's expression turned away from the person it was performing for
+   * ("头有时候会扭到右边...这样看不清楚表情"). Turning is a real manoeuvre at the body's own
+   * turn rate, never a snap.
+   */
+  function turnTo(angle) {
+    if (!Number.isFinite(angle)) return false;
+    turnTarget = angle;
+    return true;
+  }
+
   /** Cancel any pending AI suggestion and return to autonomous behavior next tick. */
   function clearIntent() {
     aiIntent = null;
@@ -856,6 +898,7 @@ export function createLifeEngine(config = {}) {
     heading = 0;
     turning = 0;
     facing = 1;
+    turnTarget = null;
     detourSide = 0;
     lastCursor = null;
     lastPosition = null;
@@ -1044,6 +1087,22 @@ export function createLifeEngine(config = {}) {
       idleUntil = now + rand(...cfg.idleDurationMsRange);
     }
 
+    // Turning on the spot outranks the idle timer but not locomotion: anything that actually
+    // walks sets its own heading, so the request is simply dropped once the cat moves off.
+    if (turnTarget != null) {
+      const error = shortestAngle(turnTarget - heading);
+      const maxTurn = cfg.maxTurnRate * deltaSeconds;
+      if (Math.abs(error) <= maxTurn) {
+        heading = shortestAngle(turnTarget);
+        turning = error / Math.max(deltaSeconds, 1e-6);
+        turnTarget = null;
+      } else {
+        heading = shortestAngle(heading + Math.sign(error) * maxTurn);
+        turning = Math.sign(error) * cfg.maxTurnRate;
+      }
+      facing = Math.cos(heading) >= 0 ? 1 : -1;
+    }
+
     if (state === 'idle') {
       if (idleUntil == null) idleUntil = now + rand(...cfg.idleDurationMsRange);
       if (now >= idleUntil) {
@@ -1127,6 +1186,7 @@ export function createLifeEngine(config = {}) {
     updateDrag,
     endDrag,
     suggestMoveTo,
+    turnTo,
     clearIntent,
     hold,
     setInteractionMode,

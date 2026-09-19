@@ -27,33 +27,57 @@
 
 ---
 
-## 第一步：注册身份
+## 零步：鉴权
+
+桥现在**需要 token**。应用第一次启动会生成一个，写在配置目录里，权限 `0600`：
+
+```
+~/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token
+```
 
 ```bash
-curl -X POST localhost:47811/agents -H 'Content-Type: application/json' -d '{
-  "id":    "claude-code",
-  "name":  "Claude Code",
-  "badge": "🤖",
-  "color": "#d97757"
-}'
+curl localhost:47811/health          # 唯一不需要 token 的接口，告诉你 token 在哪
+curl -H "Authorization: Bearer $(cat "$TOKEN_FILE")" localhost:47811/status
+```
+
+也支持 `X-Lingxi-Token:` 头和 `?token=`（调试时方便）。
+
+> **为什么只监听回环还不够**：回环是**网络边界，不是信任边界**。以这个用户身份运行的
+> 任何进程都能访问 127.0.0.1——包括浏览器里的一个页面、一个沙箱进程。而这个桥能移动猫、
+> **读取积累下来的主人记忆**、往用户配置目录写文件。token 文件只有本人可读，
+> 能读到它的东西本来就已经是这个用户了。
+
+**用 CLI 就不用管这些**——它自己会读 token。
+
+## 第一步：注册身份 + 生成你自己的 logo
+
+```bash
+lingxi register claude-code --logo my-mark.svg --name "Claude Code" --color "#d97757"
 ```
 
 | 字段 | 说明 |
 |---|---|
 | `id` | **必填**。稳定字符串，之后每次调用都带上它 |
 | `name` | 显示名，24 字以内 |
-| `badge` | **一个 emoji**（最多两个）。这是用户区分"哪个 agent 干的"的唯一标志 |
-| `color` | `#rgb` 或 `#rrggbb`，徽章描边色 |
+| `logo` | **你自己生成的 SVG**。这是用户区分"哪个 agent 干的"的标志 |
+| `color` | `#rgb` 或 `#rrggbb`，logo 底色 |
+| `badge` | 两字符文本兜底，没给 logo 时用 |
 
-**badge 让模型自己挑。** 第一次运行时选一个能代表自己的 emoji 和颜色，记在自己的配置里，
-之后一直用它。不要每次换。
+**logo 要你自己画。** 模型写 SVG 是本行——第一次运行时生成一个能代表自己的小图标，
+存在自己的配置里，之后一直用它。要求：
 
-> **为什么是 emoji 不是图片**：你自己就能生成，用户不用准备素材，渲染零成本，
-> 任何尺寸都清楚。图片方案（上传/存储/多分辨率/失效）成本高得多，收益只是精致一点。
-> `badge` 是字符串，将来要扩展成 URL 不会破坏现有调用方。见
-> [决策 003](decisions/003-multi-agent-arbitration.md)。
+- **小而平**，两三种颜色，**不要文字**（22px 下看不清）
+- 纯形状和路径。`<script>` / `<foreignObject>` / 外链 `href` / `<image>` 会被拒绝并告诉你原因
+- 64KB 以内（正常的 SVG 标记远小于 8KB）
 
-不注册也能用——裸 `curl` 必须一直能工作——但你会显示成一个通用的 💻。
+> **安全**：logo 在 webview 里是放进 `<img>` 渲染的，不是内联进 DOM。`<img>` 里的 SVG
+> **不能执行脚本、不能加载外部资源**——这是浏览器自己的保证，比我们写任何 sanitizer 都强。
+> 上面那几条拒绝规则是第二层，目的是让你**在注册时就收到报错**，而不是得到一个悄悄画不出来的图标。
+
+**logo 显示在气泡上，随气泡一起消失。** 不是钉在猫身边——钉在身上的标记是个和宠物抢注意力的
+HUD，而且没有自然的消失时机；气泡本来就有出现的理由和消失的理由。
+
+不注册也能用——裸 `curl` 必须一直能工作——但你会显示成 id 的前两个字。
 
 ---
 
@@ -128,6 +152,19 @@ curl -X POST localhost:47811/control -d '{"agent":"my-ci","priority":"alert","ex
 不要因为"我比较重要"就一律发 `alert`。用户需要看到的是**要紧的事**，
 不是要紧的工具——构建失败比空闲卖萌重要，不管是谁报的。
 
+### 优先级不够高会**排队**，太低的会被**丢弃**
+
+```json
+{ "ok": true,
+  "applied": ["queued behind a higher-priority reaction (position 1, expires in 4000ms)"],
+  "queued": true, "queuePosition": 1, "expiresInMs": 4000 }
+```
+
+- `alert` / `report` 会**排队**等舞台空出来，并且**有过期时间**（默认 8 秒，
+  用 `expiresInMs` 自己定）。过期的会被丢掉不播——一个反应是对某个**瞬间**的陈述，
+  晚了不是"迟到"，是"错了"。
+- `status` / `ambient` **不排队**，直接拒绝：氛围没有晚点播出的价值。
+
 ### 收到 `400 stage busy` 要**丢弃**，不要重试
 
 ```json
@@ -142,7 +179,7 @@ curl -X POST localhost:47811/control -d '{"agent":"my-ci","priority":"alert","ex
 ### 用户的设置不是你的
 
 `skin` / `camera` / `scale` / `visible` 是**用户的偏好**。接口不拦你（不想破坏已有接入），
-但会在响应里说一句。想被认出来，**用徽章，别改皮肤**。
+但会在响应里说一句。想被认出来，**用你自己的 logo，别改皮肤**。
 
 ---
 
@@ -162,6 +199,7 @@ curl -X POST localhost:47811/control -d '{"agent":"my-ci","priority":"alert","ex
 | `expressions.json` | 表情库 | **整体替换** |
 | `skins.json` | 主题 | 与内置**合并**（同 id 覆盖） |
 | `bubble.json` | 气泡样式（颜色/字体/形状） | 整体替换 |
+| `face.json` | **五官几何**：眼距/眼睛大小/鼻子/嘴/胡子根数与长度 | 按字段覆盖 |
 | `reactions.json` | **任务 → 表情/动作映射** | 按条覆盖 |
 | `textures/*.png` | 手绘图集 / 表情贴图 | 按引用 |
 
@@ -178,6 +216,28 @@ curl -s localhost:47811/capabilities | jq '.actions[] | select(.source=="custom"
   否则你一写就把人家的东西全删了
 
 这是接入方最容易造成不可逆损失的一个点。
+
+### `face.json` 的形状
+
+颜色一直是可换的（皮肤里的 `materials`），表情一直是数据（`expressions.json`），
+但**五官的位置和大小**以前只能改代码重新编译。现在：
+
+```jsonc
+{
+  // 只写想改的部分，其余用内置值。坐标在 256x256 的脸部贴图空间里。
+  "eyes":     { "spacing": 72, "top": 99, "width": 44, "height": 43, "pupilRadiusX": 11 },
+  "nose":     { "y": 174, "halfWidth": 9, "depth": 9 },
+  "mouth":    { "y": 193, "halfWidth": 19 },
+  "whiskers": { "rows": 3, "length": 58, "spread": 7, "width": 2, "droop": 0.8 },
+  "muzzle":   { "x": 85, "y": 166, "width": 86, "height": 48, "radius": 16 }
+}
+```
+
+写错字段会**点名**告诉你哪个字段不存在、可选的有哪些：
+
+```
+face.json：eyes.spacng 不是可调项，可用的是：spacing / top / width / height / radius / ...
+```
 
 ### `reactions.json` 的形状
 
@@ -228,12 +288,13 @@ curl -s localhost:47811/assets/status
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
+| GET | `/health` | **唯一免 token**：是否在跑、token 文件在哪 |
 | GET | `/integration` | **本文档的机器可读版，以它为准** |
 | GET | `/capabilities` | 全部动作/表情/主题/视角 + `source` 标记 |
 | GET | `/status` | 皮肤、视角、大小、可见性 |
 | GET | `/perception` | 位置、状态、表情、朝向、意图、玩具、健康 |
 | GET | `/agents` | 注册过的 agent + 当前占用舞台的是谁 |
-| POST | `/agents` | 注册身份和徽章 |
+| POST | `/agents` | 注册身份和 logo |
 | POST | `/task-event` | **推荐的主接入点** |
 | POST | `/control` | 低层直接驱动 |
 | POST | `/intent` | 让猫走到某个坐标 |
@@ -242,7 +303,32 @@ curl -s localhost:47811/assets/status
 | GET | `/assets/status` | 自定义资源状态与校验错误 |
 | GET | `/debug/events` | 任务事件历史 |
 
-MCP 接法见 [`integrations/README.md`](../integrations/README.md)。
+---
+
+## 两种接法，按摩擦成本选
+
+### A. 只用 skill + 脚本（推荐，摩擦最低）
+
+MCP 的每个工具调用都是一次授权面：不少宿主会**逐个工具**弹确认，一轮里改三次表情就要过三次。
+脚本只有一次。所以我们直接提供一个 CLI，skill 把它带上就行，**完全不用注册 MCP server**：
+
+```bash
+integrations/cli/lingxi register claude-code --logo mark.svg --name "Claude Code"
+integrations/cli/lingxi task running build "编译中"
+integrations/cli/lingxi task completed test "全绿"
+integrations/cli/lingxi say "搞定了"
+integrations/cli/lingxi state          # 自证生效
+```
+
+token 它自己读，不用配置。`lingxi help` 列全部子命令，`lingxi raw <METHOD> <PATH> [json]`
+兜住任何没包装的接口。
+
+### B. MCP server
+
+宿主想要带类型的 schema、想逐工具控制权限时更合适。见
+[`integrations/README.md`](../integrations/README.md)。
+
+两条路走的是同一个桥、同一套 token、同一份契约。
 
 ---
 

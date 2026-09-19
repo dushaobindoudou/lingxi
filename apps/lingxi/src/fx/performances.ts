@@ -20,6 +20,8 @@ export interface PerformanceContext {
   /** Only the slice of the life engine a performance is allowed to touch. */
   engine: {
     suggestMoveTo(point: { x: number; y: number }, now: number, holdMs?: number, speedMultiplier?: number): void;
+    /** Turn on the spot, radians in screen space. Used to end a set piece facing the viewer. */
+    turnTo(angle: number): boolean;
     clearIntent(): void;
     readonly position: { x: number; y: number };
   };
@@ -54,7 +56,9 @@ export interface PerformanceDef {
  *   ANTICIPATION (溜め)   a held beat before the move. Without it a charge has no weight.
  *   LOW-ANGLE DOLLY IN    the camera pushes toward the subject as it approaches - the standard
  *                         grammar for a fight climax. Our camera is orthographic, so distance
- *                         cannot produce this; `setPerformanceZoom` scales the model instead,
+ *                         cannot produce this; `setPerformanceScale` scales the model instead,
+ *                         to an ABSOLUTE size rather than a multiple of the user's - a set
+ *                         piece has to read the same whether the pet is set to tiny or large.
  *                         which is the same read (starts far and small, arrives huge).
  *   集中線 SPEED LINES    radial lines converging on the subject during the charge and again
  *                         on contact. Used only on these beats - they work by interrupting the
@@ -109,7 +113,7 @@ export const PERFORMANCES: PerformanceDef[] = [
           context.renderer.setCameraPreset?.('eye-level');
           context.renderer.playExpression?.('警觉', 1400);
           // Retreat upstage and shrink - this is the "far away" the whole shot is built on.
-          context.renderer.setPerformanceZoom?.(0.4, 0.45);
+          context.renderer.setPerformanceScale?.(0.4, 0.45);
           context.engine.suggestMoveTo(approachMark(context), context.now(), 1400, 6);
           context.fx.vignette(8600, 0.6);
         },
@@ -129,7 +133,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 1900,
         run(context) {
           context.engine.suggestMoveTo(stageMark(context), context.now(), 1700, 7);
-          context.renderer.setPerformanceZoom?.(2.7, 1.2);
+          context.renderer.setPerformanceScale?.(2.7, 1.2);
           const at = context.petPosition();
           context.fx.speedLines(at.x, at.y, { durationMs: 1400, intensity: 0.95, track: true });
           context.fx.tilt(2.2, 1500);
@@ -178,15 +182,20 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 8000,
         run(context) {
           const { width, height } = context.viewport();
-          context.renderer.setPerformanceZoom?.(1, 0.9);
+          context.renderer.setPerformanceScale?.(null, 0.9);
           context.engine.suggestMoveTo({ x: width * 0.5, y: height * 0.45 }, context.now(), 1100, 3);
         },
       },
       {
         atMs: 9200,
         run(context) {
-          context.renderer.setPerformanceZoom?.(1, 0.4);
+          context.renderer.setPerformanceScale?.(null, 0.4);
           context.restoreCamera();
+          // Face the viewer again. The retreat walks AWAY, which points the head into the
+          // screen, and the spine's presentation twist only recovers about 30 degrees of that -
+          // so without this the set piece ends with the expression turned away from the person
+          // it was performed for. +PI/2 is down the screen, i.e. toward them.
+          context.engine.turnTo(Math.PI / 2);
         },
       },
     ],
@@ -202,7 +211,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         run(context) {
           context.renderer.setCameraPreset?.('eye-level');
           context.renderer.playExpression?.('期待', 3400);
-          context.renderer.setPerformanceZoom?.(0.42, 0.45);
+          context.renderer.setPerformanceScale?.(0.42, 0.45);
           context.engine.suggestMoveTo(approachMark(context), context.now(), 1400, 6);
           context.fx.vignette(8800, 0.45);
         },
@@ -219,7 +228,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 1900,
         run(context) {
           context.engine.suggestMoveTo(stageMark(context), context.now(), 1800, 6);
-          context.renderer.setPerformanceZoom?.(2.5, 1.3);
+          context.renderer.setPerformanceScale?.(2.5, 1.3);
           const at = context.petPosition();
           // Pink lines rather than white: same grammar, different emotion.
           context.fx.speedLines(at.x, at.y, { durationMs: 1500, intensity: 0.7, color: 'rgba(255,190,214,0.9)', track: true });
@@ -255,15 +264,20 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 7400,
         run(context) {
           const { width, height } = context.viewport();
-          context.renderer.setPerformanceZoom?.(1, 1.0);
+          context.renderer.setPerformanceScale?.(null, 1.0);
           context.engine.suggestMoveTo({ x: width * 0.5, y: height * 0.45 }, context.now(), 1300, 3);
         },
       },
       {
         atMs: 9400,
         run(context) {
-          context.renderer.setPerformanceZoom?.(1, 0.4);
+          context.renderer.setPerformanceScale?.(null, 0.4);
           context.restoreCamera();
+          // Face the viewer again. The retreat walks AWAY, which points the head into the
+          // screen, and the spine's presentation twist only recovers about 30 degrees of that -
+          // so without this the set piece ends with the expression turned away from the person
+          // it was performed for. +PI/2 is down the screen, i.e. toward them.
+          context.engine.turnTo(Math.PI / 2);
         },
       },
     ],
@@ -318,6 +332,8 @@ export const PERFORMANCES: PerformanceDef[] = [
           context.engine.clearIntent();
           context.renderer.playAction?.('sit');
           context.renderer.playExpression?.('困困', 2800);
+          // Sit down facing the viewer, not facing wherever the last sprint happened to end.
+          context.engine.turnTo(Math.PI / 2);
         },
       },
       {
@@ -384,7 +400,8 @@ export function createPerformanceRunner(context: PerformanceContext): Performanc
       context.engine.clearIntent();
       // Put back everything a performance borrows. The zoom especially: leaving it scaled would
       // silently override the user's own size preset until they next changed it.
-      context.renderer.setPerformanceZoom?.(1, 0.3);
+      context.renderer.setPerformanceScale?.(null, 0.3);
+      context.engine.turnTo(Math.PI / 2);
       context.restoreCamera();
     },
   };

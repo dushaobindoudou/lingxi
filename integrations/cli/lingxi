@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# lingxi - drive the 灵犀 desktop cat from a shell.
+#
+# WHY THIS EXISTS ALONGSIDE THE MCP SERVER
+#
+# An MCP tool call is a separate approval surface: many hosts prompt for each tool, and an agent
+# that wants to change the cat's face three times in a turn pays that cost three times. A shell
+# script is one command. So this is the low-friction path - a skill can ship it, call it from
+# Bash, and never register an MCP server at all. The MCP server remains the right choice when the
+# host wants typed schemas and per-tool control.
+#
+# Everything below is a thin wrapper over the local HTTP bridge. The auth token is read from the
+# file the app writes on first run, so there is nothing to configure.
+#
+# Usage:
+#   lingxi health                              # is it running, where is the token
+#   lingxi capabilities                        # every action / expression / theme, with source
+#   lingxi state                               # position, state, expression, heading, intent
+#   lingxi status                              # theme, camera, size, visibility
+#   lingxi integration                         # the full contract, machine-readable
+#
+#   lingxi register <id> --logo <file.svg> [--name N] [--color #rrggbb]
+#       Your logo is a mark you GENERATE for yourself - a small flat SVG, two or three colours,
+#       no text, readable at 22px. It appears on the cat's speech bubble when it speaks for you.
+#   lingxi task <state> [kind] [summary]       # the PREFERRED way to drive the cat
+#
+#   lingxi say <text>
+#   lingxi express <expression> [action]
+#   lingxi do <action>
+#   lingxi perform <id>
+#   lingxi toy <yarn|feather|laser|none>
+#   lingxi look [--camera X] [--skin Y]
+#
+#   lingxi remember <text> [kind]
+#   lingxi recall
+#   lingxi remind <minutes> <text>
+#
+#   lingxi assets                              # what custom assets are loaded, and any errors
+#   lingxi reload                              # re-read the assets folder, then report
+#   lingxi agents                              # who is driving
+#   lingxi events                              # task event history
+#   lingxi raw <METHOD> <PATH> [json]          # anything not covered above
+#
+# Environment:
+#   LINGXI_PORT        default 47811
+#   LINGXI_TOKEN       overrides the token file
+#   LINGXI_TOKEN_FILE  overrides where the token is read from
+#   LINGXI_AGENT       default `agent` value sent with control calls
+set -euo pipefail
+
+PORT="${LINGXI_PORT:-47811}"
+BASE="http://127.0.0.1:${PORT}"
+TOKEN_FILE="${LINGXI_TOKEN_FILE:-$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token}"
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+
+token() {
+  if [ -n "${LINGXI_TOKEN:-}" ]; then printf '%s' "$LINGXI_TOKEN"; return; fi
+  [ -r "$TOKEN_FILE" ] || die "No token. 灵犀 writes one to:
+  $TOKEN_FILE
+Start the app once to create it, or set LINGXI_TOKEN. \`lingxi health\` works without a token and
+will tell you where the app thinks the file is."
+  tr -d '[:space:]' < "$TOKEN_FILE"
+}
+
+# request METHOD PATH [json-body]
+request() {
+  local method="$1" path="$2" body="${3:-}" code out
+  out=$(mktemp); trap 'rm -f "$out"' RETURN
+  if [ -n "$body" ]; then
+    code=$(curl -s -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
+      -H "Authorization: Bearer $(token)" -H 'Content-Type: application/json' -d "$body") || true
+  else
+    code=$(curl -s -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
+      -H "Authorization: Bearer $(token)") || true
+  fi
+  if [ -z "$code" ] || [ "$code" = "000" ]; then
+    die "灵犀 is not reachable on $BASE. Is the app running? It listens only on localhost."
+  fi
+  # Pretty-print when jq is around, otherwise pass the JSON through untouched.
+  if command -v jq >/dev/null 2>&1; then jq . < "$out"; else cat "$out"; echo; fi
+  # Non-2xx is a real failure and must be visible to the caller's `set -e`, not just readable.
+  case "$code" in 2*) return 0;; *) return 1;; esac
+}
+
+# Build a JSON object from key=value pairs, with `agent` folded in. Values are passed through
+# jq --arg so quotes, newlines and Chinese text cannot break the encoding - which is exactly the
+# class of bug a hand-rolled printf would have.
+json() {
+  if ! command -v jq >/dev/null 2>&1; then
+    die "jq is required to build request bodies safely. brew install jq"
+  fi
+  json_typed "$@"
+}
+
+# Build a JSON object from key=value pairs, folding in `agent` from the environment.
+#
+# Values go through jq --arg, never string interpolation: the text is Chinese as often as not and
+# routinely contains quotes, and a hand-rolled printf would produce invalid JSON the moment it did.
+# A `number:` prefix emits a JSON number instead of a string.
+json_typed() {
+  command -v jq >/dev/null 2>&1 || die "jq is required. brew install jq"
+  local args=() filter="" i=0
+  add() {
+    i=$((i + 1))
+    case "$2" in
+      number:*) args+=(--arg "k$i" "$1" --argjson "v$i" "${2#number:}");;
+      *)        args+=(--arg "k$i" "$1" --arg "v$i" "$2");;
+    esac
+    if [ -z "$filter" ]; then filter=".[\$k$i] = \$v$i"; else filter="$filter | .[\$k$i] = \$v$i"; fi
+  }
+  for pair in "$@"; do
+    local key="${pair%%=*}" value="${pair#*=}"
+    [ -n "$value" ] || continue
+    add "$key" "$value"
+  done
+  [ -n "${LINGXI_AGENT:-}" ] && add agent "$LINGXI_AGENT"
+  if [ -z "$filter" ]; then printf '{}'; else jq -nc "${args[@]}" "{} | $filter"; fi
+}
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  health)
+    # Deliberately unauthenticated - this is how you find out where the token lives.
+    curl -s --max-time 5 "$BASE/health" | { command -v jq >/dev/null && jq . || cat; } ;;
+  capabilities|caps) request GET /capabilities ;;
+  state)             request GET /perception ;;
+  status)            request GET /status ;;
+  integration)       request GET /integration ;;
+  agents)            request GET /agents ;;
+  events)            request GET /debug/events ;;
+  assets)            request GET /assets/status ;;
+  recall)            request GET /memory ;;
+
+  register)
+    [ $# -ge 1 ] || die "usage: lingxi register <id> --logo <file.svg> [--name N] [--color #rrggbb]"
+    reg_id="$1"; shift
+    reg_logo=""; reg_name="$reg_id"; reg_color=""; reg_badge=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --logo)  [ -r "${2:-}" ] || die "cannot read logo file: ${2:-<missing>}"
+                 reg_logo=$(cat "$2"); shift 2 ;;
+        --name)  reg_name="${2:-}"; shift 2 ;;
+        --color) reg_color="${2:-}"; shift 2 ;;
+        --badge) reg_badge="${2:-}"; shift 2 ;;
+        *) die "unknown option: $1" ;;
+      esac
+    done
+    request POST /agents "$(json id="$reg_id" name="$reg_name" color="$reg_color" badge="$reg_badge" logo="$reg_logo")" ;;
+
+  task)
+    [ $# -ge 1 ] || die "usage: lingxi task <queued|running|blocked|needs_input|completed|failed|cancelled> [kind] [summary]"
+    request POST /task-event \
+      "$(json state="$1" kind="${2:-other}" summary="${3:-}" provider="${LINGXI_AGENT:-cli}" taskId="${LINGXI_TASK_ID:-cli-$$}")" ;;
+
+  say)     [ $# -ge 1 ] || die "usage: lingxi say <text>"; request POST /control "$(json say="$*")" ;;
+  do)      [ $# -ge 1 ] || die "usage: lingxi do <action>"; request POST /control "$(json action="$1" priority="${LINGXI_PRIORITY:-status}")" ;;
+  express) [ $# -ge 1 ] || die "usage: lingxi express <expression> [action]"
+           request POST /control "$(json expression="$1" action="${2:-}" priority="${LINGXI_PRIORITY:-status}")" ;;
+  perform) [ $# -ge 1 ] || die "usage: lingxi perform <id>"; request POST /control "$(json perform="$1" priority="${LINGXI_PRIORITY:-report}")" ;;
+  toy)     [ $# -ge 1 ] || die "usage: lingxi toy <yarn|feather|laser|none>"; request POST /control "$(json toy="$1")" ;;
+
+  look)
+    camera=""; skin=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --camera) camera="${2:-}"; shift 2 ;;
+        --skin)   skin="${2:-}"; shift 2 ;;
+        *) die "usage: lingxi look [--camera X] [--skin Y]" ;;
+      esac
+    done
+    [ -n "$camera$skin" ] || die "usage: lingxi look [--camera X] [--skin Y]"
+    request POST /control "$(json camera="$camera" skin="$skin")" ;;
+
+  remember) [ $# -ge 1 ] || die "usage: lingxi remember <text> [owner|project|preference|moment]"
+            request POST /memory "$(json text="$1" kind="${2:-moment}")" ;;
+  remind)   [ $# -ge 2 ] || die "usage: lingxi remind <minutes> <text>"
+            minutes="$1"; shift
+            request POST /reminders "$(json_typed inMinutes="number:$minutes" text="$*")" ;;
+
+  reload)
+    request POST /control '{"reloadAssets":true}' >/dev/null
+    sleep 1   # the reload is asynchronous; /assets/status is where the result lands
+    request GET /assets/status ;;
+
+  raw)
+    [ $# -ge 2 ] || die "usage: lingxi raw <METHOD> <PATH> [json]"
+    request "$1" "$2" "${3:-}" ;;
+
+  help|-h|--help)
+    sed -n '3,50p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *)
+    die "unknown command: $cmd  (try: lingxi help)" ;;
+esac

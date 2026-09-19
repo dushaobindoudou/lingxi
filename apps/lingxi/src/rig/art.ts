@@ -101,43 +101,95 @@ export function paintSkin(nodes: NodeSpec[], skin: ArtSkin) {
 }
 
 /** Transparent face decal, one canvas reused. Skin controls all colours, including lids. */
-export function paintFace(canvas: HTMLCanvasElement, skin: ArtSkin, state: FaceState, blink=false) {
+/**
+ * Everything about the face that is geometry rather than colour or expression.
+ *
+ * The face used to be drawn from numbers written directly into paintFace, which meant a user who
+ * wanted wider-set eyes or longer whiskers had to edit and rebuild the app. Colours were already
+ * themeable and expressions were already data; the shapes were the one part that was not. These
+ * are in the 256x256 face-texture space, same as the literals they replaced.
+ */
+export interface FaceGeometry {
+  /** The lighter muzzle patch behind the nose and mouth. */
+  muzzle: { x: number; y: number; width: number; height: number; radius: number };
+  /** `spacing` is the distance of each eye's centre from the midline (128). */
+  eyes: {
+    spacing: number; top: number; width: number; height: number; radius: number;
+    pupilRadiusX: number; pupilRadiusY: number; browY: number; browRaisedY: number;
+  };
+  nose: { y: number; halfWidth: number; depth: number };
+  mouth: { y: number; halfWidth: number; openRadiusX: number; openRadiusY: number };
+  /** `rows` whiskers per side, `spread` apart vertically, `length` long. */
+  whiskers: { rows: number; spread: number; length: number; width: number; droop: number; y: number };
+}
+
+export const DEFAULT_FACE_GEOMETRY: FaceGeometry = {
+  muzzle: { x: 85, y: 166, width: 86, height: 48, radius: 16 },
+  eyes: {
+    spacing: 58, top: 99, width: 44, height: 43, radius: 9,
+    pupilRadiusX: 11, pupilRadiusY: 13, browY: 86, browRaisedY: 79,
+  },
+  nose: { y: 174, halfWidth: 9, depth: 9 },
+  mouth: { y: 193, halfWidth: 19, openRadiusX: 12, openRadiusY: 14 },
+  whiskers: { rows: 2, spread: 7, length: 41, width: 2, droop: 0.8, y: 185 },
+};
+
+export function paintFace(
+  canvas: HTMLCanvasElement,
+  skin: ArtSkin,
+  state: FaceState,
+  blink = false,
+  geometry: FaceGeometry = DEFAULT_FACE_GEOMETRY,
+) {
   const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,256,256);
   const c=skin.materials;
+  const g=geometry;
   const round=(x:number,y:number,w:number,h:number,r:number,color:string)=>{ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();};
   const path=(d:string,color:string,stroke=false,width=4)=>{const p=new Path2D(d);ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineCap='round';ctx.lineJoin='round';if(stroke)ctx.stroke(p);else ctx.fill(p);};
   const ellipse=(x:number,y:number,rx:number,ry:number,color:string)=>{ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill();};
-  round(85,166,86,48,16,c.cream);
-  for(const x of [70,186]) {
+  round(g.muzzle.x,g.muzzle.y,g.muzzle.width,g.muzzle.height,g.muzzle.radius,c.cream);
+  const eyeHalfW=g.eyes.width/2, eyeMidY=g.eyes.top+g.eyes.height/2;
+  for(const x of [128-g.eyes.spacing,128+g.eyes.spacing]) {
     const eye=blink?'closed':state.eye==='wink-left'?(x<128?'closed':'round'):state.eye==='wink-right'?(x>128?'closed':'round'):state.eye;
-    if(eye==='happy'||eye==='closed') path(eye==='happy'?`M${x-19} 128 Q${x} 99 ${x+19} 128`:`M${x-19} 119 Q${x} 137 ${x+19} 119`,c.pupil,true,5);
-    else if(eye==='heart') path(`M${x} 143 C${x-45} 117 ${x-12} 94 ${x} 117 C${x+12} 94 ${x+45} 117 ${x} 143`,'#CE7888');
+    if(eye==='happy'||eye==='closed') path(eye==='happy'?`M${x-19} ${eyeMidY+7} Q${x} ${eyeMidY-22} ${x+19} ${eyeMidY+7}`:`M${x-19} ${eyeMidY-2} Q${x} ${eyeMidY+16} ${x+19} ${eyeMidY-2}`,c.pupil,true,5);
+    else if(eye==='heart') path(`M${x} ${eyeMidY+22} C${x-45} ${eyeMidY-4} ${x-12} ${eyeMidY-27} ${x} ${eyeMidY-4} C${x+12} ${eyeMidY-27} ${x+45} ${eyeMidY-4} ${x} ${eyeMidY+22}`,'#CE7888');
     else {
       const half=eye==='half'||eye==='soft'; const wide=eye==='wide';
-      round(x-22,half?119:99,44,half?23:wide?49:43,9,c.iris);
-      if(eye==='slit') round(x-5,103,10,34,5,c.pupil);
-      else ellipse(x+(eye==='side'?9:0),half?130:121,wide?7:11,half?8:13,c.pupil);
-      if(!half) ellipse(x-3+(eye==='side'?9:0),113,3,3,c.cream);
-      if(eye==='sparkle'){ellipse(x+5,128,3,3,c.cream);ellipse(x-6,113,5,5,c.cream);}
-      if(eye==='tearful')ellipse(x+13,142,4,7,'#93C3CF');
+      const top=half?g.eyes.top+20:g.eyes.top;
+      const height=half?23:wide?g.eyes.height+6:g.eyes.height;
+      round(x-eyeHalfW,top,g.eyes.width,height,g.eyes.radius,c.iris);
+      if(eye==='slit') round(x-5,g.eyes.top+4,10,34,5,c.pupil);
+      else ellipse(x+(eye==='side'?9:0),half?eyeMidY+9:eyeMidY,wide?7:g.eyes.pupilRadiusX,half?8:g.eyes.pupilRadiusY,c.pupil);
+      if(!half) ellipse(x-3+(eye==='side'?9:0),eyeMidY-8,3,3,c.cream);
+      if(eye==='sparkle'){ellipse(x+5,eyeMidY+7,3,3,c.cream);ellipse(x-6,eyeMidY-8,5,5,c.cream);}
+      if(eye==='tearful')ellipse(x+13,eyeMidY+21,4,7,'#93C3CF');
     }
     if(state.brow!=='none') {
       const inward=x<128?1:-1;
       const tilt=state.brow==='furrow'?8*inward:state.brow==='sad'?-8*inward:0;
-      const y=state.brow==='raise'?79:86;
+      const y=state.brow==='raise'?g.eyes.browRaisedY:g.eyes.browY;
       path(`M${x-18} ${y-tilt} Q${x} ${y-4} ${x+18} ${y+tilt}`,c.pattern,true,4);
     }
   }
-  path('M119 174 Q128 171 137 174 L128 183 Z',c.nose);
-  if(state.mouth==='cat') path('M109 193 Q117 204 128 194 Q139 204 147 193',c.pupil,true,3);
-  if(state.mouth==='flat') round(119,196,18,3,1.5,c.pupil);
-  if(state.mouth==='frown') path('M113 203 Q128 187 143 203',c.pupil,true,3);
+  path(`M${128-g.nose.halfWidth} ${g.nose.y} Q128 ${g.nose.y-3} ${128+g.nose.halfWidth} ${g.nose.y} L128 ${g.nose.y+g.nose.depth} Z`,c.nose);
+  const mw=g.mouth.halfWidth, my=g.mouth.y;
+  if(state.mouth==='cat') path(`M${128-mw} ${my} Q${128-mw+8} ${my+11} 128 ${my+1} Q${128+mw-8} ${my+11} ${128+mw} ${my}`,c.pupil,true,3);
+  if(state.mouth==='flat') round(128-9,my+3,18,3,1.5,c.pupil);
+  if(state.mouth==='frown') path(`M${128-15} ${my+10} Q128 ${my-6} ${128+15} ${my+10}`,c.pupil,true,3);
   if(['open','tongue','hiss'].includes(state.mouth)) {
-    ellipse(128,202,12,14,c.mouth);
-    if(state.mouth==='tongue') round(121,203,14,18,7,c.tongue);
-    if(state.mouth==='hiss') {path('M118 190 L124 190 L121 199 Z',c.cream);path('M132 190 L138 190 L135 199 Z',c.cream);}
+    ellipse(128,my+9,g.mouth.openRadiusX,g.mouth.openRadiusY,c.mouth);
+    if(state.mouth==='tongue') round(121,my+10,14,18,7,c.tongue);
+    if(state.mouth==='hiss') {path(`M118 ${my-3} L124 ${my-3} L121 ${my+6} Z`,c.cream);path(`M132 ${my-3} L138 ${my-3} L135 ${my+6} Z`,c.cream);}
   }
-  for(const direction of [-1,1]) for(const dy of [-7,7]) path(`M${128+direction*47} ${185+dy} L${128+direction*88} ${185+dy*1.8}`,c.cream,true,2);
+  // Whiskers: `rows` per side, spread symmetrically about the muzzle line and drooping outward.
+  const rows=Math.max(0,Math.round(g.whiskers.rows));
+  for(const direction of [-1,1]) for(let i=0;i<rows;i+=1) {
+    const offset=(i-(rows-1)/2)*g.whiskers.spread*2;
+    path(
+      `M${128+direction*47} ${g.whiskers.y+offset} L${128+direction*(47+g.whiskers.length)} ${g.whiskers.y+offset*(1+g.whiskers.droop)}`,
+      c.cream,true,g.whiskers.width,
+    );
+  }
   const symbol=state.symbol;
   if(symbol==='heart')path('M226 52 C196 33 215 18 226 32 C237 18 256 33 226 52','#CE7888');
   if(symbol==='sweat')path('M228 23 Q247 49 228 53 Q209 49 228 23','#86B7C4');

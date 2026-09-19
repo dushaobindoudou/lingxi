@@ -52,16 +52,19 @@ export interface StageFx {
    *  up, because the cat it is anchored to is walking around. */
   anchorBubble(x: number, y: number): void;
   /**
-   * Show which agent is currently driving the cat, as a small badge beside it.
+   * Set who the next speech bubble is speaking for.
    *
-   * This is the whole answer to "which of my agents did that". A full logo pipeline (upload,
-   * storage, sizing, cache invalidation) buys very little over one emoji the agent picks for
-   * itself at registration - and the emoji costs the user no setup at all, which is what
-   * decides it for a desktop toy.
+   * Attribution rides on the BUBBLE rather than floating next to the cat: a mark pinned beside
+   * the body is a HUD element that competes with the pet for attention and has no natural moment
+   * to leave, whereas a bubble already has a reason to appear and a reason to go away. So the
+   * logo lives in the bubble's corner and dies with it.
+   *
+   * `logo` is whatever the agent generated for itself - an SVG document or a data: URI. It is
+   * rendered through an <img>, never inlined into the DOM, because an <img> cannot run script or
+   * fetch anything external no matter what the markup says. That is the browser's own guarantee
+   * and it is worth more than any sanitiser we could write.
    */
-  showAgentBadge(badge: string, color: string, name: string, holdMs: number): void;
-  /** Keep the badge parked beside the cat as it walks. */
-  anchorBadge(x: number, y: number): void;
+  setBubbleAttribution(attribution: { name: string; logo?: string | null; color?: string } | null): void;
   /** True while a bubble is showing - the host uses it to skip the anchor work otherwise. */
   readonly speaking: boolean;
   /** Take any bubble down immediately. */
@@ -256,31 +259,22 @@ const CSS = `
 .lingxi-fx-bubble.shape-spiky::after { display: none; }
 .lingxi-fx-bubble.leaving { animation: lingxi-bubble-out 260ms ease-in forwards; }
 
-/* Which agent is driving. Small, beside the cat, and gone again a few seconds later - it marks
-   the moment, it is not a permanent HUD. */
-.lingxi-agent-badge {
+/* Who the cat is speaking for. Sits on the bubble's corner and leaves with it - attribution is
+   only meaningful while there is something to attribute, so it needs no life of its own. */
+.lingxi-fx-bubble.has-mark { padding-left: 34px; }
+.lingxi-bubble-mark {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 14px;
-  line-height: 1;
-  background: rgba(20, 22, 28, 0.82);
-  border: 2px solid var(--badge-color, #8b95a5);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  opacity: 0;
-  transition: opacity 180ms ease;
+  left: 6px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin-top: -11px;
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--mark-color, rgba(255, 255, 255, 0.14));
+  padding: 2px;
+  box-sizing: border-box;
   pointer-events: none;
-}
-.lingxi-agent-badge.visible { opacity: 1; animation: lingxi-badge-pop 260ms cubic-bezier(.2,1.5,.4,1); }
-@keyframes lingxi-badge-pop {
-  from { transform: scale(0.4); }
-  to { transform: scale(1); }
 }
 @keyframes lingxi-bubble-in {
   0%   { opacity: 0; transform: translate(-50%, -100%) scale(.5); }
@@ -315,8 +309,8 @@ const HEART_GLYPHS = ['💗', '💖', '❤️', '💕', '💞'];
 
 export function createStageFx(): StageFx {
   let layer: HTMLDivElement | null = null;
-  let badgeNode: HTMLDivElement | null = null;
-  let badgeTimer = 0;
+  /** Who the next bubble speaks for, or null for the cat speaking as itself. */
+  let attribution: { name: string; logo?: string | null; color?: string } | null = null;
   let shakeTarget: HTMLElement | null = null;
   let bubbleStyle: BubbleStyle = { ...DEFAULT_BUBBLE_STYLE };
   let bubble: HTMLDivElement | null = null;
@@ -525,24 +519,8 @@ export function createStageFx(): StageFx {
       return bubble != null;
     },
 
-    showAgentBadge(badge, color, name, holdMs) {
-      if (!layer) return;
-      if (!badgeNode) {
-        badgeNode = document.createElement('div');
-        badgeNode.className = 'lingxi-agent-badge';
-        layer.append(badgeNode);
-      }
-      badgeNode.textContent = badge.slice(0, 2);
-      badgeNode.style.setProperty('--badge-color', color);
-      badgeNode.title = name;
-      badgeNode.classList.add('visible');
-      window.clearTimeout(badgeTimer);
-      badgeTimer = window.setTimeout(() => badgeNode?.classList.remove('visible'), Math.max(1200, holdMs));
-    },
-
-    anchorBadge(x, y) {
-      if (!badgeNode?.classList.contains('visible')) return;
-      badgeNode.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    setBubbleAttribution(next) {
+      attribution = next;
     },
 
     say(text, durationMs) {
@@ -567,6 +545,22 @@ export function createStageFx(): StageFx {
         bubbleStyle.shadow ? '0 6px 0 rgba(47, 42, 51, 0.18), 0 10px 22px rgba(0, 0, 0, 0.28)' : 'none',
       );
       node.textContent = trimmed;
+      if (attribution?.logo) {
+        // <img> rather than inline markup, deliberately: an <img> is a hard sandbox for SVG -
+        // no script, no external fetches - so an agent-generated document cannot reach anything.
+        const mark = document.createElement('img');
+        mark.className = 'lingxi-bubble-mark';
+        mark.alt = attribution.name;
+        mark.title = attribution.name;
+        mark.src = attribution.logo.startsWith('data:')
+          ? attribution.logo
+          : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(attribution.logo)}`;
+        if (attribution.color) mark.style.setProperty('--mark-color', attribution.color);
+        // A logo that fails to decode must not leave a broken-image glyph on the bubble.
+        mark.addEventListener('error', () => mark.remove());
+        node.append(mark);
+        node.classList.add('has-mark');
+      }
       layer.append(node);
       bubble = node;
       bubbleTimer = setTimeout(() => {

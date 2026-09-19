@@ -97,6 +97,12 @@ export interface LifeEngine {
   suggestMoveTo(targetPoint: Vec2, now: number, holdMs?: number, speedMultiplier?: number): boolean;
   /** Cancel any pending AI suggestion early. */
   clearIntent(): void;
+  /**
+   * Turn on the spot to face `angle` (radians, screen space; +y is down the screen, toward the
+   * viewer). Turns at the body's own rate - never a snap - and is abandoned the moment anything
+   * makes the character walk, since walking sets its own heading.
+   */
+  turnTo(angle: number): boolean;
   /** Stand still for `ms` without otherwise changing behaviour - used to stop the cat walking
    *  out from under an action clip that is mid-play. Weaker than a drag, a toy or an intent. */
   hold(ms: number, now: number): void;

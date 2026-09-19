@@ -893,6 +893,111 @@ fn claude_hooks_installed() -> bool {
 
 const PERCEPTION_HTTP_PORT: u16 = 47811;
 
+/// The shared secret that gates the local HTTP bridge.
+///
+/// The bridge listens on 127.0.0.1 only, which keeps it off the network but does NOT make it
+/// private: every process running as this user can reach it, and it can move the cat, read the
+/// owner notes the user has accumulated, and write to files in their config directory. Loopback
+/// is a network boundary, not a trust boundary.
+///
+/// So: a token, generated on first run, written to the config directory with owner-only
+/// permissions. Anything that can read that file is already running as the user and has won
+/// anyway; anything that cannot - a web page, another user, a sandboxed process - is now shut
+/// out. Agents do not have to be told the value, they read the file (see the `lingxi` CLI).
+struct BridgeToken {
+    value: String,
+    path: Option<PathBuf>,
+}
+
+impl BridgeToken {
+    /// Load the existing token, or mint one. Failure to persist is not fatal - the bridge still
+    /// runs with an in-memory token for this session, which is strictly better than running
+    /// with none.
+    fn load_or_create(app: &tauri::AppHandle) -> Self {
+        let path = app.path().app_config_dir().ok().map(|dir| dir.join("bridge-token"));
+        if let Some(path) = path.as_ref() {
+            if let Ok(existing) = std::fs::read_to_string(path) {
+                let trimmed = existing.trim().to_string();
+                if trimmed.len() >= 32 {
+                    return Self { value: trimmed, path: path.clone().into() };
+                }
+            }
+        }
+        let value = mint_token();
+        if let Some(path) = path.as_ref() {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::write(path, &value).is_ok() {
+                // Owner read/write only. The whole point is that other accounts cannot read it.
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+                }
+            }
+        }
+        Self { value, path }
+    }
+}
+
+/// 32 bytes of OS randomness, hex encoded. Read straight from /dev/urandom rather than adding a
+/// dependency for sixteen lines.
+fn mint_token() -> String {
+    use std::io::Read;
+    let mut bytes = [0u8; 32];
+    if let Ok(mut file) = std::fs::File::open("/dev/urandom") {
+        if file.read_exact(&mut bytes).is_ok() {
+            return bytes.iter().map(|b| format!("{b:02x}")).collect();
+        }
+    }
+    // Only reachable if /dev/urandom is unavailable, which on macOS means something is very
+    // wrong. Still better than an empty token, and the startup log says so.
+    eprintln!("[lingxi-desktop] WARNING: /dev/urandom unavailable; bridge token is time-derived");
+    let now = now_millis();
+    (0..4).map(|i| format!("{:016x}", now.wrapping_mul(0x9e3779b97f4a7c15).rotate_left(i * 7))).collect()
+}
+
+/// Whether this request carries the token. Accepts `Authorization: Bearer <token>`, the
+/// `X-Lingxi-Token` header, or a `?token=` query parameter - the last so a plain `curl` or a
+/// browser address bar can be used while debugging.
+fn request_authorised(request: &tiny_http::Request, expected: &str) -> bool {
+    for header in request.headers() {
+        let field = header.field.as_str().as_str();
+        if field.eq_ignore_ascii_case("authorization") {
+            if let Some(rest) = header.value.as_str().strip_prefix("Bearer ") {
+                if constant_time_eq(rest.trim(), expected) {
+                    return true;
+                }
+            }
+        } else if field.eq_ignore_ascii_case("x-lingxi-token")
+            && constant_time_eq(header.value.as_str().trim(), expected)
+        {
+            return true;
+        }
+    }
+    request
+        .url()
+        .split_once('?')
+        .map(|(_, query)| {
+            query
+                .split('&')
+                .filter_map(|pair| pair.split_once('='))
+                .any(|(key, value)| key == "token" && constant_time_eq(value, expected))
+        })
+        .unwrap_or(false)
+}
+
+/// Compare without leaking length-prefix information through timing. The threat here is modest -
+/// a local attacker who can already time our responses - but a constant-time compare costs
+/// nothing and removes the question.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let content_type = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
     // Loopback-only server (see spawn_perception_server), so a permissive CORS header just
@@ -939,11 +1044,16 @@ const MAX_HOLD_MS: u64 = 10 * 60 * 1000;
 /// the whole point: the old code silently skipped unrecognised keys and then reported
 /// "empty command", so a caller who wrote `expresssion` was told they had sent nothing at all
 /// and would retry the same misspelling forever.
-const CONTROL_FIELDS: [&str; 16] = [
+const CONTROL_FIELDS: [&str; 18] = [
     "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform",
     "toy", "say", "sayMs", "resetPosition", "reloadAssets",
     // Who is calling and how much the user needs to see it. Both optional - see decision 003.
     "agent", "priority",
+    // How long a queued reaction stays worth showing. See DEFAULT_REACTION_TTL_MS.
+    "expiresInMs",
+    // Internal: set only by the queue drain when replaying a reaction that already holds the
+    // stage. Listed so the unknown-field check does not reject our own replay.
+    "__stageAlreadyHeld",
 ];
 
 /// Pull the ids out of one list in the renderer-reported capability payload.
@@ -980,6 +1090,17 @@ fn check_known(
         )),
         _ => Ok(()),
     }
+}
+
+/// How long a clip runs, in milliseconds, from the renderer's reported capability list.
+/// None when the renderer has not reported yet or does not have that clip.
+fn action_duration_ms(caps: &serde_json::Value, id: &str) -> Option<u64> {
+    caps.get("actions")?
+        .as_array()?
+        .iter()
+        .find(|entry| entry.get("id").and_then(|v| v.as_str()) == Some(id))
+        .and_then(|entry| entry.get("duration").and_then(|v| v.as_f64()))
+        .map(|seconds| (seconds * 1000.0).round().max(0.0) as u64)
 }
 
 /// Truncate to `max` CHARACTERS (not bytes - the text is Chinese as often as not) and say
@@ -1020,10 +1141,16 @@ const PRIORITY_NAMES: [&str; 4] = ["ambient", "status", "report", "alert"];
 struct AgentIdentity {
     id: String,
     name: String,
-    /// One or two emoji. Deliberately not an image: the agent can invent it unaided, it costs
-    /// nothing to render, and it stays legible at badge size. `badge` is a string so it can grow
-    /// into a URL later without breaking anyone.
+    /// Short text fallback, shown when the agent has not supplied a logo.
     badge: String,
+    /// The agent's own mark, as an SVG document or a data: URI. Agents are asked to GENERATE
+    /// one - a model can author an SVG unaided, which is the whole point: no asset pipeline, no
+    /// upload UI, nothing for the user to prepare.
+    ///
+    /// Rendered inside an <img> by the webview, never inlined into the DOM, so the markup cannot
+    /// execute script or fetch anything external whatever it contains.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    logo: Option<String>,
     /// CSS colour for the badge ring.
     color: String,
     registered_at: u64,
@@ -1037,17 +1164,46 @@ struct AgentIdentity {
 struct StageClaim {
     agent: String,
     badge: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    logo: Option<String>,
     color: String,
     priority: String,
     rank: u8,
     until: u64,
 }
 
+/// Something waiting for its turn on the stage, with a deadline after which it is not worth
+/// showing any more.
+#[derive(Clone)]
+struct QueuedReaction {
+    agent: AgentIdentity,
+    command: serde_json::Value,
+    priority: String,
+    rank: u8,
+    hold_ms: u64,
+    queued_at: u64,
+    /// After this, drop it unplayed. A reaction is a statement about a moment, and a moment
+    /// expires.
+    expires_at: u64,
+}
+
 #[derive(Default)]
 struct AgentRegistry {
     agents: Mutex<HashMap<String, AgentIdentity>>,
     stage: Mutex<Option<StageClaim>>,
+    /// Waiting reactions, highest rank first then oldest first. Bounded: a queue that grows
+    /// without limit is a memory leak with a pleasant name.
+    queue: Mutex<Vec<QueuedReaction>>,
 }
+
+/// Longest anything may sit in the queue before it is dropped unplayed, unless the caller asked
+/// for something shorter. Deliberately short: a "tests passed" shown thirty seconds late is not
+/// a late reaction, it is a wrong one - the user has moved on and the cat is talking about
+/// history. Callers that care can set `expiresInMs` themselves.
+const DEFAULT_REACTION_TTL_MS: u64 = 8000;
+/// Hard cap on queued reactions. Past this the LOWEST-priority one is dropped to make room, so
+/// a flood of ambient chatter can never push out an alert.
+const REACTION_QUEUE_CAP: usize = 16;
 
 impl AgentRegistry {
     /// Decide whether `agent` may drive the cat's face right now.
@@ -1085,6 +1241,7 @@ impl AgentRegistry {
         *stage = Some(StageClaim {
             agent: agent.id.clone(),
             badge: agent.badge.clone(),
+            logo: agent.logo.clone(),
             color: agent.color.clone(),
             priority: priority.to_string(),
             rank,
@@ -1092,6 +1249,105 @@ impl AgentRegistry {
         });
         Ok(())
     }
+
+    /// Park a reaction until the stage frees up. Returns its place in the queue.
+    ///
+    /// Queueing is only offered to things worth waiting for - see `should_queue`. An `ambient`
+    /// flourish that has to wait is not worth showing late; an `alert` is.
+    fn enqueue(&self, item: QueuedReaction) -> usize {
+        let mut queue = self.queue.lock().unwrap();
+        queue.push(item);
+        // Highest rank first, then oldest first within a rank.
+        queue.sort_by(|a, b| b.rank.cmp(&a.rank).then(a.queued_at.cmp(&b.queued_at)));
+        if queue.len() > REACTION_QUEUE_CAP {
+            queue.truncate(REACTION_QUEUE_CAP); // the tail is the lowest-priority, newest work
+        }
+        queue.len()
+    }
+
+    /// The next reaction that is still worth playing, discarding any that expired while waiting.
+    /// Returns it with the count of ones dropped, so that can be reported rather than hidden.
+    fn take_next_due(&self, now: u64) -> (Option<QueuedReaction>, usize) {
+        let mut queue = self.queue.lock().unwrap();
+        let before = queue.len();
+        queue.retain(|item| item.expires_at > now);
+        let expired = before - queue.len();
+        if queue.is_empty() {
+            return (None, expired);
+        }
+        (Some(queue.remove(0)), expired)
+    }
+
+    fn stage_free_at(&self, now: u64) -> bool {
+        self.stage
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|claim| claim.until <= now)
+            .unwrap_or(true)
+    }
+}
+
+/// Whether a refused reaction is worth holding for later.
+///
+/// The rule the earlier build had - always drop - is right for flavour and wrong for anything
+/// the user actually needs to see. A build failure that arrives while the cat is mid-purr should
+/// still be shown two seconds later; an idle stretch should not. So: queue what matters, drop
+/// what does not, and give everything a deadline either way.
+fn should_queue(rank: u8) -> bool {
+    rank >= 2 // report and alert
+}
+
+/// Largest logo we will hold, in bytes. Generous for an SVG (a detailed one is a few KB) and
+/// small enough that a hundred registered agents cannot matter.
+const MAX_LOGO_BYTES: usize = 64 * 1024;
+
+/// Check an agent-supplied logo before storing it.
+///
+/// The webview renders it inside an <img>, which cannot run script or fetch external resources
+/// whatever the markup says - that browser guarantee is the real defence, and it is stronger
+/// than any sanitiser written here. These checks are the cheap second layer: keep it to formats
+/// an <img> actually renders, keep it small, and refuse anything that reaches outward, so a
+/// malformed or hostile document fails at registration with a message rather than silently
+/// producing a broken bubble.
+fn validate_logo(logo: &str) -> Result<(), String> {
+    if logo.len() > MAX_LOGO_BYTES {
+        return Err(format!(
+            "logo is {} bytes; the limit is {MAX_LOGO_BYTES}. An SVG mark should be well under 8KB - \
+             simplify the paths rather than embedding a raster image.",
+            logo.len()
+        ));
+    }
+    let trimmed = logo.trim();
+    if trimmed.is_empty() {
+        return Err("logo is empty".to_string());
+    }
+    let is_data_uri = trimmed.starts_with("data:image/svg+xml")
+        || trimmed.starts_with("data:image/png")
+        || trimmed.starts_with("data:image/webp");
+    let is_svg = trimmed.starts_with("<svg") || trimmed.starts_with("<?xml");
+    if !is_data_uri && !is_svg {
+        return Err(
+            "logo must be an SVG document (starting with <svg) or a data: URI of type \
+             image/svg+xml, image/png or image/webp. Generate one - a small flat mark, two or \
+             three colours, no text, readable at 22px."
+                .to_string(),
+        );
+    }
+    if is_svg {
+        let lower = trimmed.to_ascii_lowercase();
+        // An <img> would ignore these anyway; refusing them makes the intent explicit and gives
+        // the author a reason rather than a silently different-looking mark.
+        for forbidden in ["<script", "<foreignobject", "xlink:href=\"http", "href=\"http", "<image"] {
+            if lower.contains(forbidden) {
+                return Err(format!(
+                    "logo contains `{forbidden}`, which will not render inside an <img> and is \
+                     refused. Use plain shapes and paths only."
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Look the caller up, registering a minimal identity for one that never called POST /agents.
@@ -1104,7 +1360,8 @@ fn resolve_agent(registry: &AgentRegistry, id: Option<&str>, now: u64) -> AgentI
     let entry = agents.entry(id.to_string()).or_insert_with(|| AgentIdentity {
         id: id.to_string(),
         name: id.to_string(),
-        badge: "\u{1f4bb}".to_string(),
+        badge: id.chars().take(2).collect(),
+        logo: None,
         color: "#8b95a5".to_string(),
         registered_at: now,
         last_seen: now,
@@ -1166,12 +1423,19 @@ fn apply_control_command(
     // Only the fields that take over the cat's PERFORMANCE contend for the stage. skin/camera/
     // scale are user settings and are handled separately below; resetPosition and reloadAssets
     // are housekeeping and never conflict.
-    let wants_stage = ["expression", "action", "say", "perform", "toy"]
-        .iter()
-        .any(|field| command.get(*field).is_some());
+    // A replay from the queue already holds the stage - see spawn_reaction_drain. Without this
+    // it would contend with itself, fail, and be re-queued forever.
+    let already_held = command
+        .get("__stageAlreadyHeld")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let wants_stage = !already_held
+        && ["expression", "action", "say", "perform", "toy"]
+            .iter()
+            .any(|field| command.get(*field).is_some());
     let mut stage_denied: Option<String> = None;
+    let hold = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
     if wants_stage {
-        let hold = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
         match registry.claim_stage(&identity, priority, hold, now) {
             Ok(()) => {
                 detail.insert("agent".into(), serde_json::json!(identity.id));
@@ -1185,6 +1449,7 @@ fn apply_control_command(
                         "agent": identity.id,
                         "name": identity.name,
                         "badge": identity.badge,
+                        "logo": identity.logo,
                         "color": identity.color,
                         "priority": priority,
                         "holdMs": hold.min(MAX_HOLD_MS),
@@ -1193,13 +1458,46 @@ fn apply_control_command(
             }
             Err((reason, retry_after)) => {
                 detail.insert("retryAfterMs".into(), serde_json::json!(retry_after));
-                detail.insert("dropRatherThanRetry".into(), serde_json::json!(true));
-                stage_denied = Some(reason);
+                let rank = priority_rank(priority);
+                if should_queue(rank) {
+                    // Worth waiting for. Given a deadline either way: a reaction is a statement
+                    // about a moment, and showing it after the moment has passed is not being
+                    // late, it is being wrong.
+                    let ttl = command
+                        .get("expiresInMs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(DEFAULT_REACTION_TTL_MS)
+                        .min(MAX_HOLD_MS);
+                    let place = registry.enqueue(QueuedReaction {
+                        agent: identity.clone(),
+                        command: command.clone(),
+                        priority: priority.to_string(),
+                        rank,
+                        hold_ms: hold,
+                        queued_at: now,
+                        expires_at: now + ttl,
+                    });
+                    detail.insert("queued".into(), serde_json::json!(true));
+                    detail.insert("queuePosition".into(), serde_json::json!(place));
+                    detail.insert("expiresInMs".into(), serde_json::json!(ttl));
+                    applied.push(format!(
+                        "queued behind a higher-priority reaction (position {place}, expires in {ttl}ms)"
+                    ));
+                } else {
+                    // Flavour is not worth showing late.
+                    detail.insert("dropRatherThanRetry".into(), serde_json::json!(true));
+                    stage_denied = Some(reason);
+                }
             }
         }
     }
     if let Some(reason) = stage_denied {
         rejected.push(format!("stage busy: {reason}"));
+        return (applied, rejected, serde_json::Value::Object(detail));
+    }
+    // A queued reaction returns here: it has not been applied yet, and applying the rest of the
+    // command now would show half of it at the wrong time.
+    if detail.contains_key("queued") {
         return (applied, rejected, serde_json::Value::Object(detail));
     }
 
@@ -1224,7 +1522,7 @@ fn apply_control_command(
                 | "agent" | "priority" => value.is_string(),
                 "scale" => value.is_number(),
                 "visible" | "resetPosition" | "reloadAssets" => value.is_boolean(),
-                "holdMs" | "sayMs" => value.is_number(),
+                "holdMs" | "sayMs" | "expiresInMs" => value.is_number(),
                 _ => true,
             };
             if !type_ok {
@@ -1311,8 +1609,20 @@ fn apply_control_command(
         } else {
             match check_known(&caps, "expressions", "name", expression, "expression") {
                 Ok(()) => {
-                    let requested = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
-                    let hold_ms = requested.min(MAX_HOLD_MS);
+                    // When an action is sent alongside, the face is held for at least as long
+                    // as the clip runs. A 4s default under a 6s clip means the expression snaps
+                    // back to neutral while the body is still mid-gesture, which reads as the
+                    // cat losing interest in its own action ("动作/表情需要做好同步").
+                    let action_ms = command
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .and_then(|id| action_duration_ms(&caps, id))
+                        .unwrap_or(0);
+                    let requested = command
+                        .get("holdMs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or_else(|| action_ms.max(4000));
+                    let hold_ms = requested.max(action_ms).min(MAX_HOLD_MS);
                     if hold_ms != requested {
                         detail.insert("holdMsClamped".into(), serde_json::json!(hold_ms));
                     }
@@ -1430,7 +1740,7 @@ fn looks_like_typo(field: &str, key: &str) -> bool {
 
 fn expected_type_name(field: &str) -> &'static str {
     match field {
-        "scale" | "holdMs" | "sayMs" => "a number",
+        "scale" | "holdMs" | "sayMs" | "expiresInMs" => "a number",
         "visible" | "resetPosition" | "reloadAssets" => "a boolean",
         _ => "a string",
     }
@@ -1452,6 +1762,62 @@ fn json_type_name(value: &serde_json::Value) -> &'static str {
 /// A minute of granularity is deliberate. This is a pet mentioning something, not an alarm
 /// clock, and a reminder that fires to the second would feel like a notification - which is the
 /// thing a desktop pet is supposed to be a gentler alternative to.
+/// Play queued reactions as the stage frees up, and bin the ones that waited too long.
+///
+/// Runs often (250ms) because the whole point of queueing a `report` or an `alert` is that it
+/// still lands close to the moment it describes - a drain that ran once a second would add up to
+/// a second of staleness to every queued reaction, which is most of the budget they have.
+fn spawn_reaction_drain(app: tauri::AppHandle) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(250));
+        let now = now_millis();
+        let registry = app.state::<AgentRegistry>();
+        if !registry.stage_free_at(now) {
+            continue;
+        }
+        let (next, expired) = registry.take_next_due(now);
+        if expired > 0 {
+            eprintln!("[lingxi-desktop] dropped {expired} reaction(s) that expired while queued");
+        }
+        let Some(item) = next else { continue };
+        if registry
+            .claim_stage(&item.agent, &item.priority, item.hold_ms, now)
+            .is_err()
+        {
+            continue; // something took the stage in between; it stays queued for the next pass
+        }
+        let _ = app.emit(
+            "agent-stage",
+            serde_json::json!({
+                "agent": item.agent.id,
+                "name": item.agent.name,
+                "badge": item.agent.badge,
+                "logo": item.agent.logo,
+                "color": item.agent.color,
+                "priority": item.priority,
+                "holdMs": item.hold_ms.min(MAX_HOLD_MS),
+            }),
+        );
+        // Replayed WITHOUT the stage fields, so it cannot re-enter the queue: it has the stage.
+        let mut replay = item.command.clone();
+        if let Some(object) = replay.as_object_mut() {
+            object.remove("priority");
+            object.remove("expiresInMs");
+            object.insert("__stageAlreadyHeld".into(), serde_json::json!(true));
+        }
+        let (applied, rejected, _) = apply_control_command(&app, &replay);
+        if !rejected.is_empty() {
+            eprintln!("[lingxi-desktop] queued reaction failed on replay: {rejected:?}");
+        } else {
+            eprintln!(
+                "[lingxi-desktop] played queued reaction from {} after {}ms: {applied:?}",
+                item.agent.id,
+                now.saturating_sub(item.queued_at)
+            );
+        }
+    });
+}
+
 fn spawn_reminder_ticker(app: tauri::AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(30));
@@ -1516,9 +1882,55 @@ fn spawn_perception_server(app: tauri::AppHandle) {
             }
         };
         eprintln!("[lingxi-desktop] perception HTTP bridge listening on http://127.0.0.1:{PERCEPTION_HTTP_PORT}");
+        let token = app.state::<BridgeToken>().value.clone();
+        let token_path = app
+            .state::<BridgeToken>()
+            .path
+            .clone()
+            .map(|p| p.display().to_string());
         for mut request in server.incoming_requests() {
             let method = request.method().clone();
-            let url = request.url().to_string();
+            // The token may arrive as a query parameter, so route on the path alone.
+            let full_url = request.url().to_string();
+            let url = full_url.split('?').next().unwrap_or("").to_string();
+
+            // /health is the one unauthenticated endpoint: it exists so a caller that does not
+            // have the token yet can find out where to read it, and it says nothing else.
+            if url == "/health" {
+                let _ = request.respond(json_response(
+                    200,
+                    serde_json::json!({
+                        "ok": true,
+                        "app": "lingxi",
+                        "authRequired": true,
+                        "tokenFile": token_path,
+                        "howTo": "Read the token file and send it as `Authorization: Bearer <token>`, \
+                                  `X-Lingxi-Token: <token>`, or `?token=<token>`. The file is readable \
+                                  only by your own account.",
+                    })
+                    .to_string(),
+                ));
+                continue;
+            }
+            if !request_authorised(&request, &token) {
+                // Loopback keeps this off the network; the token keeps it away from anything
+                // that is not running as this user - a page in a browser, a sandboxed process,
+                // another account on a shared machine. The bridge can move the cat, read the
+                // owner notes, and write to the user's config directory, so "local" is not on
+                // its own a good enough reason to let it through.
+                let _ = request.respond(json_response(
+                    401,
+                    serde_json::json!({
+                        "error": "missing or invalid token",
+                        "tokenFile": token_path,
+                        "howTo": "GET /health tells you where the token file is. Send it as \
+                                  `Authorization: Bearer <token>`.",
+                    })
+                    .to_string(),
+                ));
+                continue;
+            }
+
             let response = match (method, url.as_str()) {
                 (tiny_http::Method::Get, "/perception") => {
                     let state = app.state::<PerceptionState>();
@@ -1618,9 +2030,20 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 )
                             } else {
                                 let (badge, badge_truncated) = truncate_chars(
-                                    value.get("badge").and_then(|v| v.as_str()).unwrap_or("\u{1f4bb}"),
+                                    value
+                                        .get("badge")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(id),
                                     2,
                                 );
+                                let logo = value.get("logo").and_then(|v| v.as_str());
+                                let logo_error = logo.and_then(|l| validate_logo(l).err());
+                                if let Some(message) = logo_error {
+                                    json_response(
+                                        400,
+                                        serde_json::json!({ "ok": false, "error": message }).to_string(),
+                                    )
+                                } else {
                                 let now = now_millis();
                                 let registry = app.state::<AgentRegistry>();
                                 let identity = {
@@ -1629,11 +2052,15 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                         id: id.to_string(),
                                         name: id.to_string(),
                                         badge: badge.clone(),
+                                        logo: None,
                                         color: "#8b95a5".to_string(),
                                         registered_at: now,
                                         last_seen: now,
                                         claims: 0,
                                     });
+                                    if let Some(logo) = logo {
+                                        entry.logo = Some(logo.to_string());
+                                    }
                                     if let Some(name) = value.get("name").and_then(|v| v.as_str()) {
                                         let (name, _) = truncate_chars(name, 24);
                                         if !name.is_empty() {
@@ -1657,12 +2084,14 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                         "ok": true,
                                         "agent": identity,
                                         "badgeTruncated": badge_truncated,
+                                        "logoStored": identity.logo.is_some(),
                                         "note": "Send `agent` on every /control call so your reactions are attributed, \
                                                  and `priority` (ambient|status|report|alert) so the cat can decide \
                                                  whose reaction the user needs to see. See GET /integration.",
                                     })
                                     .to_string(),
                                 )
+                                }
                             }
                         }
                         Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
@@ -2428,6 +2857,10 @@ fn get_custom_assets(app: tauri::AppHandle) -> serde_json::Value {
         "expressions": read_json_file(&dir.join("expressions.json")),
         "skins": read_json_file(&dir.join("skins.json")),
         "bubble": read_json_file(&dir.join("bubble.json")),
+        // Where the eyes, nose, mouth and whiskers sit. Colours were already themeable and
+        // expressions were already data; the shapes were the one part of the face that could
+        // only be changed by editing and rebuilding the app.
+        "face": read_json_file(&dir.join("face.json")),
         "textures": textures,
     })
 }
@@ -2648,6 +3081,7 @@ pub fn run() {
             let _ = window.set_ignore_cursor_events(true);
 
             spawn_cursor_poller(app.handle().clone(), screen_height_points, scale_factor);
+            spawn_reaction_drain(app.handle().clone());
 
             // Read-only: reports the state, never raises a dialog. The app does not use this
             // permission at all (see accessibility_trusted_readonly), so asking for it at
@@ -2695,6 +3129,7 @@ pub fn run() {
             app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
             app.manage(AssetErrorState { errors: Mutex::new(Vec::new()) });
             app.manage(AgentRegistry::default());
+            app.manage(BridgeToken::load_or_create(app.handle()));
             {
                 let (map, errors) = load_reaction_map(app.handle());
                 for error in &errors {
