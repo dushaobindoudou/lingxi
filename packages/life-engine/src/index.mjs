@@ -155,26 +155,61 @@ export function createLifeEngine(config = {}) {
   // How close the anchor may get to each edge. Negative is allowed and meaningful: it lets the
   // anchor pass the edge so part of the body goes off-screen, which is what makes the cat look
   // like it is walking off the side rather than bumping into an invisible wall.
+  //
+  // There are deliberately TWO of these, because "how far may it go" and "how far does it
+  // choose to go" are different questions and were being answered by one number.
+  //
+  //   margins      the HARD LIMIT. Only reached by things that are already extreme - a
+  //                performance charging the camera, being dragged by the user, chasing a toy
+  //                into a corner. Letting half the cat leave the screen here is what makes
+  //                those moments read as extreme ("有时候有些操作我们需要更极致").
+  //   roamMargins  where the cat sends ITSELF when nothing is going on. Tighter, because the
+  //                whole point of a desktop pet is that you can see it ("自由运动的时候，要
+  //                一直能看到猫咪很重要").
+  //
+  // Both come from the host, which is the only layer that knows how big the cat currently draws.
   let margins = { top: cfg.margin, bottom: cfg.margin, left: cfg.margin, right: cfg.margin };
+  let roamMargins = { ...margins };
 
   const minX = () => margins.left;
   const maxX = () => Math.max(margins.left, bounds.width - margins.right);
   const minY = () => margins.top;
   const maxY = () => Math.max(margins.top, bounds.height - margins.bottom);
 
+  // Never wider than the hard limit: a roam box that escaped it would have the cat choosing
+  // destinations it is not allowed to reach, and it would stall against the clamp instead.
+  const roamMinX = () => Math.max(minX(), roamMargins.left);
+  const roamMaxX = () => Math.max(roamMinX(), Math.min(maxX(), bounds.width - roamMargins.right));
+  const roamMinY = () => Math.max(minY(), roamMargins.top);
+  const roamMaxY = () => Math.max(roamMinY(), Math.min(maxY(), bounds.height - roamMargins.bottom));
+
   /**
    * Set the keep-out per edge. The host measures the character's actual on-screen extent
    * relative to its anchor and works these out, because the engine has no idea how big the cat
    * is or which way up it is drawn - and that is exactly the information this needs.
+   *
+   * Top-level values are the hard limit; `next.roam` is the tighter box the cat confines its
+   * own wandering to. Passing only the hard limit leaves roaming pinned to it, which is the
+   * old single-box behaviour.
    */
   function setMargins(next) {
     for (const edge of ['top', 'bottom', 'left', 'right']) {
       const value = next?.[edge];
-      if (typeof value === 'number' && Number.isFinite(value)) margins[edge] = value;
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        margins[edge] = value;
+        // Keep the two in step unless the caller is explicitly managing both, so a host that
+        // knows nothing about roaming still gets sane behaviour.
+        if (!next?.roam) roamMargins[edge] = value;
+      }
+      const roamValue = next?.roam?.[edge];
+      if (typeof roamValue === 'number' && Number.isFinite(roamValue)) roamMargins[edge] = roamValue;
     }
     // Keep the cat inside whatever the new margins allow.
     position = { x: clamp(position.x, minX(), maxX()), y: clamp(position.y, minY(), maxY()) };
   }
+  // Which way round the pointer the cat committed to walking: -1, +1, or 0 for "not detouring".
+  // Sticky on purpose - see detourAround.
+  let detourSide = 0;
   let toy = null; // { kind, position:{x,y}, velocity:{x,y} } | null - see TOY_KINDS
   let lastBatAt = -Infinity;
   let batThisTick = false; // one-frame flag the renderer turns into a pounce/swat clip
@@ -194,9 +229,10 @@ export function createLifeEngine(config = {}) {
     const angle = randomBetween(0, Math.PI * 2);
     const radius = randomBetween(cfg.wanderRadius * 0.3, cfg.wanderRadius);
     const raw = { x: position.x + Math.cos(angle) * radius, y: position.y + Math.sin(angle) * radius };
+    // Roam box: this is the cat choosing where to go, not something forcing it there.
     return {
-      x: clamp(raw.x, minX(), maxX()),
-      y: clamp(raw.y, minY(), maxY()),
+      x: clamp(raw.x, roamMinX(), roamMaxX()),
+      y: clamp(raw.y, roamMinY(), roamMaxY()),
     };
   }
 
@@ -252,7 +288,9 @@ export function createLifeEngine(config = {}) {
    * instead of ping-ponging corner to corner across the middle of the screen every time.
    */
   function rollEdgeRestTarget(cursor) {
-    const [left, right, top, bottom] = [minX(), maxX(), minY(), maxY()];
+    // The roam box, so "on the border" means the border of the area the cat keeps itself
+    // visible in - not the hard limit, which would park it half off the screen for hours.
+    const [left, right, top, bottom] = [roamMinX(), roamMaxX(), roamMinY(), roamMaxY()];
     const reference = cursor ?? position;
     // Distance from the reference point to each edge, normalized - bigger is safer.
     const edges = [
@@ -519,6 +557,60 @@ export function createLifeEngine(config = {}) {
   }
 
   /**
+   * Bend a desired bearing around the pointer instead of driving through it.
+   *
+   * Avoidance used to be all-or-nothing: pick a destination away from the cursor, and bolt if
+   * the cursor lands on you. Nothing handled the ordinary case of a perfectly good destination
+   * on the far side of where the user happens to be working, so the cat walked straight over
+   * the pointer to get there. What was asked for is the obvious third option - go around it
+   * ("自由活动的时候猫咪尽量不要去用户的鼠标附近和光标附近，可以绕过去").
+   *
+   * This aims at the TANGENT of the keep-out circle rather than applying a sideways shove. A
+   * push scales with how badly you are already intruding, so it fights the approach and dies
+   * out just as you reach the thing you were avoiding; a tangent is the actual edge of the
+   * region to miss, so the path curves smoothly past and rejoins the original line by itself.
+   *
+   * Only the DESIRED bearing changes. Turn rate, the cornering taper and the step length are
+   * untouched below, which is what keeps this from disturbing the gait: the cat walks the
+   * detour exactly the way it walks anything else.
+   */
+  function detourAround(bearing, avoid) {
+    if (!avoid) {
+      detourSide = 0;
+      return bearing;
+    }
+    const gap = distance(position, avoid);
+    const radius = cfg.cursorKeepOut;
+    // Outside the keep-out plus a little hysteresis: nothing to do, and forget which way round
+    // we were going so the next approach is decided fresh.
+    if (gap > radius * 1.15) {
+      detourSide = 0;
+      return bearing;
+    }
+    // Dead on the pointer. There is no "around" from here - the direction to it is undefined -
+    // so leave the bearing alone and let the flee retarget in tick() deal with it.
+    if (gap < 1e-6) return bearing;
+
+    const toCursor = Math.atan2(avoid.y - position.y, avoid.x - position.x);
+    const offBearing = shortestAngle(bearing - toCursor);
+    // The pointer is behind us, or off to one side and we are already drawing away from it.
+    // Steering here would be the cat swerving at something it has safely passed.
+    if (Math.abs(offBearing) > Math.PI / 2) {
+      detourSide = 0;
+      return bearing;
+    }
+
+    // Half-angle subtended by the keep-out circle. Saturates at a right angle once we are
+    // inside it, which turns the detour into "leave, sideways" - the correct escape.
+    const half = gap <= radius ? Math.PI / 2 : Math.asin(Math.min(1, radius / gap));
+    // Commit to a side and stay on it. Re-deciding every frame is precisely the pattern that
+    // made the cat vibrate in place when avoidance was purely reactive, and a target that sits
+    // near the line to the cursor would otherwise flip the choice on rounding noise alone.
+    if (detourSide === 0) detourSide = offBearing >= 0 ? 1 : -1;
+    return shortestAngle(toCursor + detourSide * half);
+  }
+
+  /**
    * Steer toward `dest` and move along the way the body is actually pointing.
    *
    * This used to translate straight at the destination on every tick, with the body's
@@ -533,14 +625,14 @@ export function createLifeEngine(config = {}) {
    * to get somewhere behind it, the cat has to swing around. The renderer reads the heading
    * directly instead of differentiating position, which removes the noise path entirely.
    */
-  function moveToward(dest, deltaSeconds, speed = cfg.speed) {
+  function moveToward(dest, deltaSeconds, speed = cfg.speed, avoid = null) {
     const d = distance(position, dest);
     if (d <= cfg.arriveThreshold) {
       position = { ...dest };
       return true; // arrived
     }
 
-    const bearing = Math.atan2(dest.y - position.y, dest.x - position.x);
+    const bearing = detourAround(Math.atan2(dest.y - position.y, dest.x - position.x), avoid);
     const error = shortestAngle(bearing - heading);
     // Arrival taper first, because the speed it produces is what the turn rate is derived from.
     const arrival = Math.min(1, d / Math.max(1, cfg.slowingRadius));
@@ -806,7 +898,11 @@ export function createLifeEngine(config = {}) {
       }
     } else if (state === 'wander') {
       if (!target) target = pickEdgeRestTarget(cursor);
-      const arrived = moveToward(target, deltaSeconds);
+      // The cursor is passed as an obstacle here and nowhere else: this is the one state where
+      // the cat is going somewhere purely because it felt like it, so it is the one state that
+      // can afford to take the long way round. Chasing a toy or obeying an explicit intent must
+      // still be able to go where it was told - including right at the pointer.
+      const arrived = moveToward(target, deltaSeconds, cfg.speed, cursor);
       if (arrived) {
         state = 'idle';
         idleUntil = now + randomBetween(...cfg.idleDurationMsRange);

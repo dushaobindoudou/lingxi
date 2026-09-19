@@ -79,7 +79,15 @@ export interface LifeEngine {
    * to compensate. `bottom` may be negative, which lets the feet cross the bottom edge.
    * Any edge left out keeps its current value.
    */
-  setMargins(margins: { top?: number; bottom?: number; left?: number; right?: number }): void;
+  setMargins(margins: {
+    top?: number; bottom?: number; left?: number; right?: number;
+    /**
+     * The tighter box the character confines its OWN wandering to, when nothing is driving it.
+     * The top-level values stay the hard limit, reached only by drags, toys and performances.
+     * Omit this and roaming is pinned to the hard limit, which is the old single-box behaviour.
+     */
+    roam?: { top?: number; bottom?: number; left?: number; right?: number };
+  }): void;
   /** Hard recovery: recenter and drop whatever it was doing (drag included). */
   resetPosition(): void;
   /** Put a toy on the desktop (see TOY_KINDS). Outranks every autonomous drive, not a drag. */

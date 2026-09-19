@@ -9,14 +9,19 @@
 // So this measures, through the REAL renderer and the REAL camera, how much of the cat each
 // edge actually clips once main.ts's syncMargins() has done its work.
 //
-// Healthy output: "hidden top" and "hidden bottom" are 0% on every row - none of the cat is ever
-// clipped by the top or bottom edge - while "hidden sides" stays at the ~32% that was already
-// approved. If top ever climbs toward 100% the anchor asymmetry is back and the cat is parking
-// its head off the screen.
+// There are two boxes, and this prints both.
 //
-// The sides are treated differently ON PURPOSE. The cat is about three times taller than it is
-// wide, so the same fraction that costs 43px of flank at the side costs 124px of skull at the
-// top, and the face is what the whole app is for.
+//   ROAM  where the cat sends itself when nothing is happening. Healthy: "hidden top" and
+//         "hidden bottom" are 0% on every row - a pet you cannot see is not a pet - while
+//         "hidden sides" stays at the ~32% that was already approved. If top ever climbs
+//         toward 100% the anchor asymmetry is back and the cat is parking its head off-screen.
+//   LIMIT how far anything may push it - a drag, a toy, a performance charging the camera.
+//         Healthy: 50% on all four edges. This is the tier that lets extreme moments actually
+//         look extreme.
+//
+// Sides and vertical are treated differently in the ROAM box ON PURPOSE. The cat is about three
+// times taller than it is wide, so the same fraction that costs 43px of flank at the side costs
+// 124px of skull at the top, and the face is what the whole app is for.
 import { createThreeRenderer, CAMERA_PRESETS } from './renderer.ts';
 
 const WIDTH = 1470;
@@ -33,7 +38,11 @@ renderer.resize(WIDTH, HEIGHT);
 
 /** The same derivation main.ts performs, kept here so the probe measures the shipped rule. */
 function marginsFor(extent: { above: number; below: number; halfWidth: number }) {
-  return { left: EDGE_MARGIN, right: EDGE_MARGIN, top: extent.above, bottom: extent.below };
+  const height = extent.above + extent.below;
+  return {
+    roam: { left: EDGE_MARGIN, right: EDGE_MARGIN, top: extent.above, bottom: extent.below },
+    limit: { left: 0, right: 0, top: extent.above - height * 0.5, bottom: extent.below - height * 0.5 },
+  };
 }
 
 const lines: string[] = [];
@@ -52,22 +61,27 @@ for (const preset of CAMERA_PRESETS) {
 
     const extent = renderer.screenExtent?.();
     if (!extent) { lines.push(`${camera} @${scale}: screenExtent() unavailable`); continue; }
-    const m = marginsFor(extent);
+    const { roam, limit } = marginsFor(extent);
     const height = extent.above + extent.below;
-    // What share of the body is off-screen when the cat is pressed against each edge.
-    const hiddenTop = (extent.above - m.top) / height;
-    const hiddenBottom = (extent.below - m.bottom) / height;
-    const hiddenSide = (extent.halfWidth - EDGE_MARGIN) / (extent.halfWidth * 2);
     const pct = (v: number) => `${(v * 100).toFixed(0)}%`.padStart(4);
+    // What share of the body is off-screen when the cat is pressed against each edge.
+    const hidden = (box: { top: number; bottom: number; left: number }) => ({
+      top: (extent.above - box.top) / height,
+      bottom: (extent.below - box.bottom) / height,
+      sides: (extent.halfWidth - box.left) / (extent.halfWidth * 2),
+    });
     lines.push(
       `${camera.padEnd(14)} scale ${scale.toFixed(1)}  ` +
       `body ${height.toFixed(0)}px tall (${extent.above.toFixed(0)} up / ${extent.below.toFixed(0)} down), ` +
       `${(extent.halfWidth * 2).toFixed(0)}px wide`,
     );
-    lines.push(
-      `${''.padEnd(14)}   margins  top ${m.top.toFixed(0).padStart(4)}  bottom ${m.bottom.toFixed(0).padStart(4)}  sides ${EDGE_MARGIN}` +
-      `   hidden  top ${pct(hiddenTop)}  bottom ${pct(hiddenBottom)}  sides ${pct(hiddenSide)}`,
-    );
+    for (const [name, box] of [['roam ', roam], ['limit', limit]] as const) {
+      const h = hidden(box);
+      lines.push(
+        `${''.padEnd(14)}   ${name}  top ${box.top.toFixed(0).padStart(5)}  bottom ${box.bottom.toFixed(0).padStart(5)}  sides ${box.left.toFixed(0).padStart(3)}` +
+        `   hidden  top ${pct(h.top)}  bottom ${pct(h.bottom)}  sides ${pct(h.sides)}`,
+      );
+    }
   }
   lines.push('');
 }

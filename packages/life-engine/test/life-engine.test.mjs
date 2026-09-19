@@ -649,3 +649,95 @@ test('margins left unspecified keep their current value', () => {
     assert.ok(snap.position.x <= 976 + 1e-6, `right margin was corrupted on frame ${f}`);
   }
 });
+
+// Two boxes, because "how far may it go" and "how far does it choose to go" are different
+// questions. The hard limit lets half the cat leave the screen for extreme moments; the roam
+// box is where it puts itself when nothing is happening, and has to keep it visible.
+test('the cat roams inside the roam box, not out to the hard limit', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 600 } });
+  engine.setMargins({
+    top: -100, bottom: -100, left: -60, right: -60,
+    roam: { top: 380, bottom: 30, left: 24, right: 24 },
+  });
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let f = 0; f < 20000; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    minY = Math.min(minY, snap.position.y);
+    maxY = Math.max(maxY, snap.position.y);
+  }
+  // The roam box bounds the DESTINATIONS the cat picks, not every intermediate pixel: it travels
+  // along a heading with a real turning circle, so an arc that ends on the border can bulge a
+  // little past it first. The overshoot is bounded by that turning radius, and the alternative -
+  // clamping mid-travel to the roam box - would snap the position of a cat that had been dragged
+  // outside, which is a far worse artefact than a few pixels of arc.
+  const arc = 28; // cfg.minTurnRadius
+  assert.ok(minY >= 380 - arc, `roamed well above the roam box: ${minY}`);
+  assert.ok(maxY <= 770 + arc, `roamed well below the roam box: ${maxY}`);
+  // And it must actually use the room it has, or the box is just a cage.
+  assert.ok(maxY - minY > 200, `barely moved vertically at all (${(maxY - minY).toFixed(0)}px)`);
+});
+
+test('a drag can still take the cat out to the hard limit, past the roam box', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 600 } });
+  engine.setMargins({
+    top: -100, bottom: -100, left: -60, right: -60,
+    roam: { top: 380, bottom: 30, left: 24, right: 24 },
+  });
+  engine.beginDrag({ x: 500, y: 600 });
+  engine.updateDrag({ x: 500, y: -500 });
+  assert.equal(engine.position.y, -100, 'the drag should reach the hard limit, not stop at the roam box');
+});
+
+test('a roam box wider than the hard limit is clipped to it, never the other way round', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 } });
+  engine.setMargins({ top: 200, bottom: 100, left: 50, right: 50, roam: { top: 10, bottom: 10, left: 10, right: 10 } });
+  for (let f = 0; f < 6000; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    assert.ok(snap.position.y >= 200 - 1e-6, `escaped the hard limit via the roam box on frame ${f}`);
+    assert.ok(snap.position.y <= 700 + 1e-6, `escaped the hard limit via the roam box on frame ${f}`);
+    assert.ok(snap.position.x >= 50 - 1e-6 && snap.position.x <= 950 + 1e-6, `x escaped on frame ${f}`);
+  }
+});
+
+// The cat used to have only two answers to the pointer: pick a destination away from it, or bolt
+// once it was already on top of you. Neither covers a perfectly good destination on the far side
+// of the pointer, so it walked straight over the user's cursor to get there.
+test('the cat walks around the pointer instead of over it', () => {
+  const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 100, y: 450 } });
+  engine.setMargins({ top: 0, bottom: 0, left: 0, right: 0 });
+  const cursor = { x: 700, y: 450 }; // dead centre, squarely on the route
+  engine.suggestMoveTo({ x: 1300, y: 450 }, 0);
+
+  let closest = Infinity;
+  for (let f = 0; f < 3000; f += 1) {
+    const snap = engine.tick(f * 16, cursor);
+    closest = Math.min(closest, Math.hypot(snap.position.x - cursor.x, snap.position.y - cursor.y));
+    if (snap.position.x > 1200) break;
+  }
+  // It does not have to clear the full keep-out radius - it is committed to a destination on the
+  // other side - but it must visibly go round rather than straight through.
+  assert.ok(closest > 90, `cut through the pointer, closest approach was ${closest.toFixed(0)}px`);
+});
+
+test('going around the pointer does not make the cat vibrate', () => {
+  const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 100, y: 450 } });
+  engine.setMargins({ top: 0, bottom: 0, left: 0, right: 0 });
+  const cursor = { x: 700, y: 450 };
+
+  let previous = engine.tick(0, cursor);
+  let reversals = 0;
+  let lastTurnSign = 0;
+  for (let f = 1; f < 2000; f += 1) {
+    const snap = engine.tick(f * 16, cursor);
+    const sign = Math.sign(Math.round(snap.turning * 100));
+    if (sign !== 0 && lastTurnSign !== 0 && sign !== lastTurnSign) reversals += 1;
+    if (sign !== 0) lastTurnSign = sign;
+    previous = snap;
+  }
+  assert.ok(previous, 'engine kept ticking');
+  // A committed detour sweeps one way. Frame-by-frame re-deciding is what the old reactive
+  // avoidance did, and it showed up as exactly this: the turn direction flipping constantly.
+  assert.ok(reversals < 120, `turn direction flipped ${reversals} times - the detour is chattering`);
+});

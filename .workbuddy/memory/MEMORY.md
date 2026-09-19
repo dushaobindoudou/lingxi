@@ -34,8 +34,59 @@
 
 ## 已知接口陷阱
 
+### ⛔ 最危险：`/intent` 无输入校验 → NaN 让猫永久消失
+
+`POST /intent -d '{"targetPoint":{}}'` → 返回 `{"ok":true}`，然后
+`petPosition` 变成 `{x:null,y:null}`、`petState` 卡 `ai_directed`，**猫从桌面消失**。
+
+根因：`clamp(NaN)` 返回 NaN（`clamp` 是 `Math.min(Math.max(v,min),max)`，
+而 `Math.max(undefined,24)` = NaN）—— 所以 `suggestMoveTo` 里那层"防御性 clamp"
+**对非有限输入完全无效**。之后 `heading` 与 `position` 同时 NaN，`atan2` 持续产出 NaN，**自我维持**。
+
+**`resetPosition` 救不回**：实测重发后连续 24 秒位置仍非法 —— `resetPosition()`
+（index.mjs:790-800）只重置引擎侧变量，**不重置 `heading`，也不重置渲染层平滑状态**。
+实测约 10 分钟后自行恢复，但**触发点不明**（无可观测性）。
+
+`holdMs` 也**没有上下界**（`/control` 与 `/intent` 都没有），
+且 `/perception` **不暴露当前表情** —— 一个超大的 holdMs 可以把猫的脸钉住 27 小时而无人察觉。
+
+⚠️ **教训：这个项目里"防御性 clamp"和 `ok:true` 都不能当作安全证据。**
+
+### 假成功 / 静默失败（同一枚硬币的两面）
+
 `POST /control` 的 `action` / `expression` 是**转发**的，id 拼错**不报错**（`applied` 标 `(forwarded)`，
 `rejected` 为空）。对比 `perform` / `camera` / `skin` / `scale` / `toy` 走 Rust 校验、拼错明确 400。
+
+修法（很便宜，**不需要复制词表**）：`CapabilitiesState.latest`（lib.rs:563-570）在启动时由渲染器
+`report_capabilities` 上报并缓存了完整动作/表情清单，直接拿它校验即可。注意初始值是 `json!({})`，
+**webview 上报前是空表，必须降级为转发**，不能误杀合法请求。
+
+静默失败那面：字段名拼错或类型错（`{"expresssion":..}` / `{"scale":"big"}`）会报
+`empty command: expected at least one of ...` —— 调用方会以为"我什么都没传"而不是"我拼错了"。
+截断也全静默：`say` 140 字、提醒 text 140 字、记忆 text 280 字，都不告知（`say` 还谎报复全文）。
+
+### 多提醒同时到期会被静默吞掉
+
+`spawn_reminder_ticker`（lib.rs:940-965）把**所有**到期的标记 `done=true`，但只播报 `due.first()`。
+实测 3 个同时到期 → 全部 done=true，**2 个永久丢失、用户再也看不到**。
+意图（不背待办清单）是对的，实现应该"推迟"而不是"丢弃"。
+
+### 可观测性缺口
+
+`/perception` 没有"当前表情"和 `heading`，也没有事件日志（`/debug/events` 至今未做）。
+所以"猫什么时候消失的、为什么回来"无法还原。NaN 经 JSON 序列化成 `null`，
+外部无法与"字段缺失"区分。`/intent` 只有写没有读。
+
+## 多 agent 共用一个桥（2026-09-19 确认的问题）
+
+两个入口写同一个「当前值」，**单 agent 今天就会重复反应**：
+`/task-event` → `react_to_task_event`（hooks 自动）与 `/control` → `apply_control_command`（MCP 主动）
+完全不相干。且 `react_to_task_event` 把 `TaskEvent` 已有的 `platform`/`source` 压成三元组后丢掉了，
+所以归属不可见。
+
+三阶段解法与取舍见 `~/.workbuddy/skills/lingxi-desktop-cat/references/multi-agent.md`。
+**决定做不做仲裁队列前，先加 reaction/event ratio 计数器**（目标 0.2–0.4，>0.8 一定烦人）。
+待修复清单见 `2026-09-19.md` 末尾（6 条任务）。
 
 ## 测试
 

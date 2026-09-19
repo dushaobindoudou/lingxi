@@ -63,27 +63,49 @@ async function main() {
    * right for all four edges. At the left edge the body sticks out sideways by half its width; at
    * the TOP the whole body sticks out upwards, because it is drawn above its own feet. A uniform
    * 24px margin therefore parks the cat against the top of the screen with all but its paws off
-   * the display, which is exactly what was reported ("太靠上边缘了").
+   * the display, which is what was reported ("太靠上边缘了").
    *
-   * Sideways and vertically are deliberately NOT treated the same. Letting the flank run off the
-   * side costs nothing and is the look that was asked to be kept ("左右两侧只盖住一半身体我觉得
-   * 是对的"). Letting the same share run off the TOP would cost the head - the cat is nearly
-   * three times taller than it is wide, so the sides' 32% is 43px of flank but 124px of skull -
-   * and the face is the entire point of the thing ("表情互动是核心"). So the vertical rule is
-   * simply: all of the cat stays on screen, top and bottom.
+   * Two boxes come out of the same measurement, because how far the cat MAY go and how far it
+   * CHOOSES to go are different questions:
+   *
+   *   limit  Half the body may leave the screen at any edge. Only extreme things get here - a
+   *          performance charging the camera, the user dragging it, a toy that rolled into a
+   *          corner - and being able to half-leave the frame is what sells those
+   *          ("有时候有些操作我们需要更极致").
+   *   roam   Where it puts itself when nothing is happening: whole cat on screen top and bottom,
+   *          the approved 24px at the sides. This is the half that has to stay conservative,
+   *          because a pet you cannot see is not a pet ("自由运动的时候，要一直能看到猫咪").
+   *
+   * Sideways and vertically stay deliberately different in the roam box. Letting the flank run
+   * off the side costs nothing and is the look that was asked to be kept ("左右两侧只盖住一半
+   * 身体我觉得是对的"). Applying that same share to the top would cost the head - the cat is
+   * nearly 3x taller than wide, so it is 43px of flank but 124px of skull - and the face is the
+   * entire point ("表情互动是核心").
    */
   function syncMargins() {
     const extent = renderer.screenExtent?.();
     if (!extent) return;
-    const { above, below } = extent;
-    if (!(above + below > 0)) return;
+    const { above, below, halfWidth } = extent;
+    const height = above + below;
+    if (!(height > 0) || !(halfWidth > 0)) return;
+
     engine.setMargins({
-      left: EDGE_MARGIN,
-      right: EDGE_MARGIN,
-      // Large, and that is the point: the anchor has to sit a whole body-height down from the top
-      // for the ears to clear it.
-      top: above,
-      bottom: below,
+      // Hard limit: the anchor may travel until half the body has left the screen. Sideways the
+      // anchor is already centred in the body, so "half off" is the anchor sitting exactly on
+      // the edge - hence 0. Vertically the anchor is at the feet, so the same rule lands
+      // somewhere quite different at each end, which is the whole reason these are measured.
+      left: 0,
+      right: 0,
+      top: above - height * 0.5,
+      bottom: below - height * 0.5,
+      roam: {
+        left: EDGE_MARGIN,
+        right: EDGE_MARGIN,
+        // Large, and that is the point: the anchor has to sit a whole body-height down from the
+        // top for the ears to clear it.
+        top: above,
+        bottom: below,
+      },
     });
   }
   syncMargins();
