@@ -29,11 +29,23 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
-/// Read-only trust check: NEVER shows the system permission dialog, safe to call as often as
-/// wanted (every `get_status` poll, i.e. every management-window open and every companion
-/// startup). Use this, never `accessibility_permission_ready` below, for anything but a
-/// genuine one-time startup check - see that function's doc comment for why conflating the
-/// two re-prompts the user on every single poll.
+/// Read-only Accessibility trust check. NEVER shows the system permission dialog.
+///
+/// This is the ONLY form of the check the app has, and that is deliberate: **nothing here
+/// actually uses the Accessibility permission**. Cursor tracking reads `NSEvent.mouseLocation`,
+/// a plain AppKit property that needs no entitlement (see poll_global_cursor), and dragging
+/// uses ordinary window events. The permission was only ever wanted for a global click and
+/// keystroke listener that has never been built.
+///
+/// Startup used to call a prompting variant, so the app raised a system permission dialog for
+/// a capability it does not use. Worse, the grant does not survive a rebuild: macOS keys TCC
+/// grants on the code signature, and every locally-built bundle is signed afresh, so the user
+/// grants it, rebuilds, and is asked again - "我已经开启授权了依然会弹". Reported twice, and
+/// each previous fix only narrowed WHERE it was asked from rather than asking whether it
+/// should be asked at all.
+///
+/// If a feature that genuinely needs it ever lands, prompt from THAT feature, when the user
+/// turns it on, with `application_is_trusted_with_prompt()` - not at startup for everyone.
 #[cfg(target_os = "macos")]
 fn accessibility_trusted_readonly() -> bool {
     macos_accessibility_client::accessibility::application_is_trusted()
@@ -41,32 +53,6 @@ fn accessibility_trusted_readonly() -> bool {
 
 #[cfg(not(target_os = "macos"))]
 fn accessibility_trusted_readonly() -> bool {
-    true
-}
-
-/// Checks (and, if not yet granted, prompts for) macOS Accessibility permission. Call this
-/// only from a genuine one-time startup path (see setup() below) - NEVER from a
-/// repeatedly-invoked status check like `get_status`, which must use
-/// `accessibility_trusted_readonly` instead. `get_status` used to call this directly, which
-/// re-triggers the system prompt on *every* call whenever `application_is_trusted()` doesn't
-/// stick between builds (observed in practice with locally-rebuilt/ad-hoc-signed debug
-/// bundles - TCC can treat each rebuild as a "new" app even though the user already granted
-/// it once) - every management-window open and every companion startup asks again despite
-/// the user having already said yes (reported as "每次打开主界面都会弹窗授权，我的授权已经
-/// 授权了").
-/// Cursor position no longer needs this (see poll_global_cursor below) - kept only
-/// for the future global click/keystroke *listener*, which is a materially different,
-/// still-permission-gated ask (see docs/16-desktop-shell-prototype.md).
-#[cfg(target_os = "macos")]
-fn accessibility_permission_ready() -> bool {
-    if accessibility_trusted_readonly() {
-        return true;
-    }
-    macos_accessibility_client::accessibility::application_is_trusted_with_prompt()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn accessibility_permission_ready() -> bool {
     true
 }
 
@@ -1803,15 +1789,12 @@ pub fn run() {
 
             spawn_cursor_poller(app.handle().clone(), screen_height_points, scale_factor);
 
-            let trusted = accessibility_permission_ready();
+            // Read-only: reports the state, never raises a dialog. The app does not use this
+            // permission at all (see accessibility_trusted_readonly), so asking for it at
+            // startup was pure friction - and a grant that cannot survive a rebuild made it
+            // look broken on top of that.
+            let trusted = accessibility_trusted_readonly();
             let _ = app.handle().emit("accessibility-permission", trusted);
-            if !trusted {
-                eprintln!(
-                    "[lingxi-desktop] Accessibility permission not granted. This no longer blocks \
-                     cursor tracking or dragging (both now use permission-free APIs) - it only \
-                     affects a future global click/keystroke listener that does not exist yet."
-                );
-            }
 
             // Settings persist across restarts (size / visibility / mode). Resolved
             // before the tray is built so TrayState can write on every change.
