@@ -203,6 +203,88 @@ export const tools = [
       return ok(`Applied: ${result.applied?.join(', ')}`);
     },
   },
+  {
+    name: 'lingxi_register',
+    description:
+      'Register yourself with the cat, once, at the start of a session. Pick ONE emoji and a '
+      + 'colour that represent you and keep using them - that badge is how the user tells your '
+      + "reactions apart from another agent's when several drive the same cat. Call this first.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Stable id for you, e.g. "claude-code".' },
+        name: { type: 'string', maxLength: 24, description: 'Display name.' },
+        badge: { type: 'string', description: 'One emoji you choose for yourself.' },
+        color: { type: 'string', description: 'Badge ring colour, #rgb or #rrggbb.' },
+      },
+      required: ['id'],
+    },
+    async run({ id, name, badge, color }) {
+      const result = await bridge.register({ id, name, badge, color });
+      return ok(`Registered as ${result.agent?.badge ?? ''} ${result.agent?.name ?? id}.`, result.agent);
+    },
+  },
+  {
+    name: 'lingxi_task',
+    description:
+      'Report what your work is DOING and let the cat decide how to show it. Preferred over '
+      + 'picking expressions yourself: the user can retune the state-to-reaction mapping once '
+      + 'and have it apply to every agent, and you do not need to know the clip library. Send '
+      + 'one whenever a task changes state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        state: {
+          type: 'string',
+          enum: ['queued', 'running', 'blocked', 'needs_input', 'completed', 'failed', 'cancelled'],
+        },
+        kind: {
+          type: 'string',
+          enum: ['build', 'test', 'deploy', 'review', 'search', 'write', 'chat', 'other'],
+        },
+        taskId: { type: 'string', description: 'Stable id for this piece of work.' },
+        summary: { type: 'string', maxLength: 240, description: "One line, in the user's language." },
+        agent: { type: 'string', description: 'Your registered id.' },
+      },
+      required: ['state'],
+    },
+    async run({ state, kind, taskId, summary, agent }) {
+      const result = await bridge.taskEvent({
+        state,
+        kind,
+        taskId,
+        summary,
+        agent,
+        provider: agent ?? 'mcp',
+      });
+      return ok(
+        result.recorded === false
+          ? `Not recorded: ${result.reason ?? 'unrecognised event'}`
+          : `Reported ${kind ?? 'other'} ${state}.`,
+      );
+    },
+  },
+  {
+    name: 'lingxi_reload_assets',
+    description:
+      "Re-read the user's assets folder after writing actions.json / expressions.json / "
+      + 'skins.json / reactions.json, and report what loaded and what failed validation. '
+      + 'IMPORTANT: actions.json and expressions.json are replaced WHOLESALE - check '
+      + 'lingxi_capabilities for source:"custom" first and build on the user\'s existing file '
+      + 'if there is one, or you will delete their work.',
+    inputSchema: { type: 'object', properties: {} },
+    async run() {
+      await bridge.reloadAssets();
+      await new Promise((resolve) => { setTimeout(resolve, 600); }); // the reload is asynchronous
+      const status = await bridge.assets();
+      return ok(
+        status.lastErrors?.length
+          ? `Reloaded with ${status.lastErrors.length} problem(s).`
+          : 'Reloaded cleanly.',
+        status,
+      );
+    },
+  },
 ];
 
 export const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));

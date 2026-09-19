@@ -125,7 +125,20 @@ assets/
 { "mcpServers": { "lingxi": { "command": "node", "args": ["<repo>/packages/mcp-server/src/index.mjs"] } } }
 ```
 
-十个工具：看能力、看状态、说话、表情/动作、全屏特效、放玩具、记住一件事、读回记忆、设提醒、换视角主题。
+十三个工具：注册身份、报告任务、看能力、看状态、说话、表情/动作、全屏特效、放玩具、
+记住一件事、读回记忆、设提醒、换视角主题、重载自定义资源。
+
+**接入的正确姿势是报告你在干什么，而不是指挥猫做什么**——
+`{state:"failed", kind:"deploy"}` 比"播 shake-head"好，因为映射在用户手里
+（`assets/reactions.json`），改一次对所有 agent 生效。
+
+多个 agent 同时接入是正常情况：各自注册一个 emoji 徽章，猫身边会显示当前是谁在驱动；
+表现冲突按**事件**的紧急程度仲裁（失败 > 完成 > 状态 > 氛围），**不按 agent 身份**——
+用户要看到的是要紧的事，不是要紧的工具。
+
+完整规范见 [`docs/19-agent-integration.md`](docs/19-agent-integration.md)，
+设计理由见 [决策 003](docs/decisions/003-multi-agent-arbitration.md)。
+运行中的应用会用 `GET /integration` 把契约原样吐出来，以它为准。
 
 ---
 

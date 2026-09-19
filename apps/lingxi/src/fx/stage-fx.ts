@@ -51,6 +51,17 @@ export interface StageFx {
   /** Move the current bubble to sit above this screen point. Called every frame while one is
    *  up, because the cat it is anchored to is walking around. */
   anchorBubble(x: number, y: number): void;
+  /**
+   * Show which agent is currently driving the cat, as a small badge beside it.
+   *
+   * This is the whole answer to "which of my agents did that". A full logo pipeline (upload,
+   * storage, sizing, cache invalidation) buys very little over one emoji the agent picks for
+   * itself at registration - and the emoji costs the user no setup at all, which is what
+   * decides it for a desktop toy.
+   */
+  showAgentBadge(badge: string, color: string, name: string, holdMs: number): void;
+  /** Keep the badge parked beside the cat as it walks. */
+  anchorBadge(x: number, y: number): void;
   /** True while a bubble is showing - the host uses it to skip the anchor work otherwise. */
   readonly speaking: boolean;
   /** Take any bubble down immediately. */
@@ -244,6 +255,33 @@ const CSS = `
 }
 .lingxi-fx-bubble.shape-spiky::after { display: none; }
 .lingxi-fx-bubble.leaving { animation: lingxi-bubble-out 260ms ease-in forwards; }
+
+/* Which agent is driving. Small, beside the cat, and gone again a few seconds later - it marks
+   the moment, it is not a permanent HUD. */
+.lingxi-agent-badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  line-height: 1;
+  background: rgba(20, 22, 28, 0.82);
+  border: 2px solid var(--badge-color, #8b95a5);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+.lingxi-agent-badge.visible { opacity: 1; animation: lingxi-badge-pop 260ms cubic-bezier(.2,1.5,.4,1); }
+@keyframes lingxi-badge-pop {
+  from { transform: scale(0.4); }
+  to { transform: scale(1); }
+}
 @keyframes lingxi-bubble-in {
   0%   { opacity: 0; transform: translate(-50%, -100%) scale(.5); }
   100% { opacity: 1; transform: translate(-50%, -100%) scale(1); }
@@ -277,6 +315,8 @@ const HEART_GLYPHS = ['💗', '💖', '❤️', '💕', '💞'];
 
 export function createStageFx(): StageFx {
   let layer: HTMLDivElement | null = null;
+  let badgeNode: HTMLDivElement | null = null;
+  let badgeTimer = 0;
   let shakeTarget: HTMLElement | null = null;
   let bubbleStyle: BubbleStyle = { ...DEFAULT_BUBBLE_STYLE };
   let bubble: HTMLDivElement | null = null;
@@ -483,6 +523,26 @@ export function createStageFx(): StageFx {
 
     get speaking() {
       return bubble != null;
+    },
+
+    showAgentBadge(badge, color, name, holdMs) {
+      if (!layer) return;
+      if (!badgeNode) {
+        badgeNode = document.createElement('div');
+        badgeNode.className = 'lingxi-agent-badge';
+        layer.append(badgeNode);
+      }
+      badgeNode.textContent = badge.slice(0, 2);
+      badgeNode.style.setProperty('--badge-color', color);
+      badgeNode.title = name;
+      badgeNode.classList.add('visible');
+      window.clearTimeout(badgeTimer);
+      badgeTimer = window.setTimeout(() => badgeNode?.classList.remove('visible'), Math.max(1200, holdMs));
+    },
+
+    anchorBadge(x, y) {
+      if (!badgeNode?.classList.contains('visible')) return;
+      badgeNode.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     },
 
     say(text, durationMs) {

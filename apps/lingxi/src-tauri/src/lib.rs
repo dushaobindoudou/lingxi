@@ -20,6 +20,7 @@ use base64::Engine as _;
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::NSEvent;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -635,6 +636,11 @@ struct TaskEvent {
     #[serde(rename = "observedAt")]
     observed_at: u64,
     summary: String,
+    /// What sort of work this was - build / test / deploy / review / ... See TASK_KINDS. The
+    /// reaction map keys on (state, kind), so a failed deploy can read differently from a failed
+    /// search without the agent having to pick clips itself.
+    #[serde(default)]
+    kind: String,
 }
 
 /// docs/09's verified Claude Code hooks path, fed by POST /task-event (see
@@ -652,6 +658,66 @@ const CLAUDE_TASK_EVENT_CAP: usize = 50;
 /// this app's `TaskEvent` shape. Deliberately session-granularity, not sub-task: docs/09
 /// already flags "Stop 是一轮停止，不等于用户目标完成" - `taskId` == `sourceId` == the
 /// Claude session id is an honest v1, not a claim of finer-grained task tracking.
+/// The task states any integration may report, whatever tool it is.
+///
+/// Deliberately a small, tool-agnostic vocabulary. An agent is asked to describe WHAT IS
+/// HAPPENING, not which clip to play - see docs/decisions/003. That is what lets the user retune
+/// every agent's reactions in one file, and what keeps an agent from having to know the 49-clip
+/// library exists.
+const TASK_STATES: [&str; 7] = [
+    "queued", "running", "blocked", "needs_input", "completed", "failed", "cancelled",
+];
+
+/// The kind of work, which lets the cat react differently to a deploy than to a search.
+const TASK_KINDS: [&str; 8] = [
+    "build", "test", "deploy", "review", "search", "write", "chat", "other",
+];
+
+/// A tool-agnostic task event, for any integration that is not Claude Code's hook format.
+///
+/// Claude's hooks arrive in their own shape and are translated (see below). Everything else
+/// speaks this directly, so an editor plugin or a CI watcher does not have to pretend to be a
+/// Claude hook to drive the cat.
+fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Option<TaskEvent> {
+    let state = raw.get("state").and_then(|v| v.as_str())?;
+    if !TASK_STATES.contains(&state) {
+        return None;
+    }
+    let provider = raw.get("provider").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let task_id = raw
+        .get("taskId")
+        .or_else(|| raw.get("task_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown-task");
+    let kind = raw
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .filter(|k| TASK_KINDS.contains(k))
+        .unwrap_or("other");
+    let summary = raw.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+    let observed_at = now_millis();
+    Some(TaskEvent {
+        schema_version: 1,
+        provider: provider.to_string(),
+        source_id: raw
+            .get("agent")
+            .and_then(|v| v.as_str())
+            .unwrap_or(provider)
+            .to_string(),
+        task_id: task_id.to_string(),
+        event_id: format!("{provider}-{task_id}-{state}-{observed_at}-{sequence}"),
+        state: state.to_string(),
+        sequence,
+        observed_at,
+        summary: if summary.is_empty() {
+            format!("{kind}: {state}")
+        } else {
+            summary.chars().take(240).collect()
+        },
+        kind: kind.to_string(),
+    })
+}
+
 fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEvent {
     let session_id = raw.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown-session").to_string();
     let hook_event_name = raw.get("hook_event_name").and_then(|v| v.as_str()).unwrap_or("unknown");
@@ -681,6 +747,9 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         sequence,
         observed_at,
         summary: summary.chars().take(240).collect(), // docs/09's 240-char cap
+        // Claude's hooks say nothing about what KIND of work it was - they are conversation
+        // lifecycle events, not task events. "chat" is the honest answer, not a guess.
+        kind: "chat".to_string(),
     }
 }
 
@@ -870,9 +939,11 @@ const MAX_HOLD_MS: u64 = 10 * 60 * 1000;
 /// the whole point: the old code silently skipped unrecognised keys and then reported
 /// "empty command", so a caller who wrote `expresssion` was told they had sent nothing at all
 /// and would retry the same misspelling forever.
-const CONTROL_FIELDS: [&str; 14] = [
+const CONTROL_FIELDS: [&str; 16] = [
     "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform",
     "toy", "say", "sayMs", "resetPosition", "reloadAssets",
+    // Who is calling and how much the user needs to see it. Both optional - see decision 003.
+    "agent", "priority",
 ];
 
 /// Pull the ids out of one list in the renderer-reported capability payload.
@@ -920,6 +991,130 @@ fn truncate_chars(text: &str, max: usize) -> (String, bool) {
     (kept, truncated)
 }
 
+
+// --- who is driving the cat -------------------------------------------------------------------
+//
+// Several agents can hold this port open at once (Claude Code, a CI watcher, an editor plugin),
+// and "they interfere with each other" is really three separate problems - see
+// docs/decisions/003-multi-agent-arbitration.md. The part that needs machinery is the stage:
+// two agents driving the face in the same second make the cat twitch.
+//
+// The priority that decides who wins comes from the EVENT, never from the agent. The tempting
+// design is to rank the agents - Claude outranks the CI bot - and it is wrong: what the user
+// needs to see is the important THING, not the important tool. A build failure outranks idle
+// purring no matter who reports it.
+
+/// How much the user needs to see this, highest first. Parsed from the `priority` field.
+fn priority_rank(name: &str) -> u8 {
+    match name {
+        "alert" => 3,   // needs a look right now: a failure, a question, a confirmation
+        "report" => 2,  // something finished
+        "status" => 1,  // state changed, not urgent
+        _ => 0,         // ambient flavour
+    }
+}
+
+const PRIORITY_NAMES: [&str; 4] = ["ambient", "status", "report", "alert"];
+
+#[derive(Clone, Serialize)]
+struct AgentIdentity {
+    id: String,
+    name: String,
+    /// One or two emoji. Deliberately not an image: the agent can invent it unaided, it costs
+    /// nothing to render, and it stays legible at badge size. `badge` is a string so it can grow
+    /// into a URL later without breaking anyone.
+    badge: String,
+    /// CSS colour for the badge ring.
+    color: String,
+    registered_at: u64,
+    last_seen: u64,
+    /// Stage claims this agent has made, for the per-agent budget and for the user to see who is
+    /// noisiest.
+    claims: u64,
+}
+
+#[derive(Clone, Serialize)]
+struct StageClaim {
+    agent: String,
+    badge: String,
+    color: String,
+    priority: String,
+    rank: u8,
+    until: u64,
+}
+
+#[derive(Default)]
+struct AgentRegistry {
+    agents: Mutex<HashMap<String, AgentIdentity>>,
+    stage: Mutex<Option<StageClaim>>,
+}
+
+impl AgentRegistry {
+    /// Decide whether `agent` may drive the cat's face right now.
+    ///
+    /// Returns Err with a human-readable reason when it may not. A refusal is NOT a queue: a
+    /// "tests passed" that arrives five seconds late is stale news, and playing it then would
+    /// have the cat reacting to the wrong thing. Callers are told to drop it, not retry it.
+    fn claim_stage(
+        &self,
+        agent: &AgentIdentity,
+        priority: &str,
+        hold_ms: u64,
+        now: u64,
+    ) -> Result<(), (String, u64)> {
+        let rank = priority_rank(priority);
+        let mut stage = self.stage.lock().unwrap();
+        if let Some(current) = stage.as_ref() {
+            if current.until > now && current.agent != agent.id && rank <= current.rank {
+                return Err((
+                    format!(
+                        "{} ({}) is showing a \"{}\" reaction for another {}ms. Yours is \"{}\", \
+                         which does not outrank it. DROP this reaction rather than retrying - by \
+                         the time the stage is free it will be describing something that already \
+                         finished.",
+                        current.agent,
+                        current.badge,
+                        current.priority,
+                        current.until.saturating_sub(now),
+                        priority,
+                    ),
+                    current.until.saturating_sub(now),
+                ));
+            }
+        }
+        *stage = Some(StageClaim {
+            agent: agent.id.clone(),
+            badge: agent.badge.clone(),
+            color: agent.color.clone(),
+            priority: priority.to_string(),
+            rank,
+            until: now + hold_ms.min(MAX_HOLD_MS),
+        });
+        Ok(())
+    }
+}
+
+/// Look the caller up, registering a minimal identity for one that never called POST /agents.
+///
+/// An unregistered caller is not refused: the bridge predates the registry and the whole point
+/// of a local HTTP surface is that `curl` works. It just shows up as itself with a neutral badge.
+fn resolve_agent(registry: &AgentRegistry, id: Option<&str>, now: u64) -> AgentIdentity {
+    let id = id.map(str::trim).filter(|s| !s.is_empty()).unwrap_or("anonymous");
+    let mut agents = registry.agents.lock().unwrap();
+    let entry = agents.entry(id.to_string()).or_insert_with(|| AgentIdentity {
+        id: id.to_string(),
+        name: id.to_string(),
+        badge: "\u{1f4bb}".to_string(),
+        color: "#8b95a5".to_string(),
+        registered_at: now,
+        last_seen: now,
+        claims: 0,
+    });
+    entry.last_seen = now;
+    entry.claims += 1;
+    entry.clone()
+}
+
 /// Reject an intent the cat cannot act on, at the boundary, with a reason.
 ///
 /// The engine drops a malformed target too - that is the fix that matters, since it is what
@@ -958,6 +1153,56 @@ fn apply_control_command(
     let mut detail = serde_json::Map::new();
     let caps = app.state::<CapabilitiesState>().latest.lock().unwrap().clone();
 
+    // Who is asking, and how much the user needs to see it. Both optional: the bridge predates
+    // the registry and plain `curl` has to keep working.
+    let registry = app.state::<AgentRegistry>();
+    let now = now_millis();
+    let identity = resolve_agent(&registry, command.get("agent").and_then(|v| v.as_str()), now);
+    let priority = command
+        .get("priority")
+        .and_then(|v| v.as_str())
+        .filter(|p| PRIORITY_NAMES.contains(p))
+        .unwrap_or("status");
+    // Only the fields that take over the cat's PERFORMANCE contend for the stage. skin/camera/
+    // scale are user settings and are handled separately below; resetPosition and reloadAssets
+    // are housekeeping and never conflict.
+    let wants_stage = ["expression", "action", "say", "perform", "toy"]
+        .iter()
+        .any(|field| command.get(*field).is_some());
+    let mut stage_denied: Option<String> = None;
+    if wants_stage {
+        let hold = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
+        match registry.claim_stage(&identity, priority, hold, now) {
+            Ok(()) => {
+                detail.insert("agent".into(), serde_json::json!(identity.id));
+                detail.insert("badge".into(), serde_json::json!(identity.badge));
+                detail.insert("priority".into(), serde_json::json!(priority));
+                // Tell the companion window who is driving, so the badge can be shown next to
+                // the cat. This is the whole answer to "which agent did that" - see decision 003.
+                let _ = app.emit(
+                    "agent-stage",
+                    serde_json::json!({
+                        "agent": identity.id,
+                        "name": identity.name,
+                        "badge": identity.badge,
+                        "color": identity.color,
+                        "priority": priority,
+                        "holdMs": hold.min(MAX_HOLD_MS),
+                    }),
+                );
+            }
+            Err((reason, retry_after)) => {
+                detail.insert("retryAfterMs".into(), serde_json::json!(retry_after));
+                detail.insert("dropRatherThanRetry".into(), serde_json::json!(true));
+                stage_denied = Some(reason);
+            }
+        }
+    }
+    if let Some(reason) = stage_denied {
+        rejected.push(format!("stage busy: {reason}"));
+        return (applied, rejected, serde_json::Value::Object(detail));
+    }
+
     // Anything that is not a field name, and anything that is but holds the wrong type, is
     // named explicitly. All of these used to fall through to "empty command: expected at least
     // one of ...", which tells a caller their request was empty when in fact it was misspelled
@@ -975,7 +1220,8 @@ fn apply_control_command(
                 continue;
             }
             let type_ok = match key.as_str() {
-                "camera" | "skin" | "action" | "expression" | "perform" | "toy" | "say" | "mode" => value.is_string(),
+                "camera" | "skin" | "action" | "expression" | "perform" | "toy" | "say" | "mode"
+                | "agent" | "priority" => value.is_string(),
                 "scale" => value.is_number(),
                 "visible" | "resetPosition" | "reloadAssets" => value.is_boolean(),
                 "holdMs" | "sayMs" => value.is_number(),
@@ -1014,6 +1260,18 @@ fn apply_control_command(
             Ok(()) => {
                 state.apply_skin(app, skin);
                 applied.push(format!("skin={skin}"));
+                // Not refused - that would break existing integrations - but said out loud. A
+                // theme is the USER's choice, and an agent quietly repainting their pet is the
+                // kind of thing that is only noticed as "why does it keep changing". An agent
+                // that wants to be recognisable should register a badge instead (decision 003).
+                detail.insert(
+                    "userSettingChanged".into(),
+                    serde_json::json!(
+                        "skin is a user preference, not an agent channel. Prefer registering a \
+                         badge via POST /agents so you are identifiable without repainting the \
+                         user's cat."
+                    ),
+                );
             }
             Err(message) => rejected.push(message),
         }
@@ -1115,6 +1373,14 @@ fn apply_control_command(
     // user to go and click something.
     if command.get("reloadAssets").and_then(|v| v.as_bool()).unwrap_or(false) {
         let _ = app.emit("reload-custom-assets", ());
+        // reactions.json is read on this side, not in the webview, so it is reloaded here.
+        let (map, errors) = load_reaction_map(app);
+        let count = map.len();
+        *app.state::<ReactionMapState>().map.lock().unwrap() = map;
+        detail.insert("reactionOverrides".into(), serde_json::json!(count));
+        if !errors.is_empty() {
+            detail.insert("reactionErrors".into(), serde_json::json!(errors));
+        }
         applied.push("reloadAssets".to_string());
         detail.insert(
             "note".into(),
@@ -1268,6 +1534,139 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     let state = app.state::<CapabilitiesState>();
                     let body = state.latest.lock().unwrap().to_string();
                     json_response(200, body)
+                }
+                // The whole integration contract, machine-readable, from the running build.
+                //
+                // Exists so an agent does not have to be shipped with a copy of the docs that
+                // can go stale: it can read the vocabulary, the priorities and the reaction map
+                // it will actually get, at runtime, from the cat it is actually talking to.
+                (tiny_http::Method::Get, "/integration") => {
+                    let overrides = app.state::<ReactionMapState>().map.lock().unwrap().clone();
+                    json_response(
+                        200,
+                        serde_json::json!({
+                            "schemaVersion": 1,
+                            "howToIntegrate": [
+                                "1. POST /agents once with {id, name, badge, color} - the badge is one emoji you pick for yourself, and it is how the user tells your reactions from another agent's.",
+                                "2. Report WHAT IS HAPPENING via POST /task-event {provider, taskId, state, kind, summary}. Do NOT pick expressions or clips yourself - the cat maps state+kind to a reaction, and the user can retune that mapping for every agent at once.",
+                                "3. Send `agent` and `priority` on any direct POST /control call so the cat can decide whose reaction the user needs to see.",
+                                "4. A 400 'stage busy' means a more urgent reaction is showing. DROP yours - do not retry. By the time the stage frees up, yours describes something that already finished.",
+                            ],
+                            "taskEvent": {
+                                "states": TASK_STATES,
+                                "kinds": TASK_KINDS,
+                                "example": {
+                                    "provider": "my-ci", "agent": "my-ci", "taskId": "build-4821",
+                                    "state": "failed", "kind": "test", "summary": "3 tests failed in auth/"
+                                },
+                            },
+                            "priorities": {
+                                "order": PRIORITY_NAMES,
+                                "meaning": {
+                                    "alert": "the user needs to look now - a failure, a question, a confirmation",
+                                    "report": "something finished",
+                                    "status": "state changed, not urgent",
+                                    "ambient": "flavour only, rate-limited",
+                                },
+                                "note": "Priority comes from the EVENT, never from which agent you are. A build failure outranks idle purring no matter who reports it.",
+                            },
+                            "reactions": {
+                                "customisableAt": custom_assets_dir(&app).map(|d| d.join("reactions.json").display().to_string()),
+                                "keyedBy": "\"<state>\" or \"<state>:<kind>\", most specific wins",
+                                "shape": { "expression": "required", "action": "optional clip id", "say": "optional line" },
+                                "activeOverrides": overrides.keys().collect::<Vec<_>>(),
+                            },
+                            "userOwned": {
+                                "fields": ["skin", "camera", "scale", "visible"],
+                                "note": "These are the user's preferences. You can set them and it is not blocked, but prefer a registered badge for identity - repainting someone's pet to mark your presence is not yours to do.",
+                            },
+                        })
+                        .to_string(),
+                    )
+                }
+                // Who is driving, and who has driven. The answer to "which agent made it do
+                // that" - previously unanswerable, because nothing recorded a caller at all.
+                (tiny_http::Method::Get, "/agents") => {
+                    let registry = app.state::<AgentRegistry>();
+                    let agents: Vec<AgentIdentity> =
+                        registry.agents.lock().unwrap().values().cloned().collect();
+                    let stage = registry.stage.lock().unwrap().clone();
+                    json_response(
+                        200,
+                        serde_json::json!({
+                            "agents": agents,
+                            "stage": stage,
+                            "priorities": PRIORITY_NAMES,
+                        })
+                        .to_string(),
+                    )
+                }
+                // Register (or update) an identity. Optional - an unregistered caller still works
+                // and shows up under whatever `agent` string it sends - but registering is what
+                // gets you a badge next to the cat instead of a generic laptop glyph.
+                (tiny_http::Method::Post, "/agents") => {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    match serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(value) => {
+                            let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            if id.is_empty() {
+                                json_response(
+                                    400,
+                                    "{\"error\":\"id is required - a stable string identifying your agent, e.g. \\\"claude-code\\\"\"}"
+                                        .to_string(),
+                                )
+                            } else {
+                                let (badge, badge_truncated) = truncate_chars(
+                                    value.get("badge").and_then(|v| v.as_str()).unwrap_or("\u{1f4bb}"),
+                                    2,
+                                );
+                                let now = now_millis();
+                                let registry = app.state::<AgentRegistry>();
+                                let identity = {
+                                    let mut agents = registry.agents.lock().unwrap();
+                                    let entry = agents.entry(id.to_string()).or_insert_with(|| AgentIdentity {
+                                        id: id.to_string(),
+                                        name: id.to_string(),
+                                        badge: badge.clone(),
+                                        color: "#8b95a5".to_string(),
+                                        registered_at: now,
+                                        last_seen: now,
+                                        claims: 0,
+                                    });
+                                    if let Some(name) = value.get("name").and_then(|v| v.as_str()) {
+                                        let (name, _) = truncate_chars(name, 24);
+                                        if !name.is_empty() {
+                                            entry.name = name;
+                                        }
+                                    }
+                                    if !badge.is_empty() {
+                                        entry.badge = badge.clone();
+                                    }
+                                    if let Some(color) = value.get("color").and_then(|v| v.as_str()) {
+                                        if color.starts_with('#') && (color.len() == 4 || color.len() == 7) {
+                                            entry.color = color.to_string();
+                                        }
+                                    }
+                                    entry.last_seen = now;
+                                    entry.clone()
+                                };
+                                json_response(
+                                    200,
+                                    serde_json::json!({
+                                        "ok": true,
+                                        "agent": identity,
+                                        "badgeTruncated": badge_truncated,
+                                        "note": "Send `agent` on every /control call so your reactions are attributed, \
+                                                 and `priority` (ambient|status|report|alert) so the cat can decide \
+                                                 whose reaction the user needs to see. See GET /integration.",
+                                    })
+                                    .to_string(),
+                                )
+                            }
+                        }
+                        Err(e) => json_response(400, format!("{{\"error\":\"invalid JSON body: {e}\"}}")),
+                    }
                 }
                 // What the user's own assets folder currently contributes, and whether the last
                 // read of it complained. Previously the validation errors existed only inside a
@@ -1495,7 +1894,12 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 *seq += 1;
                                 *seq
                             };
-                            let event = normalize_claude_hook_event(&raw, seq);
+                            // Either the Claude hook shape or the tool-agnostic one. The
+                            // generic form is tried first because it is unambiguous - it has a
+                            // `state` from a closed vocabulary - whereas the hook form is
+                            // identified only by the absence of that.
+                            let event = normalize_generic_task_event(&raw, seq)
+                                .unwrap_or_else(|| normalize_claude_hook_event(&raw, seq));
                             // An event nothing can act on must not displace one that matters.
                             // The buffer holds 500 and is the only history there is, so anything
                             // on the loopback interface could previously flush the real record
@@ -1683,16 +2087,107 @@ impl MemoryState {
 /// and look. Deliberately restrained: a short expression, a small action, and at most a single
 /// line of speech, because something that leaps about every time a tool call finishes is a
 /// distraction rather than company.
-fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
-    let (expression, action, line) = match event.state.as_str() {
+/// The user's own overrides for the reaction map, read from `assets/reactions.json`.
+///
+/// Held in Rust rather than the renderer because the reaction is decided here - a task event
+/// arrives over HTTP and is turned into expression/action/line before anything reaches the
+/// webview. Empty by default, in which case builtin_reaction decides everything.
+#[derive(Default)]
+struct ReactionMapState {
+    map: Mutex<HashMap<String, serde_json::Value>>,
+}
+
+/// Load `assets/reactions.json` if the user has written one. Shape:
+///
+/// ```jsonc
+/// {
+///   "failed:deploy": { "expression": "\u{60ca}\u{5413}", "action": "shake-head", "say": "..." },
+///   "completed":     { "expression": "\u{5f97}\u{610f}" }
+/// }
+/// ```
+///
+/// Invalid entries are skipped individually rather than failing the whole file, matching how
+/// every other custom asset behaves: one bad line should not cost the user the rest of their work.
+fn load_reaction_map(app: &tauri::AppHandle) -> (HashMap<String, serde_json::Value>, Vec<String>) {
+    let mut map = HashMap::new();
+    let mut errors = Vec::new();
+    let Some(path) = custom_assets_dir(app).map(|dir| dir.join("reactions.json")) else {
+        return (map, errors);
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return (map, errors); // absent is the normal case, not an error
+    };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(serde_json::Value::Object(entries)) => {
+            for (key, value) in entries {
+                if value.get("expression").and_then(|v| v.as_str()).is_none() {
+                    errors.push(format!("reactions.json: \"{key}\" needs an \"expression\""));
+                    continue;
+                }
+                map.insert(key, value);
+            }
+        }
+        Ok(_) => errors.push("reactions.json: expected an object keyed by \"state\" or \"state:kind\"".into()),
+        Err(e) => errors.push(format!("reactions.json: {e}")),
+    }
+    (map, errors)
+}
+
+/// The built-in mapping from what happened to how the cat shows it.
+///
+/// Keyed on state first, then optionally refined by kind. This is the table the user overrides
+/// in `assets/reactions.json`: an agent reports `{state, kind}` and the CAT decides the face, so
+/// retuning it once retunes every integration at once. An agent that picks its own clips instead
+/// takes that away from the user and has to be updated by hand whenever the clip library grows.
+fn builtin_reaction(state: &str, kind: &str) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
+    // Kind-specific refinements first - a failed deploy deserves more than a failed search.
+    match (state, kind) {
+        ("completed", "deploy") => return Some(("得意", Some("stretch-front"), Some("上线了！"))),
+        ("failed", "deploy") => return Some(("惊吓", Some("shake-head"), Some("部署炸了…"))),
+        ("completed", "test") => return Some(("开心", Some("paw-wave"), Some("测试全绿～"))),
+        ("failed", "test") => return Some(("不爽", Some("shake-head"), Some("有测试挂了"))),
+        ("running", "build") => return Some(("认真", None, None)),
+        _ => {}
+    }
+    Some(match state {
         "completed" => ("开心", Some("paw-wave"), Some("搞定啦～")),
         "failed" => ("不爽", Some("shake-head"), Some("这次没成…")),
-        "waiting_for_user" => ("好奇", Some("notice-you"), Some("在等你哦")),
+        "needs_input" | "waiting_for_user" => ("好奇", Some("notice-you"), Some("在等你哦")),
+        "blocked" => ("困惑", None, Some("卡住了")),
         "running" => ("认真", None, None),
         "queued" => ("清醒", None, None),
         "cancelled" => ("嫌弃", Some("shake-fur"), None),
-        _ => return,
+        _ => return None,
+    })
+}
+
+fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
+    // A user-supplied map wins over the built-in one, per entry. Looked up as "state:kind"
+    // first, then "state", so an override can be as broad or as narrow as the user likes.
+    let custom = app.state::<ReactionMapState>().map.lock().unwrap().clone();
+    let lookup = |key: &str| -> Option<(String, Option<String>, Option<String>)> {
+        let entry = custom.get(key)?;
+        Some((
+            entry.get("expression").and_then(|v| v.as_str())?.to_string(),
+            entry.get("action").and_then(|v| v.as_str()).map(str::to_string),
+            entry.get("say").and_then(|v| v.as_str()).map(str::to_string),
+        ))
     };
+    let resolved = lookup(&format!("{}:{}", event.state, event.kind))
+        .or_else(|| lookup(&event.state))
+        .or_else(|| {
+            builtin_reaction(&event.state, &event.kind).map(|(e, a, l)| {
+                (e.to_string(), a.map(str::to_string), l.map(str::to_string))
+            })
+        });
+    let Some((expression, action, line)) = resolved else {
+        return;
+    };
+    let (expression, action, line) = (
+        expression.as_str(),
+        action.as_deref(),
+        line.as_deref(),
+    );
     let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": 4000 }));
     if let Some(action) = action {
         let _ = app.emit("play-action", serde_json::json!({ "id": action }));
@@ -2199,6 +2694,14 @@ pub fn run() {
             app.manage(PerceptionState { latest_snapshot: Mutex::new(serde_json::json!({})) });
             app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
             app.manage(AssetErrorState { errors: Mutex::new(Vec::new()) });
+            app.manage(AgentRegistry::default());
+            {
+                let (map, errors) = load_reaction_map(app.handle());
+                for error in &errors {
+                    eprintln!("[lingxi-desktop] {error}");
+                }
+                app.manage(ReactionMapState { map: Mutex::new(map) });
+            }
             app.manage(MemoryState::load(app.path().app_config_dir().ok()));
             spawn_reminder_ticker(app.handle().clone());
             app.manage(ClaudeHooksState { events: Mutex::new(Vec::new()), sequence: Mutex::new(0) });

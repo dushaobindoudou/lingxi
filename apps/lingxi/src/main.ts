@@ -275,6 +275,13 @@ async function main() {
     }
   }
   await loadCustomAssets();
+  // Which agent is driving right now. Shown as a badge beside the cat for the duration of the
+  // reaction, so a user running several agents can tell whose work they are looking at.
+  void listen<{ badge: string; color: string; name: string; holdMs: number }>('agent-stage', (event) => {
+    const { badge, color, name, holdMs } = event.payload;
+    fx.showAgentBadge(badge, color, name, holdMs);
+  });
+
   void listen('reload-custom-assets', () => {
     void loadCustomAssets().then(() => {
       renderer.setSkin?.(currentSkinId);
@@ -594,6 +601,9 @@ async function main() {
         const head = renderer.headScreenPoint?.();
         if (head) fx.anchorBubble(head.x, head.y - 18);
       }
+      // The agent badge sits at the cat's shoulder rather than over its head, so it never
+      // competes with a speech bubble for the same space.
+      fx.anchorBadge(snapshot.position.x + 26, snapshot.position.y - 30);
 
       const playing = renderer.playingAction ?? null;
       if (playing && playing.id !== heldForAction) {

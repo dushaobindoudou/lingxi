@@ -73,6 +73,21 @@ export const bridge = {
     }),
 
   assets: () => call('/assets/status'),
+  integration: () => call('/integration'),
+
+  register: (identity) =>
+    call('/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(identity),
+    }),
+
+  taskEvent: (event) =>
+    call('/task-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    }),
   events: () => call('/debug/events'),
 
   control: (command) =>
