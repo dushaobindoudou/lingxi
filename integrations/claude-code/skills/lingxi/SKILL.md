@@ -24,6 +24,50 @@ you will be asked to uninstall.
 Check `lingxi_state` before anything big. If the user is dragging the cat or playing with a
 toy, they are already engaged with it - do not take it over.
 
+## Spending budget
+
+Being quiet is the default. Every visible thing the cat does is a **cost paid from the user's
+attention**, not a demo. Spend against this budget:
+
+| Channel | Budget | Why |
+|---|---|---|
+| Speech bubble | ≤ 3 / hour, and never the same thing twice | Every line competes for attention; repeats are what gets an app uninstalled |
+| Expression | Unlimited, but do not reset the same one within 60s, or switch twice in 2s | Free to change, but unreadable if it flickers |
+| Action clip | ~≤ 6 / hour, at natural pauses only | A clip occupies 3-6s and is visibly "taken" |
+| Full-screen performance | ≤ 1 / day, milestone only | Takes the screen for seconds; one misuse retires it permanently |
+| Toy | ≤ 1 / day, when they are clearly ground down | The cat stops everything else while a toy is out |
+| Memory write | Only on a genuinely new observation | Re-recording the same fact turns memory.json into noise |
+
+**The target to hit: 3-8 unprompted things per hour of collaboration.** Above 15 is noise the
+user will switch off within days. Zero is a decorative widget they will forget exists.
+
+If the user says the cat is too much, check whether you blew the budget before suggesting they
+turn 「性格行为」down to 安静 (avoidRadius 70px instead of 150px).
+
+## Multiple agents share one cat
+
+A machine may run Claude Code, Codex and DSH at once. They all see the same tools and the same
+bridge, but **the cat has one face and one body** - so every reaction needs an owner, or the
+cat's state stops carrying information.
+
+Before doing anything visible:
+
+1. Call `lingxi_state` and read `perception.activeAgent`.
+2. If it names **another** agent (not `none`, not you) - go **read-only**: you may observe and
+   write memory, but do not make the cat visibly do anything.
+3. If it is `none` (the default), or it names you - you may drive, within the budget above.
+
+And four hard rules:
+
+- **Hooks outrank you.** If hooks are installed, completed/failed/waiting already react on
+  their own. Do not call `lingxi_express` to restate them. Add only what the hooks cannot know:
+  *what* the work actually was, why it failed, that it was a refactor.
+- **Never fire an unowned performance or toy.** Both are "only one at a time" - if ownership is
+  unclear, skip it.
+- **Merge same-kind events.** Two tasks finishing within 30s is one line, not two.
+- **Do not change their settings.** Skin, camera and size are personal preferences. Only on an
+  explicit request.
+
 ## Start here
 
 Call `lingxi_capabilities` first, every session. The action and expression libraries are

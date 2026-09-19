@@ -1,0 +1,11 @@
+# Pin the toolchain so a fresh clone builds. The dependency tree (tauri, image, time, plist,
+# serde_with) requires 1.88+, so an older rustc fails resolution before it compiles anything.
+#
+# NOTE: this file only takes effect through rustup's shims. If `rustc --version` reports a
+# Homebrew build, Homebrew's cargo is ahead of rustup on PATH and this pin is ignored - the
+# symptom is a wall of "requires rustc 1.88" errors. Put ~/.cargo/bin first, or prefix the
+# command with PATH="$HOME/.cargo/bin:$PATH".
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
