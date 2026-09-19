@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/management.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>灵犀 · 主界面</title>
+    <script type="module" src="/src/management.ts" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <nav class="sidebar">
+        <div class="brand">
+          <img src="/icon.png" alt="灵犀" class="avatar" />
+          <div>
+            <h1 id="sidebar-cat-name">灵犀</h1>
+            <p class="subtitle" id="sidebar-status">桌面小猫</p>
+          </div>
+        </div>
+        <button class="nav-item active" data-page="home">首页</button>
+        <button class="nav-item" data-page="agent">Agent 接入</button>
+        <button class="nav-item" data-page="personality">性格行为</button>
+        <button class="nav-item" data-page="play">玩法</button>
+        <button class="nav-item" data-page="appearance">外观</button>
+        <button class="nav-item" data-page="settings">设置</button>
+        <div class="sidebar-footer">
+          <span>灵犀 v0.1</span>
+        </div>
+      </nav>
+
+      <main>
+        <!-- 全局顶栏：docs/18 §4/§5 - 模式/大小/找回猫咪（决策 5 已去掉免打扰） -->
+        <div class="topbar">
+          <div class="topbar-sizes" id="topbar-sizes">
+            <button data-scale="0.25" title="小 0.25x">小</button>
+            <button data-scale="0.5" title="中 0.5x">中</button>
+            <button data-scale="1" title="大 1x">大</button>
+          </div>
+          <button id="topbar-reset" class="topbar-button">找回猫咪</button>
+        </div>
+
+        <!-- 6.1 首页 -->
+        <section class="page active" id="page-home">
+          <h2>猫</h2>
+          <div class="card cat-card">
+            <div class="cat-card-row">
+              <strong id="home-cat-name">灵犀</strong>
+              </div>
+            <p class="cat-card-line" id="home-cat-state">状态：读取中…</p>
+            <p class="cat-card-line" id="home-cat-personality-line">性格：还没设定</p>
+            <p class="cat-card-line" id="home-growth-line">成长：Lv.0 · 参与度 0/100</p>
+          </div>
+
+          <h2 class="section-gap">今天</h2>
+          <div class="card">
+            <p class="cat-card-line" id="home-activity-line">互动 0 次 · 拖拽 0 次</p>
+          </div>
+
+          <h2 class="section-gap">Agent</h2>
+          <div class="card" id="home-agent-summary">
+            <p class="cat-card-line" id="home-agent-line">Claude Code：<span class="badge badge-muted">未接入</span></p>
+          </div>
+
+          <p class="hint">
+            这一页每 2 秒读一次 <code>get_perception</code>（跟本机 <code>GET /perception</code> 桥同一份快照），不需要手动刷新。主界面对
+            agent 任务只观察，不提供批准/取消等操作。
+          </p>
+        </section>
+
+        <!-- 6.2 Agent 接入：手风琴，Claude Code 首发、真实一键接入 -->
+        <section class="page" id="page-agent">
+          <h2>Agent 接入</h2>
+          <p class="hint">
+            每个平台一个可展开分区。真实事件订阅目前只有 Claude Code 做完了；Codex / DeepSeek Harness 的通道已经在
+            <code>docs/09</code> 核实过，但这里的"一键接入"还没接。
+          </p>
+
+          <div class="accordion" id="agent-accordion">
+            <div class="accordion-item" data-agent-panel="claude">
+              <button class="accordion-header">
+                <span class="accordion-title">▸ Claude Code</span>
+                <span class="badge badge-muted" id="claude-status-badge">○ 未接入</span>
+              </button>
+              <div class="accordion-body">
+                <p class="cat-card-line" id="claude-status-detail">还没有安装 hooks。</p>
+                <div class="accordion-actions">
+                  <button id="claude-connect" class="wide-button">一键接入</button>
+                  <button id="claude-disconnect" class="wide-button secondary" hidden>断开（移除 hooks）</button>
+                </div>
+                <p class="hint" id="claude-connect-result" hidden></p>
+                <p class="hint">
+                  接入方式：把 <code>UserPromptSubmit</code> / <code>Stop</code> / <code>StopFailure</code> 三个 hooks
+                  合并写入 <code>~/.claude/settings.json</code>（原文件先备份成 <code>.lingxi-backup</code>，只追加进数组，不覆盖你已有的
+                  hooks）。断开会精确移除这三条，其余 hooks 不受影响。收到第一个真实事件后状态才会变绿。
+                </p>
+                <h2 class="section-gap" style="margin-top: 14px">任务流</h2>
+                <ul class="task-list" id="claude-task-list">
+                  <li class="task-list-empty">还没有任务事件。</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="accordion-item" data-agent-panel="codex">
+              <button class="accordion-header">
+                <span class="accordion-title">▸ Codex</span>
+                <span class="badge badge-muted">○ 未接入</span>
+              </button>
+              <div class="accordion-body">
+                <p class="hint">
+                  通道已核实（App Server <code>thread/status/changed</code>/<code>turn/started</code>/<code>turn/completed</code>），
+                  一键接入还没实现。
+                </p>
+              </div>
+            </div>
+
+            <div class="accordion-item" data-agent-panel="dsh">
+              <button class="accordion-header">
+                <span class="accordion-title">▸ DeepSeek Harness</span>
+                <span class="badge badge-muted">○ 未接入</span>
+              </button>
+              <div class="accordion-body">
+                <p class="hint">通道已核实（<code>dsh-acp</code> 的 <code>dsh/sessions/watch</code>），一键接入还没实现。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6.3 性格与行为 -->
+        <section class="page" id="page-personality">
+          <h2>身份</h2>
+          <label class="field">
+            <span>名字</span>
+            <input id="cat-name-input" type="text" maxlength="24" placeholder="灵犀" />
+          </label>
+          <label class="field">
+            <span>性格（随便写，比如：温柔、独立、爱睡觉）</span>
+            <textarea id="cat-personality-input" maxlength="120" rows="2" placeholder="还没设定"></textarea>
+          </label>
+          <button id="save-identity" class="wide-button">保存</button>
+          <p class="hint" id="identity-saved-hint" hidden>已保存</p>
+
+          <h2 class="section-gap">人格倾向 <span class="badge badge-muted">即将生效</span></h2>
+          <p class="hint">
+            这五项滑杆会保存并广播，形状对应行为引擎未来要读的 <code>PersonalityManifest.traits</code>
+            （<code>packages/contracts</code> 已有校验），但行为引擎本身还没有消费它们——调了不会立刻看到猫的反应变化。
+          </p>
+          <div class="trait-sliders" id="trait-sliders">
+            <label class="trait-slider" data-trait="independence">
+              <span>独立</span>
+              <input type="range" min="0" max="100" value="50" />
+            </label>
+            <label class="trait-slider" data-trait="curiosity">
+              <span>好奇</span>
+              <input type="range" min="0" max="100" value="50" />
+            </label>
+            <label class="trait-slider" data-trait="gentleness">
+              <span>温柔</span>
+              <input type="range" min="0" max="100" value="50" />
+            </label>
+            <label class="trait-slider" data-trait="playfulness">
+              <span>玩心</span>
+              <input type="range" min="0" max="100" value="50" />
+            </label>
+            <label class="trait-slider" data-trait="sleepiness">
+              <span>困意</span>
+              <input type="range" min="0" max="100" value="50" />
+            </label>
+          </div>
+
+          <h2 class="section-gap">行为预设</h2>
+          <p class="hint">这个是真的：切换预设会立刻改变猫在"工作模式"下离光标多近才会避让（<code>avoidRadius</code>）。</p>
+          <div class="preset-options" id="behavior-preset-options">
+            <button data-preset="quiet">安静<span>70px</span></button>
+            <button data-preset="balanced">均衡<span>100px</span></button>
+            <button data-preset="lively">活泼<span>150px</span></button>
+          </div>
+        </section>
+
+        <!-- 玩法：玩具 + 特效编排 -->
+        <section class="page" id="page-play">
+          <h2>玩具</h2>
+          <p class="hint">
+            放下玩具后，猫会把它当成当前唯一想做的事——优先级高于游走和避让，只输给你亲手拖它。
+            毛线球有真实物理（会滚、减速、撞边反弹），猫够到就拍一爪把它打飞，所以不用你管它也能自己玩下去。
+          </p>
+          <div class="camera-options" id="toy-options"></div>
+          <button id="clear-toy" class="wide-button secondary">收起玩具</button>
+
+          <h2 class="section-gap">说话</h2>
+          <p class="hint">漫画气泡，钉在头顶。也可以让 Agent 通过本地接口说话（见调试台的 Agent 接口页）。</p>
+          <label class="field">
+            <span>让它说一句</span>
+            <input id="say-input" type="text" maxlength="140" placeholder="比如：该休息一下啦" />
+          </label>
+          <button id="say-button" class="wide-button">说出来</button>
+
+          <h2 class="section-gap">特效</h2>
+          <p class="hint">
+            几秒钟的整屏演出：走位、身体动作、表情、镜头和屏幕特效一起编排。特效层不接收任何鼠标事件，
+            演出期间你照常点按钮、切窗口都不受影响。
+          </p>
+          <div class="camera-options" id="performance-options"></div>
+          <button id="stop-performance" class="wide-button secondary">停止当前特效</button>
+        </section>
+
+        <!-- 6.4 外观 -->
+        <section class="page" id="page-appearance">
+          <h2>大小</h2>
+          <div class="size-options" id="size-options">
+            <button data-scale="0.25">小<span>0.25x</span></button>
+            <button data-scale="0.5">中<span>0.5x</span></button>
+            <button data-scale="1">大<span>1x</span></button>
+          </div>
+          <p class="hint">自定义滑杆（0.25–1.0 连续）是文档里的提案，需要先放开 Rust 端的取值白名单，这一版还是三档。</p>
+
+          <h2 class="section-gap">视角</h2>
+          <div class="camera-options" id="camera-options"></div>
+          <p class="hint">
+            视角决定摄像机离地面多高。以前固定在接近俯拍的角度，基本只看得到猫背和头顶；现在默认「游戏视角」
+            （3/4 斜视），并且可以随时换。选「自动」时：站着/被撸/追鼠标 → 平视对上眼，走动 → 切回 3/4，切换是渐变不是硬切。
+          </p>
+
+          <h2 class="section-gap">自定义资源</h2>
+          <p class="hint">
+            动作、表情、主题都是可编辑的 JSON 文件，放在应用配置目录的 <code>assets/</code> 里，改完点「重新加载」即可生效，
+            不用重新编译。<strong>每个文件都会先完整校验再生效</strong>——格式不对时保留内置版本并在下面显示原因，
+            不会出现半张脸或者关节拧断的情况。手绘贴图（身体图集 / 表情图）放 <code>assets/textures/</code>。
+          </p>
+          <div class="asset-actions">
+            <button id="open-assets" class="wide-button secondary">打开资源目录</button>
+            <button id="install-templates" class="wide-button secondary">导出内置资源为模板</button>
+            <button id="reload-assets" class="wide-button secondary">重新加载自定义资源</button>
+          </div>
+          <p class="hint" id="asset-status"></p>
+
+          <h2 class="section-gap">主题（皮肤）</h2>
+          <div class="skin-options" id="skin-options"></div>
+          <p class="hint" id="skin-hint"></p>
+        </section>
+
+        <!-- 6.5 设置（四个分区合并成一页） -->
+        <section class="page" id="page-settings">
+          <h2>通用</h2>
+          <button id="toggle-visibility" class="wide-button">隐藏</button>
+          <button id="reset-position" class="wide-button secondary">重置位置</button>
+          <button id="open-debug" class="wide-button secondary">打开调试台</button>
+          <p class="hint">
+            调试台里能逐个播放全部动作和表情、切换视角/主题，并且列出了 Agent 可以直接调用的本地 HTTP 接口
+            （<code>127.0.0.1:47811</code>）。托盘菜单里也有同一个入口。
+          </p>
+          <ul class="status-list" id="status-list">
+            <li>辅助功能权限：<span id="status-accessibility">检查中…</span></li>
+          </ul>
+          <p class="hint">
+            鼠标跟随和拖拽现在都不需要"辅助功能"权限了。这项权限只影响未来"感知全局点击/按键"功能，不给也不影响当前体验。
+          </p>
+
+          <h2 class="section-gap">能力开放（MCP） <span class="badge badge-muted">未实现</span></h2>
+          <div class="card">
+            <p class="cat-card-line">状态：<span class="badge badge-muted">未启用</span></p>
+            <p class="hint" style="margin-top: 6px">
+              还没有一个真正的 MCP server 进程（计划放在独立的 <code>packages/companion-mcp</code>）。下面是设计草案，不是可用列表。
+            </p>
+          </div>
+          <table class="tool-table">
+            <thead><tr><th>名称</th><th>作用</th><th>风险</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td><code>get_perception</code></td><td>读猫状态/活动</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
+              <tr><td><code>get_tasks</code></td><td>读任务摘要</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
+              <tr><td><code>suggest_move_to</code></td><td>建议猫走过去</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
+              <tr><td><code>play_emote</code></td><td>播放表情/动作</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
+              <tr><td><code>set_mode</code></td><td>切工作/逗猫</td><td>中</td><td class="badge badge-muted">未实现</td></tr>
+              <tr><td><code>write_settings</code></td><td>直接改设置（白名单）</td><td>高</td><td class="badge badge-muted">未实现</td></tr>
+            </tbody>
+          </table>
+
+          <h2 class="section-gap">大脑（LLM） <span class="badge badge-muted">未实现</span></h2>
+          <div class="card">
+            <p class="cat-card-line">反应引擎（本地规则，始终开启）：</p>
+            <p class="cat-card-line">· 工作模式光标靠近就避让到对角，逗猫模式主动寻找光标。</p>
+            <p class="hint" style="margin-top: 6px">
+              文档设想的"任务完成→小庆祝"这类事件驱动反应还没有接到猫的动画上——桌面壳里跑的还是占位几何体猫，不是正式模型。
+            </p>
+          </div>
+          <div class="card card-disabled">
+            <label class="toggle-row">
+              <input type="checkbox" disabled />
+              <span>启用 LLM 增强</span>
+            </label>
+            <p class="hint" style="margin-top: 6px">供应商、API Key、预算/冷却——都还只是设计，控件先摆出来但禁用，不假装能用。</p>
+          </div>
+
+          <h2 class="section-gap">数据隐私</h2>
+          <div class="card">
+            <p class="cat-card-line">记录猫上交互：始终开启（点击/拖拽次数，用于「成长」计算）</p>
+            <p class="cat-card-line">记录光标统计：始终开启（只统计"靠近多久"，不留轨迹）</p>
+          </div>
+          <p class="hint">
+            当前没有单独开关这几类记录的入口——都在同一个进程内存里，随应用重启清空，不落盘、不上传。按类型精细开关是后续工作。
+          </p>
+          <div class="card">
+            <p class="cat-card-line">本地 HTTP 桥只监听 <code>127.0.0.1:47811</code>，不接受外部网络访问。</p>
+            <p class="cat-card-line">访问令牌：<span class="badge badge-muted">未启用</span>（同机进程目前都能直接调用）</p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

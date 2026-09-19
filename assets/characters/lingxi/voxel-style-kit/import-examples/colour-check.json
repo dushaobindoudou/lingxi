@@ -1,0 +1,52 @@
+{
+  "format": "lingxi-texture",
+  "schemaVersion": 1,
+  "rigId": "lingxi-cat-v1",
+  "textureSize": [
+    256,
+    128
+  ],
+  "mapping": {
+    "mode": "tile",
+    "tileSize": 8
+  },
+  "filter": "nearest",
+  "faces": {
+    "head": {
+      "pz": [
+        0,
+        0,
+        32,
+        32
+      ],
+      "px": [
+        32,
+        0,
+        32,
+        32
+      ],
+      "nx": [
+        96,
+        0,
+        32,
+        32
+      ]
+    },
+    "earL": {
+      "pz": [
+        96,
+        0,
+        32,
+        32
+      ]
+    },
+    "earR": {
+      "pz": [
+        96,
+        0,
+        32,
+        32
+      ]
+    }
+  }
+}

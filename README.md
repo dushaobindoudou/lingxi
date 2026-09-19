@@ -2,51 +2,173 @@
 
 > 你忙你的，我在这里。
 
-一只真实、柔软、安静地生活在桌面上的 3D 小猫。保持熟悉的外形与猫性，支持独立换肤和性格配置，并为 Codex、Claude Code、DeepSeek Harness 等平台提供可扩展的任务观察入口。
+一只安静住在桌面上的 3D 小猫。它在屏幕边缘自己遛达、做自己的事、躲开你的鼠标，
+你逗它它会玩，你的 Agent 干完活它会有反应。
 
-<img src="assets/brand/lingxi-icon-v2.png" width="240" alt="灵犀：灰棕虎斑小猫安静趴着，轻轻歪头" />
+<img src="assets/brand/lingxi-icon-v2.png" width="200" alt="灵犀：灰棕虎斑小猫安静趴着，轻轻歪头" />
 
-**当前阶段：设计与工程基础。** 已有参考图与图标、官方 Blender MCP 集成、Blender 角色设计工作场景、配置与观察契约、测试和项目规范。尚无成品猫模型、完整毛发绑定、可运行桌面应用或三个 Agent 平台的在线观察功能；不能把参考图当成实时 3D 效果。
+macOS · Tauri 2 + Rust + TypeScript + Three.js · 无第三方运行时依赖（除 three 与 Tauri 本体）
 
-## 从这里开始
+---
 
-| 入口 | 内容 |
-| --- | --- |
-| [品牌与设计系统](docs/08-brand-and-design-system.md) | 用户确定的名字、纠正后的视觉基准、图标与界面变量 |
-| [真实 3D 桌面方案](docs/decisions/001-realtime-desktop.md) | Blender 母版、运行时毛发、透明窗口、技术验证门槛 |
-| [换肤 / 性格 / Agent 观察](docs/09-extension-architecture.md) | 可扩展接口、来源验证与实现边界 |
-| [官方 Blender 工作流](docs/10-blender-workflow.md) | 已安装版本、连接、设计源文件和验证证据 |
-| [角色工作场景](assets/characters/lingxi/source/lingxi-reference-studio.blend) | 打包参考、相机、灯光、材质基线与制作集合 |
-| [角色多视图候选](assets/characters/lingxi/reference/turnaround-v1.png) | 供进一步校正的角色设计参考 |
-| [项目设置与状态](docs/11-project-setup.md) | 仓库设置、开发约定与交付边界 |
+## 它现在能做什么
 
-## 开发
+- **自己活着。** 沿屏幕边缘巡逻，会拐弯（有转弯半径，不是原地掉头），走路时脚是**踩在地上的**
+  （支撑相足部在世界坐标里静止），停下来会自己做动作、换表情。
+- **躲着你干活。** 鼠标是你正在工作的地方，所以它不往那儿去——连"落脚点"都不会选在光标附近。
+- **能玩。** 毛线球（跟着鼠标、点击蓄力、甩出去，会滚会反弹，猫会追会拍）、逗猫棒（猫会潜伏、
+  立起来够、原地起跳）、激光笔（带拖尾，永远抓不住）。
+- **有反应。** 鼠标停在它身上会抬头看你，来回摸会眯眼呼噜，双击会用头蹭你。
+- **会说话。** 头顶漫画气泡，钉在头骨投影上，蹲下跳起换视角都跟得住。
+- **能演。** 三段全屏特效，按动漫运镜编排：从屏幕深处冲过来越来越大、集中線、命中闪白、震屏。
+- **可以改。** 动作、表情、主题都是可编辑的 JSON；支持手绘身体图集和表情图。
+- **接 Agent。** MCP server + Claude Code hooks + 纯 HTTP，任务完成/失败会有表情动作，
+  能记住关于你的事，能过一会儿提醒你。
 
-需要 Node.js 22+，当前基础包无第三方运行依赖。
+---
+
+## 跑起来
+
+需要 Node.js 22+ 和 Rust（`rustup`，仓库里有 `rust-toolchain.toml` 锁定版本）。
 
 ```sh
 npm ci --ignore-scripts
-npm run validate
+cd apps/lingxi && npm ci
+
+npm run tauri dev            # 开发
+npm run tauri build          # 打包出 .app
 ```
 
-测试覆盖任务去重、乱序、来源隔离、过期、隐私字段过滤、皮肤与性格解耦及 rig 兼容。Blender 自动化另需按[安装文档](docs/10-blender-workflow.md)配置本地官方 MCP。
+托盘图标里有：主界面、调试台、大小、玩具、特效、显示/隐藏。
 
-```text
-assets/brand/              图标、设计变量和生成记录
-assets/characters/lingxi/  角色参考与 Blender 源文件
-packages/contracts/       平台独立契约、运行时校验与测试
-presets/                  计划皮肤与性格配置
-scripts/blender/           官方 MCP 工作流与来源锁定
-docs/                     产品分析、决策、工作流、证据
-.github/                  CI、依赖更新、issue/PR 模板
+### 开发辅助页
+
+跑 `npm run dev`（在 `apps/lingxi` 里）后可以打开，这些页面不在打包产物里：
+
+| 页面 | 用途 |
+|---|---|
+| `/app-harness.html` | 不经 Tauri 直接跑真实渲染路径，在浏览器里调试 |
+| `/probe-gait.html` | **回归探针**：身体抖动、脚底打滑、自由模式行为统计 |
+| `/probe-clips.html` | 逐个动作检测穿模，按严重程度排序 |
+| `/probe-framing.html` | **回归探针**：各视角 / 各尺寸下屏幕四边各裁掉猫的多少 |
+| `/probe-unproject.html` | **回归探针**：屏幕坐标↔世界坐标是否处处可逆（曾经在屏幕底部失效） |
+| `/rig-preview.html` `/style-lab.html` | 骨架和配色试验 |
+
+`probe-gait.html` 是几个结构性 bug 的回归检查，健康值写在文件头部。改动画系统之前先看它。
+
+---
+
+## 架构
+
+三层，互相之间只通过契约通信，任何一层都可以单独换掉。
+
+```
+packages/life-engine        纯行为状态机。没有 DOM、没有渲染、没有 Tauri。
+     │                      只知道一个 2D 世界和一个光标。可单元测试。
+     │  snapshot { state, position, heading, toy, ... }
+     ▼
+apps/lingxi/src/renderer    Three.js 场景。不知道桌面宿主的存在。
+     │                      骨架 / 步态 / 脊柱弯曲 / 相机 / 主题 / 特效层
+     ▼
+apps/lingxi/src-tauri       窗口、托盘、设置持久化、本机 HTTP 桥
 ```
 
-## 原始思考与历史基线
+关键点：
 
-2026-09-10 的文档保留了项目如何形成；与后续用户决定冲突时，以新决策为准。
+- **朝向由引擎持有，不是从位移反推的。** 猫只能沿着 `heading` 前进，转向有角速度上限和最小
+  转弯半径。这条是很多稳定性问题的根因——一旦朝向是位置的导数，位置的任何抖动都会变成
+  朝向的抖动，并被相机的透视比例放大。
+- **步态由距离驱动，不是时钟。** 一个步幅的地面距离推进一个步态周期，所以任何速度下脚都不打滑。
+- **落地高度是姿态的属性**，不是"这一帧哪只爪子最低"。
+- **边界是按身体算的，不是按锚点算的，而且分两层。** 引擎操纵的点是猫的**脚**，身体整个画在
+  它上方，所以四条边不能用同一个 margin——上边用 24px 会把整只猫顶出屏幕。渲染器量出身体在
+  屏幕上的实际跨度（`screenExtent()`），宿主据此给出两个盒子：
+  **极限**（拖拽、玩具、全屏特效能到的地方）允许身体的一半出屏，四条边都是；
+  **自由活动**（猫自己决定去哪）左右仍然露一半（这是要保留的观感），上下则整只猫都在屏幕内——
+  猫高约为宽的三倍，同样的比例在侧面切掉的是身侧，在上面切掉的是**脑袋**，而表情是核心。
+- **躲鼠标不只是"逃"，还会绕。** 以前只有两种反应：选目标时避开光标，或者光标压上来就跑。
+  中间那种最常见的情况没人管——目标在光标另一边，于是猫直接从光标上碾过去。现在行进中会瞄准
+  光标禁区的**切线**绕过去（不是加一个侧向推力，那会在快到时自己衰减掉）。只改期望朝向，
+  转向速率、过弯减速、步态都不碰。实测光标不动时待在禁区内的时间 1.22%→0.00%，
+  光标在五个位置间跳动时 8.15%→2.94%。
+- **特效层是 DOM/SVG，全程 `pointer-events: none`。** 全屏特效不会吞掉你的任何一次点击。
 
-- [项目理解](docs/01-project-understanding.md) · [MVP](docs/02-product-and-mvp.md) · [角色资产](docs/03-character-and-assets.md)
-- [行为系统](docs/04-life-engine.md) · [早期技术比较](docs/05-technical-architecture.md) · [早期路线图](docs/06-roadmap-and-decisions.md)
-- [审美分析](docs/07-visual-direction.md) · [原始长文](docs/source/original-thinking.txt) · [用户概念图](docs/source/peipei-concept-board.png)
+细节见 [`docs/05-technical-architecture.md`](docs/05-technical-architecture.md)。
+过期但有参考价值的早期文档在 [`docs/archive/`](docs/archive/README.md)。
 
-开发流程见 [CONTRIBUTING](CONTRIBUTING.md)，安全边界见 [SECURITY](SECURITY.md)，当前为[私有孵化许可状态](LICENSE.md)。
+---
+
+## 自定义
+
+主界面 → 外观 → 「导出内置资源为模板」，会在应用配置目录写出：
+
+```
+assets/
+  actions.json       动作库      改完在界面上点「重新加载」即可，不用重新编译
+  expressions.json   表情
+  skins.json         主题
+  textures/*.png     手绘身体图集 / 表情图
+  README.md          格式说明（应用自己写的）
+```
+
+**每个文件都会先完整校验再生效。** 格式不对时保留内置版本、在界面上显示具体哪一行不对，
+不会出现半张脸或者关节拧断的情况。
+
+---
+
+## 接 Agent
+
+一个本机 HTTP 桥（`127.0.0.1:47811`，只监听回环），三种接法：MCP server、Claude Code hooks、
+直接 HTTP。完整说明见 [`integrations/README.md`](integrations/README.md)。
+
+```jsonc
+// 任何 MCP 客户端
+{ "mcpServers": { "lingxi": { "command": "node", "args": ["<repo>/packages/mcp-server/src/index.mjs"] } } }
+```
+
+十三个工具：注册身份、报告任务、看能力、看状态、说话、表情/动作、全屏特效、放玩具、
+记住一件事、读回记忆、设提醒、换视角主题、重载自定义资源。
+
+**接入的正确姿势是报告你在干什么，而不是指挥猫做什么**——
+`{state:"failed", kind:"deploy"}` 比"播 shake-head"好，因为映射在用户手里
+（`assets/reactions.json`），改一次对所有 agent 生效。
+
+多个 agent 同时接入是正常情况：各自注册一个 emoji 徽章，猫身边会显示当前是谁在驱动；
+表现冲突按**事件**的紧急程度仲裁（失败 > 完成 > 状态 > 氛围），**不按 agent 身份**——
+用户要看到的是要紧的事，不是要紧的工具。
+
+完整规范见 [`docs/19-agent-integration.md`](docs/19-agent-integration.md)，
+设计理由见 [决策 003](docs/decisions/003-multi-agent-arbitration.md)。
+运行中的应用会用 `GET /integration` 把契约原样吐出来，以它为准。
+
+---
+
+## 测试
+
+```sh
+npm test          # 全部包的单元测试
+npm run check     # 项目规范检查
+cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
+```
+
+行为、转向、玩具、交互反应都有测试。渲染和动画不适合单元测试，用上面的探针页面量化回归。
+
+---
+
+## 现状与边界
+
+**能用，在日常使用中。** 但要说清楚没做到的：
+
+- 只支持 macOS。窗口、托盘、光标读取都走 AppKit。
+- 多显示器下光标坐标的 y 翻转只按主屏计算，副屏上会不准。
+- 摆动中的爪子会低于地平面最多约 0.7 体素。桌面没有画地板所以看不出穿模，真正的解法是
+  世界空间踩地锁定 + 双骨 IK。
+- 部分蜷缩类动作（打滚、侧卧、挠耳朵）后腿和躯干有重叠，见 `probe-clips.html` 的排序。
+- 系统鼠标指针无法隐藏，所以逗猫棒/激光笔是画在光标位置上，不是替换了指针。
+- 人格倾向滑杆目前只持久化，行为引擎还没消费它们（界面上标了「即将生效」）。
+
+---
+
+## 许可
+
+见 [LICENSE.md](LICENSE.md)。

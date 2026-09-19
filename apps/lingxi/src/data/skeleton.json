@@ -1,0 +1,1175 @@
+{
+  "schemaVersion": 1,
+  "id": "lingxi-cat-v1",
+  "units": {
+    "voxelCm": 1.5,
+    "up": "+Y",
+    "forward": "+Z",
+    "note": "1 unit = 1 voxel. Ground is y=0; the rig is authored in a rest layout and the standing height is DERIVED at runtime (see rig/skeleton.ts groundOffset and the IK phase), never hardcoded - that derivation is what makes proportion skins possible."
+  },
+  "reference": {
+    "noseToTailBase": 32,
+    "shoulderHeight": 10,
+    "note": "Kitten/chibi proportions, deliberately NOT the spec's adult-cat reference (40/13). Baby schema - big head, short limbs, compact torso - is what produces the 治愈 read; adult-cat proportions rendered as a dachshund. Breed variants restore adult proportions via skin overrides."
+  },
+  "slotFallback": "fur",
+  "nodes": [
+    {
+      "id": "hipC",
+      "parent": null,
+      "pivot": [
+        0,
+        5.0,
+        -6.0
+      ],
+      "box": {
+        "size": [
+          6.0,
+          5.8,
+          3.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.75
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "spine3",
+      "parent": "hipC",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "box": {
+        "size": [
+          5.8,
+          5.6,
+          3.4
+        ],
+        "offset": [
+          0,
+          0,
+          1.7
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "spine2",
+      "parent": "spine3",
+      "pivot": [
+        0,
+        0,
+        3.4
+      ],
+      "box": {
+        "size": [
+          6.0,
+          5.9,
+          3.4
+        ],
+        "offset": [
+          0,
+          0,
+          1.7
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "spine1",
+      "parent": "spine2",
+      "pivot": [
+        0,
+        0,
+        3.4
+      ],
+      "box": {
+        "size": [
+          6.4,
+          6.2,
+          3.4
+        ],
+        "offset": [
+          0,
+          0,
+          1.7
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "neck2",
+      "parent": "spine1",
+      "pivot": [
+        0,
+        2.0,
+        3.4
+      ],
+      "box": {
+        "size": [
+          4.6,
+          4.4,
+          1.8
+        ],
+        "offset": [
+          0,
+          0.3,
+          0.9
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "neck1",
+      "parent": "neck2",
+      "pivot": [
+        0,
+        0.4,
+        1.6
+      ],
+      "box": {
+        "size": [
+          4.4,
+          4.2,
+          1.6
+        ],
+        "offset": [
+          0,
+          0.3,
+          0.8
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "head",
+      "parent": "neck1",
+      "pivot": [
+        0,
+        0.9,
+        1.4
+      ],
+      "box": {
+        "size": [
+          8.6,
+          7.8,
+          6.6
+        ],
+        "offset": [
+          0,
+          1.7,
+          2.0
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "jaw",
+      "parent": "head",
+      "pivot": [
+        0,
+        -1.2,
+        1.0
+      ],
+      "box": {
+        "size": [
+          5.0,
+          1.6,
+          4.2
+        ],
+        "offset": [
+          0,
+          0,
+          2.0
+        ]
+      },
+      "slot": "fur"
+    },
+    {
+      "id": "tongue",
+      "parent": "jaw",
+      "pivot": [
+        0,
+        0.2,
+        1.8
+      ],
+      "box": {
+        "size": [
+          1.2,
+          0.2,
+          1.4
+        ],
+        "offset": [
+          0,
+          0,
+          0.7
+        ]
+      },
+      "slot": "tongue"
+    },
+    {
+      "id": "earL",
+      "parent": "head",
+      "pivot": [
+        2.4,
+        5.4,
+        2.0
+      ],
+      "box": {
+        "size": [
+          2.4,
+          2.6,
+          1.0
+        ],
+        "offset": [
+          0,
+          1.2,
+          0
+        ]
+      },
+      "slot": "pattern"
+    },
+    {
+      "id": "earR",
+      "parent": "head",
+      "pivot": [
+        -2.4,
+        5.4,
+        2.0
+      ],
+      "box": {
+        "size": [
+          2.4,
+          2.6,
+          1.0
+        ],
+        "offset": [
+          0,
+          1.2,
+          0
+        ]
+      },
+      "slot": "pattern"
+    },
+    {
+      "id": "browL",
+      "parent": "head",
+      "pivot": [
+        2.0,
+        3.8,
+        5.7
+      ],
+      "box": {
+        "size": [
+          1.6,
+          0.5,
+          0.4
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "pattern"
+    },
+    {
+      "id": "browR",
+      "parent": "head",
+      "pivot": [
+        -2.0,
+        3.8,
+        5.7
+      ],
+      "box": {
+        "size": [
+          1.6,
+          0.5,
+          0.4
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "pattern"
+    },
+    {
+      "id": "eyeL",
+      "parent": "head",
+      "pivot": [
+        2.0,
+        2.0,
+        5.85
+      ],
+      "box": {
+        "size": [
+          2.4,
+          2.4,
+          0.3
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "iris"
+    },
+    {
+      "id": "eyeR",
+      "parent": "head",
+      "pivot": [
+        -2.0,
+        2.0,
+        5.85
+      ],
+      "box": {
+        "size": [
+          2.4,
+          2.4,
+          0.3
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "iris"
+    },
+    {
+      "id": "pupilL",
+      "parent": "eyeL",
+      "pivot": [
+        0,
+        0,
+        0.2
+      ],
+      "box": {
+        "size": [
+          1.1,
+          1.8,
+          0.2
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "pupil"
+    },
+    {
+      "id": "pupilR",
+      "parent": "eyeR",
+      "pivot": [
+        0,
+        0,
+        0.2
+      ],
+      "box": {
+        "size": [
+          1.1,
+          1.8,
+          0.2
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "pupil"
+    },
+    {
+      "id": "nose",
+      "parent": "head",
+      "pivot": [
+        0,
+        0.5,
+        5.95
+      ],
+      "box": {
+        "size": [
+          1.1,
+          0.8,
+          0.4
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "nose"
+    },
+    {
+      "id": "mouth",
+      "parent": "head",
+      "pivot": [
+        0,
+        -0.3,
+        5.95
+      ],
+      "box": {
+        "size": [
+          1.5,
+          0.3,
+          0.3
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ]
+      },
+      "slot": "mouth"
+    },
+    {
+      "id": "whiskerL1",
+      "parent": "head",
+      "pivot": [
+        1.8,
+        0.4,
+        5.6
+      ],
+      "box": {
+        "size": [
+          3.2,
+          0.15,
+          0.15
+        ],
+        "offset": [
+          1.6,
+          0,
+          0
+        ]
+      },
+      "slot": "whisker"
+    },
+    {
+      "id": "whiskerL2",
+      "parent": "head",
+      "pivot": [
+        1.8,
+        -0.1,
+        5.6
+      ],
+      "box": {
+        "size": [
+          3.0,
+          0.15,
+          0.15
+        ],
+        "offset": [
+          1.5,
+          0,
+          0
+        ]
+      },
+      "slot": "whisker"
+    },
+    {
+      "id": "whiskerR1",
+      "parent": "head",
+      "pivot": [
+        -1.8,
+        0.4,
+        5.6
+      ],
+      "box": {
+        "size": [
+          3.2,
+          0.15,
+          0.15
+        ],
+        "offset": [
+          -1.6,
+          0,
+          0
+        ]
+      },
+      "slot": "whisker"
+    },
+    {
+      "id": "whiskerR2",
+      "parent": "head",
+      "pivot": [
+        -1.8,
+        -0.1,
+        5.6
+      ],
+      "box": {
+        "size": [
+          3.0,
+          0.15,
+          0.15
+        ],
+        "offset": [
+          -1.5,
+          0,
+          0
+        ]
+      },
+      "slot": "whisker"
+    },
+    {
+      "id": "scapL",
+      "parent": "spine1",
+      "pivot": [
+        2.1,
+        0.4,
+        2.6
+      ],
+      "box": {
+        "size": [
+          2.6,
+          3.0,
+          1.9
+        ],
+        "offset": [
+          0,
+          -1.5,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.6,
+      "slide": {
+        "axis": "y",
+        "range": 1.2
+      }
+    },
+    {
+      "id": "upperFL",
+      "parent": "scapL",
+      "pivot": [
+        0,
+        -2.6,
+        0
+      ],
+      "box": {
+        "size": [
+          2.5,
+          3.2,
+          2.5
+        ],
+        "offset": [
+          0,
+          -1.6,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.2
+    },
+    {
+      "id": "lowerFL",
+      "parent": "upperFL",
+      "pivot": [
+        0,
+        -3.2,
+        0
+      ],
+      "box": {
+        "size": [
+          2.2,
+          2.9,
+          2.2
+        ],
+        "offset": [
+          0,
+          -1.45,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.9
+    },
+    {
+      "id": "pawFL",
+      "parent": "lowerFL",
+      "pivot": [
+        0,
+        -2.9,
+        0
+      ],
+      "box": {
+        "size": [
+          2.6,
+          1.4,
+          3.0
+        ],
+        "offset": [
+          0,
+          -0.7,
+          0.4
+        ]
+      },
+      "slot": "paw"
+    },
+    {
+      "id": "scapR",
+      "parent": "spine1",
+      "pivot": [
+        -2.1,
+        0.4,
+        2.6
+      ],
+      "box": {
+        "size": [
+          2.6,
+          3.0,
+          1.9
+        ],
+        "offset": [
+          0,
+          -1.5,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.6,
+      "slide": {
+        "axis": "y",
+        "range": 1.2
+      }
+    },
+    {
+      "id": "upperFR",
+      "parent": "scapR",
+      "pivot": [
+        0,
+        -2.6,
+        0
+      ],
+      "box": {
+        "size": [
+          2.5,
+          3.2,
+          2.5
+        ],
+        "offset": [
+          0,
+          -1.6,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.2
+    },
+    {
+      "id": "lowerFR",
+      "parent": "upperFR",
+      "pivot": [
+        0,
+        -3.2,
+        0
+      ],
+      "box": {
+        "size": [
+          2.2,
+          2.9,
+          2.2
+        ],
+        "offset": [
+          0,
+          -1.45,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.9
+    },
+    {
+      "id": "pawFR",
+      "parent": "lowerFR",
+      "pivot": [
+        0,
+        -2.9,
+        0
+      ],
+      "box": {
+        "size": [
+          2.6,
+          1.4,
+          3.0
+        ],
+        "offset": [
+          0,
+          -0.7,
+          0.4
+        ]
+      },
+      "slot": "paw"
+    },
+    {
+      "id": "thighL",
+      "parent": "hipC",
+      "pivot": [
+        2.0,
+        -0.2,
+        -1.4
+      ],
+      "box": {
+        "size": [
+          3.5,
+          3.8,
+          3.4
+        ],
+        "offset": [
+          0,
+          -1.7,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.4
+    },
+    {
+      "id": "shinL",
+      "parent": "thighL",
+      "pivot": [
+        0,
+        -3.4,
+        0
+      ],
+      "box": {
+        "size": [
+          2.7,
+          3.4,
+          2.7
+        ],
+        "offset": [
+          0,
+          -1.7,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.4
+    },
+    {
+      "id": "footL",
+      "parent": "shinL",
+      "pivot": [
+        0,
+        -3.4,
+        0
+      ],
+      "box": {
+        "size": [
+          2.3,
+          3.0,
+          2.3
+        ],
+        "offset": [
+          0,
+          -1.5,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.0
+    },
+    {
+      "id": "pawBL",
+      "parent": "footL",
+      "pivot": [
+        0,
+        -3.0,
+        0
+      ],
+      "box": {
+        "size": [
+          2.7,
+          1.4,
+          3.2
+        ],
+        "offset": [
+          0,
+          -0.7,
+          0.5
+        ]
+      },
+      "slot": "paw"
+    },
+    {
+      "id": "thighR",
+      "parent": "hipC",
+      "pivot": [
+        -2.0,
+        -0.2,
+        -1.4
+      ],
+      "box": {
+        "size": [
+          3.5,
+          3.8,
+          3.4
+        ],
+        "offset": [
+          0,
+          -1.7,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.4
+    },
+    {
+      "id": "shinR",
+      "parent": "thighR",
+      "pivot": [
+        0,
+        -3.4,
+        0
+      ],
+      "box": {
+        "size": [
+          2.7,
+          3.4,
+          2.7
+        ],
+        "offset": [
+          0,
+          -1.7,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.4
+    },
+    {
+      "id": "footR",
+      "parent": "shinR",
+      "pivot": [
+        0,
+        -3.4,
+        0
+      ],
+      "box": {
+        "size": [
+          2.3,
+          3.0,
+          2.3
+        ],
+        "offset": [
+          0,
+          -1.5,
+          0
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 3.0
+    },
+    {
+      "id": "pawBR",
+      "parent": "footR",
+      "pivot": [
+        0,
+        -3.0,
+        0
+      ],
+      "box": {
+        "size": [
+          2.7,
+          1.4,
+          3.2
+        ],
+        "offset": [
+          0,
+          -0.7,
+          0.5
+        ]
+      },
+      "slot": "paw"
+    },
+    {
+      "id": "tail0",
+      "parent": "hipC",
+      "pivot": [
+        0,
+        2.0,
+        -3.5
+      ],
+      "box": {
+        "size": [
+          1.7,
+          1.7,
+          2.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.25
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.5
+    },
+    {
+      "id": "tail1",
+      "parent": "tail0",
+      "pivot": [
+        0,
+        0,
+        -2.5
+      ],
+      "box": {
+        "size": [
+          1.59,
+          1.59,
+          2.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.25
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.5
+    },
+    {
+      "id": "tail2",
+      "parent": "tail1",
+      "pivot": [
+        0,
+        0,
+        -2.5
+      ],
+      "box": {
+        "size": [
+          1.48,
+          1.48,
+          2.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.25
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.5
+    },
+    {
+      "id": "tail3",
+      "parent": "tail2",
+      "pivot": [
+        0,
+        0,
+        -2.5
+      ],
+      "box": {
+        "size": [
+          1.38,
+          1.38,
+          2.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.25
+        ]
+      },
+      "slot": "fur",
+      "segmentLength": 2.5
+    },
+    {
+      "id": "tail4",
+      "parent": "tail3",
+      "pivot": [
+        0,
+        0,
+        -2.5
+      ],
+      "box": {
+        "size": [
+          1.27,
+          1.27,
+          2.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.25
+        ]
+      },
+      "slot": "pattern",
+      "segmentLength": 2.5
+    },
+    {
+      "id": "tail5",
+      "parent": "tail4",
+      "pivot": [
+        0,
+        0,
+        -2.5
+      ],
+      "box": {
+        "size": [
+          1.16,
+          1.16,
+          2.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.25
+        ]
+      },
+      "slot": "pattern",
+      "segmentLength": 2.5
+    },
+    {
+      "id": "tail6",
+      "parent": "tail5",
+      "pivot": [
+        0,
+        0,
+        -2.5
+      ],
+      "box": {
+        "size": [
+          1.05,
+          1.05,
+          2.5
+        ],
+        "offset": [
+          0,
+          0,
+          -1.25
+        ]
+      },
+      "slot": "pattern",
+      "segmentLength": 2.5
+    }
+  ],
+  "restPose": {
+    "note": "Digitigrade stance (see the spec's 数字跖行 rule): the visible backward-bending hind joint is the ANKLE, not the knee. thigh forward-down, shin backward-down, foot forward-down, paw flat. Getting this wrong is the single most common tell of an amateur quadruped.",
+    "thighL": [
+      -0.45,
+      0,
+      0
+    ],
+    "shinL": [
+      0.95,
+      0,
+      0
+    ],
+    "footL": [
+      -0.72,
+      0,
+      0
+    ],
+    "pawBL": [
+      0.22,
+      0,
+      0
+    ],
+    "thighR": [
+      -0.45,
+      0,
+      0
+    ],
+    "shinR": [
+      0.95,
+      0,
+      0
+    ],
+    "footR": [
+      -0.72,
+      0,
+      0
+    ],
+    "pawBR": [
+      0.22,
+      0,
+      0
+    ],
+    "scapL": [
+      0.1,
+      0,
+      0
+    ],
+    "upperFL": [
+      -0.16,
+      0,
+      0
+    ],
+    "lowerFL": [
+      0.2,
+      0,
+      0
+    ],
+    "pawFL": [
+      -0.14,
+      0,
+      0
+    ],
+    "scapR": [
+      0.1,
+      0,
+      0
+    ],
+    "upperFR": [
+      -0.16,
+      0,
+      0
+    ],
+    "lowerFR": [
+      0.2,
+      0,
+      0
+    ],
+    "pawFR": [
+      -0.14,
+      0,
+      0
+    ],
+    "tail0": [
+      0.55,
+      0,
+      0
+    ],
+    "tail1": [
+      0.3,
+      0,
+      0
+    ],
+    "tail2": [
+      0.1,
+      0,
+      0
+    ],
+    "tail3": [
+      -0.05,
+      0,
+      0
+    ],
+    "tail4": [
+      -0.18,
+      0,
+      0
+    ],
+    "tail5": [
+      -0.26,
+      0,
+      0
+    ],
+    "tail6": [
+      -0.3,
+      0,
+      0
+    ]
+  }
+}

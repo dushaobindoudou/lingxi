@@ -1,0 +1,185 @@
+[
+  {
+    "schemaVersion": 1,
+    "id": "apricot-letter",
+    "name": "杏糖来信",
+    "description": "暖杏橘 · 奶油围嘴 · 焦糖细纹",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "tabby",
+    "materials": {
+      "fur": "#E29A46",
+      "pattern": "#B97835",
+      "cream": "#F3E2C4",
+      "iris": "#F2E7C9",
+      "pupil": "#2E2118",
+      "nose": "#DE8C8C",
+      "paw": "#F3E2C4",
+      "mouth": "#5A2A2A",
+      "whisker": "#F3E2C4",
+      "tongue": "#E88AA0"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "moon-oat",
+    "name": "月光燕麦",
+    "description": "燕麦米 · 柔白袜 · 灰茶耳尖",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "point",
+    "materials": {
+      "fur": "#D7C7AE",
+      "pattern": "#9B8774",
+      "cream": "#F4EBDD",
+      "iris": "#9AABA3",
+      "pupil": "#34312D",
+      "nose": "#CA9391",
+      "paw": "#F4EBDD",
+      "mouth": "#664A45",
+      "whisker": "#F4EBDD",
+      "tongue": "#DCA0A0"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "mist-blue",
+    "name": "雾蓝眠眠",
+    "description": "雾蓝灰 · 银白胸口 · 鼠尾草眼睛",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "solid",
+    "materials": {
+      "fur": "#8E9DA8",
+      "pattern": "#6D7D89",
+      "cream": "#E6E8E3",
+      "iris": "#B9CBB3",
+      "pupil": "#293740",
+      "nose": "#C68F97",
+      "paw": "#E6E8E3",
+      "mouth": "#5C4854",
+      "whisker": "#E6E8E3",
+      "tongue": "#D79CA8"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "cocoa-snow",
+    "name": "可可落雪",
+    "description": "可可重点色 · 香草身体 · 温柔湖蓝",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "point",
+    "materials": {
+      "fur": "#DAC6AD",
+      "pattern": "#786051",
+      "cream": "#F3E7D7",
+      "iris": "#A8C9CC",
+      "pupil": "#352E2A",
+      "nose": "#C28C89",
+      "paw": "#786051",
+      "mouth": "#614140",
+      "whisker": "#F3E7D7",
+      "tongue": "#D898A2"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "peach-cloud",
+    "name": "桃酥云朵",
+    "description": "奶白底 · 杏桃色块 · 琥珀眼睛",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "bicolor",
+    "materials": {
+      "fur": "#EEE3D2",
+      "pattern": "#D49A76",
+      "cream": "#FFF4E4",
+      "iris": "#C9B37F",
+      "pupil": "#44332B",
+      "nose": "#D69496",
+      "paw": "#FFF4E4",
+      "mouth": "#704A46",
+      "whisker": "#FFF4E4",
+      "tongue": "#E1A0AA"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "ink-sesame",
+    "name": "芝麻夜航",
+    "description": "柔墨黑 · 牛奶围兜 · 淡金眼睛",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "tuxedo",
+    "materials": {
+      "fur": "#555A61",
+      "pattern": "#40464E",
+      "cream": "#EDE8DC",
+      "iris": "#D6C38D",
+      "pupil": "#252B32",
+      "nose": "#C78E99",
+      "paw": "#EDE8DC",
+      "mouth": "#614A53",
+      "whisker": "#EDE8DC",
+      "tongue": "#D99EAC"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "honey-mittens",
+    "name": "蜜栗白袜",
+    "description": "专绘 PNG · 蜜栗虎斑 · 奶油围兜与白袜",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "atelier-tabby",
+    "materials": {
+      "fur": "#D8A16A",
+      "pattern": "#986B44",
+      "cream": "#F5E8D4",
+      "iris": "#BBC2A0",
+      "pupil": "#382C24",
+      "nose": "#D89794",
+      "accent": "#C88857",
+      "paw": "#F5E8D4",
+      "mouth": "#684945",
+      "whisker": "#F5E8D4",
+      "tongue": "#E4A1AB"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "silver-brook",
+    "name": "银溪薄雾",
+    "description": "专绘 PNG · 银灰鱼骨纹 · 淡蓝绿眼睛",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "atelier-silver",
+    "materials": {
+      "fur": "#B3BCC1",
+      "pattern": "#78868F",
+      "cream": "#EFF0E7",
+      "iris": "#A8C8C6",
+      "pupil": "#303B43",
+      "nose": "#C88E9B",
+      "accent": "#96A4AC",
+      "paw": "#EFF0E7",
+      "mouth": "#684945",
+      "whisker": "#EFF0E7",
+      "tongue": "#E4A1AB"
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "calico-poem",
+    "name": "奶杏诗笺",
+    "description": "专绘 PNG · 奶白底 · 杏橘与可可三花",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "atelier-calico",
+    "materials": {
+      "fur": "#EEE5D6",
+      "pattern": "#746155",
+      "cream": "#FBF2E5",
+      "iris": "#B8BE93",
+      "pupil": "#3F332D",
+      "nose": "#D9989B",
+      "accent": "#D89B69",
+      "paw": "#FBF2E5",
+      "mouth": "#684945",
+      "whisker": "#FBF2E5",
+      "tongue": "#E4A1AB"
+    }
+  }
+]

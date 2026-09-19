@@ -1,0 +1,271 @@
+/* 调试台. Deliberately a denser, more neutral look than the management window: this is a tool
+   for reading long lists of ids quickly, not a settings surface to be charmed by. */
+:root {
+  --bg: #16181d;
+  --panel: #1e2128;
+  --border: #2e323b;
+  --ink: #e6e9ef;
+  --muted: #8d94a3;
+  --accent: #f0a0b8;
+  --accent-ink: #ffd9e4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.55 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #13151a;
+  border-bottom: 1px solid var(--border);
+}
+
+.live {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--accent-ink);
+}
+
+.live-actions {
+  display: flex;
+  gap: 8px;
+}
+
+button.ghost {
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button.ghost:hover {
+  border-color: var(--accent);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 16px 0;
+}
+
+.tab {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+main {
+  padding: 0 16px 24px;
+}
+
+.panel {
+  display: none;
+  background: var(--panel);
+  border-radius: 0 10px 10px 10px;
+  padding: 16px;
+}
+
+.panel.active {
+  display: block;
+}
+
+h2 {
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: var(--accent-ink);
+}
+
+h2.gap {
+  margin-top: 20px;
+}
+
+.hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.group {
+  margin-bottom: 20px;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: #23262e;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.card b {
+  font-size: 13px;
+}
+
+.card span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.card:hover,
+.chip:hover {
+  border-color: var(--accent);
+}
+
+.card.active,
+.chip.active {
+  border-color: var(--accent);
+  background: #35262d;
+}
+
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #23262e;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+/* "your click landed" - the cat is in another window, often behind this one. */
+.flash {
+  border-color: var(--accent) !important;
+  background: #4a2f3a !important;
+}
+
+.say-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.say-row input {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #16181d;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.say-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.api-row {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #23262e;
+}
+
+.api-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.api-head .method {
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  background: #33404f;
+  color: #a8cdf0;
+}
+
+.api-head .method.post {
+  background: #4a3340;
+  color: var(--accent-ink);
+}
+
+.api-head .path {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.api-head .muted {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+pre.curl {
+  margin: 8px 0 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #16181d;
+  color: #b6c7d8;
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.api-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#api-output {
+  margin: 0;
+  padding: 12px;
+  border-radius: 9px;
+  background: #16181d;
+  color: #b6c7d8;
+  font-size: 11.5px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+}

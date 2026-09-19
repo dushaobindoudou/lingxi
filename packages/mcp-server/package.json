@@ -1,0 +1,10 @@
+{
+  "name": "@lingxi/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server that lets a coding agent see and drive the 灵犀 desktop cat",
+  "bin": { "lingxi-mcp": "src/index.mjs" },
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node src/index.mjs" }
+}

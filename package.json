@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "description": "灵犀 — a lifelike, quiet desktop cat companion with extensible agent task observation",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "test": "node --test packages/contracts/test/*.test.mjs",
+    "test": "node --experimental-strip-types --test packages/*/test/*.test.mjs",
     "check": "node scripts/check-project.mjs",
     "validate": "npm run check && npm test"
   }

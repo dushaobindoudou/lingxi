@@ -19,7 +19,13 @@ async def main():
     parser.add_argument('--image-output', type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
-    env = {**os.environ, 'BLENDER_MCP_HOST':'127.0.0.1', 'BLENDER_MCP_PORT':'9877', 'BLENDER_PATH':'/Applications/Blender.app/Contents/MacOS/Blender'}
+    # Port is overridable via env because the running Blender add-on decides its own
+    # listen port (official blmcp default is 9876; a stale hardcode of 9877 here made
+    # every call fail with "Cannot connect"). Host likewise, both default to live reality.
+    env = {**os.environ,
+           'BLENDER_MCP_HOST': os.environ.get('BLENDER_MCP_HOST', '127.0.0.1'),
+           'BLENDER_MCP_PORT': os.environ.get('BLENDER_MCP_PORT', '9876'),
+           'BLENDER_PATH': os.environ.get('BLENDER_PATH', '/Applications/Blender.app/Contents/MacOS/Blender')}
     params = StdioServerParameters(command=str(root/'.local/blender-mcp-venv/bin/blender-mcp'), env=env)
     async with stdio_client(params) as (reader, writer):
         async with ClientSession(reader, writer) as session:

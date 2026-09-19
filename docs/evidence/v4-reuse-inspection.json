@@ -1,0 +1,410 @@
+{
+  "server": {
+    "name": "blender-mcp",
+    "title": null,
+    "version": "1.30.0",
+    "websiteUrl": null,
+    "icons": null
+  },
+  "tools": [
+    "execute_blender_code",
+    "execute_blender_code_for_cli",
+    "get_blendfile_summary_datablocks",
+    "get_blendfile_summary_datablocks_for_cli",
+    "get_blendfile_summary_missing_files",
+    "get_blendfile_summary_missing_files_for_cli",
+    "get_blendfile_summary_of_linked_libraries",
+    "get_blendfile_summary_of_linked_libraries_for_cli",
+    "get_blendfile_summary_path_info",
+    "get_blendfile_summary_path_info_for_cli",
+    "get_blendfile_summary_usage_guess",
+    "get_blendfile_summary_usage_guess_for_cli",
+    "get_object_detail_summary",
+    "get_objects_summary",
+    "get_python_api_docs",
+    "get_screenshot_of_area_as_image",
+    "get_screenshot_of_window_as_image",
+    "get_screenshot_of_window_as_json",
+    "jump_to_tab_by_name",
+    "jump_to_tab_by_space_type",
+    "jump_to_view3d_object_by_name",
+    "jump_to_view3d_object_data_by_name",
+    "render_thumbnail_to_path",
+    "render_viewport_to_path",
+    "search_api_docs",
+    "search_manual_docs"
+  ],
+  "tool": "execute_blender_code_for_cli",
+  "response": {
+    "meta": null,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"scenes\": [\n    \"Lingxi • Anatomy and Groom Study\",\n    \"Lingxi • Character Studio v1\",\n    \"Lingxi • Combed Hair Study v3\",\n    \"Lingxi • Facial Structure Study v2\",\n    \"Lingxi • Facial Structure Study v2.001\",\n    \"Lingxi • Polish Study v4\",\n    \"Scene\"\n  ],\n  \"objects\": [\n    {\n      \"name\": \"LX_v4_Ear_-1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Ear_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Ear_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Ear_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Armature\",\n      \"type\": \"ARMATURE\",\n      \"parent\": null,\n      \"bone\": \"\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_ChinPatch\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Torso.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Spine01\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Chest.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Spine01\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Haunch_-1.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Hip\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_FrontLeg_-1.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"FrontUpperLeg_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_FrontPaw_-1.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"FrontPaw_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Haunch_1.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Hip\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_FrontLeg_1.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"FrontUpperLeg_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_FrontPaw_1.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"FrontPaw_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v2_UnifiedHead.003\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Nose.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": [\n        \"BEVEL\"\n      ]\n    },\n    {\n      \"name\": \"LX_Tail.004\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"\",\n      \"mods\": [\n        \"ARMATURE\"\n      ]\n    },\n    {\n      \"name\": \"LX_Whisker_-1_0.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_-1_1.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_-1_2.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_-1_3.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_-1_4.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_1_0.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_1_1.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_1_2.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_1_3.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Whisker_1_4.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Mouth_L.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_Mouth_R.004\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Head\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_RearThigh_-1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"RearThigh_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_RearShin_-1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"RearShin_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_RearPaw_-1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"RearPaw_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_RearThigh_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"RearThigh_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_RearShin_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"RearShin_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_RearPaw_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"RearPaw_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Jaw\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Jaw\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Tongue\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Jaw\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Sclera_-1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Iris_-1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Pupil_-1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Sclera_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Iris_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Pupil_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_UpperLid_-1\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_LowerLid_-1\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_UpperLid_1\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_LowerLid_1\",\n      \"type\": \"CURVE\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Highlight_-1_0\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Highlight_-1_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_-1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Highlight_1_0\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_1\",\n      \"mods\": []\n    },\n    {\n      \"name\": \"LX_v4_Highlight_1_1\",\n      \"type\": \"MESH\",\n      \"parent\": \"LX_v4_Armature\",\n      \"bone\": \"Eye_1\",\n      \"mods\": []\n    }\n  ]\n}",
+        "annotations": null,
+        "meta": null
+      }
+    ],
+    "structuredContent": {
+      "scenes": [
+        "Lingxi • Anatomy and Groom Study",
+        "Lingxi • Character Studio v1",
+        "Lingxi • Combed Hair Study v3",
+        "Lingxi • Facial Structure Study v2",
+        "Lingxi • Facial Structure Study v2.001",
+        "Lingxi • Polish Study v4",
+        "Scene"
+      ],
+      "objects": [
+        {
+          "name": "LX_v4_Ear_-1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Ear_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Ear_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Ear_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Armature",
+          "type": "ARMATURE",
+          "parent": null,
+          "bone": "",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_ChinPatch",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Torso.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Spine01",
+          "mods": []
+        },
+        {
+          "name": "LX_Chest.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Spine01",
+          "mods": []
+        },
+        {
+          "name": "LX_Haunch_-1.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Hip",
+          "mods": []
+        },
+        {
+          "name": "LX_FrontLeg_-1.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "FrontUpperLeg_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_FrontPaw_-1.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "FrontPaw_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_Haunch_1.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Hip",
+          "mods": []
+        },
+        {
+          "name": "LX_FrontLeg_1.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "FrontUpperLeg_1",
+          "mods": []
+        },
+        {
+          "name": "LX_FrontPaw_1.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "FrontPaw_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v2_UnifiedHead.003",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Nose.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": [
+            "BEVEL"
+          ]
+        },
+        {
+          "name": "LX_Tail.004",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "",
+          "mods": [
+            "ARMATURE"
+          ]
+        },
+        {
+          "name": "LX_Whisker_-1_0.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_-1_1.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_-1_2.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_-1_3.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_-1_4.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_1_0.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_1_1.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_1_2.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_1_3.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Whisker_1_4.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Mouth_L.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_Mouth_R.004",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Head",
+          "mods": []
+        },
+        {
+          "name": "LX_RearThigh_-1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "RearThigh_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_RearShin_-1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "RearShin_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_RearPaw_-1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "RearPaw_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_RearThigh_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "RearThigh_1",
+          "mods": []
+        },
+        {
+          "name": "LX_RearShin_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "RearShin_1",
+          "mods": []
+        },
+        {
+          "name": "LX_RearPaw_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "RearPaw_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Jaw",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Jaw",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Tongue",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Jaw",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Sclera_-1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Iris_-1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Pupil_-1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Sclera_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Iris_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Pupil_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_UpperLid_-1",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_LowerLid_-1",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_UpperLid_1",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_LowerLid_1",
+          "type": "CURVE",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Highlight_-1_0",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Highlight_-1_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_-1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Highlight_1_0",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_1",
+          "mods": []
+        },
+        {
+          "name": "LX_v4_Highlight_1_1",
+          "type": "MESH",
+          "parent": "LX_v4_Armature",
+          "bone": "Eye_1",
+          "mods": []
+        }
+      ]
+    },
+    "isError": false
+  }
+}

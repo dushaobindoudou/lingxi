@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "presets": {
+    "安然": {
+      "eye": "slit",
+      "brow": "none",
+      "mouth": "cat",
+      "ear": "neutral",
+      "symbol": "none"
+    },
+    "好奇": {
+      "eye": "round",
+      "brow": "raise",
+      "mouth": "flat",
+      "ear": "forward",
+      "symbol": "question"
+    },
+    "满足": {
+      "eye": "happy",
+      "brow": "none",
+      "mouth": "cat",
+      "ear": "neutral",
+      "symbol": "none"
+    },
+    "警觉": {
+      "eye": "wide",
+      "brow": "raise",
+      "mouth": "flat",
+      "ear": "forward",
+      "symbol": "exclaim"
+    },
+    "不爽": {
+      "eye": "side",
+      "brow": "furrow",
+      "mouth": "frown",
+      "ear": "airplane",
+      "symbol": "none"
+    },
+    "惊吓": {
+      "eye": "wide",
+      "brow": "raise",
+      "mouth": "open",
+      "ear": "back",
+      "symbol": "sweat"
+    },
+    "困困": {
+      "eye": "half",
+      "brow": "sad",
+      "mouth": "flat",
+      "ear": "neutral",
+      "symbol": "sleep"
+    },
+    "玩心": {
+      "eye": "round",
+      "brow": "raise",
+      "mouth": "tongue",
+      "ear": "forward",
+      "symbol": "none"
+    },
+    "生气": {
+      "eye": "slit",
+      "brow": "furrow",
+      "mouth": "hiss",
+      "ear": "back",
+      "symbol": "anger"
+    },
+    "撒娇": {
+      "eye": "heart",
+      "brow": "raise",
+      "mouth": "cat",
+      "ear": "forward",
+      "symbol": "heart"
+    }
+  }
+}

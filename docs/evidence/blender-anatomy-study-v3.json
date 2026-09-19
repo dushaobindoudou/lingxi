@@ -1,0 +1,60 @@
+{
+  "server": {
+    "name": "blender-mcp",
+    "title": null,
+    "version": "1.30.0",
+    "websiteUrl": null,
+    "icons": null
+  },
+  "tools": [
+    "execute_blender_code",
+    "execute_blender_code_for_cli",
+    "get_blendfile_summary_datablocks",
+    "get_blendfile_summary_datablocks_for_cli",
+    "get_blendfile_summary_missing_files",
+    "get_blendfile_summary_missing_files_for_cli",
+    "get_blendfile_summary_of_linked_libraries",
+    "get_blendfile_summary_of_linked_libraries_for_cli",
+    "get_blendfile_summary_path_info",
+    "get_blendfile_summary_path_info_for_cli",
+    "get_blendfile_summary_usage_guess",
+    "get_blendfile_summary_usage_guess_for_cli",
+    "get_object_detail_summary",
+    "get_objects_summary",
+    "get_python_api_docs",
+    "get_screenshot_of_area_as_image",
+    "get_screenshot_of_window_as_image",
+    "get_screenshot_of_window_as_json",
+    "jump_to_tab_by_name",
+    "jump_to_tab_by_space_type",
+    "jump_to_view3d_object_by_name",
+    "jump_to_view3d_object_data_by_name",
+    "render_thumbnail_to_path",
+    "render_viewport_to_path",
+    "search_api_docs",
+    "search_manual_docs"
+  ],
+  "tool": "execute_blender_code",
+  "response": {
+    "meta": null,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"status\": \"ok\",\n  \"result\": {\n    \"scene\": \"Lingxi • Combed Hair Study v3\",\n    \"file\": \"/Users/dushaobin/workspace/dsh-lingxi/assets/characters/lingxi/source/lingxi-anatomy-study-v3.blend\",\n    \"curve_strands\": 214819,\n    \"stage\": \"Unapproved combed-hair study v3; offline render, no runtime rig\"\n  },\n  \"stdout\": \"Info: Saved as \\\"lingxi-anatomy-study-v3.blend\\\"\\n\"\n}",
+        "annotations": null,
+        "meta": null
+      }
+    ],
+    "structuredContent": {
+      "status": "ok",
+      "result": {
+        "scene": "Lingxi • Combed Hair Study v3",
+        "file": "/Users/dushaobin/workspace/dsh-lingxi/assets/characters/lingxi/source/lingxi-anatomy-study-v3.blend",
+        "curve_strands": 214819,
+        "stage": "Unapproved combed-hair study v3; offline render, no runtime rig"
+      },
+      "stdout": "Info: Saved as \"lingxi-anatomy-study-v3.blend\"\n"
+    },
+    "isError": false
+  }
+}

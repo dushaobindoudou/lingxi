@@ -1,0 +1,64 @@
+{
+  "server": {
+    "name": "blender-mcp",
+    "title": null,
+    "version": "1.30.0",
+    "websiteUrl": null,
+    "icons": null
+  },
+  "tools": [
+    "execute_blender_code",
+    "execute_blender_code_for_cli",
+    "get_blendfile_summary_datablocks",
+    "get_blendfile_summary_datablocks_for_cli",
+    "get_blendfile_summary_missing_files",
+    "get_blendfile_summary_missing_files_for_cli",
+    "get_blendfile_summary_of_linked_libraries",
+    "get_blendfile_summary_of_linked_libraries_for_cli",
+    "get_blendfile_summary_path_info",
+    "get_blendfile_summary_path_info_for_cli",
+    "get_blendfile_summary_usage_guess",
+    "get_blendfile_summary_usage_guess_for_cli",
+    "get_object_detail_summary",
+    "get_objects_summary",
+    "get_python_api_docs",
+    "get_screenshot_of_area_as_image",
+    "get_screenshot_of_window_as_image",
+    "get_screenshot_of_window_as_json",
+    "jump_to_tab_by_name",
+    "jump_to_tab_by_space_type",
+    "jump_to_view3d_object_by_name",
+    "jump_to_view3d_object_data_by_name",
+    "render_thumbnail_to_path",
+    "render_viewport_to_path",
+    "search_api_docs",
+    "search_manual_docs"
+  ],
+  "tool": "execute_blender_code_for_cli",
+  "response": {
+    "meta": null,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"jaw_rest_center\": [\n    -5.846725947688922e-9,\n    -0.37799997533996815,\n    0.4429999589920044\n  ],\n  \"jaw_open_center\": [\n    0.00017403472131476768,\n    -0.3583649291521556,\n    0.41753677416132223\n  ],\n  \"jaw_downward_delta\": 0.025463184830682162,\n  \"clips\": 18\n}",
+        "annotations": null,
+        "meta": null
+      }
+    ],
+    "structuredContent": {
+      "jaw_rest_center": [
+        -5.846725947688922e-09,
+        -0.37799997533996815,
+        0.4429999589920044
+      ],
+      "jaw_open_center": [
+        0.00017403472131476768,
+        -0.3583649291521556,
+        0.41753677416132223
+      ],
+      "jaw_downward_delta": 0.025463184830682162,
+      "clips": 18
+    },
+    "isError": false
+  }
+}

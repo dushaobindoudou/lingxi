@@ -1,15 +1,41 @@
+# --- build output -------------------------------------------------------------------------
 node_modules/
-.DS_Store
+dist/
+build/
+target/
+.cache/
+*.log
+
+# --- environment --------------------------------------------------------------------------
 .env
 .env.*
 !.env.example
-*.log
-*.blend1
-*.blend2
-.cache/
 .venv/
 __pycache__/
 *.pyc
-build/
-dist/
+.DS_Store
 .local/
+
+# --- large binary assets ------------------------------------------------------------------
+# The shipped cat is generated from data (apps/lingxi/src/data/*.json + src/rig/art.ts), NOT
+# from any of these files - see docs/archive/README.md. They are working material from the
+# modelling phase: hundreds of megabytes of .blend files, renders, evaluation frames and
+# exported kits. Keeping them out of git is what makes this repo clonable; they live alongside
+# the checkout rather than inside it.
+assets/characters/**/v5/
+assets/characters/**/v6/
+assets/characters/**/model-evaluation/
+assets/characters/**/materials/
+assets/characters/**/reference/daily-life/
+assets/characters/**/reference/short-fur/
+assets/characters/**/*.zip
+# Source .blend files are working material too - v4 alone is 206MB. The three older ones are
+# already in history and are left alone; nothing new gets added.
+assets/characters/**/source/*.blend
+model/
+previews/
+*.blend1
+*.blend2
+
+# Independent private Sites checkout; source is versioned by Sites.
+previews/threejs/
