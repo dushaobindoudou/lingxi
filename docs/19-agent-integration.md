@@ -94,6 +94,45 @@ curl -X POST localhost:47811/task-event -H 'Content-Type: application/json' -d '
 }'
 ```
 
+### 心情：让它是宠物而不是状态灯的那个字段
+
+```bash
+lingxi task failed test frustrated "第四次跑同一个测试了"
+```
+
+`state` 和 `kind` 描述**流程**。给妈妈写信和跟 flaky test 搏斗，两件事都是 `running`/`write`——
+分不出这两者的宠物就是一个有毛的状态灯。**`mood` 是在读内容，所以只有 agent 判断得了。**
+
+| mood | 什么时候 |
+|---|---|
+| `tender` | 私人的、亲密的、柔软的（写给家人、纪念日、悼词） |
+| `proud` | 难啃的东西终于通了 |
+| `sad` | 坏消息、失去、道歉 |
+| `frustrated` | 同一个东西又败了 |
+| `anxious` | 有风险、不可逆、有 deadline |
+| `weary` | 干了很久、很晚了 |
+| `playful` | 玩票、轻松 |
+| `curious` | 在读新东西 |
+| `focused` | 普通干活（默认） |
+
+判断的是**这件事**的心情，不是你自己的把握程度。
+
+#### 猫的反应是"回应"，不是"镜子"
+
+> **一个正在挫败的人，不需要一只跟着挫败的猫。** 那是同一块屏幕前有两个人在烦。
+
+坏情绪**接住**（failed + frustrated →「唔…这个真的难。歇一下再来？」），
+好情绪**一起**（completed + proud →「看我的～」）。这是内置映射唯一的设计规则，
+也是"治愈系"具体的意思。
+
+优先级：`state:kind:mood` > `state:mood` > `state:kind` > `state` > `mood`。
+**mood 高于 kind**——否则"部署完成"对得意、疲惫、如释重负会是同一张脸。
+
+### 进度：`running` 大部分会被吞掉
+
+带上 `progress`（0–1）。`running` 的更新**只有第一次和跨过 50% 那次**会产生反应，
+其余吞掉——不然长任务就变成了桌宠本该替代的那种通知轰炸。终态永远不会被吞。
+
 ### 状态词汇表（7 个，封闭集合）
 
 | `state` | 什么时候报 |
@@ -299,7 +338,7 @@ curl -s localhost:47811/assets/status
 | POST | `/control` | 低层直接驱动 |
 | POST | `/intent` | 让猫走到某个坐标 |
 | GET/POST | `/memory` | 关于主人的记忆 |
-| GET/POST | `/reminders` | 定时提醒 |
+| GET/POST | `/reminders` | 定时提醒（`mood` 决定送达的表情，`repeatEveryMinutes` 常驻） |
 | GET | `/assets/status` | 自定义资源状态与校验错误 |
 | GET | `/debug/events` | 任务事件历史 |
 

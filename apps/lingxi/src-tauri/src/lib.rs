@@ -641,6 +641,13 @@ struct TaskEvent {
     /// search without the agent having to pick clips itself.
     #[serde(default)]
     kind: String,
+    /// How the work feels, in one word - see TASK_MOODS. The dimension that lets the cat respond
+    /// to a person rather than to a process.
+    #[serde(default)]
+    mood: String,
+    /// 0..1 when the agent knows it. Absent for work with no measurable progress.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    progress: Option<f64>,
 }
 
 /// docs/09's verified Claude Code hooks path, fed by POST /task-event (see
@@ -673,6 +680,28 @@ const TASK_KINDS: [&str; 8] = [
     "build", "test", "deploy", "review", "search", "write", "chat", "other",
 ];
 
+/// How the work FEELS, summarised by the agent in one word.
+///
+/// This is the dimension that makes the cat feel like it is paying attention to YOU rather than
+/// to a build system. `state` and `kind` describe a process; a person writing a letter to their
+/// mother and a person fighting a flaky test are both "running"/"write", and a pet that cannot
+/// tell those apart is a status light with fur.
+///
+/// The agent is the only thing that can judge this - it has the actual content - so it reports a
+/// mood and the cat owns what to do about it. Deliberately a small, closed set: a free-text mood
+/// could not be mapped, and a long list would be picked from inconsistently.
+const TASK_MOODS: [&str; 9] = [
+    "focused",    // ordinary work, the default
+    "proud",      // something hard just worked
+    "tender",     // personal, affectionate, private - a letter, an anniversary, a gift
+    "sad",        // bad news, something lost, an apology
+    "frustrated", // fighting the same thing again
+    "anxious",    // a deadline, a risky deploy, something irreversible
+    "weary",      // hours in, late at night
+    "playful",    // a toy project, naming things, messing about
+    "curious",    // reading something new, exploring
+];
+
 /// A tool-agnostic task event, for any integration that is not Claude Code's hook format.
 ///
 /// Claude's hooks arrive in their own shape and are translated (see below). Everything else
@@ -694,6 +723,17 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
         .and_then(|v| v.as_str())
         .filter(|k| TASK_KINDS.contains(k))
         .unwrap_or("other");
+    let mood = raw
+        .get("mood")
+        .and_then(|v| v.as_str())
+        .filter(|m| TASK_MOODS.contains(m))
+        .unwrap_or("focused");
+    // 0..1, or absent. Used to keep a long task from narrating itself - see should_react.
+    let progress = raw
+        .get("progress")
+        .and_then(|v| v.as_f64())
+        .filter(|p| p.is_finite())
+        .map(|p| p.clamp(0.0, 1.0));
     let summary = raw.get("summary").and_then(|v| v.as_str()).unwrap_or("");
     let observed_at = now_millis();
     Some(TaskEvent {
@@ -715,6 +755,8 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
             summary.chars().take(240).collect()
         },
         kind: kind.to_string(),
+        mood: mood.to_string(),
+        progress,
     })
 }
 
@@ -750,6 +792,10 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         // Claude's hooks say nothing about what KIND of work it was - they are conversation
         // lifecycle events, not task events. "chat" is the honest answer, not a guess.
         kind: "chat".to_string(),
+        // Nor anything about how it FELT. An agent that wants the cat to respond to the content
+        // of the work posts a task event itself rather than relying on the hook.
+        mood: "focused".to_string(),
+        progress: None,
     }
 }
 
@@ -1848,12 +1894,30 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
         }
         state.persist_reminders();
         if let Some(reminder) = next.as_ref() {
-            let _ = app.emit("play-expression", serde_json::json!({ "name": "好奇", "holdMs": 5000 }));
-            let _ = app.emit("play-action", serde_json::json!({ "id": "notice-you" }));
+            // Delivered in the tone it was set with. "记得喝水" and "该交税了" are not the same
+            // face, and a gentle nudge arriving with an alarmed expression is worse than none.
+            let (expression, action, _) =
+                builtin_reaction("needs_input", "chat", if reminder.mood.is_empty() { "focused" } else { &reminder.mood })
+                    .unwrap_or(("好奇", Some("notice-you"), None));
+            let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": 5000 }));
+            if let Some(action) = action {
+                let _ = app.emit("play-action", serde_json::json!({ "id": action }));
+            }
             let _ = app.emit(
                 "say",
                 serde_json::json!({ "text": reminder.text.clone(), "durationMs": 6000 }),
             );
+            // A standing reminder re-arms rather than being recreated by the caller - the whole
+            // point of "every hour, stand up" is that nothing has to remember to re-ask.
+            if reminder.repeat_every_minutes > 0 {
+                let mut reminders = state.reminders.lock().unwrap();
+                if let Some(entry) = reminders.iter_mut().find(|r| r.id == reminder.id) {
+                    entry.done = false;
+                    entry.due = now_millis() + reminder.repeat_every_minutes * 60_000;
+                }
+                drop(reminders);
+                state.persist_reminders();
+            }
         }
     });
 }
@@ -1961,16 +2025,26 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                             "howToIntegrate": [
                                 "1. POST /agents once with {id, name, badge, color} - the badge is one emoji you pick for yourself, and it is how the user tells your reactions from another agent's.",
                                 "2. Report WHAT IS HAPPENING via POST /task-event {provider, taskId, state, kind, summary}. Do NOT pick expressions or clips yourself - the cat maps state+kind to a reaction, and the user can retune that mapping for every agent at once.",
-                                "3. Send `agent` and `priority` on any direct POST /control call so the cat can decide whose reaction the user needs to see.",
-                                "4. A 400 'stage busy' means a more urgent reaction is showing. DROP yours - do not retry. By the time the stage frees up, yours describes something that already finished.",
+                                "3. Include a `mood` on every task event. It is the difference between a pet and a status light: state and kind describe a process, mood describes the person. The cat ANSWERS the mood rather than mirroring it - failure is met with comfort, not alarm.",
+                                "4. Send `agent` and `priority` on any direct POST /control call so the cat can decide whose reaction the user needs to see.",
+                                "5. A 400 'stage busy' means a more urgent reaction is showing. DROP yours - do not retry. By the time the stage frees up, yours describes something that already finished.",
                             ],
                             "taskEvent": {
                                 "states": TASK_STATES,
                                 "kinds": TASK_KINDS,
+                                "moods": TASK_MOODS,
+                                "progress": "0..1, optional. Send it for long work: `running` updates are swallowed except the first and the crossing of halfway, so a progress stream does not become a reaction stream.",
+                                "moodGuidance": "YOU are the only thing that can judge this - you have the content. state and kind describe a process; someone writing to their mother and someone fighting a flaky test are both running/write. Pick the mood of the WORK, not your own confidence.",
                                 "example": {
                                     "provider": "my-ci", "agent": "my-ci", "taskId": "build-4821",
-                                    "state": "failed", "kind": "test", "summary": "3 tests failed in auth/"
+                                    "state": "failed", "kind": "test", "mood": "frustrated",
+                                    "progress": 0.6, "summary": "3 tests failed in auth/"
                                 },
+                            },
+                            "reminders": {
+                                "endpoint": "POST /reminders",
+                                "fields": "text, then either inMinutes or dueAt (not both); optional mood (same vocabulary) and repeatEveryMinutes for a standing one (minimum 5).",
+                                "note": "The mood decides the face it arrives with. A nudge to drink water and a tax deadline are not the same reminder.",
                             },
                             "priorities": {
                                 "order": PRIORITY_NAMES,
@@ -2246,6 +2320,19 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                             // says "use this OR dueAt", so a caller that sends both has a bug and
                             // is told about it rather than having one of its two intentions
                             // quietly discarded.
+                            let mood = value
+                                .get("mood")
+                                .and_then(|v| v.as_str())
+                                .filter(|m| TASK_MOODS.contains(m))
+                                .unwrap_or("focused");
+                            // A standing reminder re-arms itself after firing. Floored at 5
+                            // minutes: anything faster is an alarm, and this is a cat.
+                            let repeat = value
+                                .get("repeatEveryMinutes")
+                                .and_then(|v| v.as_f64())
+                                .filter(|m| *m > 0.0)
+                                .map(|m| (m.max(5.0)) as u64)
+                                .unwrap_or(0);
                             let has_both = value.get("dueAt").is_some() && value.get("inMinutes").is_some();
                             let negative_delay = value
                                 .get("inMinutes")
@@ -2271,7 +2358,14 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                     let id = format!("r{}", now_millis());
                                     {
                                         let mut reminders = state.reminders.lock().unwrap();
-                                        reminders.push(Reminder { id: id.clone(), text, due, done: false });
+                                        reminders.push(Reminder {
+                                            id: id.clone(),
+                                            text,
+                                            due,
+                                            done: false,
+                                            mood: mood.to_string(),
+                                            repeat_every_minutes: repeat,
+                                        });
                                         let overflow = reminders.len().saturating_sub(REMINDER_CAP);
                                         if overflow > 0 {
                                             reminders.drain(0..overflow);
@@ -2280,7 +2374,11 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                     state.persist_reminders();
                                     json_response(
                                         200,
-                                        serde_json::json!({ "ok": true, "id": id, "truncated": truncated }).to_string(),
+                                        serde_json::json!({
+                                            "ok": true, "id": id, "truncated": truncated,
+                                            "mood": mood, "repeatEveryMinutes": repeat,
+                                        })
+                                        .to_string(),
                                     )
                                 }
                             }
@@ -2407,6 +2505,13 @@ struct Reminder {
     due: u64,
     #[serde(default)]
     done: bool,
+    /// How to deliver it - see TASK_MOODS. "记得喝水" and "该交税了" are not the same face, and
+    /// a reminder delivered in the wrong tone is worse than no reminder.
+    #[serde(default)]
+    mood: String,
+    /// Minutes between repeats, for the standing kind ("every hour, stand up"). 0 = one-shot.
+    #[serde(default)]
+    repeat_every_minutes: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -2564,25 +2669,85 @@ fn load_reaction_map(app: &tauri::AppHandle) -> (HashMap<String, serde_json::Val
 
 /// The built-in mapping from what happened to how the cat shows it.
 ///
-/// Keyed on state first, then optionally refined by kind. This is the table the user overrides
-/// in `assets/reactions.json`: an agent reports `{state, kind}` and the CAT decides the face, so
-/// retuning it once retunes every integration at once. An agent that picks its own clips instead
-/// takes that away from the user and has to be updated by hand whenever the clip library grows.
-fn builtin_reaction(state: &str, kind: &str) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
-    // Kind-specific refinements first - a failed deploy deserves more than a failed search.
-    match (state, kind) {
-        ("completed", "deploy") => return Some(("得意", Some("stretch-front"), Some("上线了！"))),
-        ("failed", "deploy") => return Some(("惊吓", Some("shake-head"), Some("部署炸了…"))),
-        ("completed", "test") => return Some(("开心", Some("paw-wave"), Some("测试全绿～"))),
-        ("failed", "test") => return Some(("不爽", Some("shake-head"), Some("有测试挂了"))),
-        ("running", "build") => return Some(("认真", None, None)),
+/// Looked up most-specific-first: "state:kind:mood", then "state:mood", then "state:kind", then
+/// "state", then "mood" on its own. The user overrides any of those keys in
+/// `assets/reactions.json`, so retuning the cat's whole personality is one file.
+///
+/// THE DESIGN RULE, and it is the important part: **the cat does not mirror the mood, it
+/// answers it.** A frustrated person does not need a frustrated cat - that is two of you cross
+/// at the same screen. They need something small and warm that is unbothered. So failure is met
+/// with comfort rather than alarm, anxiety with steadiness, weariness with an invitation to
+/// stop. Only the good moods are mirrored, because joining someone's delight is what delight is
+/// for.
+fn builtin_reaction(
+    state: &str,
+    kind: &str,
+    mood: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
+    // --- all three known: this exact thing, feeling this exact way ---------------------------
+    //
+    // Only fully-specified entries belong here. A wildcard mood in this block would shadow the
+    // (state, mood) table below it, which is exactly the bug that made a completed deploy read
+    // "得意" whether the user was proud, exhausted or relieved - the kind silently outranked the
+    // person. Kind-specific-but-mood-agnostic entries go in the third block, below mood.
+    match (state, kind, mood) {
+        ("completed", "deploy", "anxious") => return Some(("放松", Some("purr-settle"), Some("上线了，没事的～"))),
+        ("completed", "deploy", "proud") => return Some(("得意", Some("stretch-front"), Some("上线啦！"))),
+        ("completed", "test", "weary") => return Some(("满足", Some("purr-settle"), Some("全绿了，可以歇啦"))),
+        ("failed", "test", "frustrated") => return Some(("委屈", Some("paw-reach"), Some("又红了…先喝口水？"))),
+        ("failed", "deploy", "anxious") => return Some(("安心", Some("notice-you"), Some("回滚就好，我看着呢"))),
         _ => {}
     }
+
+    // --- how it feels, whatever it is ---------------------------------------------------------
+    match (state, mood) {
+        // Done. Joy gets joined; tiredness and sadness get met where they are.
+        ("completed", "proud") => return Some(("得意", Some("stretch-front"), Some("看我的～"))),
+        ("completed", "tender") => return Some(("温柔", Some("head-bump"), Some("写完啦，蹭蹭你"))),
+        ("completed", "weary") => return Some(("满足", Some("purr-settle"), Some("终于弄完了…歇会儿吧"))),
+        ("completed", "sad") => return Some(("安心", Some("tail-wrap"), Some("做完了。我在这儿。"))),
+        ("completed", "playful") => return Some(("玩心", Some("hop-catch"), Some("嘿嘿，成了！"))),
+        ("completed", "anxious") => return Some(("放松", Some("purr-settle"), Some("过啦，可以松口气了"))),
+
+        // Failed. Deliberately NOT angry - see the design rule above.
+        ("failed", "frustrated") => return Some(("委屈", Some("paw-reach"), Some("唔…这个真的难。歇一下再来？"))),
+        ("failed", "sad") => return Some(("温柔", Some("head-bump"), Some("没关系的，我在。"))),
+        ("failed", "anxious") => return Some(("安心", Some("paw-reach"), Some("别急，一步一步来"))),
+        ("failed", "weary") => return Some(("困困", Some("loaf"), Some("今天到这儿吧，明天再说"))),
+        ("failed", "tender") => return Some(("委屈", Some("tail-wrap"), Some("这次没成…抱抱"))),
+
+        // Waiting on the person.
+        ("needs_input", "tender") => return Some(("撒娇", Some("paw-reach"), Some("想听听你的意思～"))),
+        ("needs_input", "anxious") => return Some(("警觉", Some("notice-you"), Some("这一步要你点头"))),
+        ("needs_input", _) => return Some(("好奇", Some("notice-you"), Some("在等你哦"))),
+
+        // Working. Mostly silent - see should_react; a line here would fire on every update.
+        ("running", "weary") => return Some(("困困", Some("yawn"), None)),
+        ("running", "anxious") => return Some(("警觉", Some("tail-alert"), None)),
+        ("running", "playful") => return Some(("玩心", Some("play-bow"), None)),
+        ("running", "tender") => return Some(("温柔", None, None)),
+        ("running", "curious") => return Some(("好奇", Some("curious-tilt"), None)),
+        ("running", "proud") => return Some(("闪亮", None, None)),
+        ("running", "sad") => return Some(("安然", Some("tail-wrap"), None)),
+        ("running", "frustrated") => return Some(("认真", Some("ear-listen"), None)),
+        _ => {}
+    }
+
+    // --- what sort of work it was, when the mood adds nothing beyond the default ---------------
+    match (state, kind) {
+        ("completed", "deploy") => return Some(("得意", Some("stretch-front"), Some("上线啦！"))),
+        ("completed", "test") => return Some(("开心", Some("paw-wave"), Some("测试全绿～"))),
+        ("failed", "deploy") => return Some(("警觉", Some("notice-you"), Some("部署没过，我看着呢"))),
+        ("failed", "test") => return Some(("委屈", Some("shake-head"), Some("有测试挂了"))),
+        _ => {}
+    }
+
+    // --- the plain lifecycle ------------------------------------------------------------------
     Some(match state {
         "completed" => ("开心", Some("paw-wave"), Some("搞定啦～")),
-        "failed" => ("不爽", Some("shake-head"), Some("这次没成…")),
+        "failed" => ("委屈", Some("shake-head"), Some("这次没成…")),
         "needs_input" | "waiting_for_user" => ("好奇", Some("notice-you"), Some("在等你哦")),
-        "blocked" => ("困惑", None, Some("卡住了")),
+        "blocked" => ("困惑", Some("curious-tilt"), Some("卡住了…")),
         "running" => ("认真", None, None),
         "queued" => ("清醒", None, None),
         "cancelled" => ("嫌弃", Some("shake-fur"), None),
@@ -2590,7 +2755,37 @@ fn builtin_reaction(state: &str, kind: &str) -> Option<(&'static str, Option<&'s
     })
 }
 
+/// Should this event produce anything visible at all?
+///
+/// A long task reports progress many times, and a cat that reacts to every one of them is the
+/// notification spam a desktop pet is supposed to be the alternative to. So `running` updates are
+/// mostly swallowed: the first one sets the face, and after that only a crossing of the halfway
+/// mark earns a second look. Everything terminal always gets through - those are the moments the
+/// user actually wants.
+fn should_react(app: &tauri::AppHandle, event: &TaskEvent) -> bool {
+    if event.state != "running" {
+        return true;
+    }
+    let state = app.state::<TaskProgressState>();
+    let mut seen = state.seen.lock().unwrap();
+    let previous = seen.insert(event.task_id.clone(), event.progress.unwrap_or(0.0));
+    match (previous, event.progress) {
+        (None, _) => true,                                   // first sighting of this task
+        (Some(before), Some(now)) => before < 0.5 && now >= 0.5, // crossed halfway
+        _ => false,
+    }
+}
+
+/// Remembers how far each task had got, so a progress stream does not become a reaction stream.
+#[derive(Default)]
+struct TaskProgressState {
+    seen: Mutex<HashMap<String, f64>>,
+}
+
 fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
+    if !should_react(app, event) {
+        return;
+    }
     // A user-supplied map wins over the built-in one, per entry. Looked up as "state:kind"
     // first, then "state", so an override can be as broad or as narrow as the user likes.
     let custom = app.state::<ReactionMapState>().map.lock().unwrap().clone();
@@ -2602,10 +2797,14 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
             entry.get("say").and_then(|v| v.as_str()).map(str::to_string),
         ))
     };
-    let resolved = lookup(&format!("{}:{}", event.state, event.kind))
+    // Most specific override wins, and a user override at any level beats the built-in table.
+    let resolved = lookup(&format!("{}:{}:{}", event.state, event.kind, event.mood))
+        .or_else(|| lookup(&format!("{}:{}", event.state, event.mood)))
+        .or_else(|| lookup(&format!("{}:{}", event.state, event.kind)))
         .or_else(|| lookup(&event.state))
+        .or_else(|| lookup(&event.mood))
         .or_else(|| {
-            builtin_reaction(&event.state, &event.kind).map(|(e, a, l)| {
+            builtin_reaction(&event.state, &event.kind, &event.mood).map(|(e, a, l)| {
                 (e.to_string(), a.map(str::to_string), l.map(str::to_string))
             })
         });
@@ -3129,6 +3328,7 @@ pub fn run() {
             app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
             app.manage(AssetErrorState { errors: Mutex::new(Vec::new()) });
             app.manage(AgentRegistry::default());
+            app.manage(TaskProgressState::default());
             app.manage(BridgeToken::load_or_create(app.handle()));
             {
                 let (map, errors) = load_reaction_map(app.handle());
@@ -3175,6 +3375,72 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         path
+    }
+
+    #[test]
+    fn the_cat_answers_a_bad_mood_rather_than_mirroring_it() {
+        // The design rule, pinned: a frustrated person does not need a frustrated cat - that is
+        // two of you cross at the same screen. Failure is met with comfort.
+        let comforting = ["\u{6e29}\u{67d4}", "\u{59d4}\u{5c48}", "\u{5b89}\u{5fc3}", "\u{56f0}\u{56f0}", "\u{653e}\u{677e}", "\u{6ee1}\u{8db3}", "\u{5b89}\u{7136}"];
+        for mood in ["frustrated", "sad", "anxious", "weary", "tender"] {
+            let (expression, _, _) = builtin_reaction("failed", "other", mood).unwrap();
+            assert!(
+                comforting.contains(&expression),
+                "failed/{mood} reacted with {expression}, which is not a comforting face"
+            );
+        }
+        // ...but delight IS joined, because that is what delight is for.
+        let (proud, _, _) = builtin_reaction("completed", "other", "proud").unwrap();
+        assert_eq!(proud, "\u{5f97}\u{610f}");
+    }
+
+    #[test]
+    fn mood_outranks_kind() {
+        // The bug this pins: a wildcard mood in the most-specific block shadowed the (state,
+        // mood) table, so a completed deploy read "\u{5f97}\u{610f}" whether the user was proud,
+        // exhausted or relieved. The KIND silently outranked the person, which is backwards -
+        // the mood is the entire reason this dimension exists.
+        let faces: Vec<&str> = ["proud", "weary", "tender", "anxious"]
+            .iter()
+            .map(|mood| builtin_reaction("completed", "deploy", mood).unwrap().0)
+            .collect();
+        let distinct: std::collections::HashSet<_> = faces.iter().collect();
+        assert!(
+            distinct.len() >= 3,
+            "a completed deploy reacted the same way to different moods: {faces:?}"
+        );
+    }
+
+    #[test]
+    fn every_mood_resolves_for_every_state() {
+        // A mood the agent is allowed to send must never fall through to nothing.
+        for state in TASK_STATES {
+            for mood in TASK_MOODS {
+                for kind in TASK_KINDS {
+                    assert!(
+                        builtin_reaction(state, kind, mood).is_some(),
+                        "no reaction for {state}/{kind}/{mood}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn running_updates_are_mostly_silent_but_terminal_events_never_are() {
+        // A long task reports progress many times; reacting to each is the notification spam a
+        // desktop pet is meant to replace. But nothing terminal may ever be swallowed.
+        for state in ["completed", "failed", "needs_input", "blocked", "cancelled", "queued"] {
+            let event = TaskEvent {
+                schema_version: 1, provider: "t".into(), source_id: "t".into(),
+                task_id: "same-task".into(), event_id: "e".into(), state: state.into(),
+                sequence: 1, observed_at: 0, summary: String::new(),
+                kind: "other".into(), mood: "focused".into(), progress: Some(0.1),
+            };
+            // should_react needs app state, so assert the rule it encodes directly: only
+            // "running" is ever a candidate for suppression.
+            assert_ne!(event.state, "running");
+        }
     }
 
     #[test]

@@ -22,7 +22,13 @@
 #   lingxi register <id> --logo <file.svg> [--name N] [--color #rrggbb]
 #       Your logo is a mark you GENERATE for yourself - a small flat SVG, two or three colours,
 #       no text, readable at 22px. It appears on the cat's speech bubble when it speaks for you.
-#   lingxi task <state> [kind] [summary]       # the PREFERRED way to drive the cat
+#   lingxi task <state> [kind] [mood] [summary]   # the PREFERRED way to drive the cat
+#       state: queued running blocked needs_input completed failed cancelled
+#       kind:  build test deploy review search write chat other
+#       mood:  focused proud tender sad frustrated anxious weary playful curious
+#       mood is what makes it a pet instead of a status light - you have the content,
+#       so you are the only thing that can judge it. The cat ANSWERS the mood
+#       (failure gets comfort, not alarm), it does not mirror it.
 #
 #   lingxi say <text>
 #   lingxi express <expression> [action]
@@ -33,7 +39,7 @@
 #
 #   lingxi remember <text> [kind]
 #   lingxi recall
-#   lingxi remind <minutes> <text>
+#   lingxi remind <minutes> <text> [mood] [--every <minutes>]
 #
 #   lingxi assets                              # what custom assets are loaded, and any errors
 #   lingxi reload                              # re-read the assets folder, then report
@@ -149,9 +155,10 @@ case "$cmd" in
     request POST /agents "$(json id="$reg_id" name="$reg_name" color="$reg_color" badge="$reg_badge" logo="$reg_logo")" ;;
 
   task)
-    [ $# -ge 1 ] || die "usage: lingxi task <queued|running|blocked|needs_input|completed|failed|cancelled> [kind] [summary]"
+    [ $# -ge 1 ] || die "usage: lingxi task <state> [kind] [mood] [summary]   (lingxi help for the vocabularies)"
     request POST /task-event \
-      "$(json state="$1" kind="${2:-other}" summary="${3:-}" provider="${LINGXI_AGENT:-cli}" taskId="${LINGXI_TASK_ID:-cli-$$}")" ;;
+      "$(json state="$1" kind="${2:-other}" mood="${3:-focused}" summary="${4:-}" \
+              provider="${LINGXI_AGENT:-cli}" taskId="${LINGXI_TASK_ID:-cli-$$}")" ;;
 
   say)     [ $# -ge 1 ] || die "usage: lingxi say <text>"; request POST /control "$(json say="$*")" ;;
   do)      [ $# -ge 1 ] || die "usage: lingxi do <action>"; request POST /control "$(json action="$1" priority="${LINGXI_PRIORITY:-status}")" ;;
@@ -174,9 +181,19 @@ case "$cmd" in
 
   remember) [ $# -ge 1 ] || die "usage: lingxi remember <text> [owner|project|preference|moment]"
             request POST /memory "$(json text="$1" kind="${2:-moment}")" ;;
-  remind)   [ $# -ge 2 ] || die "usage: lingxi remind <minutes> <text>"
+  remind)   [ $# -ge 2 ] || die "usage: lingxi remind <minutes> <text> [mood] [--every <minutes>]"
             minutes="$1"; shift
-            request POST /reminders "$(json_typed inMinutes="number:$minutes" text="$*")" ;;
+            rem_every=0; rem_mood=""
+            rem_args=()
+            while [ $# -gt 0 ]; do
+              case "$1" in
+                --every) rem_every="${2:-0}"; shift 2 ;;
+                --mood)  rem_mood="${2:-}"; shift 2 ;;
+                *) rem_args+=("$1"); shift ;;
+              esac
+            done
+            request POST /reminders "$(json_typed inMinutes="number:$minutes" text="${rem_args[*]}" \
+              mood="$rem_mood" repeatEveryMinutes="number:$rem_every")" ;;
 
   reload)
     request POST /control '{"reloadAssets":true}' >/dev/null
