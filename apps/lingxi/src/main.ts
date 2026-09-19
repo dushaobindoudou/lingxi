@@ -26,6 +26,13 @@ function dlog(message: string) {
   void invoke('debug_log', { message }).catch(() => {});
 }
 
+/**
+ * Gap between the cat's anchor point and the left/right screen edges, in logical pixels. Matches
+ * the life engine's own default so the horizontal look is unchanged; syncMargins() derives the
+ * vertical margins from what this one produces.
+ */
+const EDGE_MARGIN = 24;
+
 async function main() {
   dlog('main() start');
   const host = createTauriDesktopHost();
@@ -48,6 +55,38 @@ async function main() {
   });
   renderer.resize(logicalSize(workArea).width, logicalSize(workArea).height);
   dlog(`resized to ${JSON.stringify(logicalSize(workArea))}`);
+
+  /**
+   * Teach the engine how much room the cat's BODY needs at each screen edge.
+   *
+   * The engine steers a point, and that point is the cat's FEET - so one scalar margin cannot be
+   * right for all four edges. At the left edge the body sticks out sideways by half its width; at
+   * the TOP the whole body sticks out upwards, because it is drawn above its own feet. A uniform
+   * 24px margin therefore parks the cat against the top of the screen with all but its paws off
+   * the display, which is exactly what was reported ("太靠上边缘了").
+   *
+   * Sideways and vertically are deliberately NOT treated the same. Letting the flank run off the
+   * side costs nothing and is the look that was asked to be kept ("左右两侧只盖住一半身体我觉得
+   * 是对的"). Letting the same share run off the TOP would cost the head - the cat is nearly
+   * three times taller than it is wide, so the sides' 32% is 43px of flank but 124px of skull -
+   * and the face is the entire point of the thing ("表情互动是核心"). So the vertical rule is
+   * simply: all of the cat stays on screen, top and bottom.
+   */
+  function syncMargins() {
+    const extent = renderer.screenExtent?.();
+    if (!extent) return;
+    const { above, below } = extent;
+    if (!(above + below > 0)) return;
+    engine.setMargins({
+      left: EDGE_MARGIN,
+      right: EDGE_MARGIN,
+      // Large, and that is the point: the anchor has to sit a whole body-height down from the top
+      // for the ears to clear it.
+      top: above,
+      bottom: below,
+    });
+  }
+  syncMargins();
 
   // Pull the Rust-side current state once at startup instead of relying only on
   // broadcast events: persisted settings are restored (and the tray's checkmarks
@@ -80,6 +119,8 @@ async function main() {
     renderer.setSkin?.(status.skin);
     userCamera = status.camera;
     renderer.setCameraPreset?.(status.camera);
+    // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
+    syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
     catName = status.catName;
     activeAgent = status.activeAgent;
@@ -116,6 +157,7 @@ async function main() {
     workArea = next;
     engine.setBounds(logicalSize(next));
     renderer.resize(logicalSize(next).width, logicalSize(next).height);
+    syncMargins();
   });
 
   let cursor: { x: number; y: number } | null = null;
@@ -180,6 +222,7 @@ async function main() {
     try {
       const payload = await invoke<Record<string, unknown>>('get_custom_assets');
       const errors = renderer.applyCustomAssets?.(payload) ?? [];
+      syncMargins();
       // The bubble lives in the fx layer, which is the host's, so the renderer hands the style
       // back rather than applying it.
       fx.setBubbleStyle(renderer.customBubbleStyle ?? {});
@@ -203,10 +246,12 @@ async function main() {
   void listen<string>('set-skin', (event) => {
     currentSkinId = event.payload;
     renderer.setSkin?.(event.payload);
+    syncMargins();
   });
   void listen<string>('set-camera', (event) => {
     userCamera = event.payload;
     renderer.setCameraPreset?.(event.payload);
+    syncMargins();
   });
 
   // 调试台 / agent control surface. The companion window is the only process that owns a
@@ -273,6 +318,7 @@ async function main() {
 
   void listen<number>('set-scale', (event) => {
     renderer.setScale(event.payload);
+    syncMargins();
     engineRecorder.record({ type: 'scale_changed', at: performance.now(), scale: event.payload });
   });
 

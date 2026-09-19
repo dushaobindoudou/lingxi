@@ -111,7 +111,11 @@ const DEFAULTS = Object.freeze({
   minTurnSpeedFactor: 0.18,
   dragStaleMs: 700, // release a drag that stops getting updateDrag() calls (a lost mouseup)
   arriveThreshold: 6,
-  margin: 24, // keep the cat's anchor point away from the very edge of the work area
+  // Fallback keep-out from each edge, used until the host measures the character (see
+  // setMargins). A single number cannot be right for all four edges: the cat's anchor is its
+  // FEET, so the body extends upward from it and nothing extends below, which means the same
+  // number hides almost the whole cat at the top and none of it at the bottom.
+  margin: 24,
 });
 
 function clamp(value, min, max) {
@@ -148,6 +152,29 @@ export function createLifeEngine(config = {}) {
   let dragUpdatedSinceLastTick = false;
   let dragStuckSinceMs = null;
   let lastAvoidRetargetAt = -Infinity; // see cfg.avoidRetargetCooldownMs
+  // How close the anchor may get to each edge. Negative is allowed and meaningful: it lets the
+  // anchor pass the edge so part of the body goes off-screen, which is what makes the cat look
+  // like it is walking off the side rather than bumping into an invisible wall.
+  let margins = { top: cfg.margin, bottom: cfg.margin, left: cfg.margin, right: cfg.margin };
+
+  const minX = () => margins.left;
+  const maxX = () => Math.max(margins.left, bounds.width - margins.right);
+  const minY = () => margins.top;
+  const maxY = () => Math.max(margins.top, bounds.height - margins.bottom);
+
+  /**
+   * Set the keep-out per edge. The host measures the character's actual on-screen extent
+   * relative to its anchor and works these out, because the engine has no idea how big the cat
+   * is or which way up it is drawn - and that is exactly the information this needs.
+   */
+  function setMargins(next) {
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+      const value = next?.[edge];
+      if (typeof value === 'number' && Number.isFinite(value)) margins[edge] = value;
+    }
+    // Keep the cat inside whatever the new margins allow.
+    position = { x: clamp(position.x, minX(), maxX()), y: clamp(position.y, minY(), maxY()) };
+  }
   let toy = null; // { kind, position:{x,y}, velocity:{x,y} } | null - see TOY_KINDS
   let lastBatAt = -Infinity;
   let batThisTick = false; // one-frame flag the renderer turns into a pounce/swat clip
@@ -168,8 +195,8 @@ export function createLifeEngine(config = {}) {
     const radius = randomBetween(cfg.wanderRadius * 0.3, cfg.wanderRadius);
     const raw = { x: position.x + Math.cos(angle) * radius, y: position.y + Math.sin(angle) * radius };
     return {
-      x: clamp(raw.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-      y: clamp(raw.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+      x: clamp(raw.x, minX(), maxX()),
+      y: clamp(raw.y, minY(), maxY()),
     };
   }
 
@@ -225,19 +252,16 @@ export function createLifeEngine(config = {}) {
    * instead of ping-ponging corner to corner across the middle of the screen every time.
    */
   function rollEdgeRestTarget(cursor) {
-    const minX = cfg.margin;
-    const maxX = Math.max(cfg.margin, bounds.width - cfg.margin);
-    const minY = cfg.margin;
-    const maxY = Math.max(cfg.margin, bounds.height - cfg.margin);
+    const [left, right, top, bottom] = [minX(), maxX(), minY(), maxY()];
     const reference = cursor ?? position;
     // Distance from the reference point to each edge, normalized - bigger is safer.
     const edges = [
-      { id: 'left', safety: (reference.x - minX) / Math.max(1, maxX - minX) },
-      { id: 'right', safety: (maxX - reference.x) / Math.max(1, maxX - minX) },
-      { id: 'top', safety: (reference.y - minY) / Math.max(1, maxY - minY) },
-      { id: 'bottom', safety: (maxY - reference.y) / Math.max(1, maxY - minY) },
+      { id: 'left', safety: (reference.x - left) / Math.max(1, right - left) },
+      { id: 'right', safety: (right - reference.x) / Math.max(1, right - left) },
+      { id: 'top', safety: (reference.y - top) / Math.max(1, bottom - top) },
+      { id: 'bottom', safety: (bottom - reference.y) / Math.max(1, bottom - top) },
     ];
-    const currentEdge = nearestEdge(position, minX, maxX, minY, maxY);
+    const currentEdge = nearestEdge(position, left, right, top, bottom);
     let total = 0;
     for (const edge of edges) {
       // Cubed so "clearly the far side" dominates, plus a floor so no edge is ever impossible
@@ -253,13 +277,13 @@ export function createLifeEngine(config = {}) {
     }
     // Somewhere along that edge, avoiding the exact corners (a cat wedged in a corner reads
     // as stuck) - and keeping clear of the cursor's own coordinate on the travel axis.
-    const alongX = randomBetween(minX + (maxX - minX) * 0.08, maxX - (maxX - minX) * 0.08);
-    const alongY = randomBetween(minY + (maxY - minY) * 0.08, maxY - (maxY - minY) * 0.08);
+    const alongX = randomBetween(left + (right - left) * 0.08, right - (right - left) * 0.08);
+    const alongY = randomBetween(top + (bottom - top) * 0.08, bottom - (bottom - top) * 0.08);
     switch (chosen.id) {
-      case 'left': return { x: minX, y: alongY };
-      case 'right': return { x: maxX, y: alongY };
-      case 'top': return { x: alongX, y: minY };
-      default: return { x: alongX, y: maxY };
+      case 'left': return { x: left, y: alongY };
+      case 'right': return { x: right, y: alongY };
+      case 'top': return { x: alongX, y: top };
+      default: return { x: alongX, y: bottom };
     }
   }
 
@@ -267,15 +291,15 @@ export function createLifeEngine(config = {}) {
    *  is not enough: a cat in the dead centre of the screen is nearest to *some* edge, and
    *  handing that edge a patrol bonus would tilt the choice toward a border the cat has no
    *  relationship with - including one the cursor is sitting on. */
-  function nearestEdge(point, minX, maxX, minY, maxY) {
+  function nearestEdge(point, left, right, top, bottom) {
     const gaps = [
-      ['left', point.x - minX],
-      ['right', maxX - point.x],
-      ['top', point.y - minY],
-      ['bottom', maxY - point.y],
+      ['left', point.x - left],
+      ['right', right - point.x],
+      ['top', point.y - top],
+      ['bottom', bottom - point.y],
     ];
     const [id, gap] = gaps.reduce((best, candidate) => (candidate[1] < best[1] ? candidate : best));
-    const onIt = gap <= Math.min(maxX - minX, maxY - minY) * 0.12;
+    const onIt = gap <= Math.min(right - left, bottom - top) * 0.12;
     return onIt ? id : null;
   }
 
@@ -301,8 +325,8 @@ export function createLifeEngine(config = {}) {
     toy = {
       kind,
       position: {
-        x: clamp(spawn.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-        y: clamp(spawn.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+        x: clamp(spawn.x, minX(), maxX()),
+        y: clamp(spawn.y, minY(), maxY()),
       },
       velocity: { x: 0, y: 0 },
     };
@@ -380,8 +404,8 @@ export function createLifeEngine(config = {}) {
   function moveToy(point) {
     if (!toy) return;
     toy.position = {
-      x: clamp(point.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-      y: clamp(point.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+      x: clamp(point.x, minX(), maxX()),
+      y: clamp(point.y, minY(), maxY()),
     };
     toy.velocity = { x: 0, y: 0 };
   }
@@ -389,6 +413,10 @@ export function createLifeEngine(config = {}) {
   /** Advance the toy itself. Who drives it is the whole difference between the three kinds. */
   function stepToy(deltaSeconds, cursor) {
     if (!toy) return;
+    // Toys get the plain work-area margin, NOT the cat's body-aware per-edge margins. Those
+    // exist because the cat's anchor is its feet and its body sticks up from there; a toy is a
+    // small thing centred on its own position, and clamping a cursor-driven toy to the cat's
+    // keep-out would stop the laser from ever reaching the top of the screen.
     const minX = cfg.margin;
     const maxX = Math.max(cfg.margin, bounds.width - cfg.margin);
     const minY = cfg.margin;
@@ -534,8 +562,8 @@ export function createLifeEngine(config = {}) {
     // straight at a (already clamped) destination means the arc of a turn can now swing wide of
     // the target, and without this that arc could carry the cat off the edge of the desktop.
     position = {
-      x: clamp(position.x + Math.cos(heading) * step, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-      y: clamp(position.y + Math.sin(heading) * step, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+      x: clamp(position.x + Math.cos(heading) * step, minX(), maxX()),
+      y: clamp(position.y + Math.sin(heading) * step, minY(), maxY()),
     };
     facing = Math.cos(heading) >= 0 ? 1 : -1;
     // the step above can itself cover the remaining distance (large speed or delta),
@@ -550,8 +578,8 @@ export function createLifeEngine(config = {}) {
   function setBounds(next) {
     bounds = next;
     position = {
-      x: clamp(position.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-      y: clamp(position.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+      x: clamp(position.x, minX(), maxX()),
+      y: clamp(position.y, minY(), maxY()),
     };
   }
 
@@ -572,8 +600,8 @@ export function createLifeEngine(config = {}) {
     // (position (-490, 1400) against a 1470x956 screen) from a cause not yet root-caused;
     // clamping here prevents that outcome regardless of what produces a bad dragOffset.
     const next = {
-      x: clamp(cursor.x + dragOffset.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-      y: clamp(cursor.y + dragOffset.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+      x: clamp(cursor.x + dragOffset.x, minX(), maxX()),
+      y: clamp(cursor.y + dragOffset.y, minY(), maxY()),
     };
     // Keep the heading pointing the way it is being carried, so putting it down doesn't make
     // the body snap round to an orientation left over from before the grab.
@@ -609,8 +637,8 @@ export function createLifeEngine(config = {}) {
     if (state === 'dragged') return; // the user's hands-on control always wins
     aiIntent = {
       target: {
-        x: clamp(targetPoint.x, cfg.margin, Math.max(cfg.margin, bounds.width - cfg.margin)),
-        y: clamp(targetPoint.y, cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+        x: clamp(targetPoint.x, minX(), maxX()),
+        y: clamp(targetPoint.y, minY(), maxY()),
       },
       until: now + holdMs,
       speed: cfg.speed * (Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1),
@@ -830,6 +858,7 @@ export function createLifeEngine(config = {}) {
     hold,
     setInteractionMode,
     setAvoidRadius,
+    setMargins,
     resetPosition,
     setToy,
     clearToy,

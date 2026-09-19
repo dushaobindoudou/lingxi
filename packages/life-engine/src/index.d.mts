@@ -71,6 +71,15 @@ export interface LifeEngine {
   /** Live-update the 'auto' mode avoidance radius (see LifeEngineConfig.avoidRadius) - the
    *  behavior preset picker in "性格行为" drives this without restarting the engine. */
   setAvoidRadius(radius: number): void;
+  /**
+   * Per-edge keep-out distances between the cat's ANCHOR POINT and each screen edge, in the same
+   * logical pixels as `bounds`. Replaces the single `margin` for the cat itself (toys keep using
+   * the plain one). The four numbers are expected to differ: the anchor is the cat's feet, so the
+   * body extends far above it and barely below, and a host that wants an even-looking border has
+   * to compensate. `bottom` may be negative, which lets the feet cross the bottom edge.
+   * Any edge left out keeps its current value.
+   */
+  setMargins(margins: { top?: number; bottom?: number; left?: number; right?: number }): void;
   /** Hard recovery: recenter and drop whatever it was doing (drag included). */
   resetPosition(): void;
   /** Put a toy on the desktop (see TOY_KINDS). Outranks every autonomous drive, not a drag. */

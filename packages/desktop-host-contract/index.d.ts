@@ -132,6 +132,13 @@ export interface Renderer {
    *  bubble. Same logical pixel space as resize/render. */
   headScreenPoint?(): { x: number; y: number };
   /**
+   * How far the drawn character reaches from its anchor point, in logical screen pixels at the
+   * current scale and camera. A host uses this to decide how close to each screen edge the
+   * character may go - a single margin cannot be right for all four edges when the anchor is
+   * not the centre of the body.
+   */
+  screenExtent?(): { above: number; below: number; halfWidth: number };
+  /**
    * Machine-readable description of everything this renderer supports - clips, expressions,
    * themes, camera angles. Exists so a control surface (debug console, external agent) can be
    * built from what the renderer actually has, rather than from a hand-maintained list that

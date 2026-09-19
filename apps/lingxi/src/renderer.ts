@@ -164,6 +164,13 @@ export function createThreeRenderer(): Renderer {
   let faceSheetImage: HTMLImageElement | null = null;
   let faceSheet: CustomSkin['faceSheet'] | null = null;
 
+  /**
+   * The cat's rest-pose bounding box in voxels, refreshed by mountSkin because a custom skin can
+   * change the proportions. screenExtent() projects it; declared up here because mountSkin runs
+   * during construction, before the rest of the renderer's state exists.
+   */
+  const restBox = new THREE.Box3();
+
   function mountSkin(next: CustomSkin) {
     if (rig) {
       scene.remove(rig.root);
@@ -232,6 +239,29 @@ export function createThreeRenderer(): Renderer {
 
     bodyController = createBodyController(rig, SKELETON);
     idleAnimator = createIdleAnimator(rig);
+    // The rest-pose extent for screenExtent(). Captured here because it depends on the skin's
+    // proportions, which a custom theme can change.
+    //
+    // Measured with the root's transform neutralised, because Box3.expandByObject reads WORLD
+    // matrices: leaving the root scaled would bake effectiveScale() into the box, and then
+    // screenExtent would apply that scale a second time. Neutralising keeps the box in the rig's
+    // own voxel units, which is the one unit that does not change when the user resizes the cat.
+    bodyController.reset();
+    const keepScale = rig.root.scale.clone();
+    const keepPosition = rig.root.position.clone();
+    const keepQuaternion = rig.root.quaternion.clone();
+    rig.root.scale.setScalar(1);
+    rig.root.position.set(0, 0, 0);
+    rig.root.quaternion.identity();
+    rig.root.updateMatrixWorld(true);
+    restBox.makeEmpty();
+    rig.root.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.visible) restBox.expandByObject(object);
+    });
+    rig.root.scale.copy(keepScale);
+    rig.root.position.copy(keepPosition);
+    rig.root.quaternion.copy(keepQuaternion);
+    rig.root.updateMatrixWorld(true);
     lastFrame = director.update(0, 'idle', false);
     repaintFace();
   }
@@ -571,6 +601,39 @@ export function createThreeRenderer(): Renderer {
     /** The clip playing right now, so the host can hold the cat still for its duration. */
     get playingAction() {
       return director.playing;
+    },
+
+    /**
+     * How far the cat's drawn body reaches from its anchor, in logical screen pixels at the
+     * current size and camera angle. The anchor is its FEET, so `above` is most of its height
+     * and `below` is nearly nothing - which is exactly the asymmetry a host needs to know about
+     * to decide how close to each screen edge it may go.
+     */
+    screenExtent() {
+      const scale = effectiveScale();
+      // Measured from the rig's rest bounding box rather than the live pose: margins should not
+      // twitch because the cat happened to be mid-stretch when they were recomputed.
+      const anchor = screenToWorld(width / 2, height / 2, 0).clone();
+      const project = (world: THREE.Vector3) => {
+        const p = world.clone().project(camera);
+        return { x: (p.x * 0.5 + 0.5) * width, y: (-p.y * 0.5 + 0.5) * height };
+      };
+      const base = project(anchor);
+      const corners: { x: number; y: number }[] = [];
+      for (const dy of [restBox.min.y, restBox.max.y]) {
+        for (const dx of [restBox.min.x, restBox.max.x]) {
+          for (const dz of [restBox.min.z, restBox.max.z]) {
+            corners.push(
+              project(new THREE.Vector3(anchor.x + dx * scale, dy * scale, anchor.z + dz * scale)),
+            );
+          }
+        }
+      }
+      return {
+        above: Math.max(0, base.y - Math.min(...corners.map((c) => c.y))),
+        below: Math.max(0, Math.max(...corners.map((c) => c.y)) - base.y),
+        halfWidth: Math.max(...corners.map((c) => Math.abs(c.x - base.x))),
+      };
     },
 
     /** Where to hang something above the cat's head, in the same logical pixels as

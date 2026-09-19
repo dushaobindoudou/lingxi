@@ -605,3 +605,47 @@ test('the laser is what chases the cursor now, and it never drags the cat off-sc
     assert.ok(snap.position.y >= 20 - 1e-6 && snap.position.y <= 800 - 20 + 1e-6, `y off-screen on frame ${f}`);
   }
 });
+
+// The cat's anchor is its FEET, so the body extends a long way above it and barely below. A
+// single margin therefore cannot frame all four edges: 24px from the top leaves the cat drawn
+// entirely off the screen. setMargins is how the host, which is the only thing that knows how
+// tall the character currently draws, corrects for that.
+test('per-edge margins keep the cat inside a box that is not symmetric', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 } });
+  engine.setMargins({ top: 300, bottom: 40, left: 24, right: 24 });
+
+  for (let f = 0; f < 4000; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    assert.ok(snap.position.y >= 300 - 1e-6, `crossed the top limit on frame ${f}: ${snap.position.y}`);
+    assert.ok(snap.position.y <= 760 + 1e-6, `crossed the bottom limit on frame ${f}: ${snap.position.y}`);
+    assert.ok(snap.position.x >= 24 - 1e-6 && snap.position.x <= 976 + 1e-6, `x off-screen on frame ${f}`);
+  }
+});
+
+test('setMargins pulls a cat that is already out of the new bounds back inside', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 30 } });
+  engine.setMargins({ top: 300 });
+  assert.equal(engine.position.y, 300);
+});
+
+test('a margin can be negative, letting the anchor cross the edge', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 } });
+  engine.setMargins({ bottom: -50 });
+  for (let f = 0; f < 2000; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    assert.ok(snap.position.y <= 850 + 1e-6, `overshot the extended bottom on frame ${f}`);
+  }
+});
+
+test('margins left unspecified keep their current value', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 } });
+  engine.setMargins({ top: 300 });
+  engine.setMargins({ left: 90 });
+  engine.setMargins({ top: Number.NaN, right: 'nonsense' });
+  for (let f = 0; f < 2000; f += 1) {
+    const snap = engine.tick(f * 16, null);
+    assert.ok(snap.position.y >= 300 - 1e-6, `top margin was lost on frame ${f}`);
+    assert.ok(snap.position.x >= 90 - 1e-6, `left margin was lost on frame ${f}`);
+    assert.ok(snap.position.x <= 976 + 1e-6, `right margin was corrupted on frame ${f}`);
+  }
+});
