@@ -769,8 +769,35 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
 fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEvent {
     let session_id = raw.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown-session").to_string();
     let hook_event_name = raw.get("hook_event_name").and_then(|v| v.as_str()).unwrap_or("unknown");
+    // Must stay in step with integrations/adapters/lingxi-emit.mjs's fromClaude(). Two mappers
+    // exist because there are two paths in: the one-click installer writes a plain curl that
+    // posts the RAW hook payload (so it works for someone with only the .app and no checkout),
+    // while the plugin routes through the node adapter. They drifted - this side knew three
+    // events and the adapter knew five - so a session start and, worse, a PERMISSION PROMPT were
+    // silently dropped on the path most users take.
     let (state, summary) = match hook_event_name {
+        "SessionStart" => ("queued".to_string(), "会话开始".to_string()),
         "UserPromptSubmit" => ("running".to_string(), "新一轮对话开始".to_string()),
+        "Notification" => {
+            // Claude raises this both for permission prompts and for plain questions. They need
+            // different urgency - an approval is blocking a tool call right now - and the message
+            // text is the only thing that separates them.
+            let message = raw.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            let lower = message.to_lowercase();
+            let approval = ["permission", "approve", "allow"]
+                .iter()
+                .any(|needle| lower.contains(needle))
+                || message.contains('授') && message.contains('权')
+                || message.contains("批准")
+                || message.contains("允许");
+            let state = if approval { "needs_approval" } else { "needs_input" };
+            let text = if message.is_empty() {
+                if approval { "等你批一下".to_string() } else { "在等你回一句".to_string() }
+            } else {
+                message.to_string()
+            };
+            (state.to_string(), text)
+        }
         "Stop" => {
             let reason = raw.get("stop_reason").and_then(|v| v.as_str()).unwrap_or("end_turn");
             ("completed".to_string(), format!("本轮回复完成（{reason}）"))
@@ -3897,6 +3924,39 @@ mod tests {
         assert!(looks_like_typo("skin", "skins"), "stray plural");
         assert!(!looks_like_typo("skin", "camera"), "unrelated words must not be suggested");
         assert!(!looks_like_typo("say", "resetPosition"));
+    }
+
+    #[test]
+    fn the_two_claude_mappers_cover_the_same_events() {
+        // There are two paths in - the one-click curl posts the raw payload and Rust maps it, the
+        // plugin maps it in node first - and they drifted: this side knew three events while the
+        // adapter knew five, so a session start and a PERMISSION PROMPT were silently dropped on
+        // the path most users take. Anything the adapter handles must land here too.
+        for (event, expected) in [
+            ("SessionStart", "queued"),
+            ("UserPromptSubmit", "running"),
+            ("Stop", "completed"),
+            ("StopFailure", "failed"),
+        ] {
+            let raw = serde_json::json!({ "session_id": "s", "hook_event_name": event });
+            assert_eq!(normalize_claude_hook_event(&raw, 1).state, expected, "{event}");
+        }
+    }
+
+    #[test]
+    fn a_permission_prompt_is_an_approval_and_a_question_is_not() {
+        // The single most useful thing to forward to an IM, and it was being dropped entirely.
+        let permission = serde_json::json!({
+            "session_id": "s", "hook_event_name": "Notification",
+            "message": "Claude needs your permission to use Bash"
+        });
+        assert_eq!(normalize_claude_hook_event(&permission, 1).state, "needs_approval");
+
+        let question = serde_json::json!({
+            "session_id": "s", "hook_event_name": "Notification",
+            "message": "Waiting for your input"
+        });
+        assert_eq!(normalize_claude_hook_event(&question, 1).state, "needs_input");
     }
 
     #[test]
