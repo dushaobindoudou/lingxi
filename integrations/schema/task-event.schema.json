@@ -4,21 +4,51 @@
   "title": "灵犀 task event",
   "description": "What an agent tells the cat about the work it is doing. This is the ONE surface every integration targets: Claude Code hooks, a Codex notify program, an MCP tool call, a shell script or a bare curl all produce this object and nothing else. Adding a fourth host means writing an adapter that emits this - it never means changing the app. The split that matters: `state` and `kind` describe a PROCESS and a host can supply them from lifecycle events alone. `mood` describes the PERSON, and only something that has read the work can judge it - which is why a plugin can guarantee a baseline reaction while only the model can make it feel like the cat knows what is going on.",
   "type": "object",
-  "required": ["state"],
+  "required": [
+    "state"
+  ],
   "additionalProperties": false,
   "properties": {
     "state": {
-      "description": "Where the work has got to. The only required field.",
-      "enum": ["queued", "running", "blocked", "needs_input", "completed", "failed", "cancelled"]
+      "description": "Where the work has got to. The only required field. `needs_input` and `needs_approval` are deliberately separate: a question can wait until the user looks up, an approval is blocking a tool call right now, and a notification outlet needs to be able to treat them differently.",
+      "enum": [
+        "queued",
+        "running",
+        "blocked",
+        "needs_input",
+        "needs_approval",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
     },
     "kind": {
       "description": "What sort of work it is. Lets the cat react differently to a failed deploy than to a failed search.",
-      "enum": ["build", "test", "deploy", "review", "search", "write", "chat", "other"],
+      "enum": [
+        "build",
+        "test",
+        "deploy",
+        "review",
+        "search",
+        "write",
+        "chat",
+        "other"
+      ],
       "default": "other"
     },
     "mood": {
       "description": "How the work FEELS - the dimension that makes this a pet rather than a status light. Someone writing to their mother and someone fighting a flaky test are both running/write. Judge the mood of the WORK, not your own confidence in it: you can be certain about an apology letter and it is still `sad`. The cat ANSWERS the mood rather than mirroring it - failure is met with comfort, not alarm - so reporting a bad mood honestly is safe. Hosts that only see lifecycle events should omit this rather than guess.",
-      "enum": ["focused", "proud", "tender", "sad", "frustrated", "anxious", "weary", "playful", "curious"],
+      "enum": [
+        "focused",
+        "proud",
+        "tender",
+        "sad",
+        "frustrated",
+        "anxious",
+        "weary",
+        "playful",
+        "curious"
+      ],
       "default": "focused"
     },
     "progress": {

@@ -671,8 +671,14 @@ const CLAUDE_TASK_EVENT_CAP: usize = 50;
 /// HAPPENING, not which clip to play - see docs/decisions/003. That is what lets the user retune
 /// every agent's reactions in one file, and what keeps an agent from having to know the 49-clip
 /// library exists.
-const TASK_STATES: [&str; 7] = [
-    "queued", "running", "blocked", "needs_input", "completed", "failed", "cancelled",
+const TASK_STATES: [&str; 8] = [
+    "queued", "running", "blocked",
+    // Two different kinds of waiting, kept apart because they need different urgency. A question
+    // can sit until the user looks up; an approval is BLOCKING A TOOL CALL right now, and is the
+    // one an IM notification most needs to carry. Collapsing them meant a permission prompt and
+    // "what should I name this?" arrived identically.
+    "needs_input", "needs_approval",
+    "completed", "failed", "cancelled",
 ];
 
 /// The kind of work, which lets the cat react differently to a deploy than to a search.
@@ -2096,12 +2102,61 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 "shape": { "expression": "required", "action": "optional clip id", "say": "optional line" },
                                 "activeOverrides": overrides.keys().collect::<Vec<_>>(),
                             },
+                            "notifications": {
+                                "purpose": "An outlet, not an integration. 灵犀 does not connect to Slack, Feishu or anything else - those are your accounts - but it will echo task events to a webhook you already have.",
+                                "configureAt": custom_assets_dir(&app)
+                                    .and_then(|d| d.parent().map(|p| p.join("notifications.json").display().to_string())),
+                                "shape": { "sinks": [{ "url": "https://...", "states": ["failed", "needs_approval"], "format": "slack | feishu | raw" }] },
+                                "note": "File only - there is deliberately no API to add a sink. Otherwise anything that can reach this bridge could point your task summaries at a server of its choosing. https only.",
+                                "active": app.state::<SinkState>().sinks.lock().unwrap().len(),
+                            },
+                            "activity": {
+                                "endpoint": "GET /activity",
+                                "note": "What each tool is doing right now, one row per provider, with the agent's registered logo folded in so the source can be rendered without a second request.",
+                            },
                             "userOwned": {
                                 "fields": ["skin", "camera", "scale", "visible"],
                                 "note": "These are the user's preferences. You can set them and it is not blocked, but prefer a registered badge for identity - repainting someone's pet to mark your presence is not yours to do.",
                             },
                         })
                         .to_string(),
+                    )
+                }
+                // What each tool is doing RIGHT NOW, one entry per provider.
+                //
+                // /debug/events is a log; answering "what is Claude Code up to" from it means
+                // scanning backwards and reconstructing, and it cannot tell a finished task from
+                // a running one. This is the derived answer, with the agent's registered logo
+                // folded in so a caller can render the source without a second request.
+                (tiny_http::Method::Get, "/activity") => {
+                    let activity = app.state::<ActivityState>();
+                    let registry = app.state::<AgentRegistry>();
+                    let agents = registry.agents.lock().unwrap().clone();
+                    let rows: Vec<serde_json::Value> = activity
+                        .by_provider
+                        .lock()
+                        .unwrap()
+                        .values()
+                        .map(|row| {
+                            let identity = row
+                                .agent
+                                .as_ref()
+                                .and_then(|id| agents.get(id))
+                                .or_else(|| agents.get(&row.provider));
+                            let mut value = serde_json::to_value(row).unwrap_or(serde_json::Value::Null);
+                            if let (Some(object), Some(identity)) = (value.as_object_mut(), identity) {
+                                object.insert("name".into(), serde_json::json!(identity.name));
+                                object.insert("badge".into(), serde_json::json!(identity.badge));
+                                object.insert("logo".into(), serde_json::json!(identity.logo));
+                                object.insert("color".into(), serde_json::json!(identity.color));
+                            }
+                            value
+                        })
+                        .collect();
+                    let busy = rows.iter().filter(|r| r.get("busy") == Some(&serde_json::json!(true))).count();
+                    json_response(
+                        200,
+                        serde_json::json!({ "activity": rows, "busy": busy }).to_string(),
                     )
                 }
                 // Who is driving, and who has driven. The answer to "which agent made it do
@@ -2340,6 +2395,33 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     let state = app.state::<MemoryState>();
                     let reminders = state.reminders.lock().unwrap();
                     json_response(200, serde_json::to_string(&*reminders).unwrap_or_else(|_| "[]".into()))
+                }
+                // Cancel one. A reminder an agent set on the user's behalf has to be removable
+                // when the plan changes, and nothing could remove one before - GET listed them and
+                // POST made more.
+                (tiny_http::Method::Delete, path) if path.starts_with("/reminders/") => {
+                    let id = path.trim_start_matches("/reminders/");
+                    let state = app.state::<MemoryState>();
+                    let removed = {
+                        let mut reminders = state.reminders.lock().unwrap();
+                        let before = reminders.len();
+                        reminders.retain(|r| r.id != id);
+                        before - reminders.len()
+                    };
+                    if removed > 0 {
+                        state.persist_reminders();
+                        json_response(200, serde_json::json!({ "ok": true, "removed": id }).to_string())
+                    } else {
+                        json_response(
+                            404,
+                            serde_json::json!({
+                                "ok": false,
+                                "error": format!("no reminder with id \"{id}\""),
+                                "hint": "GET /reminders lists the ids",
+                            })
+                            .to_string(),
+                        )
+                    }
                 }
                 (tiny_http::Method::Post, "/reminders") => {
                     let mut body = String::new();
@@ -2754,6 +2836,10 @@ fn builtin_reaction(
         ("needs_input", "tender") => return Some(("撒娇", Some("paw-reach"), Some("想听听你的意思～"))),
         ("needs_input", "anxious") => return Some(("警觉", Some("notice-you"), Some("这一步要你点头"))),
         ("needs_input", _) => return Some(("好奇", Some("notice-you"), Some("在等你哦"))),
+        // Approval is blocking something. It gets a more insistent face than a question does,
+        // but still not an alarmed one - the cat is fetching you, not warning you.
+        ("needs_approval", "anxious") => return Some(("警觉", Some("notice-you"), Some("这步要你点头才能走"))),
+        ("needs_approval", _) => return Some(("警惕", Some("paw-reach"), Some("等你批一下～"))),
 
         // Working. Mostly silent - see should_react; a line here would fire on every update.
         ("running", "weary") => return Some(("困困", Some("yawn"), None)),
@@ -2781,12 +2867,183 @@ fn builtin_reaction(
         "completed" => ("开心", Some("paw-wave"), Some("搞定啦～")),
         "failed" => ("委屈", Some("shake-head"), Some("这次没成…")),
         "needs_input" | "waiting_for_user" => ("好奇", Some("notice-you"), Some("在等你哦")),
+        "needs_approval" => ("警惕", Some("paw-reach"), Some("等你批一下～")),
         "blocked" => ("困惑", Some("curious-tilt"), Some("卡住了…")),
         "running" => ("认真", None, None),
         "queued" => ("清醒", None, None),
         "cancelled" => ("嫌弃", Some("shake-fur"), None),
         _ => return None,
     })
+}
+
+/// Where the user wants task events echoed to, besides the cat.
+///
+/// THE POINT: 灵犀 does not integrate with Slack, Feishu, Telegram or anything else, and should
+/// not - those are the user's private accounts and baking any of them in means shipping their
+/// tokens, their API drift and their privacy model. What it can do is provide the OUTLET, and let
+/// the user point it wherever they already have a webhook.
+///
+/// THE TRADE, stated plainly: until now this app made no outbound network connections at all, and
+/// that was a meaningful part of its safety story. A sink sends the summaries of what the user is
+/// working on to a third party. So:
+///
+///   - Sinks are configured ONLY by editing a file in the config directory. There is deliberately
+///     no API to add one. Otherwise any process that can reach the loopback bridge could point the
+///     user's task summaries at a server of its choosing, which turns a desktop pet into an
+///     exfiltration channel.
+///   - Nothing is sent unless that file exists. The default remains zero outbound traffic.
+///   - Only `https`, because the payload describes what someone is doing all day.
+#[derive(Clone, Deserialize)]
+struct NotificationSink {
+    url: String,
+    /// Which states to forward. Empty means all of them.
+    #[serde(default)]
+    states: Vec<String>,
+    /// "raw" (the task event as-is), "slack" or "feishu" ({"text": ...} shapes).
+    #[serde(default)]
+    format: String,
+}
+
+#[derive(Default)]
+struct SinkState {
+    sinks: Mutex<Vec<NotificationSink>>,
+}
+
+/// Read `notifications.json` from the config directory. Absent is the normal case.
+fn load_sinks(app: &tauri::AppHandle) -> (Vec<NotificationSink>, Vec<String>) {
+    let mut errors = Vec::new();
+    let Some(path) = app.path().app_config_dir().ok().map(|d| d.join("notifications.json")) else {
+        return (Vec::new(), errors);
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return (Vec::new(), errors);
+    };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(value) => {
+            let raw = value.get("sinks").cloned().unwrap_or(value);
+            match serde_json::from_value::<Vec<NotificationSink>>(raw) {
+                Ok(list) => {
+                    let (ok, bad): (Vec<_>, Vec<_>) = list.into_iter().partition(|s| {
+                        // https anywhere, or plain http on LOOPBACK only. The loopback exception
+                        // is not a weakening: a relay running on this machine is how most people
+                        // will actually bridge to an IM (transform the payload, add their own
+                        // token, forward it), and requiring TLS to talk to yourself buys nothing
+                        // while making the common case annoying enough to be done badly instead.
+                        s.url.starts_with("https://")
+                            || s.url.starts_with("http://127.0.0.1")
+                            || s.url.starts_with("http://localhost")
+                    });
+                    for sink in &bad {
+                        errors.push(format!(
+                            "notifications.json: refusing \"{}\" - https, or plain http only on 127.0.0.1. \
+                             The payload describes what you are working on, so it does not leave this machine \
+                             unencrypted.",
+                            sink.url.chars().take(60).collect::<String>()
+                        ));
+                    }
+                    (ok, errors)
+                }
+                Err(e) => {
+                    errors.push(format!("notifications.json: {e}"));
+                    (Vec::new(), errors)
+                }
+            }
+        }
+        Err(e) => {
+            errors.push(format!("notifications.json: {e}"));
+            (Vec::new(), errors)
+        }
+    }
+}
+
+/// Echo one task event to every sink that wants it. Fire-and-forget on a thread: the agent that
+/// posted the event is waiting on the response, and a slow webhook must never make someone's
+/// tool feel slow.
+fn forward_to_sinks(app: &tauri::AppHandle, event: &TaskEvent) {
+    let state = app.state::<SinkState>();
+    let sinks: Vec<NotificationSink> = {
+        let guard = state.sinks.lock().unwrap();
+        guard
+            .iter()
+            .filter(|sink| sink.states.is_empty() || sink.states.iter().any(|s| s == &event.state))
+            .cloned()
+            .collect()
+    };
+    if sinks.is_empty() {
+        return;
+    }
+    let event = event.clone();
+    thread::spawn(move || {
+        for sink in sinks {
+            let line = format!(
+                "{} · {}{}",
+                event.provider,
+                event.state,
+                if event.summary.is_empty() { String::new() } else { format!(" — {}", event.summary) },
+            );
+            let body = match sink.format.as_str() {
+                // Slack and Feishu both accept {"text": "..."} on an incoming webhook, which is
+                // the shared subset worth supporting. Anything richer is the user's to build with
+                // "raw" and whatever they already use to transform webhooks.
+                "slack" | "feishu" => serde_json::json!({ "text": line }).to_string(),
+                _ => serde_json::to_string(&event).unwrap_or_else(|_| "{}".into()),
+            };
+            if let Err(e) = post_json(&sink.url, &body) {
+                eprintln!("[lingxi-desktop] notification sink failed: {e}");
+            }
+        }
+    });
+}
+
+/// Minimal blocking HTTPS POST. Uses curl rather than adding an HTTP client and a TLS stack to a
+/// desktop pet: this runs at most a few times a minute, off the request path, and the dependency
+/// cost of rustls + reqwest is not worth paying for it.
+fn post_json(url: &str, body: &str) -> Result<(), String> {
+    let output = std::process::Command::new("curl")
+        .args(["-s", "-S", "-m", "8", "-X", "POST", "-H", "Content-Type: application/json", "--data-binary", "@-", url])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(body.as_bytes())?;
+            child.wait_with_output()
+        })
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+/// Keep the live per-provider picture up to date. See ActivityState.
+fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
+    let state = app.state::<ActivityState>();
+    let mut map = state.by_provider.lock().unwrap();
+    // Keyed by the registered AGENT where there is one, falling back to the provider.
+    //
+    // Keying on provider alone made one tool appear twice: the plugin adapter reports
+    // provider "claude" while the CLI reports "claude-code", so the same Claude Code showed up as
+    // two rows with two states. The identity is what "who is doing what" is actually about; the
+    // provider is just which transport it came in on.
+    let key = if event.source_id.is_empty() { event.provider.clone() } else { event.source_id.clone() };
+    map.insert(
+        key,
+        AgentActivity {
+            provider: event.provider.clone(),
+            agent: if event.source_id.is_empty() { None } else { Some(event.source_id.clone()) },
+            task_id: event.task_id.clone(),
+            state: event.state.clone(),
+            kind: event.kind.clone(),
+            mood: event.mood.clone(),
+            progress: event.progress,
+            summary: event.summary.clone(),
+            updated_at: event.observed_at,
+            busy: state_is_busy(&event.state),
+        },
+    );
 }
 
 /// Should this event produce anything visible at all?
@@ -2816,7 +3073,51 @@ struct TaskProgressState {
     seen: Mutex<HashMap<String, f64>>,
 }
 
+/// What each agent is doing RIGHT NOW, as opposed to what has happened.
+///
+/// /debug/events is a log: to answer "what is Claude Code up to" from it you have to scan
+/// backwards and reconstruct, and you cannot tell a task that finished from one still running.
+/// This is the derived answer, kept as events arrive, so "谁在干什么" is one GET.
+#[derive(Clone, Serialize)]
+struct AgentActivity {
+    provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent: Option<String>,
+    #[serde(rename = "taskId")]
+    task_id: String,
+    state: String,
+    kind: String,
+    mood: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<f64>,
+    summary: String,
+    /// Unix millis of the last event from this source.
+    #[serde(rename = "updatedAt")]
+    updated_at: u64,
+    /// True while the work is still going. Derived here so a caller does not have to know which
+    /// states are terminal.
+    busy: bool,
+}
+
+#[derive(Default)]
+struct ActivityState {
+    /// Keyed by the registered agent id where there is one, else the provider - one entry per
+    /// TOOL rather than per task, because "what is Codex doing" has one answer and the newest
+    /// event is the one that answers it.
+    by_provider: Mutex<HashMap<String, AgentActivity>>,
+}
+
+/// Which states mean work is still in flight.
+fn state_is_busy(state: &str) -> bool {
+    matches!(state, "queued" | "running" | "blocked" | "needs_input" | "needs_approval")
+}
+
 fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
+    // Recorded BEFORE the reaction is decided, and regardless of whether one is shown at all.
+    // Progress updates are deliberately swallowed for the cat's sake (see should_react), but they
+    // are exactly what "what is it doing right now" wants, so the two must not share a gate.
+    record_activity(app, event);
+    forward_to_sinks(app, event);
     if !should_react(app, event) {
         return;
     }
@@ -3365,6 +3666,17 @@ pub fn run() {
             // unmanaged type, so registering it further down (where the other state lives) meant
             // the cursor poller took the whole app down on its first tick.
             app.manage(PowerState::default());
+            app.manage(ActivityState::default());
+            {
+                let (sinks, errors) = load_sinks(app.handle());
+                for error in &errors {
+                    eprintln!("[lingxi-desktop] {error}");
+                }
+                if !sinks.is_empty() {
+                    eprintln!("[lingxi-desktop] {} notification sink(s) configured", sinks.len());
+                }
+                app.manage(SinkState { sinks: Mutex::new(sinks) });
+            }
             spawn_cursor_poller(app.handle().clone(), screen_height_points, scale_factor);
             spawn_reaction_drain(app.handle().clone());
 

@@ -161,6 +161,7 @@ case "$cmd" in
   status)            request GET /status ;;
   integration)       request GET /integration ;;
   agents)            request GET /agents ;;
+  activity)          request GET /activity ;;
   events)            request GET /debug/events ;;
   assets)            request GET /assets/status ;;
   recall)            request GET /memory ;;
@@ -222,6 +223,10 @@ case "$cmd" in
             done
             request POST /reminders "$(json_typed inMinutes="number:$minutes" text="${rem_args[*]}" \
               mood="$rem_mood" repeatEveryMinutes="number:$rem_every")" ;;
+
+  unremind)
+    [ $# -ge 1 ] || die "usage: lingxi unremind <id>   (lingxi raw GET /reminders lists them)"
+    request DELETE "/reminders/$1" ;;
 
   reload)
     request POST /control '{"reloadAssets":true}' >/dev/null

@@ -40,7 +40,9 @@ const TOKEN_FILE =
   ?? join(homedir(), 'Library', 'Application Support', 'com.dushaobin.lingxi-desktop', 'bridge-token');
 
 /** Closed vocabularies - see integrations/schema/task-event.schema.json. */
-const STATES = new Set(['queued', 'running', 'blocked', 'needs_input', 'completed', 'failed', 'cancelled']);
+const STATES = new Set([
+  'queued', 'running', 'blocked', 'needs_input', 'needs_approval', 'completed', 'failed', 'cancelled',
+]);
 const KINDS = new Set(['build', 'test', 'deploy', 'review', 'search', 'write', 'chat', 'other']);
 const MOODS = new Set(['focused', 'proud', 'tender', 'sad', 'frustrated', 'anxious', 'weary', 'playful', 'curious']);
 
@@ -87,10 +89,19 @@ function fromClaude(raw) {
       return { state: 'queued', kind: 'chat', taskId: session };
     case 'UserPromptSubmit':
       return { state: 'running', kind: 'chat', taskId: session };
-    case 'Notification':
-      // Claude raises this when it is waiting on the user - a permission prompt, a question.
-      // This is the one hook event that genuinely earns an interruption.
-      return { state: 'needs_input', kind: 'chat', taskId: session, summary: raw.message };
+    case 'Notification': {
+      // Claude raises this both for permission prompts and for plain questions. They need
+      // different urgency - an approval is blocking a tool call right now - and the message text
+      // is the only thing that distinguishes them, so it is read rather than assumed either way.
+      const message = String(raw.message ?? '');
+      const approval = /permission|approve|allow|授权|批准|允许/i.test(message);
+      return {
+        state: approval ? 'needs_approval' : 'needs_input',
+        kind: 'chat',
+        taskId: session,
+        summary: message,
+      };
+    }
     case 'Stop':
       return { state: 'completed', kind: 'chat', taskId: session };
     case 'StopFailure':
@@ -126,6 +137,7 @@ function fromCodex(raw) {
     case 'error':
       return { state: 'failed', kind: 'chat', taskId: session, summary };
     case 'approval-requested':
+      return { state: 'needs_approval', kind: 'chat', taskId: session, summary };
     case 'input-requested':
       return { state: 'needs_input', kind: 'chat', taskId: session, summary };
     default:
@@ -177,7 +189,11 @@ async function main() {
   }
 
   const mapped = host === 'claude' ? fromClaude(raw) : host === 'codex' ? fromCodex(raw) : raw;
-  const event = clean(mapped, host === 'generic' ? (raw.provider ?? 'generic') : host);
+  // The configured identity is the better provider name when there is one: it is what the CLI and
+  // the MCP server both report, so all three paths describe the same tool by the same name rather
+  // than appearing as separate sources.
+  const provider = configuredAgent() ?? (host === 'generic' ? (raw.provider ?? 'generic') : host);
+  const event = clean(mapped, provider);
   if (!event) return; // a lifecycle event with no meaning for a cat
 
   const auth = token();

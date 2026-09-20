@@ -140,10 +140,15 @@ lingxi task failed test frustrated "第四次跑同一个测试了"
 | `queued` | 排上了，还没开始 |
 | `running` | 正在做 |
 | `blocked` | 卡住了，但不需要用户介入 |
-| `needs_input` | **需要用户回答**才能继续 |
+| `needs_input` | **需要用户回答**才能继续（一个问题，可以等） |
+| `needs_approval` | **需要用户批准**才能继续（正卡着一个工具调用，更急） |
 | `completed` | 做完了，成功 |
 | `failed` | 做完了，失败 |
 | `cancelled` | 被取消 |
+
+> `needs_input` 和 `needs_approval` 是**故意分开**的:问题可以等用户抬头,
+> 授权是**正卡着一个工具调用**。IM 通知最需要区分的就是这两个。
+> Claude 的 `Notification` hook 两种都会发,适配器读消息内容来判断。
 
 ### 工作类型（8 个）
 
@@ -323,6 +328,38 @@ curl -s localhost:47811/assets/status
 
 ---
 
+## 通知出口：接到 IM(我们不内置)
+
+灵犀**不连接** Slack / 飞书 / Telegram——那是你的账号,内置任何一个都意味着要处理它们的
+token、API 变更和隐私模型。我们提供的是**出口**,你指向自己已有的 webhook。
+
+在配置目录里放 `notifications.json`：
+
+```jsonc
+{
+  "sinks": [
+    { "url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx",
+      "states": ["failed", "needs_approval"],   // 留空 = 全部
+      "format": "feishu" },                     // feishu | slack | raw
+    { "url": "http://127.0.0.1:9787/relay", "format": "raw" }
+  ]
+}
+```
+
+`feishu` / `slack` 发的是两边都认的 `{"text": "..."}`;`raw` 发完整的 task event,
+你自己的 relay 想怎么转都行。
+
+### 要说清楚的取舍
+
+**在此之前这个应用完全不发起对外连接**,那是它安全性的一部分。一个 sink 会把
+**你在做什么的摘要**发给第三方。所以：
+
+- **只能改文件配置,故意不提供 API。** 否则任何能访问这个桥的进程都能把你的任务摘要
+  指向它选的服务器——那就把桌宠变成了一个外泄通道。
+- **文件不存在就一条都不发。** 默认仍然是零对外流量。
+- **只接受 https**,或者 `127.0.0.1` 上的 http(本机 relay 是最常见的接法,
+  要求自己跟自己用 TLS 没有意义)。
+
 ## 完整接口清单
 
 | 方法 | 路径 | 用途 |
@@ -332,6 +369,7 @@ curl -s localhost:47811/assets/status
 | GET | `/capabilities` | 全部动作/表情/主题/视角 + `source` 标记 |
 | GET | `/status` | 皮肤、视角、大小、可见性 |
 | GET | `/perception` | 位置、状态、表情、朝向、意图、玩具、健康 |
+| GET | `/activity` | **每个工具此刻在干什么**（一行一个工具，带它自己的 logo） |
 | GET | `/agents` | 注册过的 agent + 当前占用舞台的是谁 |
 | POST | `/agents` | 注册身份和 logo |
 | POST | `/task-event` | **推荐的主接入点** |
@@ -339,6 +377,7 @@ curl -s localhost:47811/assets/status
 | POST | `/intent` | 让猫走到某个坐标 |
 | GET/POST | `/memory` | 关于主人的记忆 |
 | GET/POST | `/reminders` | 定时提醒（`mood` 决定送达的表情，`repeatEveryMinutes` 常驻） |
+| DELETE | `/reminders/{id}` | 取消一个提醒 |
 | GET | `/assets/status` | 自定义资源状态与校验错误 |
 | GET | `/debug/events` | 任务事件历史 |
 
