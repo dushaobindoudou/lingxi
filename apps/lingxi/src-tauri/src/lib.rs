@@ -1006,6 +1006,38 @@ fn claude_hooks_installed() -> bool {
 
 const PERCEPTION_HTTP_PORT: u16 = 47811;
 
+/// The `lingxi` shell client, embedded in the binary.
+///
+/// WHY THE APP CARRIES ITS OWN CLI
+///
+/// The skill path is the one that works everywhere - an MCP tool call is a per-call approval
+/// surface in many hosts, so a skill that shells out costs one approval instead of one per
+/// reaction. But the skill tells the model to run `lingxi`, and until now `lingxi` only existed
+/// inside a git checkout. Anyone who installed the .app and nothing else had a skill that
+/// referred to a command they did not have.
+///
+/// So the app writes it out on every launch. That also keeps it in step: the copy on disk is
+/// always the one that matches the running build's API, rather than whatever a checkout happens
+/// to be at.
+const LINGXI_CLI: &str = include_str!("../../../../integrations/cli/lingxi");
+
+/// Write the CLI into the config directory and make it executable. Best-effort: a failure here
+/// costs the shell path, not the app, so it is logged and otherwise ignored.
+fn install_cli(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let dir = app.path().app_config_dir().ok()?.join("bin");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join("lingxi");
+    // Rewritten every launch rather than only when missing: an older copy silently disagreeing
+    // with the running build's API is worse than no copy at all.
+    std::fs::write(&path, LINGXI_CLI).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+    }
+    Some(path)
+}
+
 /// The shared secret that gates the local HTTP bridge.
 ///
 /// The bridge listens on 127.0.0.1 only, which keeps it off the network but does NOT make it
@@ -2035,6 +2067,13 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                         "app": "lingxi",
                         "authRequired": true,
                         "tokenFile": token_path,
+                        // Where the bundled shell client lives. A skill that says "run lingxi"
+                        // needs somewhere to point when it is not on PATH and there is no checkout.
+                        "cli": app
+                            .path()
+                            .app_config_dir()
+                            .ok()
+                            .map(|d| d.join("bin").join("lingxi").display().to_string()),
                         "howTo": "Read the token file and send it as `Authorization: Bearer <token>`, \
                                   `X-Lingxi-Token: <token>`, or `?token=<token>`. The file is readable \
                                   only by your own account.",
@@ -3755,6 +3794,10 @@ pub fn run() {
             app.manage(AgentRegistry::default());
             app.manage(TaskProgressState::default());
             app.manage(BridgeToken::load_or_create(app.handle()));
+            match install_cli(app.handle()) {
+                Some(path) => eprintln!("[lingxi-desktop] shell client written to {}", path.display()),
+                None => eprintln!("[lingxi-desktop] could not write the shell client; the MCP path still works"),
+            }
             {
                 let (map, errors) = load_reaction_map(app.handle());
                 for error in &errors {

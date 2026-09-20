@@ -107,8 +107,15 @@ request() {
   if [ -z "$code" ] || [ "$code" = "000" ]; then
     die "灵犀 is not reachable on $BASE. Is the app running? It listens only on localhost."
   fi
-  # Pretty-print when jq is around, otherwise pass the JSON through untouched.
-  if command -v jq >/dev/null 2>&1; then jq . < "$out"; else cat "$out"; echo; fi
+  # Pretty-print if something is around to do it; otherwise pass the JSON through untouched.
+  # Purely cosmetic, so every branch here is optional - never a reason to fail.
+  if command -v jq >/dev/null 2>&1; then
+    jq . < "$out"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -m json.tool < "$out" 2>/dev/null || { cat "$out"; echo; }
+  else
+    cat "$out"; echo
+  fi
   # Non-2xx is a real failure and must be visible to the caller's `set -e`, not just readable.
   case "$code" in 2*) return 0;; *) return 1;; esac
 }
@@ -116,46 +123,70 @@ request() {
 # Build a JSON object from key=value pairs, with `agent` folded in. Values are passed through
 # jq --arg so quotes, newlines and Chinese text cannot break the encoding - which is exactly the
 # class of bug a hand-rolled printf would have.
-json() {
-  if ! command -v jq >/dev/null 2>&1; then
-    die "jq is required to build request bodies safely. brew install jq"
-  fi
-  json_typed "$@"
-}
+json() { json_typed "$@"; }
 
-# Build a JSON object from key=value pairs, folding in `agent` from the environment or
-# ~/.lingxi/agent.json.
+# Build a JSON object from key=value pairs, folding in `agent` from the environment.
 #
-# Values go through jq --arg, never string interpolation: the text is Chinese as often as not and
-# routinely contains quotes, and a hand-rolled printf would produce invalid JSON the moment it did.
-# A `number:` prefix emits a JSON number instead of a string.
+# Encoded by python3 or node rather than by hand. The text here is Chinese as often as not and
+# routinely contains quotes and newlines, and a printf-built body produces invalid JSON the moment
+# it does - which is a bug that shows up as a mystifying 400 rather than as anything obvious.
+#
+# It used to use jq, which was the wrong dependency: jq is NOT preinstalled on macOS, so the whole
+# skill path died on a machine that had never had it, while python3 and node are both already
+# there on any machine that can run this project. A `number:` prefix emits a JSON number.
 json_typed() {
-  command -v jq >/dev/null 2>&1 || die "jq is required. brew install jq"
-  local args=() filter="" i=0
-  add() {
-    i=$((i + 1))
-    case "$2" in
-      number:*) args+=(--arg "k$i" "$1" --argjson "v$i" "${2#number:}");;
-      *)        args+=(--arg "k$i" "$1" --arg "v$i" "$2");;
-    esac
-    if [ -z "$filter" ]; then filter=".[\$k$i] = \$v$i"; else filter="$filter | .[\$k$i] = \$v$i"; fi
-  }
+  local pairs=()
+  local pair key value
   for pair in "$@"; do
-    local key="${pair%%=*}" value="${pair#*=}"
+    key="${pair%%=*}"
+    value="${pair#*=}"
     [ -n "$value" ] || continue
-    add "$key" "$value"
+    pairs+=("$key" "$value")
   done
-  local resolved_agent
-  resolved_agent="$(agent_id)"
-  [ -n "$resolved_agent" ] && add agent "$resolved_agent"
-  if [ -z "$filter" ]; then printf '{}'; else jq -nc "${args[@]}" "{} | $filter"; fi
+  if [ -n "${LINGXI_AGENT:-}" ]; then pairs+=("agent" "$LINGXI_AGENT"); fi
+  if [ ${#pairs[@]} -eq 0 ]; then printf '{}'; return; fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import json, sys
+argv = sys.argv[1:]
+out = {}
+for key, value in zip(argv[0::2], argv[1::2]):
+    if value.startswith("number:"):
+        raw = value[7:]
+        try:
+            out[key] = float(raw) if ("." in raw or "e" in raw.lower()) else int(raw)
+        except ValueError:
+            pass
+    else:
+        out[key] = value
+sys.stdout.write(json.dumps(out, ensure_ascii=False))
+' "${pairs[@]}"
+  elif command -v node >/dev/null 2>&1; then
+    node -e '
+const argv = process.argv.slice(1);
+const out = {};
+for (let i = 0; i < argv.length; i += 2) {
+  const key = argv[i];
+  const value = argv[i + 1];
+  if (value.startsWith("number:")) {
+    const n = Number(value.slice(7));
+    if (Number.isFinite(n)) out[key] = n;
+  } else out[key] = value;
+}
+process.stdout.write(JSON.stringify(out));
+' "${pairs[@]}"
+  else
+    die "need python3 or node to build a request body safely (neither found)"
+  fi
 }
 
 cmd="${1:-help}"; shift || true
 case "$cmd" in
   health)
     # Deliberately unauthenticated - this is how you find out where the token lives.
-    curl -s --max-time 5 "$BASE/health" | { command -v jq >/dev/null && jq . || cat; } ;;
+    curl -s --max-time 5 "$BASE/health" \
+      | { command -v python3 >/dev/null 2>&1 && python3 -m json.tool 2>/dev/null || cat; } ;;
   capabilities|caps) request GET /capabilities ;;
   state)             request GET /perception ;;
   status)            request GET /status ;;

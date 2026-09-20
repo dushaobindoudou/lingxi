@@ -13,28 +13,49 @@ description: Drive the 灵犀 desktop cat - let it react to what you are working
 
 ## 怎么调用
 
+**一条 shell 命令搞定全部能力,不需要 MCP。**
+
 ```bash
 lingxi help          # 全部子命令
 lingxi state         # 猫在干什么
 lingxi integration   # 运行中的应用吐出的完整契约，以它为准
 ```
 
-`lingxi` 在仓库的 `integrations/cli/lingxi`。它自己读鉴权 token，不用配置。
-如果命令不存在或 `lingxi health` 连不上，**就说猫没启动**，不要假装做了。
+### 找不到 `lingxi` 的时候
 
-也有 MCP server（`lingxi_*` 工具），宿主想要带类型的 schema 时用。两条路同一个桥，
-**两条路也认同一个署名**：身份写在 `~/.lingxi/agent.json`，两边读的是同一份，
-所以署同一个名并自动补注册；不设的话两边都会以 `anonymous`（💻）出现，用户分不清是哪个 agent。
+它不在 PATH 上也没关系——**应用每次启动都会把它写到固定位置**:
 
-```json
-{ "id": "claude-code", "name": "Claude Code", "badge": "🅲", "color": "#D97757" }
+```bash
+~/Library/Application\ Support/com.dushaobin.lingxi-desktop/bin/lingxi
 ```
 
-`LINGXI_AGENT`（及 `_NAME`/`_BADGE`/`_COLOR`）仍然可用且优先级高于文件，
-但**别把它们写进宿主 MCP 配置的 `env`**——有些宿主把 server 授权按配置哈希记账，
-`env` 键一变信任就失效、server 直接不被启动。原因见 `integrations/README.md` 的「署名」。
+所以按这个顺序找,第一个能跑的就用:
 
-MCP 的 `lingxi_task` 同样接受 `mood`——别以为只有 CLI 有。
+```bash
+command -v lingxi \
+  || echo "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi"
+```
+
+也可以问应用自己(`/health` 是唯一免鉴权的接口):
+
+```bash
+curl -s localhost:47811/health    # 返回里有 "cli": "<绝对路径>"
+```
+
+**它自己读鉴权 token,没有任何要配置的东西。** 依赖只有 `curl` 和 `python3`(或 `node`),
+都是现成的——**不需要 jq**。
+
+如果 `lingxi health` 连不上,**就说猫没启动**,不要假装做了。
+
+### 为什么优先用它而不是 MCP
+
+MCP 的每个工具调用在很多宿主里都是**一次独立的授权**——一轮里改三次表情就要过三次确认。
+shell 只有一次。而且 CLI 的能力是 MCP 的**超集**:MCP 那 13 个工具它全有,
+另外还有 `activity`(谁在干什么)、`events`(历史)、`unremind`(取消提醒)、
+`raw`(任何没包装的接口)。
+
+MCP 仍然有用——宿主想要带类型的 schema、想逐工具控制权限时更合适。
+**两条路同一个桥、同一个 token、同一份契约,任选。**
 
 ---
 

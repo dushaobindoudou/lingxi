@@ -42,9 +42,32 @@ notify = ["node", "<repo>/integrations/adapters/lingxi-emit.mjs", "--host", "cod
 
 ```sh
 ./integrations/install-skills.sh
-export PATH="$PATH:$(pwd)/integrations/cli"   # 或软链到 /usr/local/bin
+export PATH="$PATH:$(pwd)/integrations/cli"   # 可选，见下
 lingxi health
 ```
+
+**不加 PATH 也能用,连仓库都不用有**——应用每次启动会把 CLI 写到:
+
+```
+~/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi
+```
+
+`curl -s localhost:47811/health` 返回里的 `cli` 字段就是它的绝对路径(这个接口免鉴权)。
+依赖只有 `curl` + `python3`(或 `node`),**不需要 jq**。
+
+### 能力对比:CLI 是 MCP 的超集
+
+| | MCP | CLI |
+|---|---|---|
+| 说话/表情/动作/特效/玩具/视角 | ✅ | ✅ |
+| 报告任务(含 `mood`)、记忆、提醒、重载资源 | ✅ | ✅ |
+| `activity` 谁在干什么 | ❌ | ✅ |
+| `events` 事件历史 | ❌ | ✅ |
+| `unremind` 取消提醒 | ❌ | ✅ |
+| `raw` 任何未包装接口 | ❌ | ✅ |
+
+**所以只用 skill 就能驱动全部能力。** MCP 仍然有用(带类型的 schema、逐工具权限),
+但不是必需的。
 
 装好之后 **Claude Code 和 Codex 都能用**——两者都读 `<目录>/<技能名>/SKILL.md`，
 所以是同一份 skill，只是目录不同：
