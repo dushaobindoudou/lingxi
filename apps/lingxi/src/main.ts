@@ -281,10 +281,24 @@ async function main() {
     }
   });
 
+  /** Set once createPerformanceRunner has run; read optionally before that. See publishCapabilities. */
+  let performanceRunner: { list: () => unknown[] } | null = null;
+
   // 自定义资源: the user's own actions / expressions / themes, if they have written any. Loaded
   // before the first status apply, so a custom theme is already available when the persisted
   // theme id is restored. Errors are pushed to Rust so the management window can show them -
   // silently ignoring a file someone hand-edited is the worst possible behaviour here.
+  /** Tell Rust what this renderer can do. Safe to call before `performances` exists. */
+  function publishCapabilities() {
+    void invoke('report_capabilities', {
+      capabilities: {
+        ...(renderer.describeCapabilities?.() ?? {}),
+        performances: performanceRunner?.list() ?? [],
+        toys: TOY_CATALOGUE,
+      },
+    }).catch((error) => dlog(`report_capabilities failed: ${String(error)}`));
+  }
+
   async function loadCustomAssets() {
     try {
       const payload = await invoke<Record<string, unknown>>('get_custom_assets');
@@ -297,13 +311,12 @@ async function main() {
       // Re-publish the capability lists: a reload can add actions, expressions and themes, and
       // GET /capabilities is what an agent validates its ids against. Without this the bridge
       // would keep rejecting a clip the user had just successfully installed.
-      void invoke('report_capabilities', {
-        capabilities: {
-          ...(renderer.describeCapabilities?.() ?? {}),
-          performances: performances.list(),
-          toys: TOY_CATALOGUE,
-        },
-      }).catch(() => {});
+      // Republished through the same helper the startup path uses. It used to inline
+      // `performances.list()` here, and `performances` is declared 50 lines further down - so on
+      // the FIRST call, which happens during startup, this threw a temporal-dead-zone
+      // ReferenceError that loadCustomAssets' own catch swallowed. The visible symptom was that
+      // none of the user's custom assets loaded at all, reported only as one line in a log.
+      publishCapabilities();
       if (errors.length) dlog(`custom assets had problems: ${errors.join(' | ')}`);
       else if (payload?.available) dlog('custom assets loaded');
     } catch (error) {
@@ -360,6 +373,8 @@ async function main() {
 
   // 特效编排 + 玩具. Both are "do something right now" surfaces, driven identically from the
   // debug console, the tray, the management window and an agent's HTTP POST.
+  // Assigned to the forward declaration above so publishCapabilities can reach it once it
+  // exists, and read as optional before then rather than throwing.
   const performances = createPerformanceRunner({
     engine,
     renderer,
@@ -398,13 +413,8 @@ async function main() {
   // Publish what this renderer can do, once, so GET /capabilities can answer an agent
   // without round-tripping through the webview - and so the debug console builds its grids
   // from the real clip library rather than a copy of it.
-  void invoke('report_capabilities', {
-    capabilities: {
-      ...(renderer.describeCapabilities?.() ?? {}),
-      performances: performances.list(),
-      toys: TOY_CATALOGUE,
-    },
-  }).catch((error) => dlog(`report_capabilities failed: ${String(error)}`));
+  performanceRunner = performances;
+  publishCapabilities();
 
   void listen<number>('set-scale', (event) => {
     markInteresting();
@@ -571,7 +581,9 @@ async function main() {
     // Recorded before any early return: this timestamp is the evidence that the compositor is
     // still drawing us, which is what separates 'idle' from 'dormant'.
     lastRafAt = performance.now();
-    if (tier === 'dormant') setTier('active'); // the compositor came back
+    // The compositor came back. 'dormant' is not cleared here - that needs the platform to say
+    // we are visible again, which is what the visibilitychange listener is for.
+    if (tier === 'stalled') setTier('active');
     const interval = FRAME_INTERVAL[tier];
     if (interval === 0 || lastRafAt - lastRenderAt >= interval) {
       lastRenderAt = lastRafAt;
@@ -741,43 +753,46 @@ async function main() {
 
   // --- power governor -----------------------------------------------------------------------
   //
-  // A desktop pet is running every hour the machine is, so its idle cost IS its cost. Before
-  // this, the app woke roughly 137 times a second forever: 60Hz cursor polling in Rust, 60fps
-  // rendering, plus four timers - and it kept doing all of it with the lid shut.
+  // A desktop pet runs every hour the machine does, so its idle cost IS its cost. The app used to
+  // wake about 137 times a second forever - 60Hz cursor polling in Rust, 60fps rendering, four
+  // timers - and kept it up with the lid shut.
   //
-  // The watchdog below used to make that WORSE on purpose. It existed so the simulation would
-  // not freeze when the compositor stopped calling requestAnimationFrame, and it did that by
-  // driving the simulation from a timer instead. But rAF stopping is the compositor telling us
-  // nobody can see this window, and the right response to "nobody is looking" is not to keep
-  // animating from a different clock - it is to stop, and catch up when someone looks again.
+  // THE MISTAKE THE FIRST VERSION MADE, because it matters for anyone changing this:
   //
-  // Three tiers, each justified by something the app can actually observe:
+  // It treated "requestAnimationFrame has stopped" as "nobody can see this window", stopped
+  // simulating, and waited for rAF to come back. That reasoning is sound for an ordinary window
+  // and WRONG for this one. The companion is a transparent, click-through, always-on-top overlay,
+  // and macOS deprioritises compositing it while the user can still see it perfectly well. The
+  // result was a cat frozen at the centre of the screen, forever, in plain sight - which is the
+  // exact failure the original watchdog existed to prevent, removed on a theory that did not hold.
   //
-  //   active   rAF is being called and the user is around. Full rate.
-  //   idle     rAF is being called but nothing has happened for a while. The cat still breathes
-  //            and blinks, so rendering cannot stop - but it can halve. A cat breathing at 20fps
-  //            is indistinguishable from one breathing at 60fps, and it is two thirds less GPU.
-  //   dormant  rAF has stopped: screen off, locked, another window covering us, or the pet
-  //            hidden from the tray. Nothing is drawn at all, and Rust slows its polling too.
-  //
-  // The gait survives all of this because it is DISTANCE-driven rather than clock-driven: a
-  // longer frame advances the stride by exactly the ground it covered, so a lower frame rate
-  // changes how smooth it looks and not what it does.
-  type PowerTier = 'active' | 'idle' | 'dormant';
+  // So rAF stalling is no longer evidence of anything except that we cannot DRAW. The simulation
+  // keeps running off a timer when that happens, as it did before. Dormancy now requires the
+  // platform to actually say so.
+  type PowerTier = 'active' | 'idle' | 'stalled' | 'dormant';
   let tier: PowerTier = 'active';
   /** Frame interval per tier, ms. 0 = draw on every rAF callback. */
-  const FRAME_INTERVAL: Record<PowerTier, number> = { active: 0, idle: 1000 / 30, dormant: Infinity };
+  const FRAME_INTERVAL: Record<PowerTier, number> = {
+    active: 0,
+    idle: 1000 / 30,
+    // Not being composited, so smoothness is not a thing that exists right now - but the cat has
+    // to keep living, or it is standing still in the middle of someone's screen.
+    stalled: 100,
+    dormant: Infinity,
+  };
   /** No interaction and nothing happening for this long drops to `idle`. */
   const IDLE_AFTER_MS = 45_000;
-  /** rAF quiet for this long means the compositor has stopped drawing us. */
-  const DORMANT_AFTER_MS = 1_000;
+  /** rAF quiet for this long means the compositor has stopped drawing us - NOT that we are hidden. */
+  const STALLED_AFTER_MS = 1_000;
   let lastInterestingAt = performance.now();
   let lastRenderAt = 0;
+  /** True only when the platform says so: the tab is hidden, or the user hid the cat. */
+  let hiddenByPlatform = false;
 
   /** Anything that means the user is present, or the cat is mid-something worth seeing. */
   function markInteresting() {
     lastInterestingAt = performance.now();
-    if (tier !== 'active') setTier('active');
+    if (tier !== 'active' && !hiddenByPlatform) setTier('active');
   }
 
   function setTier(next: PowerTier) {
@@ -785,31 +800,31 @@ async function main() {
     const previous = tier;
     tier = next;
     dlog(`power: ${previous} -> ${next}`);
-    // Rust slows its own polling to match - the 60Hz cursor thread is the single most expensive
-    // thing in the app when nothing is happening, and it is pure waste while nobody can see.
-    void invoke('set_power_tier', { tier: next }).catch(() => {});
-    if (next === 'active') {
-      // Coming back: re-anchor the clock so the first frame after a long sleep is a normal
-      // frame and not a multi-hour delta. The engine clamps it anyway, but the fx layer and
-      // the camera ease read it too.
+    // Rust slows its own polling to match. 'stalled' is reported as idle rather than dormant: we
+    // still want cursor events at a usable rate, because the user is very likely looking at the cat.
+    const reported = next === 'stalled' ? 'idle' : next;
+    void invoke('set_power_tier', { tier: reported }).catch(() => {});
+    if (next === 'active' || next === 'stalled') {
+      // Re-anchor the clock so the first frame after a quiet spell is a normal frame rather than
+      // a multi-second delta. The engine clamps it anyway, but the fx layer reads it too.
       lastFrameAt = null;
     }
   }
 
-  const WATCHDOG_INTERVAL_MS = 250;
+  const WATCHDOG_INTERVAL_MS = 100;
   setInterval(() => {
     const now = performance.now();
+    if (hiddenByPlatform) return; // dormant until the platform says otherwise
     const rafQuietFor = now - lastRafAt;
-    if (rafQuietFor >= DORMANT_AFTER_MS) {
-      // Nobody is compositing this window. Do not draw, and do not simulate - there is nothing
-      // to be accurate FOR, and the cat picks up wherever it was the moment anyone looks again.
-      setTier('dormant');
+    if (rafQuietFor >= STALLED_AFTER_MS) {
+      // Cannot draw. Keep the simulation alive from this timer so the cat is not frozen on screen
+      // and is in the right place the moment the compositor takes an interest again.
+      if (tier !== 'stalled') setTier('stalled');
+      step(performance.now());
       return;
     }
-    // Dropping the frame rate is only free while nothing is actually MOVING. A stationary cat
-    // breathing and blinking at 30fps is indistinguishable from one at 60; a walking cat is not,
-    // and "don't reduce the experience" has to mean something. So the idle tier needs both: the
-    // user away from the mouse AND the cat with nothing on screen to smooth.
+    // Dropping the frame rate is only free while nothing is MOVING. A stationary cat breathing at
+    // 30fps is indistinguishable from one at 60; a walking cat is not.
     const catIsStill =
       lastEngineSnapshot != null
       && (lastEngineSnapshot.state === 'idle' || lastEngineSnapshot.state === 'dragged')
@@ -819,11 +834,18 @@ async function main() {
     if (tier === 'idle' && !catIsStill) setTier('active');
   }, WATCHDOG_INTERVAL_MS);
 
-  // A direct signal, when the platform gives us one. rAF stalling is the general case (it covers
-  // the screen turning off and another window covering us), but visibilitychange is immediate and
-  // unambiguous, so use it when it fires rather than waiting out the stall threshold.
+  // The platform saying so, which is the ONLY thing that now counts as "nobody can see it".
   document.addEventListener('visibilitychange', () => {
+    hiddenByPlatform = document.hidden;
     if (document.hidden) setTier('dormant');
+    else markInteresting();
+  });
+  // The user hiding the cat from the tray is the other genuine case. Event name taken from
+  // lib.rs's set_visible - an invented one would have produced a listener that never fires and a
+  // saving that never happens, with nothing to show it was broken.
+  void listen<boolean>('companion-visibility', (event) => {
+    hiddenByPlatform = !event.payload;
+    if (hiddenByPlatform) setTier('dormant');
     else markInteresting();
   });
 
