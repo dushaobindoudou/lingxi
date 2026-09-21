@@ -1,6 +1,12 @@
 # 项目设置与当前交付
 
-项目名：灵犀 Lingxi。仓库名：dsh-lingxi。默认分支：main。私有孵化，未替用户决定开源授权。
+> **2026-09-22 改名**：仓库从 `dsh-lingxi` 改为 `lingxi`（GitHub 会为旧地址保留跳转）。
+> `docs/evidence/` 下的文件**故意保持原样**——它们是当天状态的记录，把里面的旧地址改掉
+> 就是让记录说了没发生过的事。看到 `dsh-lingxi` 的链接时按这里理解即可。
+> 应用的 bundle id 一直是 `com.dushaobin.lingxi-desktop`，**不受改名影响**，
+> 所以配置目录、token 和用户数据都不用迁移。
+
+项目名：灵犀 Lingxi。仓库名：lingxi。默认分支：main。私有孵化，未替用户决定开源授权。
 
 ## 本地基础
 
@@ -13,7 +19,7 @@
 
 ## GitHub 设置
 
-仓库已创建并推送：[dushaobindoudou/dsh-lingxi](https://github.com/dushaobindoudou/dsh-lingxi)。[远端设置证据](evidence/github-settings.json)记录 private、main、issues 开启、Wiki 关闭、仅 squash 合并、合并后删除分支，以及 3 个里程碑和 6 项后续工作。依赖安全提示与自动修复已启用，初次 CI 通过。
+仓库已创建并推送：[dushaobindoudou/lingxi](https://github.com/dushaobindoudou/lingxi)。[远端设置证据](evidence/github-settings.json)记录 private、main、issues 开启、Wiki 关闭、仅 squash 合并、合并后删除分支，以及 3 个里程碑和 6 项后续工作。依赖安全提示与自动修复已启用，初次 CI 通过。
 
 **当前限制：主分支保护未启用。** GitHub 返回 HTTP 403：此账号需升级 Pro 或改为公开仓库才可启用。保持私有，不擅自公开。团队流程要求 PR 与绿色 CI，但目前服务器不能强制执行。升级后可启用 Validate 必须通过、禁止强推/删除与线性历史。
 

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseMotions } from '../../apps/lingxi/src/anim/motion.ts';
 
-const REPO = '/Users/dushaobin/workspace/dsh-lingxi';
+const REPO = '/Users/dushaobin/workspace/lingxi';
 const OUT = path.join(process.env.HOME, 'Library/Application Support/com.dushaobin.lingxi-desktop/assets');
 
 const skeleton = JSON.parse(fs.readFileSync(path.join(REPO, 'apps/lingxi/src/data/skeleton.json'), 'utf8'));

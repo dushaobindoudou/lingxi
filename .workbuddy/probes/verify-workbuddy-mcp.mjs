@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const REPO = '/Users/dushaobin/workspace/dsh-lingxi';
+const REPO = '/Users/dushaobin/workspace/lingxi';
 const SERVER = join(REPO, 'packages/mcp-server/src/index.mjs');
 const PORT = Number(process.env.LINGXI_PORT ?? 47811);
 const BASE = `http://127.0.0.1:${PORT}`;

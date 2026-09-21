@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const REPO = '/Users/dushaobin/workspace/dsh-lingxi';
+const REPO = '/Users/dushaobin/workspace/lingxi';
 const OUT = path.join(process.env.HOME, 'Library/Application Support/com.dushaobin.lingxi-desktop/assets');
 
 // WorkBuddy 品牌色：从 /Applications/WorkBuddy.app/Contents/Resources/icon.icns 提取，

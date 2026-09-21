@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/dushaobindoudou/dsh-lingxi/integrations/schema/task-event.schema.json",
+  "$id": "https://github.com/dushaobindoudou/lingxi/integrations/schema/task-event.schema.json",
   "title": "灵犀 task event",
   "description": "What an agent tells the cat about the work it is doing. This is the ONE surface every integration targets: Claude Code hooks, a Codex notify program, an MCP tool call, a shell script or a bare curl all produce this object and nothing else. Adding a fourth host means writing an adapter that emits this - it never means changing the app. The split that matters: `state` and `kind` describe a PROCESS and a host can supply them from lifecycle events alone. `mood` describes the PERSON, and only something that has read the work can judge it - which is why a plugin can guarantee a baseline reaction while only the model can make it feel like the cat knows what is going on.",
   "type": "object",

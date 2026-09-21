@@ -1,7 +1,7 @@
 /** Idempotently configure Lingxi's roadmap and capture read-back evidence using gh. */
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-const repo = process.argv[2] ?? 'dushaobindoudou/dsh-lingxi';
+const repo = process.argv[2] ?? 'dushaobindoudou/lingxi';
 if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('Expected owner/repo');
 function api(path, body) {
  const args=['api',path]; if(body)args.push('--method','POST','--input','-');

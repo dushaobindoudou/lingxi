@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "description": "灵犀 desktop cat - reacts to what Claude Code is doing, remembers things about you, and nudges you later. Ships the hooks that make the cat respond even when the model never thinks to call the skill, plus the skill that makes those responses know what the work was about.",
   "author": { "name": "dushaobin" },
-  "homepage": "https://github.com/dushaobindoudou/dsh-lingxi",
+  "homepage": "https://github.com/dushaobindoudou/lingxi",
   "keywords": ["desktop-pet", "companion", "notifications"]
 }
