@@ -67,7 +67,7 @@ lingxi task <state> <kind> <mood> "一句话"
 
 | 维度 | 取值 | 谁来判断 |
 |---|---|---|
-| `state` | queued running blocked needs_input completed failed cancelled | 流程 |
+| `state` | queued running blocked needs_input needs_approval completed failed cancelled | 流程 |
 | `kind` | build test deploy review search write chat other | 流程 |
 | **`mood`** | **focused proud tender sad frustrated anxious weary playful curious** | **只有你能判断** |
 

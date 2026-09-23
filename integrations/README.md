@@ -21,8 +21,16 @@
 # Claude Code：hooks + skill + MCP 一起装
 claude plugin install <repo>/integrations/plugins/claude-code
 
-# Codex：一行（注意 notify 只能有一个，见 plugins/codex/README.md）
-notify = ["node", "<repo>/integrations/adapters/lingxi-emit.mjs", "--host", "codex"]
+# Codex：确定性事件由 notify 承担。notify 是 TOML 单键——机器上已有别的 notifier
+# （比如 SkyComputerUseClient）时不要覆盖，写一个 fanout 脚本两边都发，
+# 现成模板见 plugins/codex/README.md
+notify = ["/Users/you/.codex/notify-fanout.sh"]
+
+# 另加 MCP（模型主动通道）：
+# [mcp_servers.lingxi]
+# command = "node"
+# args = ["<repo>/packages/mcp-server/src/index.mjs"]
+# 身份走 ~/.lingxi/agent.json，不要写 env 块（见下文「署名」一节）
 ```
 
 事件的**契约**是 [`schema/task-event.schema.json`](schema/task-event.schema.json)。

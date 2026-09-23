@@ -40,7 +40,8 @@ curl localhost:47811/health          # 唯一不需要 token 的接口，告诉�
 curl -H "Authorization: Bearer $(cat "$TOKEN_FILE")" localhost:47811/status
 ```
 
-也支持 `X-Lingxi-Token:` 头和 `?token=`（调试时方便）。
+也支持 `X-Lingxi-Token:` 头。**不要把 token 放进 URL**（`?token=` 仅作为旧版兼容保留）：
+URL 会进 shell 历史、代理日志和 referrer，而 header 不会。
 
 > **为什么只监听回环还不够**：回环是**网络边界，不是信任边界**。以这个用户身份运行的
 > 任何进程都能访问 127.0.0.1——包括浏览器里的一个页面、一个沙箱进程。而这个桥能移动猫、
@@ -133,7 +134,7 @@ lingxi task failed test frustrated "第四次跑同一个测试了"
 带上 `progress`（0–1）。`running` 的更新**只有第一次和跨过 50% 那次**会产生反应，
 其余吞掉——不然长任务就变成了桌宠本该替代的那种通知轰炸。终态永远不会被吞。
 
-### 状态词汇表（7 个，封闭集合）
+### 状态词汇表（8 个，封闭集合）
 
 | `state` | 什么时候报 |
 |---|---|
@@ -160,14 +161,15 @@ lingxi task failed test frustrated "第四次跑同一个测试了"
 
 | state | kind | 表情 | 动作 | 说话 |
 |---|---|---|---|---|
-| `completed` | `deploy` | 得意 | stretch-front | 上线了！ |
+| `completed` | `deploy` | 得意 | stretch-front | 上线啦！ |
 | `completed` | `test` | 开心 | paw-wave | 测试全绿～ |
 | `completed` | 其他 | 开心 | paw-wave | 搞定啦～ |
-| `failed` | `deploy` | 惊吓 | shake-head | 部署炸了… |
-| `failed` | `test` | 不爽 | shake-head | 有测试挂了 |
-| `failed` | 其他 | 不爽 | shake-head | 这次没成… |
+| `failed` | `deploy` | 警觉 | notice-you | 部署没过，我看着呢 |
+| `failed` | `test` | 委屈 | shake-head | 有测试挂了 |
+| `failed` | 其他 | 委屈 | shake-head | 这次没成… |
 | `needs_input` | — | 好奇 | notice-you | 在等你哦 |
-| `blocked` | — | 困惑 | — | 卡住了 |
+| `needs_approval` | — | 警惕 | paw-reach | 等你批一下～ |
+| `blocked` | — | 困惑 | curious-tilt | 卡住了… |
 | `running` | — | 认真 | — | — |
 | `queued` | — | 清醒 | — | — |
 | `cancelled` | — | 嫌弃 | shake-fur | — |

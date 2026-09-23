@@ -2,11 +2,7 @@
   "mcpServers": {
     "lingxi": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/../../../packages/mcp-server/src/index.mjs"],
-      "env": {
-        "LINGXI_AGENT": "claude-code",
-        "LINGXI_AGENT_NAME": "Claude Code"
-      }
+      "args": ["${CLAUDE_PLUGIN_ROOT}/../../../packages/mcp-server/src/index.mjs"]
     }
   }
 }

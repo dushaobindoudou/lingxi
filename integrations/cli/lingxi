@@ -23,7 +23,7 @@
 #       Your logo is a mark you GENERATE for yourself - a small flat SVG, two or three colours,
 #       no text, readable at 22px. It appears on the cat's speech bubble when it speaks for you.
 #   lingxi task <state> [kind] [mood] [summary]   # the PREFERRED way to drive the cat
-#       state: queued running blocked needs_input completed failed cancelled
+#       state: queued running blocked needs_input needs_approval completed failed cancelled
 #       kind:  build test deploy review search write chat other
 #       mood:  focused proud tender sad frustrated anxious weary playful curious
 #       mood is what makes it a pet instead of a status light - you have the content,
@@ -39,7 +39,7 @@
 #
 #   lingxi remember <text> [kind]
 #   lingxi recall
-#   lingxi remind <minutes> <text> [mood] [--every <minutes>]
+#   lingxi remind <minutes> <text> [--mood M] [--every <minutes>]
 #
 #   lingxi assets                              # what custom assets are loaded, and any errors
 #   lingxi reload                              # re-read the assets folder, then report
@@ -98,20 +98,42 @@ AGENT_FILE="$HOME/.lingxi/agent.json"
 agent_id() {
   if [ -n "${LINGXI_AGENT:-}" ]; then printf '%s' "$LINGXI_AGENT"; return; fi
   [ -r "$AGENT_FILE" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  jq -r 'if type == "object" then (.id // empty) else empty end' "$AGENT_FILE" 2>/dev/null || true
+  # jq first, but NOT only jq: it is not preinstalled on macOS, and silently reporting no
+  # identity on a machine without it is how the file and the tool disagree. python3 is
+  # already required by json_typed below, so it is always a viable fallback here.
+  if command -v jq >/dev/null 2>&1; then
+    jq -r 'if type == "object" then (.id // empty) else empty end' "$AGENT_FILE" 2>/dev/null || true
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+if isinstance(data, dict):
+    value = data.get("id")
+    if isinstance(value, str):
+        print(value)
+' "$AGENT_FILE" 2>/dev/null || true
+  fi
 }
 
 # request METHOD PATH [json-body]
 request() {
-  local method="$1" path="$2" body="${3:-}" code out
-  out=$(mktemp); trap 'rm -f "$out"' RETURN
+  local method="$1" path="$2" body="${3:-}" code out hdr
+  out=$(mktemp); hdr=$(mktemp)
+  trap 'rm -f "$out" "$hdr"' RETURN
+  # The token goes to curl through a config FILE, not the argv. `-H "Authorization: ..."` put
+  # the bearer token in the process list for the whole request duration - `ps` shows every
+  # local user's argv - which is exactly the leak the Rust-side hook command was fixed for.
+  # Same fix, same reason.
+  printf 'header = "Authorization: Bearer %s"\n' "$(token)" > "$hdr"
   if [ -n "$body" ]; then
-    code=$(curl -s "${NOPROXY[@]}" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
-      -H "Authorization: Bearer $(token)" -H 'Content-Type: application/json' -d "$body") || true
+    code=$(curl -s "${NOPROXY[@]}" -K "$hdr" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
+      -H 'Content-Type: application/json' -d "$body") || true
   else
-    code=$(curl -s "${NOPROXY[@]}" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
-      -H "Authorization: Bearer $(token)") || true
+    code=$(curl -s "${NOPROXY[@]}" -K "$hdr" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path") || true
   fi
   if [ -z "$code" ] || [ "$code" = "000" ]; then
     die "灵犀 is not reachable on $BASE. Is the app running? It listens only on localhost."
@@ -166,7 +188,11 @@ for key, value in zip(argv[0::2], argv[1::2]):
         try:
             out[key] = float(raw) if ("." in raw or "e" in raw.lower()) else int(raw)
         except ValueError:
-            pass
+            # A number that cannot be parsed is passed through AS A STRING rather than
+            # dropped: the key vanishing silently turned a bad value into a confusing
+            # "required field missing" error on the server, while the string survives to
+            # produce a clear type error at the field that actually has the problem.
+            out[key] = raw
     else:
         out[key] = value
 sys.stdout.write(json.dumps(out, ensure_ascii=False))
@@ -180,7 +206,9 @@ for (let i = 0; i < argv.length; i += 2) {
   const value = argv[i + 1];
   if (value.startsWith("number:")) {
     const n = Number(value.slice(7));
-    if (Number.isFinite(n)) out[key] = n;
+    // Unparseable stays a string, for the same reason as the python path above: dropping the
+    // key makes the failure surface as a missing-field error one layer away from the cause.
+    if (Number.isFinite(n)) out[key] = n; else out[key] = value.slice(7);
   } else out[key] = value;
 }
 process.stdout.write(JSON.stringify(out));
@@ -194,8 +222,11 @@ cmd="${1:-help}"; shift || true
 case "$cmd" in
   health)
     # Deliberately unauthenticated - this is how you find out where the token lives.
-    curl -s "${NOPROXY[@]}" --max-time 5 "$BASE/health" \
-      | { command -v python3 >/dev/null 2>&1 && python3 -m json.tool 2>/dev/null || cat; } ;;
+    # A dead app used to exit 0 with NO OUTPUT (curl's empty body piped through the
+    # pretty-printer), which scripts read as "healthy". Silence is failure here.
+    health_out=$(curl -s "${NOPROXY[@]}" --max-time 5 "$BASE/health") || true
+    [ -n "$health_out" ] || die "灵犀 is not reachable on $BASE. Is the app running? It listens only on localhost."
+    printf '%s\n' "$health_out" | { command -v python3 >/dev/null 2>&1 && python3 -m json.tool 2>/dev/null || cat; } ;;
   capabilities|caps) request GET /capabilities ;;
   state)             request GET /perception ;;
   status)            request GET /status ;;
@@ -250,7 +281,7 @@ case "$cmd" in
 
   remember) [ $# -ge 1 ] || die "usage: lingxi remember <text> [owner|project|preference|moment]"
             request POST /memory "$(json text="$1" kind="${2:-moment}")" ;;
-  remind)   [ $# -ge 2 ] || die "usage: lingxi remind <minutes> <text> [mood] [--every <minutes>]"
+  remind)   [ $# -ge 2 ] || die "usage: lingxi remind <minutes> <text> [--mood M] [--every <minutes>]   (mood is an option, not positional - the text may be any number of words)"
             minutes="$1"; shift
             rem_every=0; rem_mood=""
             rem_args=()

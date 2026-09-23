@@ -2621,9 +2621,10 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                             .app_config_dir()
                             .ok()
                             .map(|d| d.join("bin").join("lingxi").display().to_string()),
-                        "howTo": "Read the token file and send it as `Authorization: Bearer <token>`, \
-                                  `X-Lingxi-Token: <token>`, or `?token=<token>`. The file is readable \
-                                  only by your own account.",
+                        "howTo": "Read the token file and send it as `Authorization: Bearer <token>` \
+                                  or `X-Lingxi-Token: <token>`. Do NOT put the token in the URL: \
+                                  headers stay out of shell history and access logs. The file is \
+                                  readable only by your own account.",
                     })
                     .to_string(),
                 ));
