@@ -1,0 +1,60 @@
+{
+  "description": "确定性生命周期 -> 灵犀。这些 hook 无论模型是否调用 skill 都会触发——这正是插件存在的理由：skill 是建议性的，多数会话不会主动调。它们只能报告发生了什么，报不了感受；感受需要读过工作的东西来补，那是 skill 的职责。命令是纯 curl 直发 /task-event（Rust 桥接原生映射 Claude 载荷），与 app 一键安装的命令逐字相同，因此 app 的卸载逻辑能认出并接管它。",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

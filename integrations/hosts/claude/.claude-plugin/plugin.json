@@ -1,0 +1,8 @@
+{
+  "name": "lingxi-claude",
+  "version": "0.1.0",
+  "description": "灵犀桌面猫的 Claude Code 专用插件：hooks 让猫在会话开始、等待授权、回合结束时必然有反应（不依赖模型主动调用），skill 教模型把任务语义和心情报给猫，MCP 让模型直接操控猫。自包含——hooks 是纯 curl，不依赖 node 和仓库内其他目录。",
+  "author": { "name": "dushaobin" },
+  "homepage": "https://github.com/dushaobindoudou/lingxi",
+  "keywords": ["desktop-pet", "companion", "notifications"]
+}
