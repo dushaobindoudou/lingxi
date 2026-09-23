@@ -10,16 +10,69 @@ concurrency:
   cancel-in-progress: true
 jobs:
   validate:
-    name: Validate
+    name: Contracts, tests, frontend build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+          # Two lockfiles, two installs - the cache key has to cover both or the app's
+          # dependencies are restored from a key that never saw them.
+          cache-dependency-path: |
+            package-lock.json
+            apps/lingxi/package-lock.json
       - run: npm ci --ignore-scripts
-      - run: npm run validate
+
+      # Not optional, and not only for the build step below: the root test run reaches
+      # straight into this directory - packages/life-engine/test/rope.test.mjs imports
+      # three from apps/lingxi/node_modules and the rig source from apps/lingxi/src - so
+      # installing only the root's dependencies leaves `npm test` dying partway through
+      # on a module it cannot resolve. The only install script in this tree is fsevents,
+      # which is darwin-only and therefore absent here, so --ignore-scripts costs nothing.
+      - name: Install app dependencies
+        working-directory: apps/lingxi
+        run: npm ci --ignore-scripts
+
+      # Run as separate steps rather than through `npm run validate`, so a red run names
+      # which gate failed in the job summary instead of "validate".
+      - name: Check JSON, preset contracts and Markdown links
+        run: npm run check
+      - name: Behaviour and contract tests
+        run: npm test
+      - name: Type-check and build the frontend
+        working-directory: apps/lingxi
+        run: npm run build
       - name: Compile Blender automation syntax
         run: python3 -m compileall -q scripts/blender
+
+  rust:
+    name: Rust
+    # macOS, not ubuntu: the backend depends on objc2-app-kit unconditionally (see
+    # src-tauri/Cargo.toml) and calls AppKit for the overlay window and the global cursor,
+    # so the crate does not build on Linux at all. Keeping these tests on a platform the
+    # code actually targets is the point - a Linux job here could only ever be skipped.
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      # No toolchain action needed: the runner ships rustup, and rust-toolchain.toml pins
+      # the channel, so the first cargo call installs and selects it.
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/lingxi/src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('apps/lingxi/src-tauri/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: Show the toolchain actually in use
+        run: rustc --version && cargo --version
+      # Deliberately no frontend build first: tauri-build does not need frontendDist to
+      # exist for a test build, so this job stays node-free and independent of the one above.
+      - name: Rust tests
+        working-directory: apps/lingxi/src-tauri
+        run: cargo test

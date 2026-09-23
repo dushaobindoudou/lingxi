@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="820" viewBox="0 0 1200 820">
+  <defs>
+    <clipPath id="window"><rect width="1200" height="820" rx="18"/></clipPath>
+    <clipPath id="hero"><rect x="238" y="104" width="926" height="454" rx="26"/></clipPath>
+    <filter id="shadow" x="-12%" y="-12%" width="124%" height="135%"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#57483B" flood-opacity=".10"/></filter>
+  </defs>
+  <g clip-path="url(#window)">
+    <rect width="1200" height="820" fill="#FBF7F1"/>
+    <rect width="218" height="820" fill="#F5EEE5"/>
+    <path d="M218 0V820" stroke="#E5D9CA"/>
+    <image x="28" y="28" width="46" height="46" preserveAspectRatio="xMidYMid slice" xlink:href="../../brand/lingxi-icon-v3.png"/>
+    <text x="87" y="49" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="17" font-weight="650">灵犀</text>
+    <text x="87" y="68" fill="#8B7D70" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="11">你忙你的，我在这里</text>
+    <text x="26" y="126" fill="#9B8E80" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="10" letter-spacing="1">陪伴</text>
+    <rect x="16" y="140" width="186" height="42" rx="11" fill="#E9DDCD"/>
+    <rect x="16" y="149" width="3" height="24" rx="2" fill="#936746"/>
+    <text x="38" y="166" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="14" font-weight="600">首页</text>
+    <text x="38" y="215" fill="#655B51" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="13">Agent 接入</text>
+    <text x="38" y="257" fill="#655B51" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="13">性格行为</text>
+    <text x="38" y="299" fill="#655B51" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="13">玩法</text>
+    <text x="38" y="341" fill="#655B51" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="13">外观</text>
+    <text x="38" y="383" fill="#655B51" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="13">设置</text>
+    <path d="M20 778H198" stroke="#E5D9CA"/>
+    <text x="26" y="800" fill="#8B7D70" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="10">灵犀 · 桌面陪伴</text>
+
+    <text x="246" y="58" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="22" font-weight="650">此刻</text>
+    <text x="1159" y="57" text-anchor="end" fill="#72675C" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12">大小  中⌄</text>
+    <text x="1159" y="79" text-anchor="end" fill="#936746" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12">找回灵犀</text>
+
+    <g clip-path="url(#hero)" filter="url(#shadow)">
+      <rect x="238" y="104" width="926" height="454" rx="26" fill="#F2E8DB"/>
+      <image x="238" y="104" width="926" height="454" preserveAspectRatio="xMidYMid slice" xlink:href="window-desk-scene.png"/>
+      <rect x="238" y="104" width="926" height="454" fill="#FBF7F1" opacity=".08"/>
+      <text x="284" y="205" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="25" font-weight="550">你忙你的，</text>
+      <text x="284" y="242" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="25" font-weight="550">我在这里。</text>
+      <circle cx="291" cy="278" r="4" fill="#546D51"/>
+      <text x="304" y="282" fill="#655B51" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="13">陪你工作中</text>
+      <rect x="282" y="319" width="126" height="38" rx="11" fill="#936746"/>
+      <text x="345" y="343" text-anchor="middle" fill="#FFFDF9" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600">逗猫模式</text>
+      <ellipse cx="1005" cy="429" rx="126" ry="13" fill="#78624C" opacity=".12"/>
+      <image x="858" y="169" width="290" height="290" preserveAspectRatio="xMidYMid meet" xlink:href="lingxi-resting-cat.png"/>
+      <text x="284" y="520" fill="#71685E" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="11">暖光下的灵犀 · 安静陪伴</text>
+    </g>
+
+    <text x="246" y="607" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="14" font-weight="600">一起度过的今天</text>
+    <text x="246" y="635" fill="#72675C" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12">3 小时 12 分</text>
+    <path d="M410 602V641" stroke="#E5D9CA"/>
+    <text x="432" y="607" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="14" font-weight="600">身边的工作伙伴</text>
+    <circle cx="437" cy="630" r="4" fill="#546D51"/>
+    <text x="450" y="635" fill="#72675C" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12">Codex 正在工作</text>
+    <circle cx="600" cy="630" r="4" fill="#A99C8E"/>
+    <text x="613" y="635" fill="#72675C" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12">Claude 未连接</text>
+    <text x="1158" y="635" text-anchor="end" fill="#936746" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12">查看详情 →</text>
+
+    <path d="M246 677H1160" stroke="#E5D9CA"/>
+    <text x="246" y="713" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="12">安静地待着，也算一起度过一段时间。</text>
+    <text x="1158" y="713" text-anchor="end" fill="#8B7D70" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="11">状态每 2 秒同步 · 任务只观察</text>
+  </g>
+</svg>

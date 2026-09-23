@@ -1,4 +1,26 @@
-export type BehaviorState = 'idle' | 'wander' | 'follow_cursor' | 'dragged' | 'ai_directed' | 'play_toy';
+export type BehaviorState =
+  | 'idle' | 'wander' | 'follow_cursor' | 'dragged' | 'ai_directed' | 'play_toy'
+  /** Asleep: entered by the cat itself once sleepiness crosses its threshold. */
+  | 'sleep';
+
+export type PersonalityTrait = 'independence' | 'curiosity' | 'gentleness' | 'playfulness' | 'sleepiness';
+/** All 0..1, 0.5 meaning "no opinion" - see PERSONALITY_TRAITS. */
+export type Personality = Record<PersonalityTrait, number>;
+
+/** The slow-moving inner state that makes one hour differ from the next. */
+export interface Vitals {
+  /** 0..1. Drains while awake (faster walking), restores while asleep. */
+  energy: number;
+  /** 0..1. Rises while awake, faster at night; falls while asleep. */
+  sleepiness: number;
+  /** 0..1 weight from the local clock alone: 1 at the circadian peak hour, 0 twelve hours off. */
+  nightness: number;
+  /** The sleepiness THIS cat has to reach to lie down, after its personality moves the bar. */
+  sleepThreshold: number;
+  asleep: boolean;
+  sleptAt: number | null;
+  wokeAt: number | null;
+}
 export type ToyKind = 'yarn' | 'feather' | 'laser';
 export interface ToyState {
   kind: ToyKind;
@@ -79,6 +101,8 @@ export interface LifeEngineSnapshot {
   toy: ToyState | null;
   /** True for exactly the one tick the cat swats the toy; drives the swat animation. */
   batted: boolean;
+  vitals: Vitals;
+  personality: Personality;
 }
 export interface LifeEngine {
   readonly state: BehaviorState;
@@ -111,6 +135,10 @@ export interface LifeEngine {
   /** Live-update the 'auto' mode avoidance radius (see LifeEngineConfig.avoidRadius) - the
    *  behavior preset picker in "性格行为" drives this without restarting the engine. */
   setAvoidRadius(radius: number): void;
+  /** Partial update: unknown keys and non-finite values are ignored, omitted traits keep theirs. */
+  setPersonality(traits: Partial<Personality>): void;
+  readonly personality: Personality;
+  readonly vitals: { energy: number; sleepiness: number; asleep: boolean };
   /**
    * Per-edge keep-out distances between the cat's ANCHOR POINT and each screen edge, in the same
    * logical pixels as `bounds`. Replaces the single `margin` for the cat itself (toys keep using
@@ -162,5 +190,6 @@ export interface LifeEngine {
 }
 export function createLifeEngine(config?: LifeEngineConfig): LifeEngine;
 export const BEHAVIOR_STATES: readonly BehaviorState[];
+export const PERSONALITY_TRAITS: readonly PersonalityTrait[];
 export const INTERACTION_MODES: readonly InteractionMode[];
 export const TOY_KINDS: readonly ToyKind[];

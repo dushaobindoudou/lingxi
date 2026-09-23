@@ -5,7 +5,7 @@
 一只安静住在桌面上的 3D 小猫。它在屏幕边缘自己遛达、做自己的事、躲开你的鼠标，
 你逗它它会玩，你的 Agent 干完活它会有反应。
 
-<img src="assets/brand/lingxi-icon-v2.png" width="200" alt="灵犀：灰棕虎斑小猫安静趴着，轻轻歪头" />
+<img src="assets/brand/lingxi-icon-v3.png" width="200" alt="灵犀：灰棕虎斑小猫安静趴着，露出两只白色小爪" />
 
 macOS · Tauri 2 + Rust + TypeScript + Three.js · 无第三方运行时依赖（除 three 与 Tauri 本体）
 
@@ -171,8 +171,13 @@ cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
 
 ## 文档索引
 
+仓库里既有当前规格，也有当时的快照。[`docs/README.md`](docs/README.md) 把每份文档归到
+**当前规格 / 历史决策 / 已修复归档** 三层之一——读一份旧审计之前先看那里，否则很容易
+把 2026-09-13 的结论当成今天的状态。
+
 | 入口 | 内容 |
 | --- | --- |
+| [**文档分层索引**](docs/README.md) | 哪份文档描述现在，哪份只是记录当时 |
 | [接入 Agent 的完整规范](docs/19-agent-integration.md) | **写接入先看这个**：词汇表、优先级、定制、自证生效 |
 | [技术架构](docs/05-technical-architecture.md) | 三层分工与契约 |
 | [行为系统](docs/04-life-engine.md) | 纯状态机的行为设计 |

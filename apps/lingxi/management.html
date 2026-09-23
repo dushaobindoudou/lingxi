@@ -71,8 +71,10 @@
         <section class="page" id="page-agent">
           <h2>Agent 接入</h2>
           <p class="hint">
-            每个平台一个可展开分区。真实事件订阅目前只有 Claude Code 做完了；Codex / DeepSeek Harness 的通道已经在
-            <code>docs/09</code> 核实过，但这里的"一键接入"还没接。
+            每个平台一个可展开分区。Claude Code 和 Codex 都能一键接入；DeepSeek Harness 的通道已经在
+            <code>docs/09</code> 核实过（<code>dsh-acp</code> 的 <code>dsh/sessions/watch</code>），
+            但还没有做成一键。任何工具都可以不等适配器，直接往
+            <code>POST /task-event</code> 发通用事件——见 <code>docs/19</code>。
           </p>
 
           <div class="accordion" id="agent-accordion">
@@ -103,13 +105,41 @@
             <div class="accordion-item" data-agent-panel="codex">
               <button class="accordion-header">
                 <span class="accordion-title">▸ Codex</span>
-                <span class="badge badge-muted">○ 未接入</span>
+                <span class="badge badge-muted" id="codex-status-badge">检查中…</span>
               </button>
               <div class="accordion-body">
+                <p class="cat-card-line" id="codex-status-detail">检查中…</p>
+                <div class="accordion-actions">
+                  <button id="codex-connect" class="wide-button">一键接入</button>
+                  <button id="codex-disconnect" class="wide-button secondary" hidden>断开（移除 notify）</button>
+                </div>
+                <p class="hint" id="codex-connect-result" hidden></p>
                 <p class="hint">
-                  通道已核实（App Server <code>thread/status/changed</code>/<code>turn/started</code>/<code>turn/completed</code>），
-                  一键接入还没实现。
+                  接入方式：往 <code>~/.codex/config.toml</code> 写一条 <code>notify</code>（原文件先备份成
+                  <code>.lingxi-backup</code>；你的注释、模型设置和其他 MCP server 都原样保留）。
+                  <code>notify</code> 由 Codex 自己在回合结束时调用，不经过模型判断——所以它是下限，不会漏。
                 </p>
+                <!-- 冲突时显示。不是“装不上”，是“装上会删掉别人的东西”，这两件事必须让用户分得清。 -->
+                <div class="card" id="codex-conflict" hidden>
+                  <p class="cat-card-line">配置里已经有一个 <code>notify</code>，是别的工具的：</p>
+                  <p class="hint"><code id="codex-conflict-existing"></code></p>
+                  <p class="hint">
+                    TOML 的 <code>notify</code> 只能有一个，直接覆盖会让那个工具静默失效，所以这里不会动它。
+                    要两个都要，写一个分发脚本把 payload 同时转给两边，做法见
+                    <code>integrations/plugins/codex/README.md</code>。
+                  </p>
+                </div>
+                <p class="hint" id="codex-mcp-hint">
+                  上面那条只带得到“这一回合结束了”。想让猫知道这件事<strong>是关于什么的</strong>，
+                  还要把 MCP server 也加上——它跑在仓库里，所以这一半得你自己粘贴（<code>&lt;repo&gt;</code> 换成你的路径）：
+                </p>
+                <pre class="hint" id="codex-mcp-snippet">[mcp_servers.lingxi]
+command = "node"
+args = ["&lt;repo&gt;/packages/mcp-server/src/index.mjs"]
+
+[mcp_servers.lingxi.env]
+LINGXI_AGENT = "codex"
+LINGXI_AGENT_NAME = "Codex"</pre>
               </div>
             </div>
 
@@ -139,10 +169,12 @@
           <button id="save-identity" class="wide-button">保存</button>
           <p class="hint" id="identity-saved-hint" hidden>已保存</p>
 
-          <h2 class="section-gap">人格倾向 <span class="badge badge-muted">即将生效</span></h2>
+          <h2 class="section-gap">人格倾向</h2>
           <p class="hint">
-            这五项滑杆会保存并广播，形状对应行为引擎未来要读的 <code>PersonalityManifest.traits</code>
-            （<code>packages/contracts</code> 已有校验），但行为引擎本身还没有消费它们——调了不会立刻看到猫的反应变化。
+            这五项滑杆现在直接进入行为引擎：<strong>独立</strong>和<strong>好奇</strong>一起决定它歇多久才起身，
+            <strong>温柔</strong>影响走路的快慢，<strong>玩心</strong>决定追玩具有多拼，
+            <strong>贪睡</strong>决定它要困到什么程度才躺下。
+            调完是渐变生效的——这些量按小时变化，不是按帧。五项都在中间时，行为就是调校好的默认值。
           </p>
           <div class="trait-sliders" id="trait-sliders">
             <label class="trait-slider" data-trait="independence">
@@ -255,32 +287,26 @@
             鼠标跟随和拖拽现在都不需要"辅助功能"权限了。这项权限只影响未来"感知全局点击/按键"功能，不给也不影响当前体验。
           </p>
 
-          <h2 class="section-gap">能力开放（MCP） <span class="badge badge-muted">未实现</span></h2>
+          <h2 class="section-gap">能力开放（MCP）</h2>
           <div class="card">
-            <p class="cat-card-line">状态：<span class="badge badge-muted">未启用</span></p>
-            <p class="hint" style="margin-top: 6px">
-              还没有一个真正的 MCP server 进程（计划放在独立的 <code>packages/companion-mcp</code>）。下面是设计草案，不是可用列表。
-            </p>
+            <p class="cat-card-line">状态：<span class="badge" id="mcp-status-badge">检查中…</span></p>
+            <p class="hint" style="margin-top: 6px" id="mcp-status-detail"></p>
           </div>
+          <!-- 行由 management.ts 从 packages/mcp-server 的工具目录渲染，页面不自己维护一份列表。
+               没有"状态"列：这张表里的每个工具都是实际在服务的，一列全是同一个值只会重新制造
+               它上一版的问题——六个虚构工具名，整列标着"未实现"。 -->
           <table class="tool-table">
-            <thead><tr><th>名称</th><th>作用</th><th>风险</th><th>状态</th></tr></thead>
-            <tbody>
-              <tr><td><code>get_perception</code></td><td>读猫状态/活动</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
-              <tr><td><code>get_tasks</code></td><td>读任务摘要</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
-              <tr><td><code>suggest_move_to</code></td><td>建议猫走过去</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
-              <tr><td><code>play_emote</code></td><td>播放表情/动作</td><td>低</td><td class="badge badge-muted">未实现</td></tr>
-              <tr><td><code>set_mode</code></td><td>切工作/逗猫</td><td>中</td><td class="badge badge-muted">未实现</td></tr>
-              <tr><td><code>write_settings</code></td><td>直接改设置（白名单）</td><td>高</td><td class="badge badge-muted">未实现</td></tr>
-            </tbody>
+            <thead><tr><th>名称</th><th>作用</th><th>风险</th></tr></thead>
+            <tbody id="mcp-tool-rows"></tbody>
           </table>
+          <p class="hint" id="mcp-agents-line"></p>
 
           <h2 class="section-gap">大脑（LLM） <span class="badge badge-muted">未实现</span></h2>
           <div class="card">
             <p class="cat-card-line">反应引擎（本地规则，始终开启）：</p>
-            <p class="cat-card-line">· 工作模式光标靠近就避让到对角，逗猫模式主动寻找光标。</p>
-            <p class="hint" style="margin-top: 6px">
-              文档设想的"任务完成→小庆祝"这类事件驱动反应还没有接到猫的动画上——桌面壳里跑的还是占位几何体猫，不是正式模型。
-            </p>
+            <p class="cat-card-line">· 鼠标是你正在工作的地方，猫会避开它——连落脚点都不选在光标附近。</p>
+            <p class="cat-card-line">· 放出玩具它就去玩，收走就散了，不需要切换什么模式。</p>
+            <p class="cat-card-line">· Agent 报上来的任务状态会变成表情 + 动作 + 一句话（见「接 Agent」）。</p>
           </div>
           <div class="card card-disabled">
             <label class="toggle-row">
@@ -299,8 +325,9 @@
             当前没有单独开关这几类记录的入口——都在同一个进程内存里，随应用重启清空，不落盘、不上传。按类型精细开关是后续工作。
           </p>
           <div class="card">
-            <p class="cat-card-line">本地 HTTP 桥只监听 <code>127.0.0.1:47811</code>，不接受外部网络访问。</p>
-            <p class="cat-card-line">访问令牌：<span class="badge badge-muted">未启用</span>（同机进程目前都能直接调用）</p>
+            <p class="cat-card-line">本地 HTTP 桥只监听 <code id="bridge-address">127.0.0.1:47811</code>，不接受外部网络访问。</p>
+            <p class="cat-card-line">访问令牌：<span class="badge" id="bridge-auth-badge">检查中…</span></p>
+            <p class="hint" style="margin-top: 6px" id="bridge-auth-detail"></p>
           </div>
         </section>
       </main>

@@ -11,7 +11,30 @@
 // walk should just ignore `position` changes and stay in place - the engine does
 // not know or care what capabilities the renderer has.
 
-export const BEHAVIOR_STATES = Object.freeze(['idle', 'wander', 'dragged', 'ai_directed', 'play_toy']);
+export const BEHAVIOR_STATES = Object.freeze([
+  'idle', 'wander', 'dragged', 'ai_directed', 'play_toy',
+  // Asleep. The one autonomous state the cat ENTERS rather than being put into, and the only
+  // one whose exit condition is internal (rested enough) rather than a timer or an input.
+  //
+  // It exists because the other five make a cat that is always equally awake: it walks, it
+  // rests for a few seconds, it walks again, forever and identically at 04:00 and at 14:00.
+  // Sleep is what turns that loop into a day - it is the low end of a range the rest of the
+  // behaviour now sits inside.
+  'sleep',
+]);
+
+/**
+ * The five personality sliders, matching `PersonalityTraits` in src-tauri and the
+ * `validatePersonality` contract. All 0..1, all 0.5 by default - the midpoint is "no claim
+ * made", not "average cat".
+ */
+export const PERSONALITY_TRAITS = Object.freeze([
+  'independence', 'curiosity', 'gentleness', 'playfulness', 'sleepiness',
+]);
+
+const NEUTRAL_PERSONALITY = Object.freeze({
+  independence: 0.5, curiosity: 0.5, gentleness: 0.5, playfulness: 0.5, sleepiness: 0.5,
+});
 
 // There is one mode. There used to be two - "工作模式" (stay out of the way) and "逗猫模式"
 // (chase the cursor) - and the split was wrong: it made the user declare in a menu what they
@@ -112,6 +135,63 @@ const DEFAULTS = Object.freeze({
   // sub-second shuffle that reads as twitching rather than as moving out of the way. Targets
   // are re-rolled (bounded attempts) until one is at least this far off.
   minRetargetDistance: 120,
+  // --- vitals: what makes a day different from a loop ------------------------------------
+  //
+  // Two numbers, both 0..1, both changing on the scale of hours rather than frames:
+  //
+  //   energy      how much the cat has left to spend. Drains while awake (faster while
+  //               walking), restores while asleep. Low energy slows the walk and lengthens
+  //               the rests, so a tired cat LOOKS tired before it does anything about it.
+  //   sleepiness  how much it wants to stop. Rises while awake, faster at night, faster still
+  //               on a cat whose `sleepiness` trait is high. Crossing a threshold is what
+  //               sends it to sleep.
+  //
+  // They are deliberately separate: a cat can be wide awake and out of energy (late in a long
+  // session) or rested but sleepy (3am). Collapsing them into one "tiredness" number loses
+  // exactly the distinction that makes the behaviour read as a living thing rather than as a
+  // battery meter.
+  //
+  // Rates are per HOUR because that is the unit they are reasoned about in - a full day's
+  // swing should take a working day, not a coffee break.
+  energyDrainPerHour: 0.10,        // ~10 hours awake at rest to run flat
+  energyDrainMovingMultiplier: 2.4, // walking costs more than sitting
+  energyRestorePerHour: 0.42,      // ~2.5 hours of sleep for a full recharge
+  sleepinessRisePerHour: 0.13,
+  sleepinessFallPerHour: 0.55,
+  // How far the day/night cycle can push the sleepiness rate, as a multiplier. Noon is the
+  // low end, 03:00 the high end.
+  circadianSleepinessSwing: [0.55, 1.75],
+  // Peak nightness, as a local hour. 3am: the deepest part of the night for the person the
+  // cat is keeping company, which is what this is actually modelling - not a real cat's
+  // crepuscular rhythm, which would have it most active at dawn and dusk and asleep through
+  // the working day, i.e. invisible exactly when someone is there to see it.
+  circadianPeakHour: 3,
+  // Sleepiness at which a settled cat will lie down, and the energy above which it will
+  // refuse to no matter how sleepy (a cat with plenty in the tank stays up).
+  sleepEnterSleepiness: 0.78,
+  sleepRefuseAboveEnergy: 0.92,
+  // Woken when BOTH are satisfied - rested and no longer sleepy. Requiring both is what stops
+  // it waking up at the threshold and immediately qualifying to sleep again.
+  sleepWakeEnergy: 0.85,
+  sleepWakeSleepiness: 0.25,
+  // A cat does not drop where it stands. It has to have been settled this long first, which
+  // is also what keeps sleep from interrupting a walk.
+  sleepSettleMs: 6000,
+  // The most wall-clock time one tick may apply to the vitals.
+  //
+  // `deltaSeconds` is already capped at 0.25s so a stalled frame cannot teleport the cat, but
+  // vitals need a much larger cap and a different reason for it: closing the laptop for eight
+  // hours produces one tick with an eight-hour gap, and the cat did not spend those eight
+  // hours awake - it did not exist. Advancing vitals by the full gap would have it wake from
+  // a lid-open bone tired, or (asleep) fully charged the instant the screen comes back, both
+  // of which read as the state being fake. Capping at fifteen minutes means a long gap moves
+  // the needle a little, in the right direction, and no more.
+  vitalsGapCapMs: 15 * 60 * 1000,
+  // How far a trait may scale the thing it governs. Traits tune tuned behaviour - the
+  // defaults above were measured, so a slider at either extreme must bend them, not replace
+  // them. Every trait factor is clamped into this band.
+  traitInfluence: [0.6, 1.6],
+
   // --- toys (see TOY_KINDS) -------------------------------------------------------------
   toyChaseSpeedMultiplier: 3.2, // a cat going after a toy sprints; this is not a stroll
   toyReach: 34, // how close the cat's anchor gets before it can bat the toy
@@ -241,6 +321,138 @@ export function createLifeEngine(config = {}) {
   let roamMargins = { ...margins };
   // Per-edge welcome, overridable by the host - see setEdgePreference.
   const edgePreference = { ...cfg.edgePreference };
+
+  // --- vitals ----------------------------------------------------------------------------
+  // Start rested rather than at the midpoint: the first thing a user sees after launching
+  // should be a cat that is up and about, not one that lies down because it booted tired.
+  let energy = clamp(config.energy ?? 0.85, 0, 1);
+  let sleepiness = clamp(config.sleepiness ?? 0.15, 0, 1);
+  let personality = { ...NEUTRAL_PERSONALITY };
+  // When the cat last settled. Sleep needs a cat that has been still for a while, and
+  // `idleUntil` cannot answer that - it says when the rest ENDS, and is pushed forward by
+  // petting and by performances, so a cat being stroked would otherwise look "settled" for
+  // as long as the stroking lasted.
+  let settledSince = null;
+  let wokeAt = null;
+  let sleptAt = null;
+
+  /**
+   * How much the day is pulling toward sleep, 0..1, from the local clock.
+   *
+   * Derived from `now` rather than from a wall clock of its own, so the engine stays a pure
+   * function of its inputs: a test can hand it 03:00 and get the night behaviour without
+   * waiting for 03:00, and a replay with a pinned seed replays identically.
+   */
+  function nightness(now) {
+    const date = new Date(now);
+    const hour = date.getHours() + date.getMinutes() / 60;
+    const phase = ((hour - cfg.circadianPeakHour) / 24) * Math.PI * 2;
+    return (1 + Math.cos(phase)) / 2;
+  }
+
+  /**
+   * A trait's influence as a multiplier, clamped into cfg.traitInfluence.
+   *
+   * `trait` is 0..1 with 0.5 meaning "no opinion", so 0.5 must map to exactly 1.0 or moving a
+   * slider off centre and back would not return the cat to its tuned defaults. `strength` is
+   * how far the extremes reach.
+   */
+  function traitFactor(trait, strength) {
+    const [lo, hi] = cfg.traitInfluence;
+    const value = Number.isFinite(trait) ? clamp(trait, 0, 1) : 0.5;
+    return clamp(1 + (value - 0.5) * 2 * strength, lo, hi);
+  }
+
+  /**
+   * How long the cat stands still before it next goes somewhere.
+   *
+   * This is where three separate things meet, which is why it is one function rather than
+   * six call sites each doing their own arithmetic:
+   *   - low energy lengthens rests (a tired cat sits)
+   *   - `curiosity` shortens them (a curious cat goes to look)
+   *   - `independence` lengthens them (an independent cat is content where it is)
+   */
+  function idleWindow() {
+    const [lo, hi] = cfg.idleDurationMsRange;
+    const tired = 1 + (1 - energy) * 0.9;
+    const factor = tired
+      * traitFactor(1 - personality.curiosity, 0.35)
+      * traitFactor(personality.independence, 0.3);
+    return rand(lo, hi) * factor;
+  }
+
+  /**
+   * The autonomous walking pace. A flat cat walks slower, and a gentle one ambles.
+   * Never below a third of the tuned speed: past that the gait animation stops reading as
+   * walking and starts reading as a stutter.
+   */
+  function walkSpeed() {
+    const factor = (0.55 + 0.45 * energy) * traitFactor(1 - personality.gentleness, 0.2);
+    return cfg.speed * Math.max(0.33, factor);
+  }
+
+  /** Sleepiness at which THIS cat lies down, pulled by its `sleepiness` trait. */
+  function sleepThreshold() {
+    return clamp(cfg.sleepEnterSleepiness / traitFactor(personality.sleepiness, 0.28), 0.35, 0.98);
+  }
+
+  /**
+   * Advance energy and sleepiness, and return whether anything about them changed enough to
+   * matter. Called once per tick, before any state decision reads them.
+   */
+  function updateVitals(now, elapsedMs, moving) {
+    // See cfg.vitalsGapCapMs: a lid-open hands us the whole gap, and the cat did not live it.
+    const hours = Math.max(0, Math.min(elapsedMs, cfg.vitalsGapCapMs)) / 3600000;
+    if (hours <= 0) return;
+    if (state === 'sleep') {
+      energy = clamp(energy + cfg.energyRestorePerHour * hours, 0, 1);
+      sleepiness = clamp(sleepiness - cfg.sleepinessFallPerHour * hours, 0, 1);
+      return;
+    }
+    const drain = cfg.energyDrainPerHour * (moving ? cfg.energyDrainMovingMultiplier : 1);
+    energy = clamp(energy - drain * hours, 0, 1);
+
+    const [dayLow, nightHigh] = cfg.circadianSleepinessSwing;
+    const circadian = dayLow + (nightHigh - dayLow) * nightness(now);
+    const rise = cfg.sleepinessRisePerHour * circadian * traitFactor(personality.sleepiness, 0.5);
+    // Running out of energy makes you sleepy regardless of the hour - this is what guarantees
+    // the loop closes even for a cat whose sleepiness trait is at zero.
+    const exhaustion = energy < 0.2 ? (0.2 - energy) * 2.5 : 0;
+    sleepiness = clamp(sleepiness + (rise + exhaustion) * hours, 0, 1);
+  }
+
+  /** Everything that outranks sleep, i.e. every reason to be awake right now. */
+  function sleepDisturbed() {
+    return Boolean(toy) || Boolean(aiIntent) || pointerEngagedByUser || state === 'dragged';
+  }
+
+  function fallAsleep(now) {
+    state = 'sleep';
+    target = null;
+    sleptAt = now;
+    settledSince = null;
+  }
+
+  function wakeUp(now) {
+    state = 'idle';
+    wokeAt = now;
+    sleptAt = null;
+    settledSince = now;
+    // A cat that just woke does not immediately set off - it lies there a moment first.
+    idleUntil = now + idleWindow();
+  }
+
+  /**
+   * Replace the personality. Unknown keys are ignored and missing ones keep their current
+   * value, so a host that only knows about three sliders cannot blank the other two.
+   */
+  function setPersonality(next) {
+    if (!next || typeof next !== 'object') return;
+    for (const trait of PERSONALITY_TRAITS) {
+      const value = next[trait];
+      if (Number.isFinite(value)) personality[trait] = clamp(value, 0, 1);
+    }
+  }
 
   const minX = () => margins.left;
   const maxX = () => Math.max(margins.left, bounds.width - margins.right);
@@ -661,7 +873,12 @@ export function createLifeEngine(config = {}) {
     if (gap > cfg.toyReach) {
       // Aim at the toy itself rather than a standoff point: the cat is trying to reach it, not
       // to keep a polite distance from it.
-      moveToward(toy.position, deltaSeconds, cfg.speed * cfg.toyChaseSpeedMultiplier);
+      // A playful cat commits harder to the chase; a reserved one trots after it.
+      moveToward(
+        toy.position,
+        deltaSeconds,
+        cfg.speed * cfg.toyChaseSpeedMultiplier * traitFactor(personality.playfulness, 0.25),
+      );
     }
     // Face what it is playing with, always - even standing over a stopped ball.
     if (Math.abs(toy.position.x - position.x) > 1) facing = toy.position.x >= position.x ? 1 : -1;
@@ -860,7 +1077,7 @@ export function createLifeEngine(config = {}) {
   function endDrag(now) {
     if (state !== 'dragged') return;
     state = 'idle';
-    idleUntil = now + rand(...cfg.idleDurationMsRange);
+    idleUntil = now + idleWindow();
     dragStuckSinceMs = null;
   }
 
@@ -1063,8 +1280,12 @@ export function createLifeEngine(config = {}) {
     // A cursor is an input from outside and gets the same treatment as any other: a malformed
     // one is treated as "no cursor", never fed into the simulation.
     if (!isFinitePoint(cursor)) cursor = null;
-    const deltaSeconds = lastTickAt == null ? 0 : Math.min(0.25, (now - lastTickAt) / 1000);
+    const elapsedMs = lastTickAt == null ? 0 : Math.max(0, now - lastTickAt);
+    const deltaSeconds = lastTickAt == null ? 0 : Math.min(0.25, elapsedMs / 1000);
     lastTickAt = now;
+    // Before any state decision reads them. `moving` is what the cat was doing over the
+    // interval just ended, which is the interval the drain applies to.
+    updateVitals(now, elapsedMs, state === 'wander' || state === 'play_toy' || state === 'ai_directed');
     batThisTick = false;
     turning = 0; // set by moveToward when it actually steers this tick
     chargeAmount = charge ? Math.min(1, (now - charge.since) / cfg.toyChargeMaxMs) : 0;
@@ -1088,12 +1309,27 @@ export function createLifeEngine(config = {}) {
         if (dragStuckSinceMs == null) dragStuckSinceMs = now;
         else if (now - dragStuckSinceMs > cfg.dragStaleMs) {
           state = 'idle';
-          idleUntil = now + rand(...cfg.idleDurationMsRange);
+          idleUntil = now + idleWindow();
           dragStuckSinceMs = null;
           return snapshot();
         }
       }
       return snapshot();
+    }
+
+    // Waking comes before every autonomous drive and before the intent handling below,
+    // because all of them assume a cat that is up. A disturbance wakes it immediately; being
+    // rested wakes it on its own terms.
+    if (state === 'sleep') {
+      if (sleepDisturbed()) {
+        wakeUp(now);
+      } else if (energy >= cfg.sleepWakeEnergy && sleepiness <= cfg.sleepWakeSleepiness) {
+        wakeUp(now);
+      } else {
+        // Asleep and undisturbed: the body does nothing at all. No target, no heading change,
+        // no idle timer - the renderer reads `state === 'sleep'` and plays the curl.
+        return snapshot();
+      }
     }
 
     if (aiIntent && now >= aiIntent.until) aiIntent = null; // suggestion expired
@@ -1111,7 +1347,7 @@ export function createLifeEngine(config = {}) {
     // freeze the cat in the whole engine.
     if (state === 'ai_directed') {
       state = 'idle';
-      idleUntil = now + rand(...cfg.idleDurationMsRange);
+      idleUntil = now + idleWindow();
       target = null;
     }
 
@@ -1167,7 +1403,7 @@ export function createLifeEngine(config = {}) {
         state = 'idle';
         target = null;
       }
-      idleUntil = now + rand(...cfg.idleDurationMsRange);
+      idleUntil = now + idleWindow();
     }
 
     // Turning on the spot outranks the idle timer but not locomotion: anything that actually
@@ -1187,10 +1423,26 @@ export function createLifeEngine(config = {}) {
     }
 
     if (state === 'idle') {
-      if (idleUntil == null) idleUntil = now + rand(...cfg.idleDurationMsRange);
+      if (idleUntil == null) idleUntil = now + idleWindow();
+      if (settledSince == null) settledSince = now;
+      // Lying down is checked before the wander timer, so a cat that got sleepy while resting
+      // sleeps instead of setting off on one more trip it did not want to take.
+      //
+      // All four conditions matter: sleepy enough FOR THIS CAT (the trait moves the bar),
+      // not still full of energy, settled rather than mid-anything, and undisturbed.
+      if (
+        sleepiness >= sleepThreshold()
+        && energy < cfg.sleepRefuseAboveEnergy
+        && now - settledSince >= cfg.sleepSettleMs
+        && !sleepDisturbed()
+      ) {
+        fallAsleep(now);
+        return snapshot();
+      }
       if (now >= idleUntil) {
         state = 'wander';
         target = pickEdgeRestTarget(cursor);
+        settledSince = null;
       }
     } else if (state === 'wander') {
       if (!target) target = pickEdgeRestTarget(cursor);
@@ -1198,10 +1450,10 @@ export function createLifeEngine(config = {}) {
       // the cat is going somewhere purely because it felt like it, so it is the one state that
       // can afford to take the long way round. Chasing a toy or obeying an explicit intent must
       // still be able to go where it was told - including right at the pointer.
-      const arrived = moveToward(target, deltaSeconds, cfg.speed, cursor);
+      const arrived = moveToward(target, deltaSeconds, walkSpeed(), cursor);
       if (arrived) {
         state = 'idle';
-        idleUntil = now + rand(...cfg.idleDurationMsRange);
+        idleUntil = now + idleWindow();
         target = null;
       }
     }
@@ -1256,6 +1508,31 @@ export function createLifeEngine(config = {}) {
         : null,
       /** True for exactly the one frame the cat swats the toy - drives the swat animation. */
       batted: batThisTick,
+      /**
+       * The slow-moving inner state: what makes 14:00 different from 04:00, and hour six of a
+       * session different from hour one.
+       *
+       * Published rather than kept private because it is the only way anything outside can
+       * explain the cat's behaviour. "Why is it so slow today" and "why has it been lying
+       * there for twenty minutes" were previously unanswerable from any interface; with these
+       * on the snapshot the debug console, the bridge and an agent can all read the reason.
+       *
+       * `nightness` is derived from the clock, not accumulated, so it is safe to read as the
+       * current time-of-day weight rather than as history.
+       */
+      vitals: {
+        energy,
+        sleepiness,
+        nightness: nightness(lastTickAt ?? Date.now()),
+        /** The bar THIS cat has to cross to lie down, after its personality moves it. */
+        sleepThreshold: sleepThreshold(),
+        asleep: state === 'sleep',
+        /** When it last fell asleep / last woke, or null. */
+        sleptAt,
+        wokeAt,
+      },
+      /** The traits in force, so a reader can tell a sleepy cat from a sleepy hour. */
+      personality: { ...personality },
     };
   }
 
@@ -1264,6 +1541,8 @@ export function createLifeEngine(config = {}) {
     get position() { return { ...position }; },
     get mode() { return 'free'; },
     get heading() { return heading; },
+    get personality() { return { ...personality }; },
+    get vitals() { return { energy, sleepiness, asleep: state === 'sleep' }; },
     setBounds,
     beginDrag,
     updateDrag,
@@ -1273,6 +1552,7 @@ export function createLifeEngine(config = {}) {
     clearIntent,
     hold,
     setInteractionMode,
+    setPersonality,
     setAvoidRadius,
     setMargins,
     setEdgePreference,

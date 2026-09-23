@@ -17,7 +17,22 @@ export default defineConfig(() => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // Loopback, but IPv4 loopback specifically - NOT Vite's `false`/"localhost" default.
+    //
+    // `localhost` is resolved, and on a machine whose resolver returns ::1 first that binds
+    // [::1]:1420 and nothing else. Everything that reaches the dev server by name still works
+    // (Tauri's devUrl, a browser opening /probe-gait.html) because those fall back across
+    // addresses - but anything naming 127.0.0.1 gets connection-refused with no second address
+    // to try, and an HTTP proxy in the environment (http_proxy pointing at a local Clash-style
+    // listener is the common case) connects over IPv4 and answers 502 for the dev server while
+    // every other local port works.
+    //
+    // Binding 127.0.0.1 is strictly wider: a name still resolves to ::1 first, fails, and falls
+    // back to this - so `localhost:1420` keeps working - while the literal 127.0.0.1 now works
+    // too. `true`/0.0.0.0 would also fix it but puts the dev server on the LAN, which is not a
+    // trade a desktop pet's build needs to make. TAURI_DEV_HOST still overrides for the
+    // real-device case, which is the one time reaching it from off-machine is the point.
+    host: host || '127.0.0.1',
     hmr: host
       ? {
           protocol: "ws",

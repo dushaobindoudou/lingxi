@@ -13,6 +13,7 @@ import { createStageFx } from './fx/stage-fx.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
 import { createLifeEngine, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
+import type { Personality } from '../../../packages/life-engine/src/index.d.mts';
 import { createActivityRecorder } from '../../../packages/perception/src/index.mjs';
 import type { WorkArea } from '../../../packages/desktop-host-contract/index.d.ts';
 import type { AIIntent } from '../../../packages/perception-contract/index.d.ts';
@@ -160,6 +161,8 @@ async function main() {
     avoidRadius: number;
     skin: string;
     camera: string;
+    /** The five sliders from 主界面. The engine reads these - see applyStatus. */
+    personalityTraits?: Partial<Personality>;
   }
 
   /**
@@ -182,6 +185,10 @@ async function main() {
     // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
     syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
+    // Reconciled here rather than only on the broadcast, for the same reason as everything
+    // else in this function: an event can be dropped while the webview is suspended, and the
+    // Rust side is the one that persists the truth.
+    if (status.personalityTraits) engine.setPersonality(status.personalityTraits);
   }
 
   try {
@@ -205,6 +212,13 @@ async function main() {
   // control that changes live behavior instead of only persisting a label.
   void listen<{ preset: string; avoidRadius: number }>('set-behavior-preset', (event) => {
     engine.setAvoidRadius(event.payload.avoidRadius);
+  });
+  // The five trait sliders. These used to be persisted and broadcast and nothing more - the
+  // management window said so in as many words ("行为引擎本身还没有消费它们"). The engine now
+  // reads them: they move how long the cat rests, how fast it walks, how hard it chases a toy,
+  // and how sleepy it has to be before it lies down.
+  void listen<Partial<Personality>>('set-personality-traits', (event) => {
+    engine.setPersonality(event.payload);
   });
 
   function logicalSize(area: WorkArea) {
@@ -240,6 +254,8 @@ async function main() {
   // there - a hand moving back and forth is a stroke, a parked mouse is not.
   // The most recent snapshot the frame loop produced, for the reporting interval to read.
   let lastEngineSnapshot: ReturnType<typeof engine.tick> | null = null;
+  /** Previous frame's sleep flag, so waking can be detected as a transition rather than a state. */
+  let wasAsleep = false;
   let hoverSince = 0;
   let strokeDistance = 0;
   let lastHoverSample: { x: number; y: number } | null = null;
@@ -564,6 +580,19 @@ async function main() {
       activeAgent,
       activity: engineRecorder.summary(now),
       growth: engineRecorder.growth(),
+      /**
+       * Why the cat is behaving the way it is: energy, sleepiness, the hour's weight, and the
+       * threshold this particular personality has to cross to lie down.
+       *
+       * This is the field that makes the life system answerable from outside. "Why is it so
+       * slow today" and "why has it been curled up for twenty minutes" were questions nothing
+       * - not the debug console, not an agent, not the 首页 card - had any way to answer,
+       * because the only thing published was which state the cat was in, and every slow day
+       * looks like `idle` from there.
+       */
+      vitals: lastEngineSnapshot?.vitals ?? null,
+      /** The traits actually in force in the engine, which is not the same as the ones saved. */
+      personality: lastEngineSnapshot?.personality ?? null,
       /** What the app is currently spending. See the power governor. */
       power: tier,
     };
@@ -605,6 +634,26 @@ async function main() {
       // gait integrates would be wrong.
       lastEngineSnapshot = snapshot;
       renderer.render(snapshot, deltaSeconds, cursor);
+
+      // --- sleep, made visible ----------------------------------------------------------
+      //
+      // The engine decides the cat is asleep; this is what that looks like. Without these
+      // lines `state === 'sleep'` is a cat standing perfectly still doing nothing, which is
+      // indistinguishable from the frozen-in-a-state bug the engine goes to some length to
+      // make impossible - the worst possible way for a new state to present itself.
+      //
+      // `curled-sleep` is 6s and does not loop, so it is re-started whenever it ends. That is
+      // also what keeps the nap intact: the idle director does not schedule anything while an
+      // action is playing, so a continuously-playing clip is how the cat stays asleep instead
+      // of being interrupted by a yawn or a grooming clip every few seconds.
+      if (snapshot.state === 'sleep') {
+        if (!renderer.playingAction) renderer.playAction?.('curled-sleep');
+      } else if (wasAsleep) {
+        // Waking up is a beat of its own. A cat that snaps from curled to walking looks
+        // teleported; one that stretches first reads as having just got up.
+        renderer.playAction?.('stretch-front');
+      }
+      wasAsleep = snapshot.state === 'sleep';
 
       // Whenever a clip starts, pin the cat in place for as long as it runs. The renderer owns
       // the clip library and the director's scheduling; the engine owns whether the cat is
@@ -827,7 +876,10 @@ async function main() {
     // 30fps is indistinguishable from one at 60; a walking cat is not.
     const catIsStill =
       lastEngineSnapshot != null
-      && (lastEngineSnapshot.state === 'idle' || lastEngineSnapshot.state === 'dragged')
+      && (lastEngineSnapshot.state === 'idle'
+        || lastEngineSnapshot.state === 'dragged'
+        // A sleeping cat is the stillest it ever gets - exactly the case this tier exists for.
+        || lastEngineSnapshot.state === 'sleep')
       && !renderer.playingAction
       && lastEngineSnapshot.toy == null;
     if (tier === 'active' && catIsStill && now - lastInterestingAt > IDLE_AFTER_MS) setTier('idle');

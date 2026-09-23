@@ -58,6 +58,15 @@ set -euo pipefail
 
 PORT="${LINGXI_PORT:-47811}"
 BASE="http://127.0.0.1:${PORT}"
+# The bridge is loopback-only by construction, so no request this script makes should ever be
+# handed to a proxy - but curl reads http_proxy/all_proxy from the environment and does exactly
+# that, with no exemption for 127.0.0.1. On a machine with a local proxy exported (a Clash-style
+# listener on 7890 is the common shape) every call below is silently relayed through it: whether
+# that works at all depends on the proxy's own rules, the failure is a 502 or a hang rather than
+# anything mentioning a proxy, and the bearer token goes to a third process on the way. NO_PROXY
+# is not enough on its own - curl honours it, but the spelling and the wildcard handling vary by
+# build - so the flag is set explicitly on every call via this variable.
+NOPROXY=(--noproxy '*')
 TOKEN_FILE="${LINGXI_TOKEN_FILE:-$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
@@ -98,10 +107,10 @@ request() {
   local method="$1" path="$2" body="${3:-}" code out
   out=$(mktemp); trap 'rm -f "$out"' RETURN
   if [ -n "$body" ]; then
-    code=$(curl -s -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
+    code=$(curl -s "${NOPROXY[@]}" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
       -H "Authorization: Bearer $(token)" -H 'Content-Type: application/json' -d "$body") || true
   else
-    code=$(curl -s -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
+    code=$(curl -s "${NOPROXY[@]}" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
       -H "Authorization: Bearer $(token)") || true
   fi
   if [ -z "$code" ] || [ "$code" = "000" ]; then
@@ -185,7 +194,7 @@ cmd="${1:-help}"; shift || true
 case "$cmd" in
   health)
     # Deliberately unauthenticated - this is how you find out where the token lives.
-    curl -s --max-time 5 "$BASE/health" \
+    curl -s "${NOPROXY[@]}" --max-time 5 "$BASE/health" \
       | { command -v python3 >/dev/null 2>&1 && python3 -m json.tool 2>/dev/null || cat; } ;;
   capabilities|caps) request GET /capabilities ;;
   state)             request GET /perception ;;

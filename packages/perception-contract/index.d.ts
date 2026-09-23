@@ -79,7 +79,34 @@ export interface PerceptionSnapshot {
   activeAgent: string;
   activity: ActivitySummary;
   growth: GrowthMetrics;
+  /**
+   * The life system's slow variables - see `Vitals` in packages/life-engine.
+   *
+   * Optional because a host that does not run the life engine (a test harness, a reduced
+   * renderer) still produces a valid snapshot; a reader should treat absent as "this host
+   * does not model it", never as zero.
+   */
+  vitals?: Vitals | null;
+  /** The traits the engine is actually applying, which is not necessarily what is persisted. */
+  personality?: Personality | null;
 }
+
+/** Mirrors packages/life-engine's Vitals. Repeated rather than imported: this contract is
+ *  deliberately dependency-free so a non-JS host can implement it from the file alone. */
+export interface Vitals {
+  energy: number;
+  sleepiness: number;
+  nightness: number;
+  sleepThreshold: number;
+  asleep: boolean;
+  sleptAt: number | null;
+  wokeAt: number | null;
+}
+
+export type Personality = Record<
+  'independence' | 'curiosity' | 'gentleness' | 'playfulness' | 'sleepiness',
+  number
+>;
 
 /**
  * What an external driver can ask for. Both fields are optional and independent: send

@@ -6,7 +6,18 @@ Codex 没有 Claude Code 那种多事件 hook 体系，但它有一个**确定�
 
 ## 装法
 
-`~/.codex/config.toml`：
+> **最省事的一条：托盘 →「主界面」→ Agent 接入 → Codex →「一键接入」。**
+>
+> 它往 `~/.codex/config.toml` 写一条 `notify`（写之前先备份成 `.lingxi-backup`），
+> 你的注释、模型设置和其他 MCP server 原样保留。写进去的是一条 `curl`，不是下面那个
+> node 适配器——因为装了 `.app` 却没有仓库的人也得能用（和 Claude Code 的 hook 同理）。
+>
+> **配置里已经有别的 `notify` 时，按钮会消失**，并把占着那个键的命令原样显示出来。
+> 它不会替你做决定，原因见下一节。
+>
+> MCP 那一半仍然要手工粘贴：它跑在这个仓库里，而按钮不能往一个你可能没有的目录写路径。
+
+手工装的话，`~/.codex/config.toml`：
 
 ```toml
 # 确定性的那一半：不管模型有没有想起来调 skill，回合结束猫都会有反应。
@@ -69,9 +80,26 @@ notify = ["/Users/you/.codex/notify-fanout.sh"]
 # 直接喂一个 Codex 形状的事件，看猫有没有反应
 echo '{"type":"agent-turn-complete","thread-id":"t1","last-assistant-message":"写完了"}' \
   | node <repo>/integrations/adapters/lingxi-emit.mjs --host codex
+
+# 一键接入走的是另一条路：桥自己认识 Codex 的形状，不经过适配器
+curl -s --noproxy '*' -X POST http://127.0.0.1:47811/task-event \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $(cat "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token")" \
+  -d '{"type":"agent-turn-complete","thread-id":"t1","last-assistant-message":"写完了"}'
 lingxi state      # expression 应该变了
 lingxi events     # 应该看到一条 provider=codex
 ```
 
 适配器**永远 exit 0**：猫没启动、token 读不到、payload 不认识，都只是安静地什么都不做。
 一个桌宠不该有能力把你的 agent 搞坏。
+
+## 两份映射，钉在一起
+
+Codex 的事件形状现在有两个地方在解析：这里的 node 适配器（`fromCodex`），和 Rust 桥里的
+`normalize_codex_notify_event`（一键接入那条 curl 走的就是它）。
+
+两份是有代价的，而这个代价这个仓库已经付过一次：Claude Code 的两个 mapper 漂移过，
+一边认三个事件、另一边认五个，结果**权限提示在大多数人用的那条路上被静默丢掉了**。
+
+所以 `normalize_codex_notify_event_matches_the_node_adapter` 逐个用例把两边钉住——
+只给一边加事件，`cargo test` 会红。改这里的 `fromCodex` 时，那个测试就是清单。

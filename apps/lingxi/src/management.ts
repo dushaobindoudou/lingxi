@@ -17,6 +17,12 @@ import skinCatalogue from './data/skins.json';
 import actionCatalogue from './data/actions.json';
 import { BUILT_IN_EXPRESSIONS } from './rig/art.ts';
 import { ASSETS_README } from './rig/custom-assets.ts';
+// The MCP tool table is rendered from the server package's own catalogue rather than typed into
+// management.html, so the page cannot describe a tool surface that does not exist - which is
+// precisely what it did before: six invented tool names under a heading announcing that no MCP
+// server had been written, while packages/mcp-server was serving thirteen real ones.
+// packages/mcp-server/test/catalogue.test.mjs pins the catalogue to the live definitions.
+import { catalogue as MCP_TOOLS } from '../../../packages/mcp-server/src/catalogue.mjs';
 
 interface SkinCard {
   /** True for a theme that came from the user's own assets/skins.json rather than the bundle. */
@@ -459,6 +465,189 @@ function setClaudeConnectedUi(connected: boolean, hasLiveEvent: boolean) {
   if (disconnectBtn) disconnectBtn.hidden = !connected;
 }
 
+interface BridgeInfo {
+  port: number;
+  authRequired: boolean;
+  tokenFile: string | null;
+  agents: { id: string; name: string; badge: string; color: string }[];
+}
+
+/**
+ * Fill the MCP and bridge cards from what the bridge actually is at this moment.
+ *
+ * Everything these two cards used to say was written by hand and then left behind by the code:
+ * the access-token line claimed 未启用 and "同机进程目前都能直接调用" for as long as the bridge
+ * had been minting a token, storing it 0600 and rejecting anonymous callers - a page telling the
+ * user a security property was absent while it was being enforced. The fix is not a better
+ * sentence, it is asking: get_bridge_info reads the same BridgeToken and AgentRegistry the bridge
+ * serves from, so these lines cannot outlive the thing they describe.
+ *
+ * Failure is quiet on purpose. This is descriptive text on a settings page - if the command is
+ * unavailable the cards keep their "检查中…" placeholder, which is honest, rather than blanking
+ * or claiming a state nothing confirmed.
+ */
+async function renderBridgeInfo(): Promise<void> {
+  // The tool table does not depend on the app being reachable - it is a fact about the repo -
+  // so it is rendered first and unconditionally.
+  const rows = document.getElementById('mcp-tool-rows');
+  if (rows) {
+    rows.innerHTML = '';
+    for (const tool of MCP_TOOLS) {
+      const tr = document.createElement('tr');
+      const code = document.createElement('code');
+      code.textContent = tool.name;
+      const nameCell = document.createElement('td');
+      nameCell.append(code);
+      const purposeCell = document.createElement('td');
+      purposeCell.textContent = tool.purpose;
+      const riskCell = document.createElement('td');
+      riskCell.textContent = tool.risk;
+      tr.append(nameCell, purposeCell, riskCell);
+      rows.append(tr);
+    }
+  }
+  const mcpBadge = document.getElementById('mcp-status-badge');
+  const mcpDetail = document.getElementById('mcp-status-detail');
+  if (mcpBadge) mcpBadge.textContent = `${MCP_TOOLS.length} 个工具`;
+  if (mcpDetail) {
+    mcpDetail.textContent =
+      'MCP server 随仓库提供（packages/mcp-server），通过下面的本机桥说话。' +
+      '它是个独立进程，由你的 agent 宿主启动，所以这里看不到它是否正在运行——' +
+      '能看到的是下面「已登记的 agent」：有名字出现，就说明真的有东西接上了。';
+  }
+
+  let info: BridgeInfo;
+  try {
+    info = await invoke<BridgeInfo>('get_bridge_info');
+  } catch (error) {
+    console.error('[lingxi-management] get_bridge_info failed', error);
+    return;
+  }
+
+  const address = document.getElementById('bridge-address');
+  if (address) address.textContent = `127.0.0.1:${info.port}`;
+
+  const authBadge = document.getElementById('bridge-auth-badge');
+  const authDetail = document.getElementById('bridge-auth-detail');
+  if (authBadge) {
+    authBadge.textContent = info.authRequired ? '已启用' : '未启用';
+    authBadge.classList.toggle('badge-muted', !info.authRequired);
+  }
+  if (authDetail) {
+    authDetail.textContent = info.authRequired
+      ? info.tokenFile
+        // Naming the file is the actionable half: it is what a user checks when an agent cannot
+        // connect, and what they delete to revoke every client at once.
+        ? `每个请求都要带令牌，没有就拒绝。令牌存在 ${info.tokenFile}，权限 0600，只有你这个账户能读。`
+        : '每个请求都要带令牌，没有就拒绝。这次没能写入配置目录，所以令牌只存在于内存里——应用重启后会换一个。'
+      : '这个构建没有启用令牌校验。';
+  }
+
+  const agentsLine = document.getElementById('mcp-agents-line');
+  if (agentsLine) {
+    agentsLine.textContent = info.agents.length
+      ? `已登记的 agent：${info.agents.map((agent) => `${agent.badge} ${agent.name}`).join('、')}`
+      : '已登记的 agent：还没有。agent 第一次调用 lingxi_register 或 POST /agents 后会出现在这里。';
+  }
+}
+
+interface CodexStatus {
+  state: 'installed' | 'not_installed' | 'conflict' | 'unparsable' | 'unavailable';
+  configPath?: string;
+  configExists?: boolean;
+  mcpInstalled?: boolean;
+  existingNotify?: string;
+  reason?: string;
+}
+
+/**
+ * The Codex panel.
+ *
+ * Structurally the same as Claude Code's, with one state Claude Code cannot have: `conflict`.
+ * Codex's `notify` is a single TOML key, so a machine that already has one is a machine where
+ * installing would delete someone else's integration - silently, because Codex just stops
+ * calling it. That is not "cannot install", it is "installing would break something", and the
+ * panel has to make the difference visible: the button goes away and the other tool's command
+ * is shown verbatim so the user can see whose it is.
+ */
+async function initCodexAdapter(): Promise<void> {
+  const badge = document.getElementById('codex-status-badge');
+  const detail = document.getElementById('codex-status-detail');
+  const connect = document.getElementById('codex-connect') as HTMLButtonElement | null;
+  const disconnect = document.getElementById('codex-disconnect') as HTMLButtonElement | null;
+  const result = document.getElementById('codex-connect-result');
+  const conflict = document.getElementById('codex-conflict');
+  const conflictExisting = document.getElementById('codex-conflict-existing');
+  const mcpHint = document.getElementById('codex-mcp-hint');
+  const mcpSnippet = document.getElementById('codex-mcp-snippet');
+
+  function render(status: CodexStatus) {
+    const installed = status.state === 'installed';
+    if (badge) {
+      badge.textContent = {
+        installed: '● 已接入',
+        not_installed: '○ 未接入',
+        conflict: '⚠ 有冲突',
+        unparsable: '⚠ 配置读不了',
+        unavailable: '— 不可用',
+      }[status.state];
+      badge.classList.toggle('badge-muted', !installed);
+    }
+    if (detail) {
+      detail.textContent = {
+        installed: `已写入 ${status.configPath}。重启 Codex 后，每个回合结束猫都会有反应。`,
+        not_installed: status.configExists
+          ? `${status.configPath} 里还没有 notify。`
+          : `还没有 ${status.configPath}——接入时会建一个。`,
+        conflict: '没有改动你的配置。原因见下。',
+        unparsable: `${status.configPath} 不是合法的 TOML，所以这里不会去写它——先修好文件再来。`,
+        unavailable: status.reason ?? '读不到 Codex 配置。',
+      }[status.state];
+    }
+    // Installing is offered only when it is actually safe to write.
+    if (connect) connect.hidden = status.state !== 'not_installed';
+    if (disconnect) disconnect.hidden = !installed;
+    if (conflict) conflict.hidden = status.state !== 'conflict';
+    if (conflictExisting) conflictExisting.textContent = status.existingNotify ?? '';
+    // The MCP half is only worth showing once the deterministic half is in place - before that
+    // it is one more thing to read on a panel where nothing is connected yet.
+    const showMcp = installed && !status.mcpInstalled;
+    if (mcpHint) mcpHint.hidden = !showMcp;
+    if (mcpSnippet) mcpSnippet.hidden = !showMcp;
+  }
+
+  async function refresh() {
+    try {
+      render(await invoke<CodexStatus>('codex_integration_status'));
+    } catch (error) {
+      console.error('[lingxi-management] codex_integration_status failed', error);
+      render({ state: 'unavailable', reason: String(error) });
+    }
+  }
+
+  async function act(command: 'install_codex_notify' | 'uninstall_codex_notify') {
+    try {
+      const message = await invoke<string>(command);
+      if (result) {
+        result.textContent = message;
+        result.hidden = false;
+      }
+    } catch (error) {
+      if (result) {
+        // The refusal text explains what is in the way and how to keep both - show it as it
+        // is rather than flattening it to "失败".
+        result.textContent = String(error);
+        result.hidden = false;
+      }
+    }
+    await refresh();
+  }
+
+  connect?.addEventListener('click', () => void act('install_codex_notify'));
+  disconnect?.addEventListener('click', () => void act('uninstall_codex_notify'));
+  await refresh();
+}
+
 async function initClaudeAdapter() {
   let connected = false;
   try {
@@ -665,6 +854,8 @@ async function main() {
 
   startPerceptionPolling();
   void initClaudeAdapter();
+  void initCodexAdapter();
+  void renderBridgeInfo();
 }
 
 main().catch((error) => {

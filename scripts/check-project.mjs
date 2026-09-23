@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, relative } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { validateSkin, validatePersonality } from '../packages/contracts/src/index.mjs';
 const root=process.cwd();
 async function files(dir) {
@@ -12,6 +13,38 @@ async function files(dir) {
  }
  return out;
 }
+
+/**
+ * Which of these paths git is deliberately not tracking.
+ *
+ * The heavy modelling material - .blend files, render sheets, evaluation frames - is excluded by
+ * .gitignore on purpose (see the comment above those rules: keeping it out is what makes this
+ * repo clonable). The docs that describe that material still link to it, because on the machine
+ * that produced it the files really are at those paths.
+ *
+ * So a link pointing into an ignored path is not a broken link, it is a link to working material
+ * that lives alongside the checkout rather than inside it. Failing on those meant `npm run check`
+ * - and therefore `npm run validate` - could never pass on a fresh clone, which is exactly the
+ * machine most likely to be running it for the first time.
+ *
+ * One batched `git check-ignore` rather than one per path: it is a process spawn, and there are
+ * enough links here for that to matter. No git (tarball, no binary) means we cannot tell
+ * intentional from broken, and reporting a false failure is worse than reporting none - so an
+ * unavailable git yields an empty set and those links are simply not flagged.
+ */
+function ignoredPaths(paths) {
+ if(!paths.length) return new Set();
+ const r=spawnSync('git',['check-ignore','--stdin'],{cwd:root,input:paths.join('\n'),encoding:'utf8'});
+ // 0 = some matched, 1 = none matched; anything else (128: not a repo, or git missing) is
+ // "cannot tell", never a reason to fail the check.
+ if(r.error||(r.status!==0&&r.status!==1)) return new Set();
+ return new Set(r.stdout.split('\n').filter(Boolean));
+}
+
+// Every problem, not just the first. A check that throws on the thing it happens to reach first
+// turns "fix the project" into a serial guessing game: fix, rerun, discover the next one.
+const problems=[];
+const missing=[];
 for(const p of await files(root)) {
  // tsconfig files are JSONC by convention (TypeScript itself allows comments in them), so
  // they are deliberately not held to strict JSON.
@@ -19,14 +52,29 @@ for(const p of await files(root)) {
   let v;
   try { v=JSON.parse(await readFile(p,'utf8')); }
   // Without the path, a parse failure here is a line number in a file you cannot identify.
-  catch(error) { throw new Error(`${p}: ${error.message}`); }
-  if(p.includes('/presets/skins/'))validateSkin(v);
-  if(p.includes('/presets/personalities/'))validatePersonality(v);
+  catch(error) { problems.push(`${relative(root,p)}: ${error.message}`); continue; }
+  try {
+   if(p.includes('/presets/skins/'))validateSkin(v);
+   if(p.includes('/presets/personalities/'))validatePersonality(v);
+  } catch(error) { problems.push(`${relative(root,p)}: ${error.message}`); }
  }
  if(p.endsWith('.md')) for(const m of (await readFile(p,'utf8')).matchAll(/\]\(([^)]+)\)/g)) {
   const link=m[1]; if(/^[a-z]+:|^#|^<|\$\{/.test(link))continue;
-  try { await stat(resolve(dirname(p),decodeURIComponent(link.split('#')[0]))); }
-  catch { throw new Error(`${p}: broken local link -> ${link}`); }
+  const target=resolve(dirname(p),decodeURIComponent(link.split('#')[0]));
+  try { await stat(target); }
+  catch { missing.push({ doc:relative(root,p), link, rel:relative(root,target) }); }
  }
 }
+
+const ignored=ignoredPaths(missing.map((m)=>m.rel));
+const excused=missing.filter((m)=>ignored.has(m.rel));
+for(const m of missing.filter((x)=>!ignored.has(x.rel))) problems.push(`${m.doc}: broken local link -> ${m.link}`);
+
+if(problems.length) {
+ for(const p of problems) console.error(`  ${p}`);
+ throw new Error(`${problems.length} problem(s) - see above`);
+}
+// Say so rather than passing silently: "OK" on a machine where a documented asset is absent
+// should not look identical to "OK" on the machine that has it.
+if(excused.length) console.log(`${excused.length} link(s) point at git-ignored working material (not in this checkout) - see .gitignore`);
 console.log('JSON, preset contracts and local Markdown links: OK');

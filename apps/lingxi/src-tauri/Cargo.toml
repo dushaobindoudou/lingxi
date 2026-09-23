@@ -29,6 +29,12 @@ base64 = "0.22"
 # this app has no other need for an async runtime, and pulling in tokio/axum just for a
 # handful of localhost-only JSON endpoints would be a large dependency for a small job.
 tiny_http = "0.12"
+# ~/.codex/config.toml belongs to the user, not to us: it holds their model settings, their
+# other MCP servers and their own comments. toml_edit is the one that edits in place and gives
+# all of that back byte-for-byte; a parse-and-reserialise round trip would silently strip every
+# comment in the file as the price of adding six lines. It is what Cargo uses on Cargo.toml for
+# the same reason.
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
 # Global (screen-space) cursor position polling. The webview only sees mouse
 # events over its own hit-tested surface, and click-through windows stop
 # receiving those entirely - the mouse-follow behavior needs OS-level cursor

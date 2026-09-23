@@ -1,13 +1,16 @@
 #!/bin/bash
 # 灵犀 HTTP 桥边界测试。只读 + 可恢复，不改任何持久化数据以外的东西。
 B=http://127.0.0.1:47811
+# Loopback only - never via a proxy, which curl would otherwise do whenever http_proxy is
+# exported. See the same note in integrations/cli/lingxi.
+NOPROXY=(--noproxy '*')
 probe() {  # probe <标签> <方法> <路径> <body>
   local label="$1" method="$2" path="$3" body="${4:-}"
   local out code
   if [ -n "$body" ]; then
-    out=$(curl -s --max-time 4 -o /tmp/_p.json -w '%{http_code}' -X "$method" "$B$path" -H 'Content-Type: application/json' -d "$body")
+    out=$(curl -s "${NOPROXY[@]}" --max-time 4 -o /tmp/_p.json -w '%{http_code}' -X "$method" "$B$path" -H 'Content-Type: application/json' -d "$body")
   else
-    out=$(curl -s --max-time 4 -o /tmp/_p.json -w '%{http_code}' -X "$method" "$B$path")
+    out=$(curl -s "${NOPROXY[@]}" --max-time 4 -o /tmp/_p.json -w '%{http_code}' -X "$method" "$B$path")
   fi
   code="$out"
   printf '%-34s %-4s %s\n' "$label" "$code" "$(head -c 190 /tmp/_p.json | tr -d '\n')"

@@ -371,9 +371,15 @@ impl TrayState {
         self.persist();
     }
 
-    /// "性格行为" trait sliders. See `PersonalityTraits`'s doc comment: persisted and
-    /// broadcast, not yet consumed by any behavior - the management window is responsible
-    /// for labeling that honestly, this just stores what the user set.
+    /// "性格行为" trait sliders: persisted here, broadcast on `set-personality-traits`, and
+    /// consumed by the life engine (see `setPersonality` in packages/life-engine, and the
+    /// listener in apps/lingxi/src/main.ts).
+    ///
+    /// They used to stop at this function - stored and broadcast and read by nothing - and
+    /// both this comment and the management window said so. They now move how long the cat
+    /// rests between trips, how fast it walks, how hard it chases a toy, and how sleepy it
+    /// has to get before it lies down. 0.5 on every slider is exactly the tuned default
+    /// behaviour, so a user who never touches them sees no change.
     fn apply_personality_traits(&self, app: &tauri::AppHandle, traits: PersonalityTraits) {
         let traits = traits.clamped();
         *self.personality_traits.lock().unwrap() = traits.clone();
@@ -766,6 +772,78 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
     })
 }
 
+/// Codex's `notify` payload -> a task event, or None if this is not one.
+///
+/// Codex has no multi-event hook system, but it has one deterministic call: `notify`, which
+/// Codex itself invokes at the end of a turn rather than the model deciding to. That makes it
+/// the floor of the integration - it cannot be forgotten - while the MCP tools are the ceiling,
+/// because only a model that chose to call one knows what the work was ABOUT.
+///
+/// ## Why this lives in Rust as well as in the node adapter
+///
+/// Same reason as CLAUDE_HOOK_COMMAND: the one-click installer writes a plain `curl` that posts
+/// the RAW notify payload, so it keeps working for someone who installed the .app and has no
+/// checkout. `integrations/adapters/lingxi-emit.mjs` maps the same shapes for people who do.
+///
+/// That makes this the THIRD mapper of an agent's events in this repo, and the Claude pair has
+/// already demonstrated how that ends - they drifted, this side knew three events and the
+/// adapter knew five, and a permission prompt was silently dropped on the path most people use.
+/// So `normalize_codex_notify_event_matches_the_node_adapter` asserts every arm below against
+/// the adapter's `fromCodex`, case for case. Adding a case to one without the other fails it.
+///
+/// Deliberately no `mood`: the adapter does not guess one either. A mood invented by an
+/// integration is wrong in the one field the whole reaction design rests on, and it is wrong
+/// somewhere nobody is looking.
+fn normalize_codex_notify_event(raw: &serde_json::Value, sequence: u64) -> Option<TaskEvent> {
+    // The shape has moved between Codex versions, so every key is read with its aliases and
+    // anything unrecognised returns None rather than inventing a state.
+    let kind_of = raw
+        .get("type")
+        .or_else(|| raw.get("event"))
+        .or_else(|| raw.get("kind"))
+        .and_then(|v| v.as_str())?;
+    let state = match kind_of {
+        "agent-turn-complete" | "turn-ended" | "turn_complete" => "completed",
+        "turn-started" | "turn_started" => "running",
+        "turn-failed" | "error" => "failed",
+        "approval-requested" => "needs_approval",
+        "input-requested" => "needs_input",
+        _ => return None,
+    };
+    let task_id = raw
+        .get("thread-id")
+        .or_else(|| raw.get("thread_id"))
+        .or_else(|| raw.get("session_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("codex-session");
+    let summary = raw
+        .get("last-assistant-message")
+        .or_else(|| raw.get("message"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let observed_at = now_millis();
+    Some(TaskEvent {
+        schema_version: 1,
+        provider: "codex".to_string(),
+        source_id: "codex".to_string(),
+        task_id: task_id.to_string(),
+        event_id: format!("codex-{task_id}-{state}-{observed_at}-{sequence}"),
+        state: state.to_string(),
+        sequence,
+        observed_at,
+        summary: if summary.is_empty() {
+            format!("chat: {state}")
+        } else {
+            summary.chars().take(240).collect()
+        },
+        // Everything through `notify` is a conversational turn: the payload carries no
+        // indication of what sort of work it was, and guessing would be worse than "chat".
+        kind: "chat".to_string(),
+        mood: "focused".to_string(),
+        progress: None,
+    })
+}
+
 fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEvent {
     let session_id = raw.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown-session").to_string();
     let hook_event_name = raw.get("hook_event_name").and_then(|v| v.as_str()).unwrap_or("unknown");
@@ -986,6 +1064,226 @@ fn uninstall_claude_hooks() -> Result<String, String> {
     }
     write_claude_settings(&path, &settings)?;
     Ok("已移除".to_string())
+}
+
+/// What the local bridge actually is, right now, for the management window to render.
+///
+/// The "能力开放"/"隐私" cards used to be hand-written claims about the bridge, and they aged
+/// badly in the worst direction: the page kept saying the access token was 未启用 and that
+/// "同机进程目前都能直接调用" long after `BridgeToken` started minting one, persisting it at
+/// 0600 and rejecting every unauthenticated request. A user reading that page was told the
+/// security property was absent while it was in force - and a contributor was told there was
+/// work to do that had already been done.
+///
+/// So the page asks instead of asserting. Everything here is read from the live state the
+/// bridge itself uses, which means it cannot describe a build it is not running in.
+#[tauri::command]
+fn get_bridge_info(app: tauri::AppHandle) -> serde_json::Value {
+    let token = app.state::<BridgeToken>();
+    let registry = app.state::<AgentRegistry>();
+    let agents: Vec<AgentIdentity> = registry.agents.lock().unwrap().values().cloned().collect();
+    serde_json::json!({
+        "port": PERCEPTION_HTTP_PORT,
+        // Not a constant dressed up as data: it is true because a token exists, and the same
+        // value is what /health publishes to callers.
+        "authRequired": !token.value.is_empty(),
+        // None when the config directory could not be written - the bridge then runs with a
+        // session-only token, which the page should say rather than point at a missing file.
+        "tokenFile": token.path.as_ref().map(|p| p.display().to_string()),
+        "agents": agents,
+    })
+}
+
+/// What Codex should run when a turn ends.
+///
+/// Same shape and the same reasoning as CLAUDE_HOOK_COMMAND: plain `curl`, reading the bridge
+/// token itself, every failure swallowed, so it keeps working for someone who installed the
+/// .app and has no checkout of this repository.
+///
+/// The difference is how the payload arrives. Claude Code pipes the hook JSON on stdin; Codex
+/// appends it as a final ARGUMENT to whatever `notify` names. So this runs through `sh -c` with
+/// a placeholder $0 ("lingxi-notify", which is what shows up in `ps`), leaving Codex's payload
+/// as "$1" - and $1 is fed to curl through a here-string rather than interpolated into the
+/// command, because the payload is arbitrary JSON containing quotes.
+const CODEX_NOTIFY_SCRIPT: &str = concat!(
+    "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); ",
+    "printf '%s' \"$1\" | curl -s -m 2 -X POST http://127.0.0.1:47811/task-event ",
+    "-H 'Content-Type: application/json' -H \"Authorization: Bearer $T\" ",
+    "--data-binary @- >/dev/null 2>&1 || true"
+);
+
+/// How we recognise our own `notify` entry, including one we might rewrite later. Matching on
+/// the endpoint rather than on the whole script means a future tweak to the command does not
+/// make the previous install unrecognisable - which is what turns "uninstall" into "the button
+/// says it is not installed while it plainly is".
+const CODEX_NOTIFY_MARKER: &str = "127.0.0.1:47811/task-event";
+
+fn codex_config_path() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex").join("config.toml"))
+}
+
+/// Our notify entry, as Codex wants it: an argv array.
+fn codex_notify_value() -> toml_edit::Value {
+    let mut array = toml_edit::Array::new();
+    array.push("/bin/sh");
+    array.push("-c");
+    array.push(CODEX_NOTIFY_SCRIPT);
+    array.push("lingxi-notify");
+    toml_edit::Value::Array(array)
+}
+
+/// Does this `notify` value look like ours?
+fn codex_notify_is_ours(value: &toml_edit::Item) -> bool {
+    value
+        .as_array()
+        .map(|arr| arr.iter().any(|v| v.as_str().is_some_and(|s| s.contains(CODEX_NOTIFY_MARKER))))
+        .unwrap_or(false)
+}
+
+/// Add our notify entry to a config's text, or explain why we will not.
+///
+/// Pure so it can be tested: every interesting case here is about what is ALREADY in someone's
+/// file, and those cases are unpleasant to set up through $HOME.
+fn codex_install_into(text: &str) -> Result<String, String> {
+    let mut doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("不是合法的 TOML，未做任何修改：{e}"))?;
+
+    if let Some(existing) = doc.get("notify") {
+        if !codex_notify_is_ours(existing) {
+            return Err(format!(
+                "已经有一个 notify，是别的工具的，没有改动：\n  {}\n\nTOML 的 notify 只能有一个，\
+                 覆盖它会让那个工具静默失效。要两个都要，写一个分发脚本同时转发给两边——\
+                 做法见 integrations/plugins/codex/README.md。",
+                existing.to_string().trim(),
+            ));
+        }
+    }
+    doc["notify"] = toml_edit::Item::Value(codex_notify_value());
+    Ok(doc.to_string())
+}
+
+/// Remove only what we wrote, and report what that was.
+fn codex_uninstall_from(text: &str) -> Result<(String, Vec<&'static str>), String> {
+    let mut doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("不是合法的 TOML，未做任何修改：{e}"))?;
+    // Someone else's notify is left exactly where it is - removing it would be the same
+    // mistake as overwriting it during install.
+    let mut removed: Vec<&'static str> = Vec::new();
+    if doc.get("notify").map(codex_notify_is_ours).unwrap_or(false) {
+        doc.remove("notify");
+        removed.push("notify");
+    }
+    if let Some(servers) = doc.get_mut("mcp_servers").and_then(|t| t.as_table_like_mut()) {
+        if servers.remove("lingxi").is_some() {
+            removed.push("mcp_servers.lingxi");
+        }
+    }
+    Ok((doc.to_string(), removed))
+}
+
+/// What the management window needs to draw the Codex panel.
+///
+/// Three outcomes, not two, and the third is the whole reason this is a separate command rather
+/// than a boolean: `notify` is a single TOML key, so a machine that already has one is a machine
+/// where installing would DELETE someone else's integration. integrations/plugins/codex/README.md
+/// puts it plainly - "别直接覆盖用户已有的 notify。那是别人的功能，猫不值得" - and a one-click
+/// button that silently did it anyway would be the most damaging thing in this app.
+#[tauri::command]
+fn codex_integration_status() -> serde_json::Value {
+    let Some(path) = codex_config_path() else {
+        return serde_json::json!({ "state": "unavailable", "reason": "找不到 HOME 目录" });
+    };
+    let display = path.display().to_string();
+    if !path.exists() {
+        return serde_json::json!({ "state": "not_installed", "configPath": display, "configExists": false });
+    }
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return serde_json::json!({ "state": "unavailable", "configPath": display, "reason": "配置文件读不出来" });
+    };
+    let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
+        // A config we cannot parse is one we must not write to.
+        return serde_json::json!({ "state": "unparsable", "configPath": display });
+    };
+    let mcp_installed = doc
+        .get("mcp_servers")
+        .and_then(|t| t.as_table_like())
+        .map(|t| t.contains_key("lingxi"))
+        .unwrap_or(false);
+    match doc.get("notify") {
+        None => serde_json::json!({
+            "state": "not_installed", "configPath": display, "configExists": true, "mcpInstalled": mcp_installed,
+        }),
+        Some(existing) if codex_notify_is_ours(existing) => serde_json::json!({
+            "state": "installed", "configPath": display, "configExists": true, "mcpInstalled": mcp_installed,
+        }),
+        Some(existing) => serde_json::json!({
+            "state": "conflict",
+            "configPath": display,
+            "configExists": true,
+            "mcpInstalled": mcp_installed,
+            // Shown verbatim so the user can see whose it is and decide, rather than being
+            // told "something is in the way".
+            "existingNotify": existing.to_string().trim().to_string(),
+        }),
+    }
+}
+
+/// Add the notify hook and the MCP server block to ~/.codex/config.toml.
+///
+/// Refuses, rather than overwrites, when `notify` already belongs to something else. The
+/// fan-out script that lets both coexist is in integrations/plugins/codex/README.md; deciding
+/// to run it is the user's call, not this button's.
+#[tauri::command]
+fn install_codex_notify() -> Result<String, String> {
+    let path = codex_config_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
+    let text = if path.exists() {
+        std::fs::read_to_string(&path).map_err(|e| format!("读不出 {}：{e}", path.display()))?
+    } else {
+        String::new()
+    };
+    let updated = codex_install_into(&text)?;
+
+    if path.exists() {
+        let backup = path.with_extension("toml.lingxi-backup");
+        let _ = std::fs::copy(&path, &backup);
+    }
+
+    // Only the `notify` half is written here, on purpose.
+    //
+    // notify is the DETERMINISTIC half: Codex calls it itself at the end of every turn, and it
+    // needs nothing but /bin/sh and curl, so one click configures it correctly on a machine
+    // that has the .app and nothing else. The MCP half is the richer one - it is what lets a
+    // reaction know what the work was ABOUT rather than only that it ended - but it runs
+    // `packages/mcp-server`, which only exists inside a checkout of this repository. A button
+    // that wrote a path to a directory the user does not have would produce a config that looks
+    // configured and fails silently at every startup, which is worse than not writing it.
+    //
+    // So the page shows the MCP block as something to paste, with the checkout path filled in
+    // by whoever has one. See codex_integration_status's `mcpInstalled`.
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("建不了 {}：{e}", parent.display()))?;
+    }
+    std::fs::write(&path, updated).map_err(|e| format!("写不进 {}：{e}", path.display()))?;
+    Ok(format!("已写入 {}，重启 Codex 后生效。", path.display()))
+}
+
+/// Remove only what we put there.
+#[tauri::command]
+fn uninstall_codex_notify() -> Result<String, String> {
+    let path = codex_config_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
+    if !path.exists() {
+        return Ok("本来就没有配置文件，无需移除。".to_string());
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读不出 {}：{e}", path.display()))?;
+    let (updated, removed) = codex_uninstall_from(&text)?;
+    if removed.is_empty() {
+        return Ok("没有找到我们写入的配置，什么都没改。".to_string());
+    }
+    std::fs::write(&path, updated).map_err(|e| format!("写不进 {}：{e}", path.display()))?;
+    Ok(format!("已移除 {}。重启 Codex 后生效。", removed.join(" 与 ")))
 }
 
 /// Read-only check so the management window shows the right state on open, even after an
@@ -2607,7 +2905,12 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                             // generic form is tried first because it is unambiguous - it has a
                             // `state` from a closed vocabulary - whereas the hook form is
                             // identified only by the absence of that.
+                            // Generic first because it is unambiguous (it carries a `state`
+                            // from a closed vocabulary), then Codex's notify shape, which is
+                            // identified by its own `type`, and finally the Claude hook shape,
+                            // which is identified only by the absence of both.
                             let event = normalize_generic_task_event(&raw, seq)
+                                .or_else(|| normalize_codex_notify_event(&raw, seq))
                                 .unwrap_or_else(|| normalize_claude_hook_event(&raw, seq));
                             // An event nothing can act on must not displace one that matters.
                             // The buffer holds 500 and is the only history there is, so anything
@@ -3678,6 +3981,10 @@ pub fn run() {
             install_claude_hooks,
             uninstall_claude_hooks,
             claude_hooks_installed,
+            codex_integration_status,
+            install_codex_notify,
+            uninstall_codex_notify,
+            get_bridge_info,
             set_power_tier
         ])
         .setup(|app| {
@@ -4021,6 +4328,131 @@ mod tests {
         // function's own doc comment on why)
         assert_eq!(stop_event.source_id, "s1");
         assert_eq!(stop_event.task_id, "s1");
+    }
+
+    /// Pins the Rust Codex mapper to the node adapter's `fromCodex`, case for case.
+    ///
+    /// Not a formality: the Claude pair of mappers drifted exactly this way - one side learned
+    /// two new events and the other did not, and a permission prompt stopped reaching the cat
+    /// on the path most people install. This table IS the adapter's switch statement, so a case
+    /// added to one and not the other fails here instead of going quiet in production.
+    #[test]
+    fn normalize_codex_notify_event_matches_the_node_adapter() {
+        // integrations/adapters/lingxi-emit.mjs :: fromCodex
+        let cases: [(&str, &str); 8] = [
+            ("agent-turn-complete", "completed"),
+            ("turn-ended", "completed"),
+            ("turn_complete", "completed"),
+            ("turn-started", "running"),
+            ("turn_started", "running"),
+            ("turn-failed", "failed"),
+            ("error", "failed"),
+            ("approval-requested", "needs_approval"),
+        ];
+        for (ty, expected) in cases {
+            let raw = serde_json::json!({ "type": ty, "thread-id": "t1" });
+            let event = normalize_codex_notify_event(&raw, 1)
+                .unwrap_or_else(|| panic!("{ty} should map to a task event"));
+            assert_eq!(event.state, expected, "{ty}");
+            assert_eq!(event.provider, "codex");
+            assert_eq!(event.task_id, "t1");
+            assert_eq!(event.kind, "chat");
+        }
+        // input-requested is the ninth, kept out of the array only because 8 reads better than
+        // a magic 9 - assert it explicitly rather than dropping it.
+        let input = serde_json::json!({ "type": "input-requested", "thread-id": "t1" });
+        assert_eq!(normalize_codex_notify_event(&input, 1).unwrap().state, "needs_input");
+
+        // The aliases the adapter also accepts.
+        let aliased = serde_json::json!({ "event": "turn-ended", "session_id": "s9", "message": "done" });
+        let event = normalize_codex_notify_event(&aliased, 2).unwrap();
+        assert_eq!(event.task_id, "s9");
+        assert_eq!(event.summary, "done");
+
+        // And the whole point of returning Option: anything else must fall through to the next
+        // mapper rather than being invented into a state.
+        assert!(normalize_codex_notify_event(&serde_json::json!({ "type": "something-new" }), 3).is_none());
+        assert!(normalize_codex_notify_event(&serde_json::json!({}), 4).is_none());
+        // A Claude hook payload must NOT be claimed by this mapper.
+        let claude = serde_json::json!({ "session_id": "s1", "hook_event_name": "Stop" });
+        assert!(normalize_codex_notify_event(&claude, 5).is_none());
+    }
+
+    #[test]
+    fn codex_install_refuses_to_overwrite_someone_elses_notify() {
+        // The case the whole design turns on. `notify` is one TOML key, so installing over an
+        // existing one deletes another tool's integration - silently, because Codex will simply
+        // stop calling it. integrations/plugins/codex/README.md is explicit that we must not:
+        // "别直接覆盖用户已有的 notify。那是别人的功能，猫不值得。"
+        let existing = r#"
+model = "o3"
+notify = ["/Users/someone/bin/SkyComputerUseClient", "turn-ended"]
+"#;
+        let error = codex_install_into(existing).expect_err("must refuse");
+        assert!(error.contains("SkyComputerUseClient"), "the refusal has to show WHOSE it is: {error}");
+        assert!(error.contains("分发脚本"), "and how to keep both: {error}");
+    }
+
+    #[test]
+    fn codex_install_adds_notify_and_keeps_the_rest_of_the_file_intact() {
+        let before = r#"# 我自己的配置，别动
+model = "o3"
+
+[mcp_servers.something_else]
+command = "node"
+"#;
+        let after = codex_install_into(before).expect("should install");
+        assert!(after.contains("127.0.0.1:47811/task-event"), "notify should be written");
+        // The user's file is theirs: comments, settings and other servers all survive. A
+        // parse-and-reserialise round trip would have dropped the comment, which is why this
+        // uses toml_edit rather than a plain TOML parser.
+        assert!(after.contains("# 我自己的配置，别动"), "comments must survive");
+        assert!(after.contains("model = \"o3\""));
+        assert!(after.contains("[mcp_servers.something_else]"));
+    }
+
+    #[test]
+    fn codex_install_is_idempotent_and_works_on_an_empty_config() {
+        let once = codex_install_into("").expect("empty config is fine");
+        let twice = codex_install_into(&once).expect("re-installing is not an error");
+        assert_eq!(once, twice, "installing twice must not append a second entry");
+    }
+
+    #[test]
+    fn codex_uninstall_removes_only_ours() {
+        let installed = codex_install_into("model = \"o3\"\n").unwrap();
+        let (after, removed) = codex_uninstall_from(&installed).unwrap();
+        assert_eq!(removed, vec!["notify"]);
+        assert!(!after.contains("47811"));
+        assert!(after.contains("model = \"o3\""), "the user's settings stay");
+
+        // Another tool's notify is left exactly where it is - removing it would be the same
+        // mistake as overwriting it.
+        let foreign = "notify = [\"/other/tool\"]\n";
+        let (untouched, nothing) = codex_uninstall_from(foreign).unwrap();
+        assert!(nothing.is_empty());
+        assert!(untouched.contains("/other/tool"));
+    }
+
+    #[test]
+    fn codex_install_refuses_an_unparsable_config_rather_than_rewriting_it() {
+        let broken = "notify = [\"unclosed\n";
+        assert!(codex_install_into(broken).is_err());
+        assert!(codex_uninstall_from(broken).is_err());
+    }
+
+    #[test]
+    fn the_codex_notify_command_survives_a_payload_full_of_quotes() {
+        // The reason the payload goes through "$1" and a pipe rather than being interpolated:
+        // it is arbitrary JSON, and Codex hands it over as an argument.
+        let argv = codex_notify_value();
+        let arr = argv.as_array().expect("notify is an argv array");
+        let parts: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(parts[0], "/bin/sh");
+        assert_eq!(parts[1], "-c");
+        assert!(parts[2].contains("\"$1\""), "the payload must be referenced, never inlined");
+        // $0 is a placeholder so that Codex's appended payload lands in $1.
+        assert_eq!(parts.len(), 4, "sh -c <script> <argv0>, then Codex appends the payload");
     }
 
     #[test]
