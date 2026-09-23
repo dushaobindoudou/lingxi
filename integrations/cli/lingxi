@@ -174,7 +174,13 @@ json_typed() {
     [ -n "$value" ] || continue
     pairs+=("$key" "$value")
   done
-  if [ -n "${LINGXI_AGENT:-}" ]; then pairs+=("agent" "$LINGXI_AGENT"); fi
+  # Fold the machine identity into EVERY call, not just task events: a `lingxi say` used to
+  # arrive with no agent at all, and the bridge filed it under "anonymous" - the user saw the
+  # cat speak for nobody. The identity source is the same one agent_id() uses (env wins, then
+  # ~/.lingxi/agent.json), so all paths attribute identically.
+  local ident
+  ident="$(agent_id)"
+  if [ -n "$ident" ]; then pairs+=("agent" "$ident"); fi
   if [ ${#pairs[@]} -eq 0 ]; then printf '{}'; return; fi
 
   if command -v python3 >/dev/null 2>&1; then
