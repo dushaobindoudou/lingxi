@@ -151,11 +151,12 @@ const PET_STATE_LABELS: Record<string, string> = {
 const TASK_STATE_LABELS: Record<string, string> = {
   queued: '排队中',
   running: '进行中',
-  waiting_for_user: '等待你',
+  blocked: '卡住了',
+  needs_input: '等你回答',
+  needs_approval: '等你批准',
   completed: '✓ 完成',
   failed: '✗ 失败',
   cancelled: '已取消',
-  unknown: '未知',
 };
 
 function setupNav() {
@@ -425,7 +426,9 @@ function renderClaudeTaskList() {
   }
   // Most recent first; failed/waiting pinned to the top (docs/18 §6.1's own rule for the
   // task flow, applied here too since this is the only task list in the app right now).
-  const priority = (s: string) => (s === 'failed' || s === 'waiting_for_user' ? 0 : 1);
+  // "Waiting" means the three states where the USER is the blocker - a question, a permission
+  // prompt, or being stuck - not just one of them.
+  const priority = (s: string) => (s === 'failed' || s === 'needs_input' || s === 'needs_approval' || s === 'blocked' ? 0 : 1);
   const sorted = [...events].sort((a, b) => priority(a.state) - priority(b.state) || b.observedAt - a.observedAt);
   list.innerHTML = sorted
     .slice(0, 20)

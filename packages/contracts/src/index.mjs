@@ -1,5 +1,11 @@
 /** Platform-independent domain contracts. Runtime validation is mandatory at the boundary. */
-export const TASK_STATES = Object.freeze(['queued', 'running', 'waiting_for_user', 'completed', 'failed', 'cancelled', 'unknown']);
+// The eight states the Rust host, the MCP tool schema and the adapters speak. This list used
+// to lag them: `waiting_for_user` and `unknown` were never emitted by anything, while
+// `needs_approval` - the single most urgent state an agent can raise - was rejected HERE, at
+// the validation boundary, so the plugin path's permission prompts threw out of
+// TaskStore.apply instead of reaching the management page. One vocabulary; this is the
+// enforced one.
+export const TASK_STATES = Object.freeze(['queued', 'running', 'blocked', 'needs_input', 'needs_approval', 'completed', 'failed', 'cancelled']);
 const ID = /^[a-z0-9][a-z0-9._-]{0,79}$/i;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const assert = (condition, message) => { if (!condition) throw new TypeError(message); };
@@ -27,6 +33,14 @@ export class TaskStore {
     const key = taskKey(event);
     const previous = this.#tasks.get(key);
     if (previous && (previous.eventId === event.eventId || previous.sequence >= event.sequence)) return false;
+    // A sourceId is a stream EPOCH: adapters mint a new one when a connection is
+    // re-established. Nothing ever calls forget(), so the old epoch's entry used to stay in
+    // the store forever and the task list grew one ghost row per reconnect - all of them
+    // stale except the newest. The new epoch's arrival retires its predecessors: same
+    // provider, same task, superseded stream.
+    for (const [k, e] of this.#tasks) {
+      if (e.provider === event.provider && e.taskId === event.taskId && e.sourceId !== event.sourceId) this.#tasks.delete(k);
+    }
     this.#tasks.set(key, event);
     return true;
   }
@@ -64,5 +78,8 @@ export function composeCompanion(skin, personality, rigId) {
 export function taskCue(event, { enabled = false, quiet = false, stale = false } = {}) {
   validateTaskEvent(event);
   if (!enabled || quiet || stale) return 'none';
-  return ({ completed: 'soft_glance', failed: 'attention_mark', waiting_for_user: 'attention_mark' })[event.state] ?? 'none';
+  // needs_approval is at least as attention-worthy as needs_input: a tool call is blocked
+  // RIGHT NOW, and it is the state an IM notification most needs to carry (see the Rust
+  // TASK_STATES comment).
+  return ({ completed: 'soft_glance', failed: 'attention_mark', needs_input: 'attention_mark', needs_approval: 'attention_mark' })[event.state] ?? 'none';
 }

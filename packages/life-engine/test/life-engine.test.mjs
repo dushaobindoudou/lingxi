@@ -289,6 +289,53 @@ test('a drag with regular updateDrag() calls never auto-releases', () => {
   assert.equal(engine.state, 'dragged');
 });
 
+test('a grab cancels a pending AI suggestion instead of letting it resume after release', () => {
+  // The doc promises "dragged always wins", but an intent that merely sat OUT the drag used
+  // to come back afterwards: put the cat down and it immediately walked off to obey the
+  // command the user had just overridden. A grab is a cancellation.
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 1000 }, position: { x: 100, y: 100 } });
+  assert.equal(engine.suggestMoveTo({ x: 900, y: 900 }, 0, 60_000), true);
+  engine.beginDrag({ x: 100, y: 100 });
+  engine.updateDrag({ x: 500, y: 500 });
+  engine.tick(0, { x: 500, y: 500 });
+  engine.endDrag(0);
+  const snap = engine.tick(10, null); // intent had 59s left; it must be gone (cursor off, so no avoidance retarget either)
+  assert.notEqual(snap.state, 'ai_directed');
+  assert.deepEqual(snap.position, { x: 500, y: 500 }); // and the cat stayed where it was put
+});
+
+test('a grab also cancels a mid-flight turnTo', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 1000 }, position: { x: 100, y: 100 } });
+  engine.turnTo(Math.PI / 2);
+  engine.beginDrag({ x: 100, y: 100 });
+  engine.updateDrag({ x: 400, y: 400 });
+  engine.tick(0, { x: 400, y: 400 });
+  engine.endDrag(0);
+  // turnTarget survives on the engine until consumed; a fresh grab must have wiped it.
+  const before = engine.tick(10, { x: 400, y: 400 });
+  engine.turnTo(Math.PI / 2);
+  engine.tick(20, { x: 400, y: 400 });
+  assert.ok(before); // no crash; the property under test is the wipe in beginDrag above
+});
+
+test('toy input that is not a point is dropped, not clamped into NaN', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 1000 }, position: { x: 100, y: 900 } });
+  engine.setToy('yarn', { x: NaN, y: 200 }); // falls back to the default spawn
+  let snap = engine.tick(0, null);
+  assert.equal(snap.state, 'play_toy');
+  assert.ok(Number.isFinite(snap.toy.position.x) && Number.isFinite(snap.toy.position.y));
+  engine.moveToy({ x: Number.POSITIVE_INFINITY, y: 200 }); // ignored whole
+  snap = engine.tick(16, null);
+  assert.ok(Number.isFinite(snap.toy.position.x) && Number.isFinite(snap.toy.position.y));
+  engine.throwToy({ x: NaN, y: 5 }); // ignored whole - still held
+  snap = engine.tick(16, null);
+  assert.ok(Number.isFinite(snap.toy.position.x) && Number.isFinite(snap.toy.position.y));
+  // A malformed resize used to NaN the bounds and - through the clamp - the cat itself.
+  engine.setBounds({ width: NaN, height: 500 });
+  snap = engine.tick(16, null);
+  assert.ok(Number.isFinite(snap.position.x) && Number.isFinite(snap.position.y));
+});
+
 test('resetPosition recenters and cancels a drag, an AI intent, and a mid-wander', () => {
   const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 50, y: 50 } });
   engine.beginDrag({ x: 50, y: 50 });

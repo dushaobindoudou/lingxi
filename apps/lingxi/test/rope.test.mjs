@@ -3,8 +3,8 @@
 // settles, it does not stretch, and it responds to being hit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from '../../../apps/lingxi/node_modules/three/build/three.module.js';
-import { createRope } from '../../../apps/lingxi/src/rig/rope.ts';
+import * as THREE from '../node_modules/three/build/three.module.js';
+import { createRope } from '../src/rig/rope.ts';
 
 const step = 1 / 60;
 function settle(rope, anchor, frames = 240) {

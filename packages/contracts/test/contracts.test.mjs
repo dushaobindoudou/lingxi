@@ -7,9 +7,14 @@ test('deduplicates delivery and ignores out-of-order updates', () => {
  assert.equal(s.apply(event({eventId:'e2',sequence:2,state:'completed'})), true);
  assert.equal(s.apply(event({eventId:'late',sequence:1})), false); assert.equal(s.snapshot(1001)[0].state,'completed');
 });
-test('namespaces IDs by provider and connection epoch', () => {
+test('namespaces IDs by provider, and a new stream epoch retires the old one', () => {
  const s=new TaskStore(); for (const e of [event(),event({provider:'claude'}),event({sourceId:'remote'})]) s.apply(e);
- assert.equal(s.snapshot(1001).length,3);
+ // Different PROVIDERS are separate rows. Same provider+task under a NEW sourceId (a
+ // reconnected stream) is not a second row: nothing ever calls forget(), so keeping the old
+ // epoch grew one ghost row per reconnect, all stale but the newest. 2 = one codex row (the
+ // new epoch) + one claude row.
+ assert.equal(s.snapshot(1001).length,2);
+ assert.equal(s.snapshot(1001).filter(e => e.provider==='codex')[0].sourceId,'remote');
 });
 test('stale source remains unknown freshness, never converted to completed', () => {
  const s=new TaskStore(); s.apply(event()); const [snapshot]=s.snapshot(62000); assert.equal(snapshot.stale,true); assert.equal(snapshot.state,'running');

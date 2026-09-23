@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine, AFFECTION_LINES, STROKE_THRESHOLD_PX }
-  from '../../../apps/lingxi/src/anim/interactions.ts';
+  from '../src/anim/interactions.ts';
 
 test('a wand held still just out of reach makes the cat set up rather than walk over', () => {
   for (const roll of [0.1, 0.9]) {

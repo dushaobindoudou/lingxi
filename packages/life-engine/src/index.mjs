@@ -546,17 +546,6 @@ export function createLifeEngine(config = {}) {
   // threading one through every call site would be worse than recomputing it once per tick.
   let chargeAmount = 0;
 
-  function pickWanderTarget() {
-    const angle = rand(0, Math.PI * 2);
-    const radius = rand(cfg.wanderRadius * 0.3, cfg.wanderRadius);
-    const raw = { x: position.x + Math.cos(angle) * radius, y: position.y + Math.sin(angle) * radius };
-    // Roam box: this is the cat choosing where to go, not something forcing it there.
-    return {
-      x: clamp(raw.x, roamMinX(), roamMaxX()),
-      y: clamp(raw.y, roamMinY(), roamMaxY()),
-    };
-  }
-
   /**
    * 'auto' mode's rest spot: a point on the work area's border, far enough away to be worth
    * walking to. A wander target picked as a random hop from the *current* position - the
@@ -714,10 +703,18 @@ export function createLifeEngine(config = {}) {
    */
   function setToy(kind, at = null) {
     if (!TOY_KINDS.includes(kind)) return;
-    const spawn = at ?? {
-      x: position.x < bounds.width / 2 ? bounds.width * 0.75 : bounds.width * 0.25,
-      y: clamp(position.y + rand(-120, 120), cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
-    };
+    // `at` arrives from an agent's HTTP POST and from tray state restore, so it has exactly
+    // the trust level of any other remote input. clamp() cannot sanitise it - Math.min/max
+    // propagate NaN - and a NaN toy position reaches chaseToy's moveToward, whose bearing
+    // computation turns it into a NaN heading, which is how the cat vanished the last time
+    // this class of input slipped through. A spawn point that is not a point falls back to
+    // the default "across the work area" placement.
+    const spawn = isFinitePoint(at)
+      ? at
+      : {
+          x: position.x < bounds.width / 2 ? bounds.width * 0.75 : bounds.width * 0.25,
+          y: clamp(position.y + rand(-120, 120), cfg.margin, Math.max(cfg.margin, bounds.height - cfg.margin)),
+        };
     toy = {
       kind,
       position: {
@@ -750,6 +747,11 @@ export function createLifeEngine(config = {}) {
    */
   function throwToy(velocity) {
     if (!toy || toy.kind !== 'yarn') return;
+    // Same reasoning as setToy: the velocity comes from the bridge. NaN here reaches the
+    // integrator directly (position += velocity * dt) and then the bounce clamp, which passes
+    // NaN through, and the next chaseToy turns it into a NaN heading. A throw that cannot be
+    // honoured is ignored, not half-applied.
+    if (!isFinitePoint(velocity)) return;
     charge = null;
     toyHeld = false;
     toy.velocity = { x: velocity.x, y: velocity.y };
@@ -799,6 +801,9 @@ export function createLifeEngine(config = {}) {
   /** Move the yarn ball (a drag), or reposition any toy. */
   function moveToy(point) {
     if (!toy) return;
+    // A drag that is not a point is ignored whole: clamping would place a NaN-centred toy
+    // that the cat then chases into a NaN heading (see setToy for that post-mortem).
+    if (!isFinitePoint(point)) return;
     toy.position = {
       x: clamp(point.x, minX(), maxX()),
       y: clamp(point.y, minY(), maxY()),
@@ -809,19 +814,30 @@ export function createLifeEngine(config = {}) {
   /** Advance the toy itself. Who drives it is the whole difference between the three kinds. */
   function stepToy(deltaSeconds, cursor) {
     if (!toy) return;
-    // Toys get the plain work-area margin, NOT the cat's body-aware per-edge margins. Those
-    // exist because the cat's anchor is its feet and its body sticks up from there; a toy is a
-    // small thing centred on its own position, and clamping a cursor-driven toy to the cat's
-    // keep-out would stop the laser from ever reaching the top of the screen.
-    const minX = cfg.margin;
-    const maxX = Math.max(cfg.margin, bounds.width - cfg.margin);
-    const minY = cfg.margin;
-    const maxY = Math.max(cfg.margin, bounds.height - cfg.margin);
+    // The cursor-driven toys (laser dot, feather tip) get the plain work-area margin, NOT the
+    // cat's body-aware per-edge margins. Those exist because the cat's anchor is its feet and
+    // its body sticks up from there; a toy is a small thing centred on its own position, and
+    // clamping a cursor-driven toy to the cat's keep-out would stop the laser from ever
+    // reaching the top of the screen.
+    //
+    // The yarn ball is the exception, and which box it bounces in decides whether the game can
+    // end at all. The cat chases with moveToward, which clamps to the cat's HARD margins - its
+    // anchor box, top edge around (above-below)/2 when scaled up. Bouncing the ball in the
+    // plain cfg.margin box let it settle up there, outside the cat's reachable set by far more
+    // than toyReach (34px), and `if (toy)` in tick() has no timeout: the result was a cat
+    // standing at the boundary of its own box forever, swatting air at a ball it could see but
+    // never touch. The ball therefore bounces in the cat's box; only the cat can be there, so
+    // every point of the ball's box is within its reach.
+    const inCatBox = toy.kind === 'yarn';
+    const loX = inCatBox ? minX() : cfg.margin;
+    const hiX = inCatBox ? maxX() : Math.max(cfg.margin, bounds.width - cfg.margin);
+    const loY = inCatBox ? minY() : cfg.margin;
+    const hiY = inCatBox ? maxY() : Math.max(cfg.margin, bounds.height - cfg.margin);
 
     // In hand (whether or not you are winding up): the ball sits at the cursor and does not roll.
     if ((charge || toyHeld) && toy.kind === 'yarn') {
       if (cursor) {
-        toy.position = { x: clamp(cursor.x, minX, maxX), y: clamp(cursor.y, minY, maxY) };
+        toy.position = { x: clamp(cursor.x, loX, hiX), y: clamp(cursor.y, loY, hiY) };
       }
       toy.velocity = { x: 0, y: 0 };
       return;
@@ -830,7 +846,7 @@ export function createLifeEngine(config = {}) {
     if (toy.kind === 'laser') {
       // Pinned to the cursor exactly. With no cursor it simply stays where it last was, which
       // reads as the dot being held still rather than the toy vanishing.
-      if (cursor) toy.position = { x: clamp(cursor.x, minX, maxX), y: clamp(cursor.y, minY, maxY) };
+      if (cursor) toy.position = { x: clamp(cursor.x, loX, hiX), y: clamp(cursor.y, loY, hiY) };
       toy.velocity = { x: 0, y: 0 };
       return;
     }
@@ -840,8 +856,8 @@ export function createLifeEngine(config = {}) {
       if (cursor) {
         const catchUp = 1 - Math.exp(-deltaSeconds * cfg.toyFeatherLag);
         toy.position = {
-          x: clamp(toy.position.x + (cursor.x - toy.position.x) * catchUp, minX, maxX),
-          y: clamp(toy.position.y + (cursor.y - toy.position.y) * catchUp, minY, maxY),
+          x: clamp(toy.position.x + (cursor.x - toy.position.x) * catchUp, loX, hiX),
+          y: clamp(toy.position.y + (cursor.y - toy.position.y) * catchUp, loY, hiY),
         };
       }
       toy.velocity = { x: 0, y: 0 };
@@ -853,12 +869,12 @@ export function createLifeEngine(config = {}) {
     toy.velocity = { x: toy.velocity.x * decay, y: toy.velocity.y * decay };
     let nx = toy.position.x + toy.velocity.x * deltaSeconds;
     let ny = toy.position.y + toy.velocity.y * deltaSeconds;
-    if (nx < minX || nx > maxX) {
-      nx = clamp(nx, minX, maxX);
+    if (nx < loX || nx > hiX) {
+      nx = clamp(nx, loX, hiX);
       toy.velocity.x *= -cfg.toyBounceLoss;
     }
-    if (ny < minY || ny > maxY) {
-      ny = clamp(ny, minY, maxY);
+    if (ny < loY || ny > hiY) {
+      ny = clamp(ny, loY, hiY);
       toy.velocity.y *= -cfg.toyBounceLoss;
     }
     toy.position = { x: nx, y: ny };
@@ -903,16 +919,6 @@ export function createLifeEngine(config = {}) {
         toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
       }
     }
-  }
-
-  /** A point `standoff` away from `target`, on the ray from `target` through `fromPos`. */
-  function standoffPoint(fromPos, target, standoff) {
-    const dx = fromPos.x - target.x;
-    const dy = fromPos.y - target.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 1e-6) return { x: target.x + standoff, y: target.y };
-    const scale = standoff / d;
-    return { x: target.x + dx * scale, y: target.y + dy * scale };
   }
 
   function shortestAngle(radians) {
@@ -1035,8 +1041,17 @@ export function createLifeEngine(config = {}) {
   /**
    * Resize the world (e.g. the OS work area changed, or a monitor was unplugged).
    * Clamps the current position back into the new bounds.
+   *
+   * `next` comes from the host's window/monitor events. The other position-setting paths
+   * validate their inputs because clamp() propagates NaN; this one used to trust its caller
+   * and assign straight through, so one malformed resize event could make width NaN and - via
+   * the clamp below - erase the cat in the same frame. A resize that is not a resize is
+   * ignored and the current world kept.
    */
   function setBounds(next) {
+    if (!next || !Number.isFinite(next.width) || !Number.isFinite(next.height) || next.width <= 0 || next.height <= 0) {
+      return;
+    }
     bounds = next;
     position = {
       x: clamp(position.x, minX(), maxX()),
@@ -1049,6 +1064,14 @@ export function createLifeEngine(config = {}) {
     state = 'dragged';
     dragOffset = { x: position.x - cursor.x, y: position.y - cursor.y };
     target = null;
+    // The user's hand outranks everything, and a suggestion that was pending when the grab
+    // started must not resume the moment they let go: the doc below promises "dragged always
+    // wins", but an intent that merely SAT OUT the drag came back afterwards and the cat
+    // walked off to obey a command the user had just overridden - put it down, it leaves.
+    // Same for a mid-flight turnTo: the body should look where the user puts it, not finish
+    // rotating towards somewhere else.
+    aiIntent = null;
+    turnTarget = null;
   }
 
   /** Drag continues; host reports the current cursor position each frame. */
@@ -1218,9 +1241,20 @@ export function createLifeEngine(config = {}) {
    * outside world finds out it happened, rather than being told a comforting `null`.
    */
   function enforceInvariants() {
-    if (isFinitePoint(position) && Number.isFinite(heading)) return false;
-    resetPosition();
-    return true;
+    let repaired = false;
+    if (!(isFinitePoint(position) && Number.isFinite(heading))) {
+      resetPosition();
+      repaired = true;
+    }
+    // The toy is simulation state too, and it reaches the cat's heading through chaseToy - a
+    // toy at NaN is a cat at NaN one frame later. Where the body gets reset, the toy gets
+    // taken away: it "rolled off the desk". Cheaper than repairing a corrupt toy into
+    // somewhere plausible, and a broken toy is not worth a second enforcement round.
+    if (toy && !isFinitePoint(toy.position)) {
+      clearToy();
+      repaired = true;
+    }
+    return repaired;
   }
 
   /**
