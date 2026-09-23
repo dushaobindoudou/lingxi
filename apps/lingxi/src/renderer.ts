@@ -16,7 +16,7 @@ import { buildRig, type Rig, type SkeletonData } from './rig/skeleton.ts';
 import skeletonData from './data/skeleton.json';
 import catalogue from './data/skins.json';
 import { refineSkeleton } from './rig/anatomy.ts';
-import { paintSkin, paintFace, setExpressions, resetExpressions, DEFAULT_FACE_GEOMETRY, type ArtSkin, type FaceGeometry, type FaceState } from './rig/art.ts';
+import { paintSkin, paintFace, setExpressions, resetExpressions, expressions, DEFAULT_FACE_GEOMETRY, type ArtSkin, type FaceGeometry, type FaceState } from './rig/art.ts';
 import { loadCustomAssets, type CustomAssetPayload, type CustomSkin } from './rig/custom-assets.ts';
 import { POSES } from './anim/poses.ts';
 import { createBodyController } from './anim/body-controller.ts';
@@ -122,6 +122,22 @@ export function createThreeRenderer(): Renderer {
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+  // GPU resets happen (driver update, VM migration, macOS killing the context). Without a
+  // handler the lost event spews three.js errors every frame and the canvas freezes on the
+  // last frame; with preventDefault, three.js re-initialises on restore and we simply stop
+  // presenting until then. Nothing about the scene graph changes, so the cat comes back
+  // mid-pose and the loop never notices beyond a pause.
+  let contextLost = false;
+  renderer.domElement.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    contextLost = true;
+    console.warn('[lingxi-desktop] WebGL context lost; pausing rendering until it is restored');
+  });
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    contextLost = false;
+    console.warn('[lingxi-desktop] WebGL context restored');
+  });
+
   scene.add(new THREE.HemisphereLight(0xfff3e0, 0x3a2e26, 1.1));
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const key = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -199,7 +215,15 @@ export function createThreeRenderer(): Renderer {
    */
   const restBox = new THREE.Box3();
 
+  // Bumped on every mountSkin. The texture loads below resolve ASYNCHRONOUSLY, and a quick
+  // theme switch meant the first mount's onload could fire after the second mount had
+  // replaced bodyTexture - painting the old skin's bitmap onto the new skin's canvas, which
+  // then sat there until something else happened to repaint. Each load checks the epoch
+  // before it touches anything, so a load from a superseded mount is a no-op.
+  let mountEpoch = 0;
+
   function mountSkin(next: CustomSkin) {
+    const epoch = ++mountEpoch;
     if (rig) {
       scene.remove(rig.root);
       rig.dispose();
@@ -220,6 +244,7 @@ export function createThreeRenderer(): Renderer {
     if (custom.bodyTexture) {
       const image = new Image();
       image.onload = () => {
+        if (epoch !== mountEpoch) return; // a newer mount owns the canvas now
         const ctx = atlas.canvas.getContext('2d');
         if (!ctx) return;
         ctx.clearRect(0, 0, atlas.canvas.width, atlas.canvas.height);
@@ -233,6 +258,7 @@ export function createThreeRenderer(): Renderer {
     if (faceSheet) {
       const image = new Image();
       image.onload = () => {
+        if (epoch !== mountEpoch) return; // a newer mount owns the face
         faceSheetImage = image;
         repaintFace();
       };
@@ -649,8 +675,25 @@ export function createThreeRenderer(): Renderer {
         poseNames: Object.keys(POSES),
         rigId: SKELETON.id,
       });
+      // The expression swap happens BEFORE the director is built, on purpose: createDirector's
+      // fallback parses the BUILT-IN action library against the live expression set, and that
+      // set must be the one that will actually be in effect. But that same order is what made
+      // this function half-commit: a custom expression set that does not cover the names the
+      // builtin actions reference threw out of createDirector AFTER setExpressions had already
+      // replaced the faces - custom faces live, old director still running, and an exception
+      // in the caller's lap that blamed actions.json. So the build is wrapped: a throw rolls
+      // the swap back, is recorded as an error like any other, and the remaining assets
+      // (skins, bubble, face) still apply.
+      const previousExpressions = { ...expressions };
       if (loaded.expressions) setExpressions(loaded.expressions);
       else resetExpressions();
+      try {
+        director = createDirector(nodeIds, loaded.actions);
+      } catch (error) {
+        setExpressions(previousExpressions);
+        const message = error instanceof Error ? error.message : String(error);
+        loaded.errors.push(`expressions.json：自定义表情未覆盖内置动作引用的表情名，已退回内置表情（${message}）`);
+      }
       faceLayout = loaded.face ?? DEFAULT_FACE_GEOMETRY;
       assetSources = {
         actions: loaded.actions ? 'custom' : 'builtin',
@@ -664,10 +707,6 @@ export function createThreeRenderer(): Renderer {
       // Handed back to the caller rather than applied here: the fx layer belongs to the host,
       // not to the renderer, and the renderer has no business reaching into it.
       lastLoadedBubbleStyle = loaded.bubble ?? null;
-
-      // The director caches the expression names it validates against, so it is rebuilt rather
-      // than mutated whenever either file changes.
-      director = createDirector(nodeIds, loaded.actions);
 
       const merged = new Map<string, CustomSkin>();
       for (const entry of BUILT_IN_SKINS as CustomSkin[]) merged.set(entry.id, entry);
@@ -1122,6 +1161,10 @@ export function createThreeRenderer(): Renderer {
       head.rotation.z += headTilt;
       head.rotation.x += cameraHeadPitch;
 
+      // Simulation above still runs; only the PRESENTATION pauses. Drawing into a lost
+      // context throws or silently no-ops depending on the browser, and neither is better
+      // than skipping.
+      if (contextLost) return;
       renderer.render(scene, camera);
     },
 
@@ -1147,6 +1190,14 @@ export function createThreeRenderer(): Renderer {
       shadow.geometry.dispose();
       (shadow.material as THREE.Material).dispose();
       shadowTexture.dispose();
+      // The toy prop allocates its own geometry/materials and may sit in the scene (or in a
+      // second layer); it went undisposed here, leaking both on every teardown.
+      if (toyProp) {
+        scene.remove(toyProp.object);
+        if (toyProp.worldLayer) scene.remove(toyProp.worldLayer);
+        toyProp.dispose();
+        toyProp = null;
+      }
       rig.dispose();
       bodyTexture.dispose();
       bodyMaterial.dispose();

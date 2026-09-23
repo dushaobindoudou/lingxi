@@ -33,8 +33,8 @@ export type ActivityEvent =
  * reconstructs what the user was doing elsewhere on their desktop.
  */
 export interface ActivitySummary {
-  /** Milliseconds since the user last did anything the pet could perceive. */
-  idleMs: number;
+  /** Milliseconds since the user last did anything the pet could perceive. `null` until the first activity: JSON has no Infinity, so the old sentinel crossed the IPC as null while the type still claimed number. */
+  idleMs: number | null;
   /** How long, cumulatively, the cursor has spent within the pet's follow radius. */
   cursorNearPetMs: number;
   /** Direct interactions in the current session. */

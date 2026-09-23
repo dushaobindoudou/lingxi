@@ -52,7 +52,11 @@ export function createActivityRecorder() {
   function summary(now) {
     const liveNear = cursorEnteredAt != null ? Math.max(0, now - cursorEnteredAt) : 0;
     return {
-      idleMs: lastActivityAt == null ? Number.POSITIVE_INFINITY : Math.max(0, now - lastActivityAt),
+      // `null` means "no activity has happened yet", NOT Infinity. This summary crosses the
+      // Tauri IPC as JSON, and JSON has no infinity: the sentinel arrived in the webview as
+      // `null` while the typed contract still claimed `number`, so every consumer discovered
+      // the mismatch at runtime. Null is JSON's own "absent" and is what the contract says.
+      idleMs: lastActivityAt == null ? null : Math.max(0, now - lastActivityAt),
       cursorNearPetMs: cursorNearPetMs + liveNear,
       clicksOnPet,
       dragCount,

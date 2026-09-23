@@ -4225,6 +4225,11 @@ fn reload_custom_assets(app: tauri::AppHandle) {
 fn say(app: tauri::AppHandle, text: String, duration_ms: Option<u64>) {
     let text: String = text.trim().chars().take(140).collect();
     if text.is_empty() {
+        // An all-whitespace line is not a no-op, it is the HUSH request. The debug console's
+        // "收起" button sent exactly this and nothing happened: the empty text was dropped
+        // here, no event ever fired, and the bubble stayed on screen under a dead button.
+        // Empty means "take the current bubble down".
+        let _ = app.emit("say", serde_json::json!({ "text": "", "durationMs": duration_ms }));
         return;
     }
     let _ = app.emit(

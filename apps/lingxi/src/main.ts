@@ -22,7 +22,11 @@ import { invoke } from '@tauri-apps/api/core';
 
 // TEMPORARY: mirrors checkpoints into the Rust process's stdout, since the real
 // Tauri webview's console isn't otherwise reachable while debugging click-through.
+// DEV builds only: the call sites include whole-object snapshots (the first-frame one alone
+// is tens of KB of JSON), and every one of them used to run in production too - an invoke
+// round-trip per checkpoint, per frame-adjacent event, in the build the user actually runs.
 function dlog(message: string) {
+  if (!import.meta.env.DEV) return;
   console.log(message);
   void invoke('debug_log', { message }).catch(() => {});
 }
@@ -42,6 +46,19 @@ const TOY_CATALOGUE = [
 ];
 
 async function main() {
+  // A rejected `void listen(...)` / `void invoke(...)` used to be an unhandled rejection:
+  // invisible in release windows, and in dev a console error attributed to nothing. One
+  // handler catches them all and puts them where every other startup/diagnostic line is read.
+  // `listen()` from the Tauri API resolves to a disposer, and its promise is the thing that
+  // rejects when the event name is wrong or the bridge is gone - the ~20 `void listen` sites
+  // across the windows all share this safety net rather than each growing a .catch.
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason instanceof Error ? `${event.reason.name}: ${event.reason.message}` : String(event.reason);
+    console.warn('[lingxi-desktop] unhandled rejection:', reason);
+    // Handled here means logged, not escalated; the app keeps running and the specific
+    // feature simply stays at whatever state its failed setup left it in.
+    event.preventDefault();
+  });
   dlog('main() start');
   const host = createTauriDesktopHost();
   const renderer = createThreeRenderer();
@@ -189,6 +206,11 @@ async function main() {
     // else in this function: an event can be dropped while the webview is suspended, and the
     // Rust side is the one that persists the truth.
     if (status.personalityTraits) engine.setPersonality(status.personalityTraits);
+    // catName/activeAgent ride the same argument: they also arrive as one-shot events
+    // (set-cat-identity / set-active-agent), a dropped event left the perception snapshot
+    // attributing the cat's state to a stale name for a whole reconcile period.
+    catName = status.catName;
+    activeAgent = status.activeAgent;
   }
 
   try {
@@ -340,6 +362,12 @@ async function main() {
     }
   }
   await loadCustomAssets();
+  // The applyStatus above ran while SKINS was still builtin-only (custom themes load here),
+  // so a persisted custom skin silently no-op'd and the cat first painted in the default
+  // theme until the periodic reconcile happened to re-apply status. Re-apply now that the
+  // merge is done - a no-op when the id is unchanged, a mount when it is not.
+  renderer.setSkin?.(currentSkinId);
+  syncMargins();
   // Who the cat is currently speaking for. Applied to the NEXT bubble rather than drawn beside
   // the cat: a mark pinned to the body is a HUD with no natural moment to leave, while a bubble
   // already has one. Arrives before the `say` that follows it, because the Rust side claims the
@@ -423,7 +451,10 @@ async function main() {
   // 说话气泡: one line at a time, above the head, anchored every frame in frame() below.
   void listen<{ text: string; durationMs?: number }>('say', (event) => {
     markInteresting();
-    fx.say(event.payload.text, event.payload.durationMs);
+    // An empty text is the hush signal (the debug console's 收起 button, and anything else
+    // that wants to withdraw a line); fx.say no-ops on empty, so it is routed explicitly.
+    if (!event.payload.text.trim()) fx.hush();
+    else fx.say(event.payload.text, event.payload.durationMs);
   });
 
   // Publish what this renderer can do, once, so GET /capabilities can answer an agent
@@ -755,6 +786,21 @@ async function main() {
         if (shouldCapture !== isCaptured) {
           isCaptured = shouldCapture;
           void host.setClickThrough(!isCaptured);
+        }
+      } else {
+        // The cursor left the window entirely (the poller reports null). Without this branch
+        // the latched state froze: if it vanished while ON the cat, `wasHit` stayed true and
+        // the next entry never produced a "left" event; and a capture held when the pointer
+        // disappeared kept the window un-click-through until the pointer came back - an
+        // invisible region of the desktop eating clicks.
+        if (wasHit) {
+          wasHit = false;
+          engineRecorder.record({ type: 'cursor_left_pet', at: now });
+        }
+        overToy = false;
+        if (isCaptured && !isMouseDown && !isChargingToy) {
+          isCaptured = false;
+          void host.setClickThrough(true);
         }
       }
     } catch (error) {

@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createActivityRecorder } from '../src/index.mjs';
 
-test('idleMs is Infinity until the first event, then counts up from the last one', () => {
+test('idleMs is null until the first event, then counts up from the last one', () => {
   const rec = createActivityRecorder();
-  assert.equal(rec.summary(1000).idleMs, Infinity);
+  // Null, not Infinity: the summary crosses the Tauri IPC as JSON, which has no Infinity -
+  // consumers received null while the contract claimed a number. Null is the contract now.
+  assert.equal(rec.summary(1000).idleMs, null);
   rec.record({ type: 'click_on_pet', at: 1000, position: { x: 0, y: 0 } });
   assert.equal(rec.summary(1500).idleMs, 500);
 });

@@ -116,7 +116,7 @@ interface PerceptionSnapshot {
   petState?: string;
   mode?: string;
   activity?: {
-    idleMs: number;
+    idleMs: number | null;
     cursorNearPetMs: number;
     clicksOnPet: number;
     dragCount: number;
@@ -364,6 +364,12 @@ function formatDuration(ms: number): string {
   return hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`;
 }
 
+/** `null` idleMs means "no activity has ever been perceived" - say that, not NaNm. */
+function formatIdle(ms: number | null): string {
+  if (ms === null) return '还没有互动记录';
+  return formatDuration(ms);
+}
+
 function renderPerception(snapshot: PerceptionSnapshot) {
   const stateEl = document.getElementById('home-cat-state');
   if (stateEl) {
@@ -380,7 +386,7 @@ function renderPerception(snapshot: PerceptionSnapshot) {
     const a = snapshot.activity;
     activityEl.textContent =
       `互动 ${a.clicksOnPet} 次 · 拖拽 ${a.dragCount} 次 · ` +
-      `靠近陪伴 ${formatDuration(a.cursorNearPetMs)} · 距上次互动 ${formatDuration(a.idleMs)}`;
+      `靠近陪伴 ${formatDuration(a.cursorNearPetMs)} · 距上次互动 ${formatIdle(a.idleMs)}`;
   }
 }
 
@@ -766,6 +772,9 @@ async function main() {
 
   // --- 自定义资源 ---
   const assetStatus = document.getElementById('asset-status');
+  // Set when a reload is awaiting the companion window's completion event, consumed by the
+  // custom-assets-reloaded listener below. Null means nothing pending.
+  let pendingAssetRefreshMessage: string | null = null;
   async function refreshAssetStatus(extra?: string) {
     if (!assetStatus) return;
     const errors = await invoke<string[]>('get_asset_errors').catch(() => [] as string[]);
@@ -801,9 +810,24 @@ async function main() {
     }
   });
   document.getElementById('reload-assets')?.addEventListener('click', async () => {
-    await invoke('reload_custom_assets');
-    // The companion window re-reads and reports asynchronously; give it a beat before asking.
-    setTimeout(() => void refreshAssetStatus('已重新加载。'), 700);
+    try {
+      await invoke('reload_custom_assets');
+      // The companion window re-reads and reports asynchronously; asking immediately shows the
+      // PREVIOUS load's theme list. Listen for its completion event instead of guessing a
+      // delay: the 700ms guess raced a slow disk (stale list) and annoyed nobody on a fast one.
+      pendingAssetRefreshMessage = '已重新加载。';
+    } catch (error) {
+      if (assetStatus) assetStatus.textContent = `重新加载失败：${String(error)}`;
+    }
+  });
+  // Fired by the companion window (main.ts) once loadCustomAssets has actually finished; see
+  // the emit in its reload-custom-assets listener.
+  void listen('custom-assets-reloaded', () => {
+    if (pendingAssetRefreshMessage !== null) {
+      const message = pendingAssetRefreshMessage;
+      pendingAssetRefreshMessage = null;
+      void refreshAssetStatus(message);
+    }
   });
 
   for (const id of ['reset-position', 'topbar-reset']) {
