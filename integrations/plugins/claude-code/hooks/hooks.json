@@ -28,6 +28,13 @@
           { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/../../adapters/lingxi-emit.mjs\" --host claude", "timeout": 3 }
         ]
       }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/../../adapters/lingxi-emit.mjs\" --host claude", "timeout": 3 }
+        ]
+      }
     ]
   }
 }

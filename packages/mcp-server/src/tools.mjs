@@ -298,7 +298,10 @@ export const tools = [
       properties: {
         state: {
           type: 'string',
-          enum: ['queued', 'running', 'blocked', 'needs_input', 'completed', 'failed', 'cancelled'],
+          // The same eight the app, the schema and the adapter speak - `needs_approval` was
+          // added everywhere but here, and a model reading only this enum would never send
+          // the one state that means "a tool call is blocked on the user, right now".
+          enum: ['queued', 'running', 'blocked', 'needs_input', 'needs_approval', 'completed', 'failed', 'cancelled'],
         },
         kind: {
           type: 'string',

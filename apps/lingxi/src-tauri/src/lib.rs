@@ -22,7 +22,7 @@ use objc2_app_kit::NSEvent;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -724,12 +724,20 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
     if !TASK_STATES.contains(&state) {
         return None;
     }
-    let provider = raw.get("provider").and_then(|v| v.as_str()).unwrap_or("unknown");
+    // Identity-ish strings get the same treatment as `summary`: a caller is outside this
+    // process's trust boundary (the token proves it is the user's, not that it is sane), and
+    // these land in the activity map, the agent registry and the UI. Text caps are CHARACTERS
+    // for the same reason summary's are - Chinese is the common case, not the exception.
+    let provider = raw
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     let task_id = raw
         .get("taskId")
         .or_else(|| raw.get("task_id"))
         .and_then(|v| v.as_str())
         .unwrap_or("unknown-task");
+    let agent_id = raw.get("agent").and_then(|v| v.as_str()).unwrap_or(provider);
     let kind = raw
         .get("kind")
         .and_then(|v| v.as_str())
@@ -750,13 +758,9 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
     let observed_at = now_millis();
     Some(TaskEvent {
         schema_version: 1,
-        provider: provider.to_string(),
-        source_id: raw
-            .get("agent")
-            .and_then(|v| v.as_str())
-            .unwrap_or(provider)
-            .to_string(),
-        task_id: task_id.to_string(),
+        provider: provider.chars().take(64).collect(),
+        source_id: agent_id.chars().take(64).collect(),
+        task_id: task_id.chars().take(128).collect(),
         event_id: format!("{provider}-{task_id}-{state}-{observed_at}-{sequence}"),
         state: state.to_string(),
         sequence,
@@ -934,27 +938,47 @@ fn get_claude_task_events(state: State<ClaudeHooksState>) -> Vec<TaskEvent> {
 /// depend on a repository path existing. The adapter is the richer option for people who do have
 /// one (see integrations/plugins/), and both post the same schema to the same endpoint.
 ///
-/// The token goes into a variable BEFORE curl rather than inline in the header. Inline looks
-/// tidier and does not work: the path contains spaces, so it needs quoting, and quoting inside
-/// $( ) inside an already-quoted -H argument does not survive the shell. Caught by running the
-/// generated line rather than by reading it.
+/// The token goes into a variable BEFORE curl (the path contains spaces, so it needs quoting,
+/// and quoting inside $( ) inside an already-quoted argument does not survive the shell), and
+/// then reaches curl through a config FILE rather than a `-H` argv: an expanded `-H` lands in
+/// curl's argv, which `ps` shows to every local user for the life of the call. `-K -` (config
+/// on stdin) cannot be used here because the payload already arrives on stdin. `mktemp`
+/// creates the file 0600, so the token spends its whole life under the same protection as the
+/// token file itself.
 ///
 /// `|| true` at the end, and every failure swallowed: a desktop pet must never be able to make
 /// someone's agent fail.
 const CLAUDE_HOOK_COMMAND: &str = concat!(
     "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); ",
-    "curl -s -m 2 -X POST http://127.0.0.1:47811/task-event ",
-    "-H 'Content-Type: application/json' -H \"Authorization: Bearer $T\" ",
-    "--data-binary @- >/dev/null 2>&1 || true"
+    "H=$(mktemp) || exit 0; ",
+    "printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; ",
+    "curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event ",
+    "-H 'Content-Type: application/json' ",
+    "--data-binary @- >/dev/null 2>&1 || true; ",
+    "rm -f \"$H\""
 );
 
 /// Hook lines we have written in the past. Uninstall has to recognise all of them, or an older
-/// install becomes impossible to remove through the UI that created it.
-const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 1] = [
+/// install becomes impossible to remove through the UI that created it - and install has to
+/// REPLACE them, or a machine that installed before a fix keeps running the outdated command
+/// forever while every button involved insists it is up to date.
+const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 2] = [
+    // The tokenless original: written before the bridge grew authentication, dead (401)
+    // against any bridge that has one.
     "curl -s -m 2 -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true",
+    // The argv-token form: worked, but exposed the token in `ps` for every call. Superseded
+    // by the -K form above.
+    "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); curl -s -m 2 -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' -H \"Authorization: Bearer $T\" --data-binary @- >/dev/null 2>&1 || true",
 ];
 
-const CLAUDE_HOOK_EVENTS: [&str; 3] = ["UserPromptSubmit", "Stop", "StopFailure"];
+/// The five Claude Code lifecycle events this integration speaks, shared verbatim by the
+/// one-click installer and the plugin's hooks.json. Notification is the one that carries
+/// permission prompts - the single most urgent thing an agent can be doing - and SessionStart
+/// is what makes the cat look up when a session begins; leaving either unsubscribed was the
+/// residue of the mapper drift this whole block exists to prevent. If you add one here, add it
+/// to integrations/plugins/claude-code/hooks/hooks.json and to the mappers in the same commit.
+const CLAUDE_HOOK_EVENTS: [&str; 5] =
+    ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "StopFailure"];
 
 fn claude_settings_path() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(|home| PathBuf::from(home).join(".claude").join("settings.json"))
@@ -984,30 +1008,70 @@ fn write_claude_settings(path: &PathBuf, value: &serde_json::Value) -> Result<()
 }
 
 /// Whether `CLAUDE_HOOK_COMMAND` is already present under a given hooks[event] array -
-/// shared by install (skip re-adding) and uninstall (find exactly what to remove), so the
-/// two can never disagree about what "ours" means.
+/// shared by install (skip re-adding), install's legacy upgrade and uninstall (find exactly
+/// what to remove), so all three can never disagree about what "ours" means.
+fn is_our_command(command: &str) -> bool {
+    command == CLAUDE_HOOK_COMMAND || LEGACY_CLAUDE_HOOK_COMMANDS.contains(&command)
+}
+
 fn has_our_hook(entries: &[serde_json::Value]) -> bool {
     entries.iter().any(|entry| {
         entry
             .get("hooks")
             .and_then(|h| h.as_array())
-            .map(|inner| {
-                inner.iter().any(|h| {
-                    let command = h.get("command").and_then(|c| c.as_str());
-                    command == Some(CLAUDE_HOOK_COMMAND)
-                        || command.is_some_and(|c| LEGACY_CLAUDE_HOOK_COMMANDS.contains(&c))
-                })
-            })
+            .map(|inner| inner.iter().any(|h| h.get("command").and_then(|c| c.as_str()).is_some_and(is_our_command)))
             .unwrap_or(false)
     })
 }
 
-/// "一键接入" (docs/18 §6.2): merges `CLAUDE_HOOK_COMMAND` into
-/// `UserPromptSubmit`/`Stop`/`StopFailure`, appending to each event's array rather than
-/// replacing it - any hooks the user already had stay exactly as they were. Backs up the
-/// pre-existing file first (single generation, `.lingxi-backup` - see `uninstall` for the
-/// removal path, which is preferred over restoring from backup since it can't undo hooks the
-/// user added *after* install ran).
+/// Drop entries carrying an OUTDATED form of our hook, keeping everything else - the user's
+/// own hooks and other tools' hooks are untouchable. Returns true when a current-form entry
+/// survives, which is what lets install upgrade a machine that ran an older installer
+/// (tokenless, then argv-token) instead of skipping it forever because `has_our_hook`
+/// recognised the obsolete line.
+fn prune_legacy_hook_entries(entries: &mut Vec<serde_json::Value>) -> bool {
+    entries.retain(|entry| {
+        let inner_is_current_only = |entry: &serde_json::Value| {
+            entry
+                .get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|inner| {
+                    inner.iter().any(|h| {
+                        let command = h.get("command").and_then(|c| c.as_str());
+                        command == Some(CLAUDE_HOOK_COMMAND)
+                    })
+                })
+                .unwrap_or(false)
+        };
+        // Keep the entry unless it holds ONLY a legacy command of ours. An entry mixing our
+        // legacy command with other commands is not something we wrote - leave it alone.
+        if inner_is_current_only(entry) {
+            return true;
+        }
+        let holds_legacy = entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .map(|inner| {
+                !inner.is_empty()
+                    && inner.iter().all(|h| {
+                        h.get("command").and_then(|c| c.as_str()).is_some_and(|c| {
+                            LEGACY_CLAUDE_HOOK_COMMANDS.contains(&c)
+                        })
+                    })
+            })
+            .unwrap_or(false);
+        !holds_legacy
+    });
+    has_our_hook(entries)
+}
+
+/// "一键接入" (docs/18 §6.2): merges `CLAUDE_HOOK_COMMAND` into the five subscribed events,
+/// appending to each event's array rather than replacing it - any hooks the user already had
+/// stay exactly as they were. Entries holding an OUTDATED form of our command are replaced
+/// with the current one (see `prune_legacy_hook_entries`). Backs up the pre-existing file
+/// first (single generation, `.lingxi-backup` - see `uninstall` for the removal path, which
+/// is preferred over restoring from backup since it can't undo hooks the user added *after*
+/// install ran).
 #[tauri::command]
 fn install_claude_hooks() -> Result<String, String> {
     let path = claude_settings_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
@@ -1030,7 +1094,7 @@ fn install_claude_hooks() -> Result<String, String> {
         let Some(entries_arr) = entries.as_array_mut() else {
             return Err(format!("\"hooks.{event}\" 不是数组，未做任何修改"));
         };
-        if !has_our_hook(entries_arr) {
+        if !prune_legacy_hook_entries(entries_arr) {
             entries_arr.push(serde_json::json!({ "hooks": [ { "type": "command", "command": CLAUDE_HOOK_COMMAND } ] }));
         }
     }
@@ -1039,9 +1103,37 @@ fn install_claude_hooks() -> Result<String, String> {
     Ok(format!("已写入 {}（原文件已备份为 .lingxi-backup）", path.display()))
 }
 
+/// Remove every entry carrying OUR command (current or any legacy form) from each subscribed
+/// event, leaving the user's own hooks untouched. Returns how many entries went away. Pure so
+/// the legacy-recognition contract is testable without an AppHandle.
+fn remove_our_hook_entries(hooks_obj: &mut serde_json::Map<String, serde_json::Value>) -> usize {
+    let mut removed = 0;
+    for event in CLAUDE_HOOK_EVENTS {
+        if let Some(entries_arr) = hooks_obj.get_mut(event).and_then(|e| e.as_array_mut()) {
+            let before = entries_arr.len();
+            entries_arr.retain(|entry| {
+                !entry
+                    .get("hooks")
+                    .and_then(|h| h.as_array())
+                    .map(|inner| {
+                        inner
+                            .iter()
+                            .any(|h| h.get("command").and_then(|c| c.as_str()).is_some_and(is_our_command))
+                    })
+                    .unwrap_or(false)
+            });
+            removed += before - entries_arr.len();
+        }
+    }
+    removed
+}
+
 /// The rollback path (docs/18 §6.2's "备份+回退"): removes exactly the entries
-/// `install_claude_hooks` would recognize as its own, leaving everything else - including
-/// hooks added by the user or another tool after install ran - untouched.
+/// `install_claude_hooks` would recognize as its own - CURRENT and LEGACY forms alike,
+/// because `claude_hooks_installed` reports the legacy forms as installed and an uninstall
+/// that only matched the current command would leave those machines with hooks they can
+/// see in the UI but not remove. Everything else - including hooks added by the user or
+/// another tool after install ran - is untouched.
 #[tauri::command]
 fn uninstall_claude_hooks() -> Result<String, String> {
     let path = claude_settings_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
@@ -1049,18 +1141,9 @@ fn uninstall_claude_hooks() -> Result<String, String> {
     let Some(hooks_obj) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
         return Ok("没有发现已安装的 hooks".to_string());
     };
-    for event in CLAUDE_HOOK_EVENTS {
-        if let Some(entries_arr) = hooks_obj.get_mut(event).and_then(|e| e.as_array_mut()) {
-            entries_arr.retain(|entry| {
-                !entry
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .map(|inner| {
-                        inner.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some(CLAUDE_HOOK_COMMAND))
-                    })
-                    .unwrap_or(false)
-            });
-        }
+    let removed = remove_our_hook_entries(hooks_obj);
+    if removed == 0 {
+        return Ok("没有发现已安装的 hooks".to_string());
     }
     write_claude_settings(&path, &settings)?;
     Ok("已移除".to_string())
@@ -1077,6 +1160,18 @@ fn uninstall_claude_hooks() -> Result<String, String> {
 ///
 /// So the page asks instead of asserting. Everything here is read from the live state the
 /// bridge itself uses, which means it cannot describe a build it is not running in.
+/// Whether the perception bridge actually bound its port. A failed bind (something else took
+/// 47811 - another account's copy of this app, or any process at all: loopback ports are not
+/// per-user) used to be silent: the app ran, the management page kept describing a bridge,
+/// and every agent's hook - Bearer token and all - went to whoever held the port. The page
+/// reads this and tells the truth instead.
+#[derive(Default)]
+struct BridgeBindState {
+    listening: AtomicBool,
+}
+
+/// What the management window's bridge card renders. See BridgeBindState for the listening
+/// flag: it is read from live state, so the page cannot describe a build it is not running in.
 #[tauri::command]
 fn get_bridge_info(app: tauri::AppHandle) -> serde_json::Value {
     let token = app.state::<BridgeToken>();
@@ -1084,6 +1179,7 @@ fn get_bridge_info(app: tauri::AppHandle) -> serde_json::Value {
     let agents: Vec<AgentIdentity> = registry.agents.lock().unwrap().values().cloned().collect();
     serde_json::json!({
         "port": PERCEPTION_HTTP_PORT,
+        "listening": app.state::<BridgeBindState>().listening.load(Ordering::Relaxed),
         // Not a constant dressed up as data: it is true because a token exists, and the same
         // value is what /health publishes to callers.
         "authRequired": !token.value.is_empty(),
@@ -1107,9 +1203,12 @@ fn get_bridge_info(app: tauri::AppHandle) -> serde_json::Value {
 /// command, because the payload is arbitrary JSON containing quotes.
 const CODEX_NOTIFY_SCRIPT: &str = concat!(
     "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); ",
-    "printf '%s' \"$1\" | curl -s -m 2 -X POST http://127.0.0.1:47811/task-event ",
-    "-H 'Content-Type: application/json' -H \"Authorization: Bearer $T\" ",
-    "--data-binary @- >/dev/null 2>&1 || true"
+    "H=$(mktemp) || exit 0; ",
+    "printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; ",
+    "printf '%s' \"$1\" | curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event ",
+    "-H 'Content-Type: application/json' ",
+    "--data-binary @- >/dev/null 2>&1 || true; ",
+    "rm -f \"$H\""
 );
 
 /// How we recognise our own `notify` entry, including one we might rewrite later. Matching on
@@ -1441,15 +1540,31 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// Hard cap on a request body. The bridge trusts its callers with the cat, not with its memory:
+/// `Content-Length` is caller-asserted, and an unbounded `read_to_string` let one process
+/// holding the token turn a fat payload into an OOM of the whole app. 1 MiB is orders of
+/// magnitude past anything the schema wants (the largest legal body is a 64 KiB SVG logo) and
+/// far below what a desktop app should be willing to buffer.
+const MAX_BODY_BYTES: u64 = 1024 * 1024;
+
+fn read_body_capped(request: &mut tiny_http::Request) -> String {
+    use std::io::Read;
+    let mut body = String::new();
+    let _ = request.as_reader().take(MAX_BODY_BYTES).read_to_string(&mut body);
+    body
+}
+
 fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let content_type = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-    // Loopback-only server (see spawn_perception_server), so a permissive CORS header just
-    // makes it usable from a browser-based debug tool too - it does not widen network exposure.
-    let cors = tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap();
+    // CORS is deliberately NOT granted here - not even `*`. /health and the 401 body both name
+    // the token file (an absolute path, and therefore a macOS username), and
+    // `Access-Control-Allow-Origin: *` let any page in any browser read both. The one
+    // legitimate cross-origin reader is the dev console on the vite dev server, served by the
+    // explicit allow-list in the request loop below; same-origin clients (the app's own
+    // windows, curl, agents) never needed the header at all.
     tiny_http::Response::from_string(body)
         .with_status_code(status)
         .with_header(content_type)
-        .with_header(cors)
 }
 
 /// Minimal local HTTP bridge for an external AI driver process (anything that can speak
@@ -1721,6 +1836,23 @@ impl AgentRegistry {
         (Some(queue.remove(0)), expired)
     }
 
+    /// Give back a reaction that was taken but could not be played.
+    ///
+    /// `take_next_due` REMOVES the item before returning it, and the drain loop's `claim_stage`
+    /// can still lose a race to an HTTP thread that claimed the stage in between. Putting the
+    /// item back at the FRONT preserves its order; its `expires_at` is untouched, so one that
+    /// sat out the whole race still gets dropped by the next `take_next_due` rather than shown
+    /// stale. (The drain loop used to just `continue` here, with a comment claiming the item
+    /// "stays queued" - it did not; an alert could be silently destroyed by exactly the race
+    /// this queue exists to absorb.)
+    fn requeue_front(&self, item: QueuedReaction) {
+        let mut queue = self.queue.lock().unwrap();
+        queue.insert(0, item);
+        if queue.len() > REACTION_QUEUE_CAP {
+            queue.truncate(REACTION_QUEUE_CAP);
+        }
+    }
+
     fn stage_free_at(&self, now: u64) -> bool {
         self.stage
             .lock()
@@ -1793,24 +1925,57 @@ fn validate_logo(logo: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Cap for the agent registry. Every distinct `agent` string any caller ever sends becomes a
+/// permanent entry otherwise - a memory leak with a badge. Sixty-four is far more identities
+/// than one person's machine has tools.
+const AGENT_REGISTRY_CAP: usize = 64;
+
+/// Insert-or-update under the registry cap, evicting the least-recently-seen identity when a
+/// NEW id would exceed it. Returns the entry so the caller can apply its own update; `last_seen`
+/// is bumped here, since both call sites mean "this identity is alive right now".
+fn registry_entry<'a>(
+    agents: &'a mut HashMap<String, AgentIdentity>,
+    id: &str,
+    now: u64,
+) -> &'a mut AgentIdentity {
+    if !agents.contains_key(id) {
+        while agents.len() >= AGENT_REGISTRY_CAP {
+            let stalest = agents.values().min_by_key(|a| a.last_seen).map(|a| a.id.clone());
+            match stalest {
+                Some(victim) => {
+                    agents.remove(&victim);
+                }
+                None => break,
+            }
+        }
+    }
+    let entry = agents
+        .entry(id.to_string())
+        .or_insert_with(|| AgentIdentity {
+            id: id.to_string(),
+            name: id.to_string(),
+            badge: id.chars().take(2).collect(),
+            logo: None,
+            color: "#8b95a5".to_string(),
+            registered_at: now,
+            last_seen: now,
+            claims: 0,
+        });
+    entry.last_seen = now;
+    entry
+}
+
 /// Look the caller up, registering a minimal identity for one that never called POST /agents.
 ///
 /// An unregistered caller is not refused: the bridge predates the registry and the whole point
 /// of a local HTTP surface is that `curl` works. It just shows up as itself with a neutral badge.
 fn resolve_agent(registry: &AgentRegistry, id: Option<&str>, now: u64) -> AgentIdentity {
     let id = id.map(str::trim).filter(|s| !s.is_empty()).unwrap_or("anonymous");
+    // The id comes from outside this process and becomes a map key and UI text, so it gets the
+    // same treatment as every other external string: bounded.
+    let id: String = id.chars().take(64).collect();
     let mut agents = registry.agents.lock().unwrap();
-    let entry = agents.entry(id.to_string()).or_insert_with(|| AgentIdentity {
-        id: id.to_string(),
-        name: id.to_string(),
-        badge: id.chars().take(2).collect(),
-        logo: None,
-        color: "#8b95a5".to_string(),
-        registered_at: now,
-        last_seen: now,
-        claims: 0,
-    });
-    entry.last_seen = now;
+    let entry = registry_entry(&mut agents, &id, now);
     entry.claims += 1;
     entry.clone()
 }
@@ -1876,6 +2041,50 @@ fn apply_control_command(
         && ["expression", "action", "say", "perform", "toy"]
             .iter()
             .any(|field| command.get(*field).is_some());
+    // Pre-flight the stage-worthy fields BEFORE claiming the stage. The order used to be claim
+    // first, validate later, so a command like `{"agent":"a","action":"not-a-clip"}` held the
+    // stage for its whole hold window with the agent's badge on screen, then came back 400 -
+    // and every other agent's reaction in that window was told "stage busy" by a command that
+    // was never going to play. The same messages are produced again by the field sections
+    // below; this pass only decides whether the request has earned the stage. (`say` is
+    // included because a whitespace-only line is rejected there too.)
+    let stage_preflight_rejected: Vec<String> = if wants_stage {
+        let mut problems: Vec<String> = Vec::new();
+        if let Some(action) = command.get("action").and_then(|v| v.as_str()) {
+            if action.trim().is_empty() {
+                problems.push("action: empty id".to_string());
+            } else if let Err(message) = check_known(&caps, "actions", "id", action, "action") {
+                problems.push(message);
+            }
+        }
+        if let Some(expression) = command.get("expression").and_then(|v| v.as_str()) {
+            if expression.trim().is_empty() {
+                problems.push("expression: empty name".to_string());
+            } else if let Err(message) = check_known(&caps, "expressions", "name", expression, "expression") {
+                problems.push(message);
+            }
+        }
+        if let Some(id) = command.get("perform").and_then(|v| v.as_str()) {
+            if !KNOWN_PERFORMANCES.contains(&id) {
+                problems.push(format!("perform: unknown performance \"{id}\" (see GET /capabilities)"));
+            }
+        }
+        if let Some(kind) = command.get("toy").and_then(|v| v.as_str()) {
+            if kind != "none" && !KNOWN_TOYS.contains(&kind) {
+                problems.push(format!("toy: unknown toy \"{kind}\" (expected one of {KNOWN_TOYS:?} or \"none\")"));
+            }
+        }
+        if let Some(text) = command.get("say").and_then(|v| v.as_str()) {
+            let (trimmed, _) = truncate_chars(text, SAY_MAX_CHARS);
+            if trimmed.is_empty() {
+                problems.push("say: empty text".to_string());
+            }
+        }
+        problems
+    } else {
+        Vec::new()
+    };
+    let wants_stage = wants_stage && stage_preflight_rejected.is_empty();
     let mut stage_denied: Option<String> = None;
     let hold = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
     if wants_stage {
@@ -2157,28 +2366,46 @@ fn looks_like_typo(field: &str, key: &str) -> bool {
         return false;
     }
     let (a, b): (Vec<char>, Vec<char>) = (field.chars().collect(), key.chars().collect());
-    let mut differences = 0;
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        if a[i] == b[j] {
-            i += 1;
-            j += 1;
-            continue;
-        }
-        differences += 1;
-        if differences > 1 {
-            return false;
-        }
-        match a.len().cmp(&b.len()) {
-            std::cmp::Ordering::Greater => i += 1,
-            std::cmp::Ordering::Less => j += 1,
-            std::cmp::Ordering::Equal => {
-                i += 1;
-                j += 1;
+    if a.len() == b.len() {
+        // Equal lengths: a single substitution, or an adjacent TRANSPOSITION ("camrea" for
+        // "camera"). The single-difference scan below cannot see a transposition - it counts
+        // as two substitutions - and a missed one here means a mistyped field gets rejected
+        // as unknown instead of suggested, which is the exact failure this helper exists to
+        // soften. First mismatch, swapped neighbours, equal tails: that is a transposition.
+        match (0..a.len()).find(|&i| a[i] != b[i]) {
+            None => true, // identical; the caller's eq_ignore_ascii_case arm means this is moot
+            Some(k) => {
+                a[k + 1..] == b[k + 1..]
+                    || (k + 1 < a.len()
+                        && a[k] == b[k + 1]
+                        && a[k + 1] == b[k]
+                        && a[k + 2..] == b[k + 2..])
             }
         }
+    } else {
+        let mut differences = 0;
+        let (mut i, mut j) = (0, 0);
+        while i < a.len() && j < b.len() {
+            if a[i] == b[j] {
+                i += 1;
+                j += 1;
+                continue;
+            }
+            differences += 1;
+            if differences > 1 {
+                return false;
+            }
+            match a.len().cmp(&b.len()) {
+                std::cmp::Ordering::Greater => i += 1,
+                std::cmp::Ordering::Less => j += 1,
+                std::cmp::Ordering::Equal => {
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+        differences + (a.len() - i) + (b.len() - j) <= 1
     }
-    differences + (a.len() - i) + (b.len() - j) <= 1
 }
 
 fn expected_type_name(field: &str) -> &'static str {
@@ -2227,7 +2454,12 @@ fn spawn_reaction_drain(app: tauri::AppHandle) {
             .claim_stage(&item.agent, &item.priority, item.hold_ms, now)
             .is_err()
         {
-            continue; // something took the stage in between; it stays queued for the next pass
+            // Something took the stage in between the free check and the claim. The item was
+            // already REMOVED from the queue by take_next_due, so it must go back - dropping
+            // it here would destroy exactly the alert/report reactions the queue exists to
+            // protect. Its expires_at still bounds how long it can sit.
+            registry.requeue_front(item);
+            continue;
         }
         let _ = app.emit(
             "agent-stage",
@@ -2274,23 +2506,20 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
         // a pet); the implementation has to DEFER the others, not discard them. The next tick is
         // 30 seconds away, so a backlog still drains, one gentle mention at a time.
         let next: Option<Reminder> = {
-            let mut reminders = state.reminders.lock().unwrap();
+            let reminders = state.reminders.lock().unwrap();
             let now = now_millis();
             reminders
-                .iter_mut()
+                .iter()
                 .filter(|reminder| !reminder.done && reminder.due <= now)
                 // Oldest first, so a backlog comes out in the order it was promised.
                 .min_by_key(|reminder| reminder.due)
-                .map(|reminder| {
-                    reminder.done = true;
-                    reminder.clone()
-                })
+                .cloned()
         };
         if next.is_none() {
             continue;
         }
-        state.persist_reminders();
-        if let Some(reminder) = next.as_ref() {
+        let reminder = next.unwrap();
+        {
             // Delivered in the tone it was set with. "记得喝水" and "该交税了" are not the same
             // face, and a gentle nudge arriving with an alarmed expression is worse than none.
             let (expression, action, _) =
@@ -2304,18 +2533,29 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
                 "say",
                 serde_json::json!({ "text": reminder.text.clone(), "durationMs": 6000 }),
             );
-            // A standing reminder re-arms rather than being recreated by the caller - the whole
-            // point of "every hour, stand up" is that nothing has to remember to re-ask.
-            if reminder.repeat_every_minutes > 0 {
-                let mut reminders = state.reminders.lock().unwrap();
-                if let Some(entry) = reminders.iter_mut().find(|r| r.id == reminder.id) {
+        }
+        // Mark done only AFTER speaking, then persist. The old order (mark, persist, speak)
+        // meant a crash in between silently swallowed the reminder - flagged complete, never
+        // said. The reverse costs at most one repeat after a crash, which is an apology rather
+        // than a silence.
+        {
+            let mut reminders = state.reminders.lock().unwrap();
+            if let Some(entry) = reminders.iter_mut().find(|r| r.id == reminder.id) {
+                // A standing reminder re-arms rather than being recreated by the caller - the
+                // whole point of "every hour, stand up" is that nothing has to remember to
+                // re-ask. saturating_mul: a user who typed a huge "every N minutes" must get a
+                // far-future due date, not a wrapped-around past one (release) or a panic that
+                // takes this whole ticker thread down (debug) - a panic here is unrecoverable,
+                // every reminder after it silently stops firing.
+                if reminder.repeat_every_minutes > 0 {
                     entry.done = false;
-                    entry.due = now_millis() + reminder.repeat_every_minutes * 60_000;
+                    entry.due = now_millis() + reminder.repeat_every_minutes.saturating_mul(60_000);
+                } else {
+                    entry.done = true;
                 }
-                drop(reminders);
-                state.persist_reminders();
             }
         }
+        state.persist_reminders();
     });
 }
 
@@ -2328,7 +2568,10 @@ fn spawn_perception_server(app: tauri::AppHandle) {
         let mut attempt = 0;
         let server = loop {
             match tiny_http::Server::http(("127.0.0.1", PERCEPTION_HTTP_PORT)) {
-                Ok(s) => break s,
+                Ok(s) => {
+                    app.state::<BridgeBindState>().listening.store(true, Ordering::Relaxed);
+                    break s;
+                }
                 Err(e) if attempt < 10 => {
                     attempt += 1;
                     eprintln!(
@@ -2338,6 +2581,12 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 }
                 Err(e) => {
                     eprintln!("[lingxi-desktop] perception HTTP server failed to bind 127.0.0.1:{PERCEPTION_HTTP_PORT} after {attempt} retries: {e}");
+                    // The failure must be visible, not just logged: a machine where another
+                    // local process (possibly another user's copy of this very app - loopback
+                    // ports are not per-user) holds 47811 leaves every agent's hook posting
+                    // its Bearer token to the port holder. The management page reads this
+                    // flag and says so, instead of reporting a bridge that does not exist.
+                    eprintln!("[lingxi-desktop] the bridge is DOWN; agent hooks will post their token to whatever holds port {PERCEPTION_HTTP_PORT}. Find it with: lsof -nP -iTCP:{PERCEPTION_HTTP_PORT} -sTCP:LISTEN");
                     return;
                 }
             }
@@ -2399,7 +2648,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 continue;
             }
 
-            let response = match (method, url.as_str()) {
+            let mut response = match (method, url.as_str()) {
                 (tiny_http::Method::Get, "/perception") => {
                     let state = app.state::<PerceptionState>();
                     let body = state.latest_snapshot.lock().unwrap().to_string();
@@ -2465,6 +2714,10 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 "keyedBy": "\"<state>\" or \"<state>:<kind>\", most specific wins",
                                 "shape": { "expression": "required", "action": "optional clip id", "say": "optional line" },
                                 "activeOverrides": overrides.keys().collect::<Vec<_>>(),
+                                "builtin": {
+                                    "note": "The effective built-in mapping for every (state, kind, mood) triple - what the cat does BEFORE your reactions.json overrides are applied. Repeated values mean the mapping is coarser than the key. This is the table the docs promise is authoritative; the overrides above are the only delta.",
+                                    "table": builtin_reaction_table(),
+                                },
                             },
                             "notifications": {
                                 "purpose": "An outlet, not an integration. 灵犀 does not connect to Slack, Feishu or anything else - those are your accounts - but it will echo task events to a webhook you already have.",
@@ -2544,8 +2797,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 // and shows up under whatever `agent` string it sends - but registering is what
                 // gets you a badge next to the cat instead of a generic laptop glyph.
                 (tiny_http::Method::Post, "/agents") => {
-                    let mut body = String::new();
-                    let _ = request.as_reader().read_to_string(&mut body);
+                    let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(value) => {
                             let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
@@ -2573,18 +2825,12 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 } else {
                                 let now = now_millis();
                                 let registry = app.state::<AgentRegistry>();
+                                // The id becomes a registry key and UI text; bound it like any
+                                // other external string (resolve_agent caps at the same 64).
+                                let id: String = id.chars().take(64).collect();
                                 let identity = {
                                     let mut agents = registry.agents.lock().unwrap();
-                                    let entry = agents.entry(id.to_string()).or_insert_with(|| AgentIdentity {
-                                        id: id.to_string(),
-                                        name: id.to_string(),
-                                        badge: badge.clone(),
-                                        logo: None,
-                                        color: "#8b95a5".to_string(),
-                                        registered_at: now,
-                                        last_seen: now,
-                                        claims: 0,
-                                    });
+                                    let entry = registry_entry(&mut agents, &id, now);
                                     if let Some(logo) = logo {
                                         entry.logo = Some(logo.to_string());
                                     }
@@ -2683,8 +2929,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 // Unknown ids are rejected per-field with a message, not silently ignored -
                 // an agent that typo'd a clip name should find out.
                 (tiny_http::Method::Post, "/control") => {
-                    let mut body = String::new();
-                    let _ = request.as_reader().read_to_string(&mut body);
+                    let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(command) => {
                             let (applied, rejected, detail) = apply_control_command(&app, &command);
@@ -2716,8 +2961,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     json_response(200, serde_json::to_string(&*memory).unwrap_or_else(|_| "{}".into()))
                 }
                 (tiny_http::Method::Post, "/memory") => {
-                    let mut body = String::new();
-                    let _ = request.as_reader().read_to_string(&mut body);
+                    let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(value) => {
                             let text = value.get("text").and_then(|v| v.as_str()).unwrap_or("");
@@ -2788,8 +3032,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     }
                 }
                 (tiny_http::Method::Post, "/reminders") => {
-                    let mut body = String::new();
-                    let _ = request.as_reader().read_to_string(&mut body);
+                    let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(value) => {
                             let (text, truncated) =
@@ -2835,7 +3078,16 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 (_, None) => json_response(400, "{\"error\":\"dueAt or inMinutes is required\"}".to_string()),
                                 (_, Some(due)) => {
                                     let state = app.state::<MemoryState>();
-                                    let id = format!("r{}", now_millis());
+                                    // The id used to be `r{now_millis()}` - two reminders created
+                                    // in the same millisecond shared an id, and DELETE (a retain
+                                    // on id) removed both. A process-lifetime counter makes the
+                                    // suffix unique however fast reminders arrive.
+                                    static REMINDER_SEQ: AtomicU64 = AtomicU64::new(0);
+                                    let id = format!(
+                                        "r{}-{}",
+                                        now_millis(),
+                                        REMINDER_SEQ.fetch_add(1, Ordering::Relaxed)
+                                    );
                                     {
                                         let mut reminders = state.reminders.lock().unwrap();
                                         reminders.push(Reminder {
@@ -2867,8 +3119,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     }
                 }
                 (tiny_http::Method::Post, "/intent") => {
-                    let mut body = String::new();
-                    let _ = request.as_reader().read_to_string(&mut body);
+                    let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(intent) => match validate_intent(&intent) {
                             Ok(()) => {
@@ -2891,8 +3142,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 // CLAUDE_HOOK_COMMAND's `|| true` means our own exit code can't block
                 // anything either way - this 200 is just "received", not "understood".
                 (tiny_http::Method::Post, "/task-event") => {
-                    let mut body = String::new();
-                    let _ = request.as_reader().read_to_string(&mut body);
+                    let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(raw) => {
                             let state = app.state::<ClaudeHooksState>();
@@ -2947,6 +3197,29 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 (tiny_http::Method::Options, _) => json_response(204, String::new()),
                 _ => json_response(404, "{\"error\":\"not found\"}".to_string()),
             };
+            // Cross-origin reads are granted to the dev console's origins ONLY, per response.
+            // `*` used to be sent on every response, which let any page in any browser read
+            // /health and the 401 body - both of which name the token file.
+            const DEV_CORS_ORIGINS: [&str; 2] = ["http://localhost:1420", "http://127.0.0.1:1420"];
+            let origin = request
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Origin"))
+                .map(|h| h.value.as_str().to_string())
+                .filter(|o| DEV_CORS_ORIGINS.contains(&o.as_str()));
+            if let Some(origin) = origin {
+                if let Ok(header) =
+                    tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], origin.as_str())
+                {
+                    response.add_header(header);
+                }
+                if let Ok(header) = tiny_http::Header::from_bytes(
+                    &b"Access-Control-Allow-Headers"[..],
+                    &b"Content-Type, Authorization, X-Lingxi-Token"[..],
+                ) {
+                    response.add_header(header);
+                }
+            }
             let _ = request.respond(response);
         }
     });
@@ -3245,6 +3518,31 @@ fn builtin_reaction(
     })
 }
 
+/// The complete built-in mapping, for GET /integration.
+///
+/// The docs (docs/19-agent-integration.md) promise that /integration is authoritative and
+/// "以它为准", but the endpoint used to return only the override KEYS - an agent could see that
+/// something had been retuned, never what the underlying behaviour actually was, and the doc
+/// table drifted from the code anyway. This resolves every triple through the real lookup, so
+/// the endpoint cannot lie about the build it is running in. Coarse tiers produce repeated
+/// values under finer keys; that is data, not a bug.
+fn builtin_reaction_table() -> serde_json::Map<String, serde_json::Value> {
+    let mut table = serde_json::Map::new();
+    for state in TASK_STATES {
+        for kind in TASK_KINDS {
+            for mood in TASK_MOODS {
+                if let Some((expression, action, say)) = builtin_reaction(state, kind, mood) {
+                    table.insert(
+                        format!("{state}:{kind}:{mood}"),
+                        serde_json::json!({ "expression": expression, "action": action, "say": say }),
+                    );
+                }
+            }
+        }
+    }
+    table
+}
+
 /// Where the user wants task events echoed to, besides the cat.
 ///
 /// THE POINT: 灵犀 does not integrate with Slack, Feishu, Telegram or anything else, and should
@@ -3278,6 +3576,34 @@ struct SinkState {
     sinks: Mutex<Vec<NotificationSink>>,
 }
 
+/// The HOST part of an http/https URL, parsed rather than prefix-matched.
+///
+/// The old check was `starts_with("http://localhost")`, which passed `http://localhost@evil.com`
+/// (userinfo - the host is evil.com) and `http://localhost.evil.com` (a subdomain). Both would
+/// have POSTed the payload - what the user is working on - to a machine they have never heard
+/// of. Parse the authority instead: strip the userinfo, strip the port, compare the host
+/// exactly. No authority, no scheme, no allowance.
+fn url_host(url: &str) -> Option<&str> {
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let host_port = authority.rsplit_once('@').map(|(_, hp)| hp).unwrap_or(authority);
+    // An IPv6 literal arrives bracketed; the port split below must not eat the brackets.
+    if let Some(close) = host_port.rfind(']') {
+        return host_port
+            .get(..=close)
+            .map(|h| h.trim_start_matches('[').trim_end_matches(']'));
+    }
+    host_port.split(':').next()
+}
+
+/// https anywhere; plain http only when the HOST is this machine.
+fn sink_url_allowed(url: &str) -> bool {
+    if url.starts_with("https://") {
+        return true;
+    }
+    matches!(url_host(url), Some("127.0.0.1") | Some("localhost") | Some("::1"))
+}
+
 /// Read `notifications.json` from the config directory. Absent is the normal case.
 fn load_sinks(app: &tauri::AppHandle) -> (Vec<NotificationSink>, Vec<String>) {
     let mut errors = Vec::new();
@@ -3298,9 +3624,7 @@ fn load_sinks(app: &tauri::AppHandle) -> (Vec<NotificationSink>, Vec<String>) {
                         // will actually bridge to an IM (transform the payload, add their own
                         // token, forward it), and requiring TLS to talk to yourself buys nothing
                         // while making the common case annoying enough to be done badly instead.
-                        s.url.starts_with("https://")
-                            || s.url.starts_with("http://127.0.0.1")
-                            || s.url.starts_with("http://localhost")
+                        sink_url_allowed(&s.url)
                     });
                     for sink in &bad {
                         errors.push(format!(
@@ -3398,6 +3722,15 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
     // two rows with two states. The identity is what "who is doing what" is actually about; the
     // provider is just which transport it came in on.
     let key = if event.source_id.is_empty() { event.provider.clone() } else { event.source_id.clone() };
+    // Keys arrive from outside the process; without a cap, every distinct source_id any caller
+    // ever sends is a row forever. Past the cap, the stalest row gives way - the picture is
+    // "who is doing what NOW", and a source that has gone quiet longest is the least of that.
+    const ACTIVITY_CAP: usize = 64;
+    if !map.contains_key(&key) && map.len() >= ACTIVITY_CAP {
+        if let Some((stalest, _)) = map.iter().min_by_key(|(_, v)| v.updated_at).map(|(k, v)| (k.clone(), v.updated_at)) {
+            map.remove(&stalest);
+        }
+    }
     map.insert(
         key,
         AgentActivity {
@@ -3428,6 +3761,16 @@ fn should_react(app: &tauri::AppHandle, event: &TaskEvent) -> bool {
     }
     let state = app.state::<TaskProgressState>();
     let mut seen = state.seen.lock().unwrap();
+    // task_id arrives from outside the process. Without a cap, every task any agent ever runs
+    // here is remembered forever. Past the cap an arbitrary entry gives way: the map only
+    // remembers progress fractions, so "arbitrary" is honest, and losing one task's
+    // halfway-crossing memory costs at most one extra reaction.
+    const SEEN_CAP: usize = 512;
+    if !seen.contains_key(&event.task_id) && seen.len() >= SEEN_CAP {
+        if let Some(victim) = seen.keys().next().cloned() {
+            seen.remove(&victim);
+        }
+    }
     let previous = seen.insert(event.task_id.clone(), event.progress.unwrap_or(0.0));
     match (previous, event.progress) {
         (None, _) => true,                                   // first sighting of this task
@@ -4100,6 +4443,7 @@ pub fn run() {
             app.manage(AssetErrorState { errors: Mutex::new(Vec::new()) });
             app.manage(AgentRegistry::default());
             app.manage(TaskProgressState::default());
+            app.manage(BridgeBindState::default());
             app.manage(BridgeToken::load_or_create(app.handle()));
             match install_cli(app.handle()) {
                 Some(path) => eprintln!("[lingxi-desktop] shell client written to {}", path.display()),
@@ -4270,7 +4614,7 @@ mod tests {
     #[test]
     fn looks_like_typo_catches_the_realistic_misspellings_only() {
         assert!(looks_like_typo("expression", "expresssion"), "doubled letter");
-        assert!(looks_like_typo("camera", "camrea") || !looks_like_typo("camera", "camrea"));
+        assert!(looks_like_typo("camera", "camrea"), "adjacent transposition");
         assert!(looks_like_typo("skin", "skins"), "stray plural");
         assert!(!looks_like_typo("skin", "camera"), "unrelated words must not be suggested");
         assert!(!looks_like_typo("say", "resetPosition"));
@@ -4285,12 +4629,22 @@ mod tests {
         for (event, expected) in [
             ("SessionStart", "queued"),
             ("UserPromptSubmit", "running"),
+            ("Notification", "needs_input"),
             ("Stop", "completed"),
             ("StopFailure", "failed"),
         ] {
             let raw = serde_json::json!({ "session_id": "s", "hook_event_name": event });
             assert_eq!(normalize_claude_hook_event(&raw, 1).state, expected, "{event}");
         }
+        // The approval-shaped Notification is the single most urgent event an agent can raise -
+        // it is what "a tool call is blocked right now" looks like. Assert it separately from
+        // the plain-question shape above, because the two must not be collapsible.
+        let approval = serde_json::json!({
+            "session_id": "s",
+            "hook_event_name": "Notification",
+            "message": "Claude needs your permission to use Bash",
+        });
+        assert_eq!(normalize_claude_hook_event(&approval, 1).state, "needs_approval");
     }
 
     #[test]
@@ -4502,6 +4856,71 @@ command = "node"
         std::fs::write(&path, "{ not valid json").unwrap();
         assert!(read_claude_settings(&path).is_err());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn legacy_hook_forms_are_uninstallable_and_upgradeable() {
+        // A machine that installed an OLDER build carries an older command string. This used to
+        // be a trap with two exits, both bad: uninstall matched only the current command, so
+        // "已接入" was reported and "已移除" was returned while the dead hook stayed; install
+        // recognised the legacy line and skipped, so re-installing could never upgrade it.
+        let legacy = LEGACY_CLAUDE_HOOK_COMMANDS[0];
+        let mut hooks = serde_json::json!({
+            "Stop": [
+                { "hooks": [ { "type": "command", "command": legacy } ] },
+                { "hooks": [ { "type": "command", "command": "echo someone-elses" } ] }
+            ]
+        });
+        // Reported as ours...
+        assert!(has_our_hook(hooks["Stop"].as_array().unwrap()));
+        // ...removable by uninstall...
+        let removed = remove_our_hook_entries(hooks.as_object_mut().unwrap());
+        assert_eq!(removed, 1);
+        let stop = hooks["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1, "someone else's hook must survive");
+        assert_eq!(stop[0]["hooks"][0]["command"], "echo someone-elses");
+        // ...and upgradeable by install: the legacy form is pruned, the current one added.
+        let entries = hooks["Stop"].as_array_mut().unwrap();
+        assert!(!prune_legacy_hook_entries(entries));
+        assert_eq!(entries.len(), 1, "the legacy entry went away");
+        entries.push(serde_json::json!({ "hooks": [ { "type": "command", "command": CLAUDE_HOOK_COMMAND } ] }));
+        assert!(prune_legacy_hook_entries(entries), "current form survives the prune");
+        assert_eq!(entries.len(), 2, "and was not re-added on top of");
+    }
+
+    #[test]
+    fn queue_item_taken_but_not_claimed_is_played_not_lost() {
+        // take_next_due REMOVES the item before returning it; a lost stage race in the drain
+        // loop used to just `continue`, destroying the alert it was holding.
+        let registry = AgentRegistry::default();
+        let identity = AgentIdentity {
+            id: "a".into(),
+            name: "a".into(),
+            badge: "a".into(),
+            logo: None,
+            color: "#000".into(),
+            registered_at: 0,
+            last_seen: 0,
+            claims: 0,
+        };
+        let item = QueuedReaction {
+            agent: identity,
+            command: serde_json::json!({"expression": "x"}),
+            priority: "alert".into(),
+            rank: priority_rank("alert"),
+            hold_ms: 1000,
+            queued_at: 0,
+            expires_at: u64::MAX,
+        };
+        registry.enqueue(item.clone());
+        let (taken, expired) = registry.take_next_due(0);
+        assert_eq!(expired, 0);
+        let item = taken.expect("item should be taken");
+        // The stage is free (never claimed) - claim_stage would succeed - but the race this
+        // regression pins is the loser's path: give the item back and it is still queued.
+        registry.requeue_front(item);
+        let (again, _) = registry.take_next_due(0);
+        assert!(again.is_some(), "a taken-but-unclaimed reaction must survive for the next pass");
     }
 
     #[test]

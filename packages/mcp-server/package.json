@@ -6,5 +6,8 @@
   "description": "MCP server that lets a coding agent see and drive the 灵犀 desktop cat",
   "bin": { "lingxi-mcp": "src/index.mjs" },
   "engines": { "node": ">=22" },
-  "scripts": { "start": "node src/index.mjs" }
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --experimental-strip-types --test test/*.test.mjs"
+  }
 }

@@ -11,8 +11,14 @@
     com.apple.security.network.server   the bridge binds 127.0.0.1 only; loopback needs no
                                         entitlement, and asking for the server entitlement would
                                         let a compromised build listen on the LAN.
-    com.apple.security.network.client   nothing here makes outbound connections. No telemetry,
-                                        no update check, no asset fetching.
+    com.apple.security.network.client   one exception, and it is opt-in: if (and only if) the
+                                        user hand-writes notifications.json with a webhook sink,
+                                        task-event summaries are POSTed there via curl (see
+                                        post_json and SinkState in lib.rs). The default install
+                                        makes zero outbound connections; the entitlement stays
+                                        absent because the hardened runtime gates this process,
+                                        not its children, and the actual guarantee is the design
+                                        rule "no sink file, no traffic".
     com.apple.security.device.camera / .audio-input / .personal-information.*
                                         never used.
     com.apple.security.automation.apple-events
