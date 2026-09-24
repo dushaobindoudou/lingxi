@@ -15,8 +15,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const REPO = '/Users/dushaobin/workspace/lingxi';
+// Repo root = two levels up from .workbuddy/probes/ - see the note in build-workbuddy-assets.mjs.
+const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const SERVER = join(REPO, 'packages/mcp-server/src/index.mjs');
 const PORT = Number(process.env.LINGXI_PORT ?? 47811);
 const BASE = `http://127.0.0.1:${PORT}`;

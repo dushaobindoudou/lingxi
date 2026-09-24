@@ -1,9 +1,11 @@
 // 用应用自己的校验逻辑预检自定义资源，避免「点了重新加载才发现文件是错的」。
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseMotions } from '../../apps/lingxi/src/anim/motion.ts';
 
-const REPO = '/Users/dushaobin/workspace/lingxi';
+// Repo root = two levels up from .workbuddy/probes/ - see the note in build-workbuddy-assets.mjs.
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(process.env.HOME, 'Library/Application Support/com.dushaobin.lingxi-desktop/assets');
 
 const skeleton = JSON.parse(fs.readFileSync(path.join(REPO, 'apps/lingxi/src/data/skeleton.json'), 'utf8'));

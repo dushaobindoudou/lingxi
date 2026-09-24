@@ -17,14 +17,20 @@
 适配器**故意不猜** `mood`——插件编一个出来，就是在瞎编整个设计赖以成立的那一个字段，
 而且会在没人看得见的地方错。它留空，应用按 `focused` 处理，模型真有话说时再覆盖。
 
+> **装哪一份：`hosts/`。** `integrations/hosts/<宿主>/` 下每个目录只为一个宿主负责，是现在的
+> 首选路径；`integrations/plugins/` 是上一版的通用插件，仍在仓库里但**不要和 `hosts/` 同时装**
+> ——两条路径会在事件流里留下两个署名。取舍对比见
+> [`hosts/README.md`](hosts/README.md)。
+
 ```sh
-# Claude Code：hooks + skill + MCP 一起装
-claude plugin install <repo>/integrations/plugins/claude-code
+# Claude Code：hooks + skill + MCP 一起装（hooks 是纯 curl，不依赖 node）
+claude plugin install <repo>/integrations/hosts/claude
 
 # Codex：确定性事件由 notify 承担。notify 是 TOML 单键——机器上已有别的 notifier
-# （比如 SkyComputerUseClient）时不要覆盖，写一个 fanout 脚本两边都发，
-# 现成模板见 plugins/codex/README.md
-notify = ["/Users/you/.codex/notify-fanout.sh"]
+# （比如 SkyComputerUseClient）时不要覆盖，安装器会写一个 fanout 脚本两边都发：
+<repo>/integrations/hosts/codex/install.sh
+
+# DSH / WorkBuddy 各有自己的形态，见 hosts/dsh/ 与 hosts/workbuddy/
 
 # 另加 MCP（模型主动通道）：
 # [mcp_servers.lingxi]
@@ -36,6 +42,11 @@ notify = ["/Users/you/.codex/notify-fanout.sh"]
 事件的**契约**是 [`schema/task-event.schema.json`](schema/task-event.schema.json)。
 所有接入——hook、notify、MCP、curl——都只产出这一个对象。
 **再接一个新宿主 = 写一个适配器，不需要动应用。**
+
+接入时还要按实际场景检查并更新气泡配置：默认样式不适合所有应用。检查气泡与文字是否居中、
+icon 的位置，以及正文与强调文字的颜色；居中和 icon 位置目前没有配置字段，需要结合渲染实现优化。
+**每轮对话都要根据最新上下文更新任务 `summary`，结束时总结实际结果，避免展示的任务标题偏离当前工作。**
+详见[气泡配置与每轮任务总结要求](../docs/19-agent-integration.md#接入时必须检查并更新气泡配置)。
 
 ---
 

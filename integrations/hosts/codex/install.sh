@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 灵犀 · Codex 专用安装器。
 #
-# Codex 没有插件清单格式——它的"插件"就是 config.toml 里的一行 notify、一段 mcp_servers、
+# 这里安装的是 Codex 宿主接入：config.toml 里的一行 notify、一段 mcp_servers、
 # 和 ~/.codex/skills 下的一个目录。所以这个安装器做四件事，全部幂等、全部可回退：
 #
 #   1. 备份 ~/.codex/config.toml（带时间戳，从不覆盖旧备份）
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-CODEX_DIR="$HOME/.codex"
+CODEX_DIR="${LINGXI_CODEX_DIR:-$HOME/.codex}"
 CONFIG="$CODEX_DIR/config.toml"
 MARKER="# >>> lingxi plugin >>>"
 END_MARKER="# <<< lingxi plugin <<<"
@@ -48,15 +48,30 @@ fi
 CURRENT_NOTIFY_LINE="$(grep -E '^[[:space:]]*notify[[:space:]]*=' "$CONFIG" | tail -1 || true)"
 
 existing_notify_cmd() {
-  # notify = ["prog", "arg", ...] → 可直接 sh -c 的 prog arg ...
+  # Keep argv boundaries, including spaces and quotes inside an argument. `sed` cannot parse
+  # TOML arrays: it silently turns one argument into several and breaks the user's notifier.
   [ -n "$CURRENT_NOTIFY_LINE" ] || return 0
   local cmd
-  cmd="$(printf '%s' "$CURRENT_NOTIFY_LINE" | sed -E 's/^[[:space:]]*notify[[:space:]]*=[[:space:]]*//; s/^\[//; s/\]$//; s/",[[:space:]]*"/ /g; s/"//g')"
+  cmd="$(notify_line_to_shell "$CURRENT_NOTIFY_LINE")" || return 1
   # 指向旧 fanout / 灵犀自身的行不保留，避免套娃
   case "$cmd" in
     *notify-fanout*|*lingxi-emit*) return 0 ;;
   esac
   printf '%s' "$cmd"
+}
+
+notify_line_to_shell() {
+  python3 - "$1" <<'PYEOF'
+import ast, shlex, sys
+try:
+    value = ast.literal_eval(sys.argv[1].split('=', 1)[1].strip())
+    if not isinstance(value, list) or not value or not all(isinstance(v, str) for v in value):
+        raise ValueError('notify must be an array of strings')
+except (ValueError, SyntaxError, IndexError) as error:
+    print(f'✗ 无法安全读取原有 notify：{error}', file=sys.stderr)
+    sys.exit(1)
+print(' '.join(shlex.quote(arg) for arg in value))
+PYEOF
 }
 
 write_fanout() {
@@ -68,7 +83,7 @@ write_fanout() {
     echo '# 各拿完整载荷、并行、互不阻塞。回退：把 config.toml 的 notify 换回 previous 行。'
     echo 'PAYLOAD="$1"'
     if [ -n "$prev_cmd" ]; then
-      echo "sh -c $(printf '%q' "$prev_cmd") sh \"\$PAYLOAD\" &   # 你原来的通知器"
+      echo "$prev_cmd \"\$PAYLOAD\" &   # 你原来的通知器"
     fi
     echo "LINGXI_AGENT=codex node $(printf '%q' "$EMIT") --host codex \"\$PAYLOAD\" &"
     echo 'wait'
@@ -81,7 +96,10 @@ write_fanout() {
 # 记录在既有 fanout 脚本自己的注释行里。不回收它，重装就会静默杀掉用户的通知程序。
 previous_from_fanout() {
   [ -f "$FANOUT" ] || return 0
-  # 行形如：sh -c 'cmd args...' &   # 你原来的通知器；%q 转义不产生裸单引号，取首尾之间即可
+  # New fanout stores a shell-quoted argv prefix; keep the older generated form readable too.
+  local previous
+  previous="$(sed -n 's/ \"\$PAYLOAD\" &[[:space:]]*#[[:space:]]*你原来的通知器[[:space:]]*$//p' "$FANOUT" | head -1)"
+  if [ -n "$previous" ]; then printf '%s' "$previous"; return 0; fi
   sed -n "s/^sh -c '\(.*\)' &[[:space:]]*#[[:space:]]*你原来的通知器[[:space:]]*$/\1/p" "$FANOUT" | head -1
 }
 
@@ -97,7 +115,7 @@ previous_from_backup() {
   for bak in $(ls "$CONFIG".bak-lingxi-* 2>/dev/null); do
     line="$(grep -E '^[[:space:]]*notify[[:space:]]*=' "$bak" | tail -1 || true)"
     [ -n "$line" ] || continue
-    cmd="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*notify[[:space:]]*=[[:space:]]*//; s/^\[//; s/\]$//; s/",[[:space:]]*"/ /g; s/"//g')"
+    cmd="$(notify_line_to_shell "$line")" || continue
     case "$cmd" in
       *notify-fanout*|*lingxi-emit*) continue ;;
     esac
@@ -107,7 +125,7 @@ previous_from_backup() {
   return 0
 }
 
-PREV_CMD="$(existing_notify_cmd || true)"
+PREV_CMD="$(existing_notify_cmd)"
 if [ -z "$PREV_CMD" ]; then
   PREV_CMD="$(previous_from_fanout || true)"
 fi
@@ -156,9 +174,20 @@ text = open(path).read()
 marker, end = "# >>> lingxi plugin >>>", "# <<< lingxi plugin <<<"
 pattern = re.compile(re.escape(marker) + r".*?" + re.escape(end), re.S)
 if pattern.search(text):
-    open(path, "w").write(pattern.sub(lambda _: block, text, count=1))
+    updated = pattern.sub(lambda _: block, text, count=1)
 else:
-    open(path, "w").write(text.rstrip("\n") + "\n\n" + block + "\n")
+    # Older/manual installs have the same TOML tables but no marker. Replace those tables
+    # in place; appending another [mcp_servers.lingxi] makes the whole config invalid.
+    table = re.compile(r"(?m)^\[mcp_servers\.lingxi\]\s*$")
+    match = table.search(text)
+    if match:
+        next_table = re.compile(r"(?m)^\[(?!mcp_servers\.lingxi(?:\.|\]))[^\n]+\]\s*$")
+        following = next_table.search(text, match.end())
+        end_at = following.start() if following else len(text)
+        updated = text[:match.start()].rstrip("\n") + "\n\n" + block + "\n\n" + text[end_at:].lstrip("\n")
+    else:
+        updated = text.rstrip("\n") + "\n\n" + block + "\n"
+open(path, "w").write(updated)
 PYEOF
 }
 
@@ -188,6 +217,10 @@ fi
 # ---------- 4. skill ----------
 if [ "$DRY_RUN" = 0 ]; then
   mkdir -p "$CODEX_DIR/skills"
+  if [ -e "$CODEX_DIR/skills/lingxi" ] && [ ! -L "$CODEX_DIR/skills/lingxi" ]; then
+    echo "✗ $CODEX_DIR/skills/lingxi 是普通目录；请先手动确认，安装器不会覆盖它。" >&2
+    exit 1
+  fi
   ln -sfn "$REPO/integrations/hosts/codex/skills/lingxi" "$CODEX_DIR/skills/lingxi"
 fi
 log "skill → ~/.codex/skills/lingxi（符号链接）"

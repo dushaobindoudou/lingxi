@@ -60,6 +60,13 @@ function renderJson(args, value) {
   return [{ type: 'text', text: JSON.stringify(value) }];
 }
 
+async function ensureIdentity(ctx) {
+  const result = await callBridge(ctx, 'POST', '/agents', {
+    id: AGENT_ID, name: 'DSH Agent', badge: 'DS', color: '#4D6BFE',
+  });
+  return result && result.ok === true ? null : result;
+}
+
 function buildTools(ctx) {
   return [
     harness.defineTool({
@@ -68,23 +75,27 @@ function buildTools(ctx) {
         '把你正在为用户做的任务报给桌宠猫灵犀。state 是流程（开始 running、等授权 needs_approval、' +
         '被挡 blocked、完成 completed、失败 failed、用户取消 cancelled）；mood 是只有你判断得了的' +
         '事情心情（写家书是 tender，和 flaky test 搏斗是 frustrated），猫回应的是心情而不是镜像状态。' +
-        '开始和结束各报一次即可，不要刷屏；没有心情可报时不报也是正确的。',
+        '每个任务开始时报告 running，结束时报告 completed/failed/cancelled；summary 必须说明具体做了什么或结果是什么，' +
+        '尤其 completed 要写清完成的任务，不能只写“搞定”。同一任务始终复用 taskId，不要刷屏；' +
+        'mood 只有确实能判断时才传，没有心情可报时省略也是正确的。',
       parameters: {
         type: 'object',
         properties: {
           state: { type: 'string', enum: STATES, description: '任务流程状态' },
           kind: { type: 'string', enum: KINDS, description: '任务种类，默认 other' },
           mood: { type: 'string', enum: MOODS, description: '这件事的心情——最有价值的字段' },
-          summary: { type: 'string', description: '一句话概述（不超过 140 字）' },
-          taskId: { type: 'string', description: '稳定的任务标识，同一任务用同一个' },
+          summary: { type: 'string', maxLength: 140, description: '一句话概述（不超过 140 字，必须具体）' },
+          taskId: { type: 'string', minLength: 1, description: '必填且稳定的任务标识；同一任务从开始到结束始终用同一个' },
           progress: { type: 'number', description: '0..1，用于长任务的过半提醒' },
         },
-        required: ['state'],
+        required: ['state', 'taskId', 'summary'],
         additionalProperties: true,
       },
       output: { schema: { type: 'object', additionalProperties: true }, render: renderJson },
       timeoutMs: 8000,
       execute: async function (args) {
+        const identityError = await ensureIdentity(ctx);
+        if (identityError) return identityError;
         return callBridge(ctx, 'POST', '/task-event', Object.assign({ provider: AGENT_ID, agent: AGENT_ID }, args));
       },
     }),
@@ -104,6 +115,8 @@ function buildTools(ctx) {
       output: { schema: { type: 'object', additionalProperties: true }, render: renderJson },
       timeoutMs: 8000,
       execute: async function (args) {
+        const identityError = await ensureIdentity(ctx);
+        if (identityError) return identityError;
         return callBridge(ctx, 'POST', '/control', { say: args.text, agent: AGENT_ID, priority: 'status' });
       },
     }),
@@ -126,6 +139,8 @@ function buildTools(ctx) {
       output: { schema: { type: 'object', additionalProperties: true }, render: renderJson },
       timeoutMs: 8000,
       execute: async function (args) {
+        const identityError = await ensureIdentity(ctx);
+        if (identityError) return identityError;
         return callBridge(ctx, 'POST', '/control', Object.assign({ agent: AGENT_ID }, args));
       },
     }),
@@ -168,16 +183,8 @@ return {
   apply(ctx) {
     // 身份注册 + 上线播报：幂等（POST /agents 按 id upsert），失败静默——桥接没起时
     // 工具调用会如实报错，这里不必抢先失败。
-    callBridge(ctx, 'POST', '/agents', { id: AGENT_ID, name: 'DSH Agent', badge: 'DS', color: '#4D6BFE' })
+    ensureIdentity(ctx)
       .catch(function () {});
-    callBridge(ctx, 'POST', '/task-event', {
-      provider: AGENT_ID,
-      agent: AGENT_ID,
-      state: 'running',
-      kind: 'chat',
-      summary: 'DSH 已接入，灵犀桥接就绪',
-    }).catch(function () {});
-
     const tools = buildTools(ctx);
     ctx.effect(function () {
       const unregisters = [];

@@ -37,6 +37,9 @@ install_into() {
 echo "Installing 灵犀 skills ($MODE):"
 install_into "$HOME/.claude/skills"  "Claude Code (user)"
 install_into "$HOME/.codex/skills"   "Codex (user)"
+# WorkBuddy reads the same `<dir>/<skill-name>/SKILL.md` layout. Its MCP half is a separate step
+# (the host gates it behind a config-hash approval) - see integrations/hosts/workbuddy/install.sh.
+install_into "$HOME/.workbuddy/skills" "WorkBuddy (user)"
 [ "$PROJECT" = 1 ] && install_into "$REPO/.claude/skills" "this repo"
 
 # The CLI has to be on PATH for the skills to be usable as written.
@@ -74,6 +77,11 @@ Codex - one line in ~/.codex/config.toml:
   notify = ["node", "$REPO/integrations/adapters/lingxi-emit.mjs", "--host", "codex"]
   WARNING: notify holds ONE program. If you already have one, fan out instead -
   see $REPO/integrations/plugins/codex/README.md
+
+WorkBuddy - there is no deterministic half to add: it exposes no session-lifecycle hook, so the
+skill above IS the integration. For the typed tool path plus the badge:
+  $REPO/integrations/hosts/workbuddy/install.sh
+  then click 信任 on lingxi in the connector management page (it gates MCP servers by config hash)
 
 Done. Check with:
   lingxi health        # is the cat running, where is its token

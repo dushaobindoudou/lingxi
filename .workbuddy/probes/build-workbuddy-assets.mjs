@@ -2,8 +2,11 @@
 // 动作库 / 表情集是「整体替换」，所以必须先把内置的完整带上，再追加新的。
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const REPO = '/Users/dushaobin/workspace/lingxi';
+// Repo root = two levels up from .workbuddy/probes/. Never a hard-coded home directory: the probe
+// has to run on whoever checked the repo out, not only on the machine it was written on.
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(process.env.HOME, 'Library/Application Support/com.dushaobin.lingxi-desktop/assets');
 
 // WorkBuddy 品牌色：从 /Applications/WorkBuddy.app/Contents/Resources/icon.icns 提取，
@@ -106,30 +109,61 @@ const actions = {
 fs.writeFileSync(path.join(OUT, 'actions.json'), JSON.stringify(actions, null, 2) + '\n');
 
 // ---------------------------------------------------------------- 皮肤
-// 只写新增的一款 —— 自定义皮肤是「合并到内置之上」，不需要复制那 9 款。
-const skins = [
-  {
-    schemaVersion: 1,
-    id: 'workbuddy-mint',
-    name: '青釉工蜂',
-    description: 'WorkBuddy 品牌青绿 · 取色自应用图标 #0AC89F · 奶白围嘴',
-    rigId: 'lingxi-cat-v1',
-    pattern: 'tuxedo',
-    materials: {
-      fur: B.mintSoft,        // 主体：品牌色的中间调，柔和到仍然像猫毛
-      pattern: B.mintDeep,    // 深青绿，用于虎斑式暗纹
-      cream: B.mintPale,      // 围嘴 / 白袜：品牌浅色
-      iris: B.gold,           // 暖金瞳 —— 和青绿形成补色，眼睛才"活"
-      pupil: B.ink,
-      nose: B.rose,
-      paw: B.mintPale,
-      mouth: B.plum,
-      whisker: B.mintPale,
-      tongue: '#E998A6',
-    },
+// 皮肤是「合并到内置之上」，所以这份文件只写新增的那一款，不复制内置的 9 款。
+//
+// 但**必须先读现有的 skins.json，再增量写**。这个文件里已经有用户自己的皮肤
+// （deepseek-whale 甚至是此刻生效的那一款），而 skins.json 的合并语义是
+// "整份自定义集合盖住自定义集合" —— 一份不带它们的文件会把它们从盘上抹掉，
+// settings.json 里 skin 指向的 id 当场变成悬空。这是这套机制里最容易造成
+// 不可逆损失的一个入口，所以这里先读后写，并且先备份。
+const skinsPath = path.join(OUT, 'skins.json');
+const backupDir = path.join(process.env.HOME, '.lingxi', 'backup');
+let existingSkins = [];
+if (fs.existsSync(skinsPath)) {
+  const raw = JSON.parse(fs.readFileSync(skinsPath, 'utf8'));
+  if (!Array.isArray(raw)) throw new Error(`${skinsPath} 不是一个数组，停下来人工看一眼`);
+  existingSkins = raw;
+  // 只留第一份：它是 pre-WorkBuddy 的原样快照，是唯一的退路。
+  if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const snapshot = path.join(backupDir, `skins.json.pre-workbuddy-${stamp}`);
+  if (!fs.readdirSync(backupDir).some((n) => n.startsWith('skins.json.pre-workbuddy-'))) {
+    fs.copyFileSync(skinsPath, snapshot);
+    console.log('已备份 skins.json →', snapshot);
+  } else {
+    console.log('已有 skins.json 快照，不覆盖（保留最早那份）');
+  }
+}
+
+// WorkBuddy 品牌薄荷：`fur` 直接用应用图标的主色 #0AC89F，身体是最大的一块面积 ——
+// "这是 WorkBuddy 的猫"必须一眼看得出来，所以品牌色不是点缀，是底色。
+// 其余角色分工和内置的「芝麻夜航」（tuxedo）完全一致：
+//   pattern → 耳朵 / 眉 / 尾端的深色区分   cream → 胸口围嘴 + 肚皮
+//   paw → 白袜子                          iris → 蜜金瞳（和青绿互补，眼睛才"活"）
+const wbSkin = {
+  schemaVersion: 1,
+  id: 'workbuddy-mint',
+  name: '薄荷值班',
+  description: '品牌薄荷青 · 云白围嘴 · 蜜金瞳',
+  rigId: 'lingxi-cat-v1',
+  pattern: 'tuxedo',
+  materials: {
+    fur: '#0AC89F',        // 品牌主色，取色自应用图标
+    pattern: '#06806A',    // 深薄荷：耳朵、眉、尾端的暗部
+    cream: '#EDFBF6',      // 围嘴与肚皮：品牌浅色 #E5F9F4 提亮一档
+    iris: '#F2CD7A',       // 蜜金瞳
+    pupil: '#0A3A31',
+    nose: '#F0939C',
+    paw: '#EDFBF6',
+    mouth: '#2F6F60',
+    whisker: '#EDFBF6',
+    tongue: '#E998A6',
   },
-];
-fs.writeFileSync(path.join(OUT, 'skins.json'), JSON.stringify(skins, null, 2) + '\n');
+};
+// 同 id 覆盖、其余原样保留 —— 重跑这个脚本必须是幂等的。
+const skins = [...existingSkins.filter((s) => s.id !== wbSkin.id), wbSkin];
+fs.writeFileSync(skinsPath, JSON.stringify(skins, null, 2) + '\n');
+const keptSkins = skins.filter((s) => s.id !== wbSkin.id).map((s) => s.id);
 
 // ---------------------------------------------------------------- 气泡
 const bubble = {
@@ -187,6 +221,7 @@ fs.writeFileSync(path.join(OUT, 'reactions.json'), JSON.stringify(reactions, nul
 console.log('写入目录:', OUT);
 console.log('  动作  :', builtInActionCount, '内置 +', wbActions.length, '新增 =', actions.actions.length);
 console.log('  表情  :', builtInCount, '内置 +', Object.keys(wbExpressions).length, '新增 =', Object.keys(expressions).length);
-console.log('  皮肤  :', skins.length, '款新增（合并到内置 9 款之上）');
+console.log('  皮肤  :', `workbuddy-mint「薄荷值班」写入/覆盖；原有 ${keptSkins.length} 款原样保留`,
+  keptSkins.length ? `(${keptSkins.join(', ')})` : '');
 console.log('  气泡  :', Object.keys(bubble).length, '个字段');
 console.log('  反应  :', Object.keys(reactions).length, '条（含', Object.keys(pinned).length, '条钉住的内置情绪响应）');

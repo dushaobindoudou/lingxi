@@ -16,7 +16,7 @@ description: Drive the 灵犀 desktop cat from Codex - report the emotional shap
 
 | 通道 | 何时触发 | 报什么 |
 |---|---|---|
-| notify fanout | 回合结束（自动） | `completed`——只有"结束了"，没有语义 |
+| notify fanout | 回合结束（自动） | `completed` + `kind=chat`，只表示本轮回复结束，不代表用户任务完成 |
 | MCP `lingxi_task` / CLI | 你主动调 | state + kind + **mood** + 一句话 |
 
 notify 只能让猫知道"回合结束了"。开始一件事、卡住、需要授权、失败——以及所有心情，
