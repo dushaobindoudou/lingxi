@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "lingxi": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/../../../packages/mcp-server/src/index.mjs"]
-    }
-  }
-}

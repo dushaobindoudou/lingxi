@@ -24,7 +24,10 @@ function bridgeCommand(method, path, withBody) {
     'T=$(cat "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token" 2>/dev/null)',
     'H=$(mktemp) || exit 9',
     'printf \'header = "Authorization: Bearer %s"\\n\' "$T" > "$H"',
-    "curl -s -m 3 -K \"$H\" -X " + method + " http://127.0.0.1:" + LINGXI_PORT + path + " -H 'Content-Type: application/json'",
+    // `agent` in the body covers /control and /task-event; /memory and /reminders read the
+    // tier off this header. Sending both means the two paths cannot disagree about who we are.
+    "curl -s -m 3 -K \"$H\" -X " + method + " http://127.0.0.1:" + LINGXI_PORT + path +
+      " -H 'Content-Type: application/json' -H 'X-Lingxi-Agent: " + AGENT_ID + "'",
   ];
   // 必须跟在同一段 curl 里：拼成独立语句会变成 `curl; --data-binary @-`，curl 发空 body。
   if (withBody) parts[parts.length - 1] += ' --data-binary @-';
@@ -173,6 +176,11 @@ function buildTools(ctx) {
       output: { schema: { type: 'object', additionalProperties: true }, render: renderJson },
       timeoutMs: 8000,
       execute: async function (args) {
+        // Registering first, like every other tool here. A memory is a persistent write, so the
+        // bridge checks this id's tier - and an id the registry has never seen (it is pure
+        // in-memory, so every app restart empties it) falls to the default tier and is refused.
+        const identityError = await ensureIdentity(ctx);
+        if (identityError) return identityError;
         return callBridge(ctx, 'POST', '/memory', Object.assign({ agent: AGENT_ID }, args));
       },
     }),

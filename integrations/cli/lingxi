@@ -129,6 +129,14 @@ request() {
   # local user's argv - which is exactly the leak the Rust-side hook command was fixed for.
   # Same fix, same reason.
   printf 'header = "Authorization: Bearer %s"\n' "$(token)" > "$hdr"
+  # Who is calling, on every request. `json()` already folds `agent` into the body, which is
+  # what /control and /task-event read - but /memory and /reminders decide the permission tier
+  # from this header, and a `lingxi remember` that travelled without it was filed under
+  # `anonymous` and refused with a 403 that named an id the user had never seen.
+  cli_ident="$(agent_id)"
+  if [ -n "$cli_ident" ]; then
+    printf 'header = "X-Lingxi-Agent: %s"\n' "$cli_ident" >> "$hdr"
+  fi
   if [ -n "$body" ]; then
     code=$(curl -s "${NOPROXY[@]}" -K "$hdr" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
       -H 'Content-Type: application/json' -d "$body") || true

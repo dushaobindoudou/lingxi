@@ -937,7 +937,7 @@ fn get_claude_task_events(state: State<ClaudeHooksState>) -> Vec<TaskEvent> {
 /// Still plain `curl` rather than the node adapter in integrations/adapters, deliberately: this
 /// path has to keep working for someone who installed the .app and has no checkout, so it cannot
 /// depend on a repository path existing. The adapter is the richer option for people who do have
-/// one (see integrations/plugins/), and both post the same schema to the same endpoint.
+/// one (see integrations/hosts/), and both post the same schema to the same endpoint.
 ///
 /// The token goes into a variable BEFORE curl (the path contains spaces, so it needs quoting,
 /// and quoting inside $( ) inside an already-quoted argument does not survive the shell), and
@@ -977,7 +977,7 @@ const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 2] = [
 /// permission prompts - the single most urgent thing an agent can be doing - and SessionStart
 /// is what makes the cat look up when a session begins; leaving either unsubscribed was the
 /// residue of the mapper drift this whole block exists to prevent. If you add one here, add it
-/// to integrations/plugins/claude-code/hooks/hooks.json and to the mappers in the same commit.
+/// to integrations/hosts/claude/hooks/hooks.json and to the mappers in the same commit.
 const CLAUDE_HOOK_EVENTS: [&str; 5] =
     ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "StopFailure"];
 
@@ -2290,34 +2290,62 @@ fn resolve_agent(registry: &AgentRegistry, id: Option<&str>, now: u64) -> AgentI
     entry.clone()
 }
 
+/// Who is making this write: the `X-Lingxi-Agent` header, else the body's own `agent` field,
+/// else `anonymous`.
+///
+/// Both sources, deliberately. An earlier version read only the header, with a comment
+/// explaining that the body is consumed once and cannot be re-read here - true, and it is why
+/// the body is now read BEFORE the check rather than after. But the consequence of
+/// header-only was that `/memory` and `/reminders` answered 403 to every shipped client,
+/// because not one of them sent that header: the CLI, the MCP server and the DSH plugin all
+/// name themselves in the body's `agent` field, which is what `/control` and `/task-event`
+/// have always read. So did every `curl` example in docs/19, and a bare curl is documented as
+/// something that must keep working.
+///
+/// The header still wins when both are present: a host that wants to attribute a call it is
+/// relaying should not be overridable by the payload it is relaying.
+fn write_caller_id(request: &tiny_http::Request, body: Option<&serde_json::Value>) -> String {
+    let header = request
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv("X-Lingxi-Agent"))
+        .map(|h| h.value.as_str());
+    resolve_write_caller_id(header, body)
+}
+
+/// The part of `write_caller_id` that does not need a live request, so it can be tested.
+fn resolve_write_caller_id(header: Option<&str>, body: Option<&serde_json::Value>) -> String {
+    let clean = |v: &str| -> Option<String> {
+        let trimmed: String = v.trim().chars().take(64).collect();
+        (!trimmed.is_empty()).then_some(trimmed)
+    };
+    header
+        .and_then(clean)
+        .or_else(|| body.and_then(|v| v.get("agent")).and_then(|v| v.as_str()).and_then(clean))
+        .unwrap_or_else(|| "anonymous".to_string())
+}
+
 /// Refuse a persistent write from an agent that is not trusted, or None to let it through.
 ///
 /// `/control` filters per field, because a control call usually asks for several things and one
 /// over-reaching field should not cost the caller the rest. These two endpoints do exactly one
 /// thing each, so there is nothing to filter: it is allowed or it is not.
 ///
-/// The caller id comes from the `X-Lingxi-Agent` header rather than the body, because the body
-/// is read once and consumed, and reading it here to look for an `agent` key would leave the
-/// handler below with nothing. A caller that sends no header is `anonymous`, which gets the
-/// default tier like any other unregistered id.
+/// Takes the already-parsed body so that `write_caller_id` can fall back to its `agent` field -
+/// see that function for why the header alone was not enough.
 fn refuse_untrusted_write(
     app: &tauri::AppHandle,
     request: &tiny_http::Request,
+    body: Option<&serde_json::Value>,
     surface: &str,
 ) -> Option<tiny_http::Response<std::io::Cursor<Vec<u8>>>> {
-    let id = request
-        .headers()
-        .iter()
-        .find(|h| h.field.equiv("X-Lingxi-Agent"))
-        .map(|h| h.value.as_str().trim().chars().take(64).collect::<String>())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| "anonymous".to_string());
+    let id = write_caller_id(request, body);
     let registry = app.state::<AgentRegistry>();
     let permission = registry.permission_of(&id);
     let now = now_millis();
     if !permission.may_write_settings() {
         let reason = format!(
-            "「{id}」的权限档位是 {}，不能写 {surface}。要放行，去 主界面 → Agent 接入 → 权限，改成 trusted。",
+            "「{id}」的权限档位是 {}，不能写 {surface}。要放行，去 主界面 → Agent 接入 →「权限与日志」，把「{id}」改成 trusted。",
             permission.as_str()
         );
         registry.record(&id, surface, "write".to_string(), "denied", Some(reason.clone()));
@@ -3414,12 +3442,17 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     // The owner notes and the reminder list are the user's own writing, and
                     // they persist - so they sit on the same side of the line as settings, and
                     // need the same tier. See AgentPermission.
-                    if let Some(refusal) = refuse_untrusted_write(&app, &request, "memory") {
+                    // Body first, permission second: the caller's id may be in the body (see
+                    // write_caller_id), and it cannot be read back once the handler has it.
+                    let body = read_body_capped(&mut request);
+                    let parsed = serde_json::from_str::<serde_json::Value>(&body);
+                    if let Some(refusal) =
+                        refuse_untrusted_write(&app, &request, parsed.as_ref().ok(), "memory")
+                    {
                         request.respond(refusal).ok();
                         continue;
                     }
-                    let body = read_body_capped(&mut request);
-                    match serde_json::from_str::<serde_json::Value>(&body) {
+                    match parsed {
                         Ok(value) => {
                             let text = value.get("text").and_then(|v| v.as_str()).unwrap_or("");
                             let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("");
@@ -3492,12 +3525,16 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     // The owner notes and the reminder list are the user's own writing, and
                     // they persist - so they sit on the same side of the line as settings, and
                     // need the same tier. See AgentPermission.
-                    if let Some(refusal) = refuse_untrusted_write(&app, &request, "reminders") {
+                    // Body first, permission second - same reason as /memory above.
+                    let body = read_body_capped(&mut request);
+                    let parsed = serde_json::from_str::<serde_json::Value>(&body);
+                    if let Some(refusal) =
+                        refuse_untrusted_write(&app, &request, parsed.as_ref().ok(), "reminders")
+                    {
                         request.respond(refusal).ok();
                         continue;
                     }
-                    let body = read_body_capped(&mut request);
-                    match serde_json::from_str::<serde_json::Value>(&body) {
+                    match parsed {
                         Ok(value) => {
                             let (text, truncated) =
                                 truncate_chars(value.get("text").and_then(|v| v.as_str()).unwrap_or(""), REMINDER_MAX_CHARS);
@@ -5313,6 +5350,31 @@ mod tests {
             AgentPermission::Trusted,
             "first call after a restart must already be trusted, not refused once and then fixed",
         );
+    }
+
+    #[test]
+    fn a_persistent_write_is_attributed_by_header_or_by_body() {
+        use serde_json::json;
+        // The header wins when present - a host relaying someone else's call should not be
+        // overridable by the payload it is relaying.
+        assert_eq!(
+            resolve_write_caller_id(Some("claude"), Some(&json!({ "agent": "someone-else" }))),
+            "claude",
+        );
+        // Body fallback. This is the case that mattered: not one shipped client sent the
+        // header, so /memory and /reminders answered 403 to all of them while the id they
+        // did send sat unread in the body.
+        assert_eq!(resolve_write_caller_id(None, Some(&json!({ "agent": "codex" }))), "codex");
+        // A bare curl with no id anywhere is still allowed to be anonymous - docs/19 promises
+        // that an unregistered caller keeps working, it just gets the default tier.
+        assert_eq!(resolve_write_caller_id(None, Some(&json!({ "text": "hi" }))), "anonymous");
+        assert_eq!(resolve_write_caller_id(None, None), "anonymous");
+        // Blank and whitespace-only are not identities.
+        assert_eq!(resolve_write_caller_id(Some("   "), Some(&json!({ "agent": "  " }))), "anonymous");
+        // An over-long id is truncated rather than rejected: it is a map key, not a promise.
+        assert_eq!(resolve_write_caller_id(Some(&"x".repeat(200)), None).len(), 64);
+        // A non-string agent is not an id.
+        assert_eq!(resolve_write_caller_id(None, Some(&json!({ "agent": 7 }))), "anonymous");
     }
 
     #[test]

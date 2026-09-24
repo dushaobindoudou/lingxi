@@ -10,6 +10,21 @@
 
 ---
 
+## 修复结论（2026-09-24 当天，盘点之后）
+
+| 条目 | 结论 |
+|---|---|
+| **B1** 记忆/提醒全 403 | ✅ 已修。身份改成"`X-Lingxi-Agent` 头优先，回落 body 的 `agent` 字段"，两个 handler 改成先读 body 再判权限；CLI、MCP server、DSH 插件三处都补发了请求头；MCP 的 `remember`/`remind` 原本连 body 都没带身份，改成走 `stamp()` 并补 `ensureRegistered()`。新增 Rust 单测 `a_persistent_write_is_attributed_by_header_or_by_body` |
+| **B2** DSH `lingxi_remember` 不注册 | ✅ 已修，补 `ensureIdentity` |
+| **B3** `accentText` 未写进应用自己的 README | ✅ 已修，示例和说明都补了 |
+| **B4** 探针 PNG 会进 `.app` | ✅ 已修。两张 PNG 从 `public/` 移到所属皮肤的 `textures/`，预览页改成 Vite import（该页不是构建入口，所以不会被打包） |
+| **B5** `dist/` 入库 | ❌ 撤回，本条不成立（见下） |
+| **S15/S16/S17** `plugins/` 与 `hosts/` 并存 | ✅ 已修。`integrations/plugins/` 整个删除，`install-skills.sh`、`lib.rs` 注释、三份 README 的指向全部改到 `hosts/` |
+
+第二、三节的 ⬜ 条目里，U1–U15 仍然成立，见下。
+
+---
+
 ## 一、Bug（按影响排序）
 
 ### B1 · 记忆和提醒对所有已发布的接入方全部是 403 —— P0
@@ -87,9 +102,9 @@ Vite 把 `public/` 整目录原样拷进 `dist/`，包括点开头的目录，�
 | S12 | `docs/21` 首页 ASCII 图 | 图里画着"一起度过的今天 3 小时 12 分"，正文同一节又写"当前没有这个契约，因此整项隐藏" —— 文档内部自相矛盾，实现按"隐藏"做的 | ✅ 改图 |
 | S13 | `docs/21` 交互表 | 按钮在三处叫三个名字：图里"找回灵犀"、表里"找到灵犀"、代码里"找回猫咪" | ✅ 统一为"找回猫咪" |
 | S14 | `docs/19` 权限一节 | 写"主界面 → Agent 接入 → **权限与日志**"，代码的拒绝文案写"→ **权限**" | ✅ 文档对齐代码实际的区块标题 |
-| S15 | `integrations/install-skills.sh:73,79` | 同 S10/S11，脚本输出仍推荐 `plugins/` 路径 | ⬜ 属于脚本，本轮不改 |
-| S16 | `apps/lingxi/src-tauri/src/lib.rs:940,980` | 注释指向 `integrations/plugins/`，应为 `integrations/hosts/claude/` | ⬜ 属于代码注释 |
-| S17 | `integrations/plugins/` 整个目录 | `hosts/` 已按"一个宿主一个插件"重做，`plugins/` 是上一版通用插件。留着就会一直产生 S10/S11/S15/S16 这类冲突 | ⬜ **需要你拍板**：删除，还是明确标为 deprecated 保留一个版本 |
+| S15 | `integrations/install-skills.sh:73,79` | 同 S10/S11，脚本输出仍推荐 `plugins/` 路径 | ✅ 改指向 `hosts/claude` 与 `hosts/codex/install.sh` |
+| S16 | `apps/lingxi/src-tauri/src/lib.rs:940,980` | 注释指向 `integrations/plugins/`，应为 `integrations/hosts/claude/` | ✅ 已改 |
+| S17 | `integrations/plugins/` 整个目录 | `hosts/` 已按"一个宿主一个插件"重做，`plugins/` 是上一版通用插件。留着就会一直产生 S10/S11/S15/S16 这类冲突 | ✅ 删除。装过 `plugins/claude-code` 的人需要重装 `hosts/claude`，三份 README 都写了这句 |
 
 ---
 

@@ -460,6 +460,7 @@ export const ASSETS_README = `# 灵犀 · 自定义资源
 {
   "background": "#1e1e28",
   "text": "#f0e6ff",
+  "accentText": "#c9b6ff",
   "border": "#8f7fd8",
   "borderWidth": 3,
   "radius": 20,
@@ -470,6 +471,9 @@ export const ASSETS_README = `# 灵犀 · 自定义资源
   "shadow": true
 }
 \`\`\`
+
+\`text\` 是正文色，\`accentText\` 是强调色——任务摘要里的状态词、agent 名字这类要跳出来的片段
+用它。两者都要在 \`background\` 上读得清楚。
 
 \`shape\` 可选：
 - \`round\` 普通气泡（默认）

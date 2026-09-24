@@ -173,6 +173,11 @@ async function call(path, init, { retriedAuth = false } = {}) {
       headers: {
         ...(init?.headers ?? {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // Who is calling, on EVERY request. /control and /task-event read the `agent` field out
+        // of the body, but /memory and /reminders are checked before their body is available to
+        // the permission layer, so those two read this header. Sending it everywhere means the
+        // two paths can never disagree about who we are.
+        ...(AGENT_ID ? { 'X-Lingxi-Agent': AGENT_ID } : {}),
       },
       // Short: every one of these is a local round trip, and an agent waiting on a desktop pet
       // is a bad trade. If the app is not there, fail fast and say so.
@@ -276,17 +281,24 @@ export const bridge = {
   /** Why attribution may be degraded, or null. Read after a call, surfaced on the result. */
   identityWarning: () => identityWarning,
 
-  remember: (text, kind) =>
-    call('/memory', {
+  // Both stamped like every other write. They were the two calls that built their body by hand
+  // and so travelled with no identity at all - which, once persistent writes needed a tier,
+  // meant every one of them was filed under `anonymous` and refused.
+  remember: async (text, kind) => {
+    await ensureRegistered();
+    return call('/memory', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, kind }),
-    }),
+      body: JSON.stringify(stamp({ text, kind })),
+    });
+  },
 
-  remind: (text, when) =>
-    call('/reminders', {
+  remind: async (text, when) => {
+    await ensureRegistered();
+    return call('/reminders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, ...when }),
-    }),
+      body: JSON.stringify(stamp({ text, ...when })),
+    });
+  },
 };

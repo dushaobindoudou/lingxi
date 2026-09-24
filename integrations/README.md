@@ -17,9 +17,9 @@
 适配器**故意不猜** `mood`——插件编一个出来，就是在瞎编整个设计赖以成立的那一个字段，
 而且会在没人看得见的地方错。它留空，应用按 `focused` 处理，模型真有话说时再覆盖。
 
-> **装哪一份：`hosts/`。** `integrations/hosts/<宿主>/` 下每个目录只为一个宿主负责，是现在的
-> 首选路径；`integrations/plugins/` 是上一版的通用插件，仍在仓库里但**不要和 `hosts/` 同时装**
-> ——两条路径会在事件流里留下两个署名。取舍对比见
+> **装哪一份：`hosts/`。** `integrations/hosts/<宿主>/` 下每个目录只为一个宿主负责，
+> 按那个宿主的真实形态来做，是唯一的接入路径。上一版的通用插件目录 `integrations/plugins/`
+> 已删除；装过 `plugins/claude-code` 的话重装一次 `hosts/claude`。取舍对比见
 > [`hosts/README.md`](hosts/README.md)。
 
 ```sh

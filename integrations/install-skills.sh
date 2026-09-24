@@ -70,13 +70,12 @@ cat <<EOF
 Skills only fire when the model decides to use one. To have the cat react regardless:
 
 Claude Code - add the plugin (hooks + skill + MCP in one):
-  claude plugin install $REPO/integrations/plugins/claude-code
+  claude plugin install $REPO/integrations/hosts/claude
 or, without plugins, the app's 主界面 -> Agent 接入 -> 安装 Claude Code hooks
 
-Codex - one line in ~/.codex/config.toml:
-  notify = ["node", "$REPO/integrations/adapters/lingxi-emit.mjs", "--host", "codex"]
-  WARNING: notify holds ONE program. If you already have one, fan out instead -
-  see $REPO/integrations/plugins/codex/README.md
+Codex - the installer writes the notify line and keeps any notifier you already have:
+  $REPO/integrations/hosts/codex/install.sh
+  (notify holds ONE program, so it fans out rather than overwriting yours)
 
 WorkBuddy - there is no deterministic half to add: it exposes no session-lifecycle hook, so the
 skill above IS the integration. For the typed tool path plus the badge:

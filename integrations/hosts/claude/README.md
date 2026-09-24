@@ -32,8 +32,9 @@ hook 命令与 app 主界面「Agent 接入」写入的命令**逐字相同**（
 - 装了插件就不用再点一键安装（反之亦然，不会叠加）；
 - app 的卸载逻辑 `remove_our_hook_entries` 按命令串识别，能把这个插件装的 hook 一并清掉。
 
-事件署名是桥接给的 `claude`（裸载荷路径不读机器身份文件）。要 `claude-code` 署名就用
-`integrations/plugins/claude-code`（node 适配器路径）——**两条路径别同时装**。
+事件署名是桥接给的 `claude`：裸载荷路径不读 `~/.lingxi/agent.json`，所以这半边的署名是固定的。
+模型主动那半边（skill / MCP）仍然读机器身份文件——两边署名不同是有意的，你能在事件流里
+分辨"宿主替你报的"和"模型自己报的"。
 
 ## 验收
 
