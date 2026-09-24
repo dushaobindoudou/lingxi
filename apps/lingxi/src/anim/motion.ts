@@ -1,5 +1,22 @@
+/**
+ * How a track moves between its keys.
+ *
+ *   smooth     (default) smoothstep: zero velocity at both ends of every segment. Right for a
+ *              pose settling into place - a head turn, a rear-up, a crouch.
+ *   linear     constant velocity. Right for a sweep that should not ease.
+ *   ballistic  a real parabola: the segment that RISES decelerates to zero at its top, the
+ *              segment that FALLS accelerates from zero. Right for anything leaving the floor.
+ *
+ * `ballistic` exists because smoothstep gets a jump exactly backwards. Under smoothstep the cat
+ * leaves the ground at zero vertical speed, speeds up in mid-air, stops dead at the apex and is
+ * lowered back down - it reads as being lifted on a string, which is what it is. Every airborne
+ * clip in the built-in library was authored that way, and the implied gravity of the worst of
+ * them was about a tenth of Earth's.
+ */
+export type MotionInterp = 'smooth' | 'linear' | 'ballistic';
+
 /** Sample rest-relative action offsets. Caller applies them after its base pose each frame. */
-export interface MotionTrack { channel:string; keys:number[][] }
+export interface MotionTrack { channel:string; keys:number[][]; interp?:MotionInterp }
 export interface Motion { id:string; name:string; duration:number; priority:number; expression:string; tracks:MotionTrack[]; category?:string; description?:string }
 export function sampleMotion(motion:Motion, elapsed:number): Record<string,number> {
   const result:Record<string,number>={};
@@ -11,7 +28,14 @@ export function sampleMotion(motion:Motion, elapsed:number): Record<string,numbe
     if(time<=keys[0][0])value=keys[0][1];
     else for(let i=1;i<keys.length;i++)if(time<=keys[i][0]){
       const [t0,v0]=keys[i-1], [t1,v1]=keys[i];
-      const u=(time-t0)/(t1-t0),e=u*u*(3-2*u);
+      const u=(time-t0)/(t1-t0);
+      // Ballistic: ease-out on the way up (fast off the floor, stopped at the apex) and ease-in
+      // on the way down. Those are the two halves of one parabola, so a rise key followed by a
+      // fall key of equal duration traces a genuine ballistic arc through the apex - and the
+      // implied gravity is then 2*height/riseTime^2, which is a number an author can check.
+      const e = track.interp==='linear' ? u
+        : track.interp==='ballistic' ? (v1>=v0 ? u*(2-u) : u*u)
+        : u*u*(3-2*u);
       value=v0+(v1-v0)*e;break;
     }
     result[track.channel]=value;
@@ -38,6 +62,7 @@ export function parseMotions(value:unknown,nodeIds:readonly string[],expressionN
       const [id,kind,axis,...extra]=track.channel.split('.');
       const special=['face.blink','face.tongue','face.open','groom.paw','groom.wash'].includes(track.channel)||(id==='pose'&&poseNames.includes(kind)&&axis===undefined);
       if(!special&&(!nodes.has(id)||!['rotation','position'].includes(kind)||!['x','y','z'].includes(axis)||extra.length))throw new Error(`不支持动作通道 ${track.channel}`);
+      if(track.interp!==undefined&&!['smooth','linear','ballistic'].includes(track.interp))throw new Error(`${m.id} 的 ${track.channel} 插值方式只能是 smooth / linear / ballistic`);
       if(!Array.isArray(track.keys)||track.keys.length<2||track.keys.length>128)throw new Error('每条轨道需 2–128 个关键帧');
       let previous=-1;
       for(const key of track.keys){

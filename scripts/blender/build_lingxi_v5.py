@@ -33,24 +33,9 @@ dark=mat('LX_MouthInterior',(.035,.009,.014));black=mat('LX_Pupil',(.004,.006,.0
 M=lambda n:{'HazelIris':iris,'ClearCornea':cornea,'Strand':strand}[n]
 
 def coat_material(name,region):
- m=softmat(name,(.30,.22,.15),.84,.08);nt=m.node_tree;p=nt.nodes.get('Principled BSDF')
- geo=nt.nodes.new('ShaderNodeNewGeometry');sep=nt.nodes.new('ShaderNodeSeparateXYZ');nt.links.new(geo.outputs['Position'],sep.inputs['Vector'])
- coords=nt.nodes.new('ShaderNodeCombineXYZ');nt.links.new(sep.outputs['X' if region=='head' else 'Y'],coords.inputs['X']);nt.links.new(sep.outputs['Y' if region=='head' else 'X'],coords.inputs['Y']);nt.links.new(sep.outputs['Z'],coords.inputs['Z'])
- wave=nt.nodes.new('ShaderNodeTexWave');wave.wave_type='BANDS';wave.bands_direction='X';wave.inputs['Scale'].default_value=8.5 if region=='head' else 3.4;wave.inputs['Distortion'].default_value=1.8 if region=='head' else 1.25;wave.inputs['Detail'].default_value=2
- nt.links.new(coords.outputs['Vector'],wave.inputs['Vector'])
- ramp=nt.nodes.new('ShaderNodeValToRGB');ramp.color_ramp.interpolation='EASE';ramp.color_ramp.elements[0].position=.31;ramp.color_ramp.elements[0].color=(.15,.105,.082,1) if region=='head' else (.20,.14,.10,1);ramp.color_ramp.elements[1].position=.68;ramp.color_ramp.elements[1].color=(.37,.28,.22,1) if region=='head' else (.38,.29,.21,1);nt.links.new(wave.outputs['Fac'],ramp.inputs['Fac'])
- if region=='body':
-  mask=nt.nodes.new('ShaderNodeMapRange');mask.clamp=True;mask.inputs['From Min'].default_value=.17;mask.inputs['From Max'].default_value=.235;mask.inputs['To Min'].default_value=1;mask.inputs['To Max'].default_value=0;nt.links.new(sep.outputs['Z'],mask.inputs['Value']);factor=mask.outputs['Result']
- elif region=='head':
-  ab=nt.nodes.new('ShaderNodeMath');ab.operation='ABSOLUTE';nt.links.new(sep.outputs['X'],ab.inputs[0])
-  xm=nt.nodes.new('ShaderNodeMapRange');xm.clamp=True;xm.inputs['From Min'].default_value=.017;xm.inputs['From Max'].default_value=.050;xm.inputs['To Min'].default_value=1;xm.inputs['To Max'].default_value=0;nt.links.new(ab.outputs[0],xm.inputs['Value'])
-  ym=nt.nodes.new('ShaderNodeMapRange');ym.clamp=True;ym.inputs['From Min'].default_value=-.31;ym.inputs['From Max'].default_value=-.39;ym.inputs['To Min'].default_value=0;ym.inputs['To Max'].default_value=1;nt.links.new(sep.outputs['Y'],ym.inputs['Value'])
-  mul=nt.nodes.new('ShaderNodeMath');mul.operation='MULTIPLY';nt.links.new(xm.outputs['Result'],mul.inputs[0]);nt.links.new(ym.outputs['Result'],mul.inputs[1]);factor=mul.outputs[0]
- else:factor=None
- if factor:
-  mix=nt.nodes.new('ShaderNodeMixRGB');mix.blend_type='MIX';mix.inputs[2].default_value=(.68,.63,.55,1);nt.links.new(factor,mix.inputs[0]);nt.links.new(ramp.outputs['Color'],mix.inputs[1]);nt.links.new(mix.outputs['Color'],p.inputs['Base Color'])
- else:nt.links.new(ramp.outputs['Color'],p.inputs['Base Color'])
- return m
+ # All pattern lives in the fur_color vertex attribute (the SAME map the groom samples),
+ # so surface and strands can never disagree again. The material only sets shading.
+ m=softmat(name,(.30,.22,.15),.84,.08);return m
 bodycoat=coat_material('BodyTabby','body');headcoat=coat_material('FaceTabby','head')
 
 def sphere(name,loc,scale,material=None):
@@ -73,7 +58,7 @@ parts=[sphere('Torso',(0,.07,.34),(.16,.30,.17)),sphere('Chest',(0,-.14,.35),(.1
 for s in [-1,1]:
  parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.047),(.064,.088,.047)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.046),(.061,.085,.045))]
 body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
-head=merge([sphere('Cranium',(0,-.285,.525),(.172,.145,.162)),sphere('MuzzleL',(-.037,-.405,.465),(.051,.039,.037)),sphere('MuzzleR',(.037,-.405,.465),(.051,.039,.037))],'LX_Head',.005)
+head=merge([sphere('Cranium',(0,-.285,.525),(.175,.148,.163)),sphere('CheekL',(-.083,-.335,.468),(.072,.088,.066)),sphere('CheekR',(.083,-.335,.468),(.072,.088,.066)),sphere('MuzzleL',(-.034,-.405,.462),(.056,.044,.040)),sphere('MuzzleR',(.034,-.405,.462),(.056,.044,.040))],'LX_Head',.005)
 head.data.materials.clear();head.data.materials.append(headcoat)
 # Muzzle remains divided from lower jaw; dark recessed opening gives a real oral interior.
 jaw=sphere('LX_Jaw',(0,-.378,.433),(.068,.065,.023),cream)
@@ -97,8 +82,8 @@ for s in [-1,1]:
   a=(x,y,.32);b=(x,y+(.012 if front else .065),.17);c=(x,y-(.02 if front else -.025),.065);d=(x,y-.08,.035)
   bone(pre+'Upper.'+suf,a,b,'Spine' if front else 'Pelvis');bone(pre+'Lower.'+suf,b,c,pre+'Upper.'+suf);bone(pre+'Paw.'+suf,c,d,pre+'Lower.'+suf)
   for i in range(4):bone(pre+f'Toe{i}.'+suf,(x+(i-1.5)*.023,y-.06,.04),(x+(i-1.5)*.023,y-.10,.033),pre+'Paw.'+suf)
- bone('Ear.'+suf,(s*.115,-.275,.625),(s*.14,-.25,.765),'Head')
- bone('Eye.'+suf,(s*.072,-.398,.541),(s*.072,-.43,.541),'Head')
+ bone('Ear.'+suf,(s*.100,-.275,.618),(s*.124,-.248,.730),'Head')
+ bone('Eye.'+suf,(s*.066,-.398,.545),(s*.066,-.43,.545),'Head')
  bone('Whisker.'+suf,(s*.048,-.43,.477),(s*.21,-.43,.48),'Head')
 tailpoints=[(0,.36,.33),(.04,.45,.36),(.09,.53,.40),(.13,.61,.45),(.14,.68,.50),(.12,.73,.55)]
 for i in range(5):bone('Tail'+str(i),tailpoints[i],tailpoints[i+1],'Pelvis' if i==0 else 'Tail'+str(i-1))
@@ -143,14 +128,15 @@ def bind(o,region):
  return pts
 bind(body,'body');bind(head,'Head')
 for o,r in [(jaw,'Jaw'),(cavity,'Head'),(tongue,'Tongue'),(nose,'Nose')]:bind(o,r)
-# Curved ear shells with pink inner membrane.
+# Curved ear shells with pink inner membrane. Wide base, low height, rounded tip:
+# the previous 72mm-wide 155mm-tall shell read as two paper spikes, not ears.
 ears=[]
 for s in [-1,1]:
  suf='L' if s<0 else 'R';vs=[];fs=[]
  for j in range(13):
-  t=j/12;wid=.072*(1-t)+.004
+  t=j/12;wid=.086*(1-t**1.5)+.005
   for k in range(13):
-   u=k/6-1;vs.append((s*(.112+.03*t)+wid*u,-.273+.022*t+.029*(1-u*u)*math.sin(math.pi*t),.616+.155*t))
+   u=k/6-1;vs.append((s*(.098+.026*t)+wid*u,-.273+.024*t+.032*(1-u*u)*math.sin(math.pi*t),.616+.128*t))
  for j in range(12):
   for k in range(12):a=j*13+k;fs.append((a,a+1,a+14,a+13))
  me=bpy.data.meshes.new('Ear');me.from_pydata(vs,[],fs);me.update();o=bpy.data.objects.new('LX_Ear.'+suf,me);scene.collection.objects.link(o);me.materials.append(nosemat)
@@ -164,7 +150,7 @@ def add_eye_blink(obj,center_z):
  for i,v in enumerate(key.data):v.co.z=center_z+(v.co.z-obj.data.vertices[i].co.z)*.035
  eye_shapes.append(obj)
 for s in [-1,1]:
- suf='L' if s<0 else 'R';cx=s*.072;cy=-.409;cz=.543;r=.029
+ suf='L' if s<0 else 'R';cx=s*.066;cy=-.409;cz=.547;r=.031
  eyeb=sphere('LX_Eyeball.'+suf,(cx,cy+.014,cz),(r,r*.76,r),black);bind(eyeb,'Eye.'+suf);add_eye_blink(eyeb,cz)
  vs=[(cx,cy-.017,cz)]+[(cx+math.cos(a)*r,cy-.006,cz+math.sin(a)*r) for a in np.linspace(0,2*math.pi,97)[:-1]]
  me=bpy.data.meshes.new('Iris');me.from_pydata(vs,[],[(0,i+1,(i+1)%96+1) for i in range(96)]);me.update();uv=me.uv_layers.new()
@@ -172,7 +158,7 @@ for s in [-1,1]:
   for li in p.loop_indices:
    v=me.vertices[me.loops[li].vertex_index].co;uv.data[li].uv=((v.x-cx)/r/2+.5,(v.z-cz)/r/2+.5)
  o=bpy.data.objects.new('LX_Iris.'+suf,me);scene.collection.objects.link(o);me.materials.append(M('HazelIris'));bind(o,'Eye.'+suf);add_eye_blink(o,cz)
- pupil=sphere('LX_Pupil.'+suf,(cx,cy-.025,cz),(.012,.0025,.016),black);bind(pupil,'Eye.'+suf);add_eye_blink(pupil,cz)
+ pupil=sphere('LX_Pupil.'+suf,(cx,cy-.025,cz),(.008,.0026,.019),black);bind(pupil,'Eye.'+suf);add_eye_blink(pupil,cz)
  glintmat=mat('LX_Catchlight',(1,.97,.88),.18)
  glint=sphere('LX_Catchlight.'+suf,(cx-.007,cy-.028,cz+.009),(.0045,.002,.005),glintmat);bind(glint,'Eye.'+suf);add_eye_blink(glint,cz)
  cor=sphere('LX_Cornea.'+suf,(cx,cy-.005,cz),(r*1.008,.015,r*1.008),M('ClearCornea'));bind(cor,'Eye.'+suf);add_eye_blink(cor,cz)
