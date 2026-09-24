@@ -65,7 +65,7 @@ jobs:
       # No toolchain action needed: the runner ships rustup, and rust-toolchain.toml pins
       # the channel, so the first cargo call installs and selects it.
       - name: Cache cargo registry and build output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
