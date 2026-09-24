@@ -118,7 +118,7 @@ if [ "$SKIP_TESTS" = 0 ]; then
   ( cd "$REPO" && npm test >/dev/null ) || die "unit tests failed - run npm test"
   ( cd "$APP_DIR" && npx tsc --noEmit ) || die "typecheck failed"
   ( cd "$TAURI_DIR" && cargo test --quiet >/dev/null ) || die "rust tests failed - run cargo test in $TAURI_DIR"
-  ( cd "$REPO" && npm run check >/dev/null ) || die "project checks failed - run npm run check"
+  ( cd "$REPO" && node scripts/check-project.mjs --tracked >/dev/null ) || die "project checks failed - run: node scripts/check-project.mjs --tracked"
   echo "  all green"
 fi
 

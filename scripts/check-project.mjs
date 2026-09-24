@@ -4,6 +4,12 @@ import { spawnSync } from 'node:child_process';
 import { validateSkin, validatePersonality } from '../packages/contracts/src/index.mjs';
 import { currentVersion } from './version.mjs';
 const root=process.cwd();
+// --tracked: only what git tracks. scripts/release.sh uses it - a release is built from a commit,
+// and someone's half-written untracked file elsewhere in the tree is not part of it. (Untracked
+// files that WOULD reach the app are caught by release.sh's own dirty check.)
+const tracked=process.argv.includes('--tracked')
+ ? new Set(spawnSync('git',['ls-files','-z'],{cwd:root,encoding:'utf8'}).stdout.split('\0').filter(Boolean).map((f)=>resolve(root,f)))
+ : null;
 async function files(dir) {
  const out=[];
  for(const e of await readdir(dir,{withFileTypes:true})) {
@@ -46,7 +52,7 @@ function ignoredPaths(paths) {
 // turns "fix the project" into a serial guessing game: fix, rerun, discover the next one.
 const problems=[];
 const missing=[];
-for(const p of await files(root)) {
+for(const p of (await files(root)).filter((f)=>!tracked||tracked.has(f))) {
  // tsconfig files are JSONC by convention (TypeScript itself allows comments in them), so
  // they are deliberately not held to strict JSON.
  if(p.endsWith('.json') && !/tsconfig[^/]*\.json$/.test(p)) {
