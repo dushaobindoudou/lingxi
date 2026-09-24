@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# The plugin's own management commands, behind /lingxi:setup and /lingxi:status.
+#
+#   lingxi-claude setup            install if missing, start, connect as Claude, show the page
+#   lingxi-claude setup --update   the same, and update the app to the latest release first
+#   lingxi-claude setup --no-open  do not bring the main window forward at the end
+#   lingxi-claude status           read-only report: app, data, connection, options, updates
+#   lingxi-claude open [page]      open the main window (home, agent, personality, play,
+#                                  appearance, settings), starting the app if needed
+#
+# Output is plain text meant to be read by Claude and summarised for the user: one fact per
+# line, ✓ / ✗ / ! marks, and every ✗ followed by what to do about it.
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$ROOT}"
+. "$ROOT/scripts/lib.sh"
+CLI="$ROOT/bin/lingxi"
+
+ok()   { printf '  ✓ %s\n' "$*"; }
+bad()  { printf '  ✗ %s\n' "$*"; PROBLEMS=$((PROBLEMS + 1)); }
+note() { printf '  ! %s\n' "$*"; }
+hint() { printf '      %s\n' "$*"; }
+PROBLEMS=0
+
+latest_release() {
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh release view --repo "$LX_REPO" --json tagName -q .tagName 2>/dev/null
+  else
+    curl -fsSL -m 8 "https://api.github.com/repos/$LX_REPO/releases/latest" 2>/dev/null \
+      | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | sed -n 1p
+  fi
+}
+
+# The tier the bridge holds for this agent, read off GET /agents without jq or python.
+permission_of_claude() {
+  "$CLI" agents 2>/dev/null | tr -d '\n' | tr '{}' '\n\n' \
+    | grep "\"id\": *\"$LX_AGENT_ID\"" | sed -n 's/.*"permission": *"\([a-z]*\)".*/\1/p' | sed -n 1p
+}
+
+report_data() {
+  if [ -d "$LX_CONFIG_DIR" ]; then
+    local kept="" f
+    for f in settings.json memory.json reminders.json agent-permissions.json assets; do
+      [ -e "$LX_CONFIG_DIR/$f" ] && kept="$kept $f"
+    done
+    ok "配置和数据：$LX_CONFIG_DIR"
+    [ -n "$kept" ] && hint "已有：${kept# }——重装或升级应用都会沿用，不会清掉"
+  else
+    note "还没有配置目录（应用第一次启动时创建）：$LX_CONFIG_DIR"
+  fi
+}
+
+report_duplicates() {
+  if lx_oneclick_hooks_installed; then
+    note "你之前用主界面的「一键接入」装过 hooks（在 ~/.claude/settings.json）"
+    hint "插件会自动让路，事件不会重复。想只留插件：主界面 → Agent 接入 → Claude Code →「断开」"
+  fi
+}
+
+cmd="${1:-status}"; shift || true
+case "$cmd" in
+  setup)
+    UPDATE=""; OPEN=1
+    for arg in "$@"; do
+      case "$arg" in --update|update) UPDATE="--update" ;; --no-open) OPEN=0 ;; esac
+    done
+    printf '灵犀 · Claude Code 插件设置\n\n应用\n'
+    APP="$(lx_app_path)"
+    if [ -z "$APP" ] || [ -n "$UPDATE" ]; then
+      if "$ROOT/scripts/install-app.sh" $UPDATE | sed 's/^/  /'; then
+        APP="$(lx_app_path)"
+      else
+        bad "安装没有完成：$(lx_state | cut -f2)"
+        hint "日志：$LX_STATE_DIR/install.log"
+        hint "仓库是私有的话需要先 gh auth login；也可以从 Releases 页面下载 .dmg 后运行："
+        hint "\"$ROOT/scripts/install-app.sh\" --from ~/Downloads/Lingxi-<版本>-universal.dmg"
+        exit 1
+      fi
+    else
+      ok "已安装：${APP}（$(lx_version_of "$APP")）"
+    fi
+
+    if lx_bridge_up; then
+      ok "正在运行"
+    else
+      lx_open_app "$APP" background
+      if lx_wait_bridge 20; then ok "已启动"; else bad "启动了，但 20 秒内桥没有就绪"; hint "看看屏幕上有没有系统弹窗；或运行：lingxi doctor"; exit 1; fi
+    fi
+
+    printf '\n连接\n'
+    if "$CLI" register "$LX_AGENT_ID" --logo "$ROOT/assets/claude-mark.svg" --name Claude --color '#D97757' >/dev/null 2>&1; then
+      ok "以「${LX_AGENT_ID}」身份接入（猫说话时气泡上会带 Claude 的标记）"
+    else
+      bad "登记身份失败"; hint "运行 lingxi doctor 看原因"
+    fi
+    tier="$(permission_of_claude)"
+    case "$tier" in
+      trusted)   ok "权限 trusted：能表演、说话、记住你的事、定提醒" ;;
+      performer) note "权限 performer：能表演和说话，但不能记事和提醒"
+                 hint "想开：主界面 → Agent 接入 →「权限与日志」→ 把 $LX_AGENT_ID 改成 trusted" ;;
+      observer)  note "权限 observer：只能读，猫不会对 Claude 做出反应"
+                 hint "主界面 → Agent 接入 →「权限与日志」里可以调高" ;;
+      *)         note "还读不到权限档位（第一次调用后才会出现）" ;;
+    esac
+    report_duplicates
+
+    printf '\n数据\n'
+    report_data
+
+    if [ "$OPEN" = 1 ]; then
+      printf '{"openManagement":"agent:claude","agent":"%s"}' "$LX_AGENT_ID" | lx_post /control >/dev/null
+      ok "已打开主界面的「Agent 接入」页，Claude Code 一栏里能看到连接状态和任务流"
+    fi
+    printf '\n'
+    if [ "$PROBLEMS" = 0 ]; then printf '✓ 灵犀已就绪。\n'; else printf '有 %s 项需要处理，见上面的 ✗。\n' "$PROBLEMS"; exit 1; fi
+    ;;
+
+  status)
+    printf '灵犀 · 状态\n\n应用\n'
+    APP="$(lx_app_path)"
+    if [ -n "$APP" ]; then
+      CURRENT="$(lx_version_of "$APP")"
+      ok "已安装：${APP}（${CURRENT}）"
+      if lx_bridge_up; then ok "正在运行"; else note "没有在运行"; hint "下次开会话会自动打开；现在打开：/lingxi:setup"; fi
+      LATEST="$(latest_release)"
+      if [ -n "$LATEST" ] && [ "${LATEST#v}" != "$CURRENT" ]; then
+        note "有新版本 $LATEST"; hint "更新：/lingxi:setup update（配置和数据会保留）"
+      elif [ -n "$LATEST" ]; then ok "已是最新版本"; fi
+    else
+      state="$(lx_state)"
+      case "$(cut -f1 <<<"$state")" in
+        downloading|verifying|installing) note "正在安装：$(cut -f2 <<<"$state")" ;;
+        failed) bad "安装失败：$(cut -f2 <<<"$state")"; hint "重试：/lingxi:setup；日志：$LX_STATE_DIR/install.log" ;;
+        *) bad "没有安装"; hint "安装：/lingxi:setup" ;;
+      esac
+    fi
+
+    printf '\n连接\n'
+    if lx_bridge_up; then
+      tier="$(permission_of_claude)"
+      [ -n "$tier" ] && ok "以「${LX_AGENT_ID}」身份接入，权限 $tier" || note "「${LX_AGENT_ID}」还没调用过（权限按默认值）"
+    fi
+    report_duplicates
+
+    printf '\n数据\n'
+    report_data
+
+    printf '\n插件选项（/plugin → lingxi → 配置）\n'
+    printf '  自动安装应用：%s    自动打开应用：%s    会话反应：%s\n' \
+      "$(lx_option auto_install true)" "$(lx_option auto_open true)" "$(lx_option reactions all)"
+    lx_falsy "${LINGXI_AUTOSTART:-}" && note "环境变量 LINGXI_AUTOSTART=${LINGXI_AUTOSTART} 关掉了自动打开"
+    lx_falsy "${LINGXI_AUTOINSTALL:-}" && note "环境变量 LINGXI_AUTOINSTALL=${LINGXI_AUTOINSTALL} 关掉了自动安装"
+    if [ -s "$LX_STATE_DIR/install.log" ]; then
+      printf '\n最近的安装记录\n'; tail -n 4 "$LX_STATE_DIR/install.log" | sed 's/^/  /'
+    fi
+    ;;
+
+  open)
+    page="${1:-home}"
+    case "$page" in home|agent|personality|play|appearance|settings) ;; *) echo "未知页面：$page" >&2; exit 2 ;; esac
+    APP="$(lx_app_path)"; [ -n "$APP" ] || { echo "灵犀还没安装，先运行 /lingxi:setup"; exit 1; }
+    lx_bridge_up || { lx_open_app "$APP" background; lx_wait_bridge 20 || { echo "灵犀没能启动"; exit 1; }; }
+    target="$page"; [ "$page" = agent ] && target="agent:claude"
+    printf '{"openManagement":"%s","agent":"%s"}' "$target" "$LX_AGENT_ID" | lx_post /control >/dev/null
+    echo "已打开灵犀主界面（${page}）"
+    ;;
+
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

@@ -1,58 +1,39 @@
 {
-  "description": "确定性生命周期 -> 灵犀。这些 hook 无论模型是否调用 skill 都会触发——这正是插件存在的理由：skill 是建议性的，多数会话不会主动调。它们只能报告发生了什么，报不了感受；感受需要读过工作的东西来补，那是 skill 的职责。SessionStart 先检查灵犀是否在跑、没跑就在后台拉起（LINGXI_AUTOSTART=0 可关），其余事件只投递不拉起。命令是纯 curl 直发 /task-event（Rust 桥接原生映射 Claude 载荷），与 app 一键安装的命令逐字相同，因此 app 的卸载逻辑能认出并接管它。",
+  "description": "灵犀桌面猫的生命周期 hooks。SessionStart 是检查模块：没装就后台安装、没开就后台打开、再补发这条事件，毫秒级返回，不拖住会话。其余事件只投递、异步执行，猫没开就什么都不做。与主界面「一键接入」写进 settings.json 的 hooks 共存时自动让路，不会重复。",
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup|resume|clear|compact",
         "hooks": [
-          {
-            "type": "command",
-            "command": "P=$(cat); (lx_up() { curl -s -m 1 --noproxy '*' -o /dev/null http://127.0.0.1:47811/health; }; lx_up || { case \"${LINGXI_AUTOSTART:-1}\" in 0|false|no) exit 0;; esac; open -g -b com.dushaobin.lingxi-desktop || exit 0; i=0; until lx_up; do i=$((i+1)); [ $i -gt 50 ] && exit 0; sleep 0.3; done; }; T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; printf '%s' \"$P\" | curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @-; rm -f \"$H\") </dev/null >/dev/null 2>&1 &",
-            "timeout": 3
-          }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh\"", "timeout": 10 }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
-            "timeout": 3
-          }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
         ]
       }
     ],
     "Notification": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
-            "timeout": 3
-          }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
-            "timeout": 3
-          }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
         ]
       }
     ],
     "StopFailure": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
-            "timeout": 3
-          }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
         ]
       }
     ]

@@ -10,24 +10,25 @@ description: Drive the 灵犀 desktop cat from Claude Code - report the emotiona
 
 ## 怎么调用
 
-一条 shell 命令，不需要 MCP（插件虽带 MCP，但 CLI 是超集且不用逐工具授权）：
+`lingxi` 已经在你的 PATH 上（插件的 `bin/`），并且**固定以 Claude 的身份说话**——气泡上会带
+Claude 的标记。一条 shell 命令，不需要 MCP（插件也带 MCP，但 CLI 是超集，而且不用逐工具授权）：
 
 ```bash
-lingxi state         # 猫在干什么
-lingxi task <state> <kind> <mood> "一句话"
-lingxi say "一句话"          # 猫说一句话
-lingxi remember "事实"       # 让猫记住你（owner/project/preference/moment）
+lingxi task <state> <kind> <mood> "一句话"   # 最常用
+lingxi say "一句话"          # 猫说一句短话
+lingxi remember "事实"       # 让猫记住关于用户的事（owner/project/preference/moment）
 lingxi remind 30 "该喝水了"  # 30 分钟后提醒
-lingxi integration   # 运行中应用的完整契约，以它为准
+lingxi state                 # 猫此刻在干什么
+lingxi integration           # 运行中应用的完整契约，以它为准
 ```
 
-`lingxi` 不在 PATH 时，应用每次启动都会写到：
-`~/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi`。
+**应用的安装和启动不归你管。** 会话开始时插件已经检查过：没装会在后台安装，没开会在后台打开。
+所以：
 
-**先确认猫在跑。** `lingxi up` 是检查模块：在跑就不动，没跑就在后台拉起（不抢焦点）并等它就绪。
-插件的 SessionStart hook 每次会话开始已经做过一次，其它子命令遇到猫没开也会自己拉起，所以通常
-不用单独调；CLI 文件还不存在（应用从没跑过）时用 `open -g -b com.dushaobin.lingxi-desktop`。
-拉不起来（没装应用、`LINGXI_AUTOSTART=0`）它会说原因——照实告诉用户，不要假装做了。
+- 会话开头的上下文里说灵犀**正在安装**或**没有安装**时，这个会话里就别调 `lingxi`，除非用户问起；
+  用户问起就提 `/lingxi:setup`（安装/修复/升级）和 `/lingxi:status`（看状态）。
+- 不要自己去下载、安装、`open` 应用，也不要改 `~/.claude/settings.json`——这些都有专门的命令。
+- `lingxi` 报错说连不上时照实说一句，建议 `/lingxi:status`，然后继续干正事。不要重试到底。
 
 ## 一、最重要的事：报**心情**，不只是状态
 

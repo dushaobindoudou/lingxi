@@ -27,7 +27,13 @@ esac
       case "${LINGXI_AUTOSTART:-1}" in
         0|false|no) exit 0 ;;
       esac
-      open -g -b com.dushaobin.lingxi-desktop || exit 0
+      # By path first: `open -b` lets Launch Services pick any registered copy, build outputs
+      # in src-tauri/target included (see integrations/hosts/PLUGIN-STANDARD.md, A2).
+      app=""
+      for candidate in "/Applications/灵犀.app" "${HOME}/Applications/灵犀.app"; do
+        [ -d "${candidate}" ] && { app="${candidate}"; break; }
+      done
+      if [ -n "${app}" ]; then open -g "${app}" || exit 0; else open -g -b com.dushaobin.lingxi-desktop || exit 0; fi
       i=0
       until lx_up; do
         i=$((i + 1))

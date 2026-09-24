@@ -69,8 +69,9 @@ cat <<EOF
 
 Skills only fire when the model decides to use one. To have the cat react regardless:
 
-Claude Code - add the plugin (hooks + skill + MCP in one):
-  claude plugin install $REPO/integrations/hosts/claude
+Claude Code - add the plugin (installs/opens the app, hooks, skill, /lingxi:setup):
+  claude plugin marketplace add dushaobindoudou/lingxi && claude plugin install lingxi@lingxi
+  (from this checkout instead: claude plugin marketplace add $REPO)
 or, without plugins, the app's 主界面 -> Agent 接入 -> 安装 Claude Code hooks
 
 Codex - the installer writes the notify line and keeps any notifier you already have:

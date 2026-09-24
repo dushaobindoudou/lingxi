@@ -6,7 +6,10 @@
 > （Claude 的 hooks 走 node 适配器，署名 `claude-code`）。它已删除：两套并存意味着装错一套
 > 就会在事件流里出现两个署名，而两边的文档各自推荐自己那套。
 > **如果你之前装的是 `plugins/claude-code`，重装一次**：
-> `claude plugin install <repo>/integrations/hosts/claude`。
+> `claude plugin marketplace add dushaobindoudou/lingxi && claude plugin install lingxi@lingxi`。
+>
+> 每个宿主插件要达到的标准（装应用、复用数据、不阻塞宿主、不重复上报……）和现状审查见
+> [`PLUGIN-STANDARD.md`](PLUGIN-STANDARD.md)；参照实现是 [`claude/`](claude/)。
 
 | 目录 | 宿主 | 形态 | 关键取舍 |
 |---|---|---|---|

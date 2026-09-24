@@ -181,6 +181,21 @@ function setupNav() {
   navButtons.forEach((btn) => {
     btn.addEventListener('click', () => showPage(btn.dataset.page ?? 'home'));
   });
+  // `page` or `page:panel`, sent by POST /control {"openManagement": ...} - the Claude Code plugin
+  // uses `agent:claude` right after installing the app, so the first thing the user sees is where
+  // Claude is connected. Validated on the Rust side; unknown names are simply ignored here.
+  const navigate = (route: string) => {
+    const [page, panel] = route.split(':');
+    if (!titles[page]) return;
+    showPage(page);
+    if (!panel) return;
+    const target = document.querySelector<HTMLElement>(`[data-agent-panel="${CSS.escape(panel)}"]`);
+    target?.classList.add('open');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const initial = (window as { __LINGXI_ROUTE__?: string }).__LINGXI_ROUTE__;
+  if (initial) requestAnimationFrame(() => navigate(initial));
+  void listen<string>('management-navigate', (event) => navigate(event.payload));
   document.getElementById('home-agent-summary')?.addEventListener('click', (event) => {
     const row = (event.target as HTMLElement).closest<HTMLButtonElement>('.home-agent-row');
     if (row) {
@@ -468,24 +483,45 @@ function escapeHtml(s: string): string {
   return div.innerHTML;
 }
 
+interface ClaudePluginStatus { installed: boolean; enabled: boolean; version: string | null; id: string | null }
+let claudePlugin: ClaudePluginStatus = { installed: false, enabled: false, version: null, id: null };
+
+/**
+ * Two ways Claude Code can be connected: the plugin (preferred - it also installs and opens the
+ * app, and teaches Claude to report moods) and the "一键接入" hooks in settings.json. With the
+ * plugin active the button would only add a second copy of what it already does, so it is
+ * hidden; if both are present the plugin already steps aside, and the page offers to remove the
+ * old hooks.
+ */
 function setClaudeConnectedUi(connected: boolean, hasLiveEvent: boolean) {
   const badge = document.getElementById('claude-status-badge');
   const detail = document.getElementById('claude-status-detail');
   const connectBtn = document.getElementById('claude-connect') as HTMLButtonElement | null;
   const disconnectBtn = document.getElementById('claude-disconnect') as HTMLButtonElement | null;
+  const viaPlugin = claudePlugin.installed && claudePlugin.enabled;
+  const linked = connected || viaPlugin;
   if (badge) {
-    badge.textContent = hasLiveEvent ? '● 已连接' : connected ? '◐ 已接入 · 等待事件' : '○ 未接入';
-    badge.classList.toggle('badge-muted', !connected);
+    badge.textContent = hasLiveEvent ? '● 已连接' : linked ? '◐ 已接入 · 等待事件' : '○ 未接入';
+    badge.classList.toggle('badge-muted', !linked);
   }
   if (detail) {
-    detail.textContent = hasLiveEvent
-      ? '正在接收真实任务事件。'
-      : connected
-        ? 'hooks 已安装，等待 Claude Code 触发第一个事件（提交一轮对话即可）。'
-        : '还没有安装 hooks。';
+    const version = claudePlugin.version ? ` v${claudePlugin.version}` : '';
+    detail.textContent = viaPlugin
+      ? `由 Claude Code 插件 lingxi${version} 接入${hasLiveEvent ? '，正在接收任务事件' : '，下一次会话开始时就会有事件'}。` +
+        (connected ? '另外还装着「一键接入」的 hooks——插件会自动让路，不会重复；想只留插件可以断开它们。' : '')
+      : claudePlugin.installed
+        ? `Claude Code 插件 lingxi${version} 装了但被停用了（/plugin 里可以启用）。` + (connected ? '目前由「一键接入」的 hooks 接入。' : '')
+        : hasLiveEvent
+          ? '正在接收真实任务事件。'
+          : connected
+            ? 'hooks 已安装，等待 Claude Code 触发第一个事件（提交一轮对话即可）。'
+            : '还没有接入。推荐装插件：claude plugin marketplace add dushaobindoudou/lingxi，再 claude plugin install lingxi@lingxi；或者点「一键接入」只装 hooks。';
   }
-  if (connectBtn) connectBtn.hidden = connected;
-  if (disconnectBtn) disconnectBtn.hidden = !connected;
+  if (connectBtn) connectBtn.hidden = linked;
+  if (disconnectBtn) {
+    disconnectBtn.hidden = !connected;
+    disconnectBtn.textContent = viaPlugin ? '移除一键接入的 hooks（插件已覆盖）' : '断开（移除 hooks）';
+  }
 }
 
 interface BridgeInfo {
@@ -977,6 +1013,11 @@ async function initCodexAdapter(): Promise<void> {
 }
 
 async function initClaudeAdapter() {
+  try {
+    claudePlugin = await invoke<ClaudePluginStatus>('claude_plugin_status');
+  } catch {
+    // older backend - behave as before, hooks only
+  }
   let connected = false;
   try {
     connected = await invoke<boolean>('claude_hooks_installed');

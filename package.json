@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test packages/*/test/*.test.mjs apps/lingxi/test/*.test.mjs",
+    "test": "node --experimental-strip-types --test packages/*/test/*.test.mjs apps/lingxi/test/*.test.mjs integrations/test/*.test.mjs",
     "check": "node scripts/check-project.mjs",
     "validate": "npm run check && npm test"
   }

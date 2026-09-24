@@ -1,0 +1,16 @@
+{
+  "name": "lingxi",
+  "owner": { "name": "dushaobin", "url": "https://github.com/dushaobindoudou" },
+  "metadata": {
+    "description": "灵犀桌面猫的 Claude Code 插件。安装：claude plugin marketplace add dushaobindoudou/lingxi，然后 claude plugin install lingxi@lingxi"
+  },
+  "plugins": [
+    {
+      "name": "lingxi",
+      "source": "./integrations/hosts/claude",
+      "description": "让灵犀桌面猫陪你用 Claude Code：自动安装/打开应用并复用已有数据，等你授权时提醒你，回合结束有反应，Claude 会报告心情、记事和提醒。",
+      "category": "productivity",
+      "keywords": ["desktop-pet", "companion", "macos"]
+    }
+  ]
+}

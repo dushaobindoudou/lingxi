@@ -154,23 +154,19 @@ function fromCodex(raw) {
  * put the event name in every payload (sessionStart and stop use different field sets).
  * `stop` is one agent turn ending, not proof the user's task is done.
  * The sidebar title is the name of the chat when it was opened. Later turns
- * drift off it, so it is never used as the summary. The current prompt is only
- * what was just asked. What the turn actually did comes from the model.
+ * drift off it, so it is never used as the summary, and neither is the prompt. What the
+ * turn actually did comes from the model.
  */
 function fromCursor(raw) {
   const event = raw.hook_event_name;
   const session = raw.session_id ?? raw.conversation_id ?? 'cursor-session';
-  const prompt = typeof raw.prompt === 'string' ? raw.prompt.replace(/\s+/g, ' ').trim() : '';
   switch (event) {
     case 'sessionStart':
       return { state: 'queued', kind: 'chat', taskId: session, summary: '会话开始' };
+    // Never the prompt itself: what the user typed is theirs, and "不采集任务正文" (docs/09) holds
+    // for every host. The event says a turn started, which is all the cat needs.
     case 'beforeSubmitPrompt':
-      return {
-        state: 'running',
-        kind: 'chat',
-        taskId: session,
-        summary: prompt || '新一轮对话开始',
-      };
+      return { state: 'running', kind: 'chat', taskId: session, summary: '新一轮对话开始' };
     case 'stop': {
       const status = raw.status ?? 'completed';
       if (status === 'error') {

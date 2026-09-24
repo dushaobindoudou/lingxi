@@ -54,7 +54,9 @@ function startAppCommand() {
     '[ "${LINGXI_AUTOSTART:-1}" = "0" ] && exit 7',
     // --noproxy, or a proxy's 502 for 127.0.0.1 reads as "the app is up" and nothing is started.
     "curl -s -m 2 --noproxy '*' -o /dev/null http://127.0.0.1:" + LINGXI_PORT + '/health && exit 0',
-    'open -g -b ' + BUNDLE_ID + ' 2>/dev/null || exit 8',
+    // By path first: `open -b` lets Launch Services pick any registered copy, build outputs in
+    // src-tauri/target included (integrations/hosts/PLUGIN-STANDARD.md, A2).
+    'open -g "/Applications/灵犀.app" 2>/dev/null || open -g "$HOME/Applications/灵犀.app" 2>/dev/null || open -g -b ' + BUNDLE_ID + ' 2>/dev/null || exit 8',
     'n=0; while [ $n -lt 150 ]; do',
     "  curl -s -m 2 --noproxy '*' -o /dev/null http://127.0.0.1:" + LINGXI_PORT + '/health && exit 0',
     '  sleep 0.1; n=$((n+1))',

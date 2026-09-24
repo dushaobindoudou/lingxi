@@ -1015,7 +1015,8 @@ const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 3] = [
 ];
 
 /// The five Claude Code lifecycle events this integration speaks, shared verbatim by the
-/// one-click installer and the plugin's hooks.json. Notification is the one that carries
+/// one-click installer and the plugin's hooks.json (whose scripts post the same raw payloads -
+/// see integrations/hosts/claude/scripts/event.sh). Notification is the one that carries
 /// permission prompts - the single most urgent thing an agent can be doing - and SessionStart
 /// is what makes the cat look up when a session begins; leaving either unsubscribed was the
 /// residue of the mapper drift this whole block exists to prevent. If you add one here, add it
@@ -1565,6 +1566,54 @@ fn uninstall_codex_notify() -> Result<String, String> {
     Ok(format!("已移除 {}。重启 Codex 后生效。", removed.join(" 与 ")))
 }
 
+/// Is the 灵犀 Claude Code plugin installed (and not disabled)?
+///
+/// Read from Claude Code's own records - `~/.claude/plugins/installed_plugins.json` and the
+/// `enabledPlugins` map in `~/.claude/settings.json` - so the Agent page can say "connected by
+/// the plugin" instead of offering a "一键接入" that would duplicate what the plugin already does.
+/// Any marketplace name counts (`lingxi@lingxi`, a fork's `lingxi@whatever`).
+#[derive(Serialize, Default, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+struct ClaudePluginStatus {
+    installed: bool,
+    enabled: bool,
+    version: Option<String>,
+    id: Option<String>,
+}
+
+fn claude_plugin_status_from(installed: &serde_json::Value, settings: &serde_json::Value) -> ClaudePluginStatus {
+    let Some(plugins) = installed.get("plugins").and_then(|p| p.as_object()) else { return ClaudePluginStatus::default() };
+    let Some((id, entries)) = plugins.iter().find(|(id, _)| id.split('@').next() == Some("lingxi")) else {
+        return ClaudePluginStatus::default();
+    };
+    let version = entries
+        .as_array()
+        .and_then(|list| list.first())
+        .and_then(|entry| entry.get("version"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    // Absent means enabled: a plugin is on unless the user switched it off.
+    let enabled = settings
+        .get("enabledPlugins")
+        .and_then(|e| e.get(id))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    ClaudePluginStatus { installed: true, enabled, version, id: Some(id.clone()) }
+}
+
+#[tauri::command]
+fn claude_plugin_status() -> ClaudePluginStatus {
+    let Ok(home) = std::env::var("HOME") else { return ClaudePluginStatus::default() };
+    let read = |path: PathBuf| {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+            .unwrap_or(serde_json::Value::Null)
+    };
+    let claude = PathBuf::from(home).join(".claude");
+    claude_plugin_status_from(&read(claude.join("plugins").join("installed_plugins.json")), &read(claude.join("settings.json")))
+}
+
 /// Read-only check so the management window shows the right state on open, even after an
 /// app restart where `ClaudeHooksState`'s in-memory event buffer is empty again.
 #[tauri::command]
@@ -1785,9 +1834,11 @@ const MAX_HOLD_MS: u64 = 10 * 60 * 1000;
 /// the whole point: the old code silently skipped unrecognised keys and then reported
 /// "empty command", so a caller who wrote `expresssion` was told they had sent nothing at all
 /// and would retry the same misspelling forever.
-const CONTROL_FIELDS: [&str; 18] = [
+const CONTROL_FIELDS: [&str; 19] = [
     "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform",
     "toy", "say", "sayMs", "resetPosition", "reloadAssets",
+    // Bring the main window forward at a page - see MANAGEMENT_PAGES.
+    "openManagement",
     // Who is calling and how much the user needs to see it. Both optional - see decision 003.
     "agent", "priority",
     // How long a queued reaction stays worth showing. See DEFAULT_REACTION_TTL_MS.
@@ -2757,7 +2808,7 @@ fn apply_control_command(
             }
             let type_ok = match key.as_str() {
                 "camera" | "skin" | "action" | "expression" | "perform" | "toy" | "say" | "mode"
-                | "agent" | "priority" => value.is_string(),
+                | "agent" | "priority" | "openManagement" => value.is_string(),
                 "scale" => value.is_number(),
                 "visible" | "resetPosition" | "reloadAssets" => value.is_boolean(),
                 "holdMs" | "sayMs" | "expiresInMs" => value.is_number(),
@@ -2936,6 +2987,15 @@ fn apply_control_command(
                 "The reload is asynchronous. Poll GET /assets/status for the validation result -                  lastLoadedAt will move and lastErrors will hold any per-file complaints."
             ),
         );
+    }
+    if let Some(route) = command.get("openManagement").and_then(|v| v.as_str()) {
+        match parse_management_route(route) {
+            Ok(route) => {
+                open_management_at(app, Some(route.clone()));
+                applied.push(format!("openManagement={route}"));
+            }
+            Err(reason) => rejected.push(format!("openManagement: {reason}")),
+        }
     }
     if applied.is_empty() && rejected.is_empty() {
         rejected.push(format!(
@@ -5001,12 +5061,55 @@ fn open_or_focus_debug_window(app: &tauri::AppHandle) {
 }
 
 fn open_or_focus_management_window(app: &tauri::AppHandle) {
-    if let Some(existing) = app.get_webview_window("management") {
-        let _ = existing.show();
-        let _ = existing.set_focus();
-        return;
+    open_management_at(app, None);
+}
+
+/// The main window's pages, as management.html names them (`data-page`).
+const MANAGEMENT_PAGES: [&str; 6] = ["home", "agent", "personality", "play", "appearance", "settings"];
+
+/// `page` or `page:panel` - e.g. `agent:claude` opens Agent 接入 with the Claude Code panel
+/// expanded. This is how an integration shows the user where it is connected (the Claude Code
+/// plugin does it once, right after installing the app): the one piece of setup that needs the
+/// user's eyes, reached without them hunting through a tray menu for it.
+fn parse_management_route(route: &str) -> Result<String, String> {
+    let (page, panel) = route.split_once(':').unwrap_or((route, ""));
+    if !MANAGEMENT_PAGES.contains(&page) {
+        return Err(format!("unknown page \"{page}\" (expected one of {MANAGEMENT_PAGES:?})"));
     }
+    if panel.len() > 32 || !panel.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return Err(format!("panel \"{panel}\" must be a short lowercase id like \"claude\""));
+    }
+    Ok(if panel.is_empty() { page.to_string() } else { format!("{page}:{panel}") })
+}
+
+/// Open (or bring forward) the main window, optionally at a route. Always on the main thread:
+/// this is reached from the bridge's worker thread as well as from the tray, and AppKit windows
+/// must be created where AppKit runs.
+fn open_management_at(app: &tauri::AppHandle, route: Option<String>) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(existing) = handle.get_webview_window("management") {
+            let _ = existing.show();
+            let _ = existing.unminimize();
+            let _ = existing.set_focus();
+            if let Some(route) = route {
+                let _ = existing.emit("management-navigate", route);
+            }
+            return;
+        }
+        build_management_window(&handle, route);
+    });
+}
+
+fn build_management_window(app: &tauri::AppHandle, route: Option<String>) {
+    // A window that does not exist yet cannot receive an event, so the route rides in as a
+    // global the page reads on load. serde_json quotes it, so no route string can escape it.
+    let script = format!(
+        "window.__LINGXI_ROUTE__ = {};",
+        serde_json::to_string(&route.unwrap_or_default()).unwrap_or_else(|_| "\"\"".into())
+    );
     let builder = WebviewWindowBuilder::new(app, "management", WebviewUrl::App("management.html".into()))
+        .initialization_script(&script)
         .title("灵犀 · 主界面")
         .inner_size(960.0, 680.0)
         .min_inner_size(860.0, 620.0)
@@ -5024,6 +5127,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             primary_monitor_bounds,
             debug_log,
+            claude_plugin_status,
             set_scale,
             set_companion_visible,
             set_cat_identity,
@@ -5840,20 +5944,43 @@ command = "node"
     }
 
     #[test]
-    fn the_claude_plugin_ships_exactly_the_hooks_the_app_installs() {
-        // Two install paths, one contract: the app's uninstall recognises the plugin's hooks only
-        // because the strings are identical, and a session started under either must check the
-        // app the same way.
-        let plugin: serde_json::Value =
-            serde_json::from_str(include_str!("../../../../integrations/hosts/claude/hooks/hooks.json")).unwrap();
-        let events = plugin["hooks"].as_object().unwrap();
-        assert_eq!(events.len(), CLAUDE_HOOK_EVENTS.len());
-        for event in CLAUDE_HOOK_EVENTS {
-            assert_eq!(
-                events[event][0]["hooks"][0]["command"], claude_hook_command_for(event),
-                "integrations/hosts/claude/hooks/hooks.json's {event} differs from what 一键接入 writes"
-            );
+    fn the_plugin_recognises_every_hook_line_the_app_writes() {
+        // Claude Code does not deduplicate a plugin's hook against a settings.json hook, so with
+        // both "一键接入" and the plugin installed every event would reach the cat twice. The
+        // plugin steps aside when it finds the app's hooks, and it finds them by this marker -
+        // so every command the app writes, current or legacy, has to carry it.
+        let plugin_lib = include_str!("../../../../integrations/hosts/claude/scripts/lib.sh");
+        let marker = "127.0.0.1:47811/task-event";
+        assert!(plugin_lib.contains(&format!("grep -q '{marker}'")), "lib.sh no longer looks for {marker}");
+        for command in [CLAUDE_HOOK_COMMAND, CLAUDE_SESSION_START_COMMAND].iter().chain(LEGACY_CLAUDE_HOOK_COMMANDS.iter()) {
+            assert!(command.contains(marker), "the plugin would not recognise: {command}");
         }
+    }
+
+    #[test]
+    fn management_routes_are_checked_before_a_window_opens() {
+        assert_eq!(parse_management_route("agent:claude").as_deref(), Ok("agent:claude"));
+        assert_eq!(parse_management_route("settings").as_deref(), Ok("settings"));
+        assert!(parse_management_route("admin").is_err(), "unknown page");
+        assert!(parse_management_route("agent:<script>").is_err(), "panel ids are plain lowercase");
+        assert!(parse_management_route(&format!("agent:{}", "a".repeat(40))).is_err());
+        assert!(CONTROL_FIELDS.contains(&"openManagement"));
+    }
+
+    #[test]
+    fn the_agent_page_knows_when_the_claude_plugin_is_connected() {
+        let installed = serde_json::json!({ "version": 2, "plugins": {
+            "other@x": [ { "version": "1.0.0" } ],
+            "lingxi@lingxi": [ { "scope": "user", "version": "0.2.0" } ]
+        }});
+        let status = claude_plugin_status_from(&installed, &serde_json::json!({}));
+        assert!(status.installed && status.enabled, "installed and not switched off means enabled");
+        assert_eq!(status.version.as_deref(), Some("0.2.0"));
+        let off = serde_json::json!({ "enabledPlugins": { "lingxi@lingxi": false } });
+        assert!(!claude_plugin_status_from(&installed, &off).enabled);
+        assert!(!claude_plugin_status_from(&serde_json::json!({ "plugins": { "lingxi-other@x": [] } }), &off).installed,
+            "only a plugin named exactly lingxi counts");
+        assert!(!claude_plugin_status_from(&serde_json::Value::Null, &serde_json::Value::Null).installed);
     }
 
     #[test]

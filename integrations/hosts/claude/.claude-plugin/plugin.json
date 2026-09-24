@@ -1,8 +1,32 @@
 {
-  "name": "lingxi-claude",
-  "version": "0.1.0",
-  "description": "灵犀桌面猫的 Claude Code 专用插件：hooks 让猫在会话开始、等待授权、回合结束时必然有反应（不依赖模型主动调用），skill 教模型把任务语义和心情报给猫，MCP 让模型直接操控猫。自包含——hooks 是纯 curl，不依赖 node 和仓库内其他目录。",
-  "author": { "name": "dushaobin" },
-  "homepage": "https://github.com/dushaobindoudou/lingxi",
-  "keywords": ["desktop-pet", "companion", "notifications"]
+  "name": "lingxi",
+  "displayName": "灵犀 Lingxi",
+  "version": "0.2.0",
+  "description": "让灵犀桌面猫陪你用 Claude Code：会话开始时检查并自动安装、打开应用（配置和数据跨重装保留），等你授权时提醒你、回合结束有反应，并教 Claude 在合适的时候报告心情、让猫说话、记住你的事和定提醒。命令：/lingxi:setup、/lingxi:status。",
+  "author": { "name": "dushaobin", "url": "https://github.com/dushaobindoudou" },
+  "homepage": "https://github.com/dushaobindoudou/lingxi/tree/main/integrations/hosts/claude",
+  "repository": "https://github.com/dushaobindoudou/lingxi",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "keywords": ["desktop-pet", "companion", "notifications", "macos", "lingxi"],
+  "userConfig": {
+    "auto_install": {
+      "type": "boolean",
+      "title": "没装灵犀时自动安装",
+      "description": "会话开始时如果这台 Mac 上没有灵犀，就在后台从 GitHub Releases 下载、校验并安装（约 16 MB），装好自动打开。关掉后改用 /lingxi:setup 手动安装。",
+      "default": true
+    },
+    "auto_open": {
+      "type": "boolean",
+      "title": "会话开始时自动打开灵犀",
+      "description": "灵犀装了但没在运行时，在后台打开它（不抢焦点）。只在会话开始时做一次；会话中途你把猫关了，插件不会再把它拉起来。",
+      "default": true
+    },
+    "reactions": {
+      "type": "string",
+      "title": "猫对会话的反应",
+      "description": "all：每条提问、等你授权、回合结束都会反应；important：只在会话开始、等你授权、回合结束和出错时反应；off：插件不发生命周期事件（Claude 自己报告的心情照常）。",
+      "options": ["all", "important", "off"],
+      "default": "all"
+    }
+  }
 }

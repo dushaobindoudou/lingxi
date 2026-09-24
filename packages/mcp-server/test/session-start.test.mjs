@@ -16,7 +16,6 @@ import { tmpdir, platform } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
-import { BUNDLE_ID } from '../src/launch.mjs';
 
 const SERVER = fileURLToPath(new URL('../src/index.mjs', import.meta.url));
 
@@ -83,7 +82,7 @@ test('a host connecting starts the cat, without making the handshake wait for it
     assert.ok(handshakeMs < 1500, `the handshake took ${handshakeMs}ms - it must not wait for the app to boot`);
     assert.ok(await waitFor(() => existsSync(machine.log), 3000), 'the app was never asked to start');
     const calls = readFileSync(machine.log, 'utf8').trim().split('\n');
-    assert.deepEqual(calls, [`-g -b ${BUNDLE_ID}`], 'exactly one start, in the background (-g), by bundle id');
+    assert.deepEqual(calls, ['-g /Applications/灵犀.app'], 'exactly one start, in the background (-g), by the installed path - never whichever copy Launch Services prefers');
   } finally {
     child.kill();
   }

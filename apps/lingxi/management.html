@@ -90,9 +90,14 @@
                 </div>
                 <p class="hint" id="claude-connect-result" hidden></p>
                 <p class="hint">
-                  接入方式：把 <code>UserPromptSubmit</code> / <code>Stop</code> / <code>StopFailure</code> 三个 hooks
-                  合并写入 <code>~/.claude/settings.json</code>（原文件先备份成 <code>.lingxi-backup</code>，只追加进数组，不覆盖你已有的
-                  hooks）。断开会精确移除这三条，其余 hooks 不受影响。收到第一个真实事件后状态才会变绿。
+                  推荐用 <strong>Claude Code 插件</strong>：<code>claude plugin marketplace add dushaobindoudou/lingxi</code>，
+                  再 <code>claude plugin install lingxi@lingxi</code>。它会在会话开始时检查灵犀、没开就打开、等你授权时提醒你，
+                  还会教 Claude 报告心情、记事和提醒；在 Claude Code 里用 <code>/lingxi:setup</code>、<code>/lingxi:status</code>。
+                </p>
+                <p class="hint">
+                  「一键接入」只装 hooks：把会话开始、提问、通知、回合结束、出错五个 hooks 合并写入
+                  <code>~/.claude/settings.json</code>（原文件先备份成 <code>.lingxi-backup</code>，只追加，不覆盖你已有的 hooks）。
+                  断开会精确移除这几条。两种方式同时装也不会重复——插件发现这些 hooks 会自动让路。
                 </p>
                 <h2 class="section-gap" style="margin-top: 14px">任务流</h2>
                 <ul class="task-list" id="claude-task-list">

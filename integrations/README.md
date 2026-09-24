@@ -23,8 +23,9 @@
 > [`hosts/README.md`](hosts/README.md)。
 
 ```sh
-# Claude Code：hooks + skill + MCP 一起装（hooks 是纯 curl，不依赖 node）
-claude plugin install <repo>/integrations/hosts/claude
+# Claude Code：插件会自己检查、安装、打开灵犀（复用已有数据），带 hooks、skill、/lingxi:setup
+claude plugin marketplace add dushaobindoudou/lingxi
+claude plugin install lingxi@lingxi
 
 # Codex：确定性事件由 notify 承担。notify 是 TOML 单键——机器上已有别的 notifier
 # （比如 SkyComputerUseClient）时不要覆盖，安装器会写一个 fanout 脚本两边都发：

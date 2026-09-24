@@ -1,7 +1,8 @@
-// The Claude Code hooks, run for real under sh: SessionStart is the check that brings the cat up.
+// The "一键接入" hooks, run for real under sh: their SessionStart is the check that brings the cat up.
 //
-// The commands are taken verbatim from integrations/hosts/claude/hooks/hooks.json, which a Rust
-// test pins to the strings "一键接入" writes - so this exercises both install paths at once.
+// The commands are read out of lib.rs - CLAUDE_SESSION_START_COMMAND and CLAUDE_HOOK_COMMAND, the
+// exact strings the app writes into ~/.claude/settings.json - so what runs here is what runs on a
+// user's machine. (The Claude Code plugin has its own scripts; integrations/test covers those.)
 // `curl` and `open` are replaced on PATH by scripts that simulate the app: /health refuses until
 // `open` has "launched" it, and launching it is what creates the token file, exactly as on a
 // machine where the app has never run.
@@ -13,8 +14,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const hooks = JSON.parse(readFileSync(fileURLToPath(new URL('../../../integrations/hosts/claude/hooks/hooks.json', import.meta.url)), 'utf8')).hooks;
-const commandFor = (event) => hooks[event][0].hooks[0].command;
+const LIB_RS = readFileSync(fileURLToPath(new URL('../src-tauri/src/lib.rs', import.meta.url)), 'utf8');
+/** A `const NAME: &str = concat!("...", "...");` from lib.rs, as the string it compiles to. */
+function rustConst(name) {
+  const body = LIB_RS.match(new RegExp(`const ${name}: &str = concat!\\(([\\s\\S]*?)\\n\\);`))?.[1];
+  assert.ok(body, `${name} not found in lib.rs`);
+  return [...body.matchAll(/^\s*"((?:[^"\\]|\\.)*)",?\s*$/gm)].map((m) => JSON.parse(`"${m[1]}"`)).join('');
+}
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'Stop', 'StopFailure'];
+const commandFor = (event) => rustConst(event === 'SessionStart' ? 'CLAUDE_SESSION_START_COMMAND' : 'CLAUDE_HOOK_COMMAND');
 
 const PAYLOAD = JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'abc', source: 'startup' });
 const TOKEN = 'x'.repeat(40);
@@ -100,7 +108,7 @@ test('LINGXI_AUTOSTART=0 leaves a closed cat closed', async () => {
 });
 
 test('no other hook starts the app - only the session boundary may', async () => {
-  for (const event of Object.keys(hooks).filter((e) => e !== 'SessionStart')) {
+  for (const event of EVENTS.filter((e) => e !== 'SessionStart')) {
     const box = machine();
     assert.equal(runHook(event, box).status, 0, `${event} must exit 0 with the app closed`);
     await new Promise((r) => setTimeout(r, 300));

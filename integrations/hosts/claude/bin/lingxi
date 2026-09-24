@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# `lingxi` inside Claude Code - the plugin's bin/ is on the Bash tool's PATH, so the model never
+# has to discover where the shell client lives.
+#
+# It is the same client the app ships (scripts/lingxi-cli is a byte-for-byte copy of
+# integrations/cli/lingxi, held there by a test), with one difference: it always speaks as
+# Claude. ~/.lingxi/agent.json names ONE agent per machine, and on a machine that also runs
+# WorkBuddy or Codex that name is theirs - calls from this session would be credited to the
+# wrong agent. LINGXI_CLAUDE_AGENT overrides the id if you run several Claude identities.
+export LINGXI_AGENT="${LINGXI_CLAUDE_AGENT:-claude}"
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/lingxi-cli" "$@"

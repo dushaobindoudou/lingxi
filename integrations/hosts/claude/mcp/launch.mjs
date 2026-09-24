@@ -60,6 +60,8 @@ export function launchBlockedReason() {
  * be disabled or still indexing on a fresh copy, hence the fallback list of the usual places.
  */
 export function installedPath() {
+  const usual = LIKELY_PATHS.find((path) => existsSync(path));
+  if (usual) return usual;
   try {
     const found = execFileSync(
       'mdfind',
@@ -68,12 +70,14 @@ export function installedPath() {
     )
       .split('\n')
       .map((line) => line.trim())
-      .filter(Boolean);
+      // Never a build output, a mounted image or the Trash - starting the copy in
+      // src-tauri/target/…/bundle instead of the installed app is what this used to do.
+      .filter((line) => line && !/^\/Volumes\/|\/target\/|\/\.Trash\/|\/node_modules\//.test(line));
     if (found.length) return found[0];
   } catch {
     // mdfind missing, disabled, or slow - fall through to the known locations.
   }
-  return LIKELY_PATHS.find((path) => existsSync(path)) ?? null;
+  return null;
 }
 
 /** Ask the app to open, without waiting for it and without stealing focus. */
@@ -81,16 +85,13 @@ function spawnApp() {
   return new Promise((resolve) => {
     // `-g` keeps the cat from jumping in front of whatever the user is doing. `-j` would also
     // hide it, but the whole point is that it becomes visible on the desktop.
-    execFile('open', ['-g', '-b', BUNDLE_ID], { timeout: 5000 }, (error) => {
-      if (!error) return resolve(null);
-      const path = installedPath();
-      if (!path) return resolve(error.message);
-      // Bundle id lookup can fail on a copy Launch Services has not registered yet (a fresh
-      // build that has never been opened by hand). The path always works.
-      execFile('open', ['-g', path], { timeout: 5000 }, (pathError) =>
-        resolve(pathError ? pathError.message : null),
-      );
-    });
+    // By path first: `open -b` lets Launch Services choose among every copy it has ever seen,
+    // build outputs included. The bundle id is the fallback for a copy found nowhere else.
+    const path = installedPath();
+    const byId = () => execFile('open', ['-g', '-b', BUNDLE_ID], { timeout: 5000 }, (error) =>
+      resolve(error ? error.message : null));
+    if (!path) return byId();
+    execFile('open', ['-g', path], { timeout: 5000 }, (error) => (error ? byId() : resolve(null)));
   });
 }
 
