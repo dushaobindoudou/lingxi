@@ -17,6 +17,8 @@ import skinCatalogue from './data/skins.json';
 import actionCatalogue from './data/actions.json';
 import { BUILT_IN_EXPRESSIONS } from './rig/art.ts';
 import { ASSETS_README } from './rig/custom-assets.ts';
+import homeSceneUrl from '../../../assets/tray-menu/v1/window-desk-scene.png';
+import homeCatUrl from '../../../assets/tray-menu/v1/lingxi-resting-cat.png';
 // The MCP tool table is rendered from the server package's own catalogue rather than typed into
 // management.html, so the page cannot describe a tool surface that does not exist - which is
 // precisely what it did before: six invented tool names under a heading announcing that no MCP
@@ -161,13 +163,50 @@ const TASK_STATE_LABELS: Record<string, string> = {
 
 function setupNav() {
   const navButtons = document.querySelectorAll<HTMLButtonElement>('.nav-item');
-  navButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      navButtons.forEach((b) => b.classList.toggle('active', b === btn));
-      document.querySelectorAll<HTMLElement>('.page').forEach((page) => {
-        page.classList.toggle('active', page.id === `page-${btn.dataset.page}`);
-      });
+  const titles: Record<string, string> = {
+    home: '此刻', agent: 'Agent 接入', personality: '性格行为', play: '玩法', appearance: '外观', settings: '设置',
+  };
+  function showPage(pageName: string) {
+    navButtons.forEach((button) => {
+      const active = button.dataset.page === pageName;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-current', active ? 'page' : 'false');
     });
+    document.querySelectorAll<HTMLElement>('.page').forEach((page) => {
+      page.classList.toggle('active', page.id === `page-${pageName}`);
+    });
+    const title = document.getElementById('page-title');
+    if (title) title.textContent = titles[pageName] ?? '灵犀';
+  }
+  navButtons.forEach((btn) => {
+    btn.addEventListener('click', () => showPage(btn.dataset.page ?? 'home'));
+  });
+  document.getElementById('home-agent-summary')?.addEventListener('click', (event) => {
+    const row = (event.target as HTMLElement).closest<HTMLButtonElement>('.home-agent-row');
+    if (row) {
+      const target = row.dataset.agentTarget;
+      if (!target) return;
+      showPage('agent');
+      const panel = document.querySelector<HTMLElement>(`[data-agent-panel="${target}"]`);
+      panel?.classList.add('open');
+      panel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+}
+
+function setupHomeHero() {
+  const hero = document.getElementById('home-hero');
+  const cat = document.getElementById('home-cat-image') as HTMLImageElement | null;
+  if (hero) hero.style.backgroundImage = `url("${homeSceneUrl}")`;
+  if (cat) cat.src = homeCatUrl;
+  document.getElementById('home-play')?.addEventListener('click', async () => {
+    const result = document.getElementById('home-play-result');
+    try {
+      await invoke('set_toy', { kind: 'feather' });
+      if (result) result.textContent = '逗猫棒放好了，等你来逗。';
+    } catch (error) {
+      if (result) result.textContent = `暂时没放好：${String(error)}`;
+    }
   });
 }
 
@@ -356,37 +395,11 @@ function renderPlayPage() {
   document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
 }
 
-function formatDuration(ms: number): string {
-  const totalMinutes = Math.round(ms / 60000);
-  if (totalMinutes < 1) return '不到 1 分钟';
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`;
-}
-
-/** `null` idleMs means "no activity has ever been perceived" - say that, not NaNm. */
-function formatIdle(ms: number | null): string {
-  if (ms === null) return '还没有互动记录';
-  return formatDuration(ms);
-}
-
 function renderPerception(snapshot: PerceptionSnapshot) {
   const stateEl = document.getElementById('home-cat-state');
   if (stateEl) {
     const label = snapshot.petState ? (PET_STATE_LABELS[snapshot.petState] ?? snapshot.petState) : '还没收到状态';
-    stateEl.textContent = `状态：${label}`;
-  }
-  const growthEl = document.getElementById('home-growth-line');
-  if (growthEl && snapshot.growth) {
-    const level = Math.max(1, Math.floor(snapshot.growth.engagementScore / 20) + 1);
-    growthEl.textContent = `成长：Lv.${level} · 参与度 ${Math.round(snapshot.growth.engagementScore)}/100`;
-  }
-  const activityEl = document.getElementById('home-activity-line');
-  if (activityEl && snapshot.activity) {
-    const a = snapshot.activity;
-    activityEl.textContent =
-      `互动 ${a.clicksOnPet} 次 · 拖拽 ${a.dragCount} 次 · ` +
-      `靠近陪伴 ${formatDuration(a.cursorNearPetMs)} · 距上次互动 ${formatIdle(a.idleMs)}`;
+    stateEl.textContent = `现在，${label}`;
   }
 }
 
@@ -440,7 +453,8 @@ function renderClaudeTaskList() {
     .slice(0, 20)
     .map((e) => {
       const time = new Date(e.observedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-      const label = TASK_STATE_LABELS[e.state] ?? e.state;
+      const label = e.provider === 'codex' && e.state === 'completed'
+        ? '本轮回复结束' : (TASK_STATE_LABELS[e.state] ?? e.state);
       const staleNote = e.stale ? '（过期，未推断完成）' : '';
       const summary = e.summary ? escapeHtml(e.summary) : '';
       return `<li class="task-list-item"><span class="task-time">${time}</span><span class="task-label">${label}${staleNote}</span><span class="task-summary">${summary}</span></li>`;
@@ -558,6 +572,310 @@ async function renderBridgeInfo(): Promise<void> {
       ? `已登记的 agent：${info.agents.map((agent) => `${agent.badge} ${agent.name}`).join('、')}`
       : '已登记的 agent：还没有。agent 第一次调用 lingxi_register 或 POST /agents 后会出现在这里。';
   }
+}
+
+interface AgentRow {
+  id: string;
+  name: string;
+  badge: string;
+  color: string;
+  lastSeen: number;
+  claims: number;
+  permission: string;
+  /** False for an agent that has a saved grant but has not called yet this session. */
+  seen: boolean;
+}
+
+interface AgentCall {
+  at: number;
+  agent: string;
+  surface: string;
+  asked: string;
+  outcome: 'applied' | 'rejected' | 'denied' | 'throttled';
+  reason?: string;
+}
+
+interface HomeActivity {
+  provider: string;
+  agent?: string;
+  taskId: string;
+  state: string;
+  kind: string;
+  summary: string;
+  updatedAt: number;
+  busy: boolean;
+  name?: string;
+  badge?: string;
+  color?: string;
+}
+
+interface AgentActivity {
+  agents: AgentRow[];
+  activity?: HomeActivity[];
+  log: AgentCall[];
+  permissions: string[];
+  writeLimit: number;
+  writeWindowMs: number;
+  settingsFields: string[];
+}
+
+const OUTCOME_LABEL: Record<AgentCall['outcome'], string> = {
+  applied: '已执行',
+  rejected: '被拒',
+  denied: '无权限',
+  throttled: '频控',
+};
+
+function relativeTime(at: number): string {
+  if (!at) return '—';
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (seconds < 60) return `${seconds} 秒前`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟前`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} 小时前`;
+  return `${Math.round(seconds / 86400)} 天前`;
+}
+
+function agentTarget(id: string): string | undefined {
+  const normalized = id.toLowerCase();
+  if (normalized.includes('dsh') || normalized.includes('deepseek')) return 'dsh';
+  if (normalized.includes('claude')) return 'claude';
+  if (normalized.includes('codex')) return 'codex';
+  return undefined;
+}
+
+function activityStateLabel(activity: HomeActivity): string {
+  const state = TASK_STATE_LABELS[activity.state] ?? activity.state;
+  const summary = activity.summary.trim();
+  if (activity.state === 'completed' && activity.kind === 'chat') {
+    return summary ? `本轮回复结束：${summary}` : '本轮回复结束';
+  }
+  if (activity.state === 'completed' && summary) return `已完成：${summary}`;
+  if (activity.state === 'failed' && summary) return `失败：${summary}`;
+  if (summary) return `${state}：${summary}`;
+  return state;
+}
+
+function renderHomeAgents(data: AgentActivity) {
+  const container = document.getElementById('home-agent-summary');
+  if (!container) return;
+  container.replaceChildren();
+  const activities = [...(data.activity ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
+  const registered = data.agents.filter((agent) => agent.seen);
+  const dshBadge = document.getElementById('dsh-status-badge');
+  const dshActivity = (data.activity ?? []).find((activity) =>
+    agentTarget(activity.agent || activity.provider) === 'dsh',
+  );
+  const dshRegistered = registered.some((agent) => agentTarget(agent.id) === 'dsh');
+  if (dshBadge) {
+    dshBadge.textContent = dshActivity ? `最近报告 · ${relativeTime(dshActivity.updatedAt)}` : dshRegistered ? '已登记 · 暂无任务' : '尚无报告';
+    dshBadge.classList.toggle('badge-muted', !dshActivity);
+  }
+  const represented = new Set<string>();
+  const rows: { id: string; name: string; badge: string; color: string; detail: string }[] = [];
+  for (const activity of activities) {
+    const id = activity.agent || activity.provider;
+    represented.add(id);
+    const registeredAgent = registered.find((agent) => agent.id === id || agent.id === activity.provider);
+    rows.push({
+      id,
+      name: activity.name || registeredAgent?.name || activity.provider,
+      badge: activity.badge || registeredAgent?.badge || activity.provider.slice(0, 2).toUpperCase(),
+      color: activity.color || registeredAgent?.color || '#8b7865',
+      detail: `${activityStateLabel(activity)} · ${relativeTime(activity.updatedAt)}`,
+    });
+  }
+  for (const agent of registered) {
+    if (represented.has(agent.id)) continue;
+    rows.push({
+      id: agent.id,
+      name: agent.name,
+      badge: agent.badge,
+      color: agent.color,
+      detail: `已登记 · 暂无实时任务 · 最近 ${relativeTime(agent.lastSeen)}`,
+    });
+  }
+  if (!rows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'home-empty';
+    empty.textContent = '还没有 Agent 接入；接入后，最近任务会出现在这里。';
+    container.append(empty);
+    return;
+  }
+  for (const row of rows.slice(0, 4)) {
+    const button = document.createElement('button');
+    button.className = 'home-agent-row';
+    button.type = 'button';
+    button.dataset.agentTarget = agentTarget(row.id) ?? '';
+    button.title = button.dataset.agentTarget ? `打开 ${row.name} 接入详情` : `${row.name}（暂无专属详情页）`;
+    const badge = document.createElement('span');
+    badge.className = 'home-agent-badge';
+    badge.textContent = row.badge;
+    badge.style.backgroundColor = row.color;
+    const copy = document.createElement('span');
+    copy.className = 'home-agent-copy';
+    const name = document.createElement('strong');
+    name.textContent = row.name;
+    const detail = document.createElement('span');
+    detail.className = 'home-agent-detail';
+    detail.textContent = row.detail;
+    copy.append(name, detail);
+    const arrow = document.createElement('span');
+    arrow.className = 'home-agent-arrow';
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.textContent = button.dataset.agentTarget ? '›' : '';
+    button.append(badge, copy, arrow);
+    container.append(button);
+  }
+}
+
+/**
+ * The per-agent permission table and the call log.
+ *
+ * Both halves are here because neither works alone. A tier the user cannot see the consequences
+ * of is a setting they will never touch; a log with nothing to change in response to it is a
+ * wall of text. Granting `trusted` and then watching the next few calls land is the actual
+ * workflow this is for.
+ */
+async function initAgentPermissions(): Promise<void> {
+  const rows = document.getElementById('agent-permission-rows');
+  const logRows = document.getElementById('agent-log-rows');
+  const result = document.getElementById('agent-permission-result');
+  const fieldsLabel = document.getElementById('perm-settings-fields');
+  const logNote = document.getElementById('agent-log-note');
+
+  function renderAgents(data: AgentActivity) {
+    if (!rows) return;
+    rows.innerHTML = '';
+    if (!data.agents.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = '还没有 agent 调用过。接上一个之后它会出现在这里。';
+      tr.append(td);
+      rows.append(tr);
+      return;
+    }
+    // Most recently active first - the one you are about to make a decision about is almost
+    // always the one that just did something.
+    const sorted = [...data.agents].sort((a, b) => b.lastSeen - a.lastSeen);
+    for (const agent of sorted) {
+      const tr = document.createElement('tr');
+
+      const who = document.createElement('td');
+      who.textContent = `${agent.badge} ${agent.name}`;
+      if (!agent.seen) {
+        const note = document.createElement('span');
+        note.className = 'hint';
+        note.textContent = '（本次运行还没来过）';
+        who.append(note);
+      }
+
+      const tier = document.createElement('td');
+      const select = document.createElement('select');
+      for (const value of data.permissions) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        if (value === agent.permission) {
+          option.selected = true;
+          // Reflected as an attribute as well as a property. The property alone is what the
+          // browser acts on, but it does not serialise - so the rendered page would not say
+          // which tier is in force, and a permissions UI whose state cannot be read back is
+          // one nobody can check.
+          option.setAttribute('selected', '');
+        }
+        select.append(option);
+      }
+      select.addEventListener('change', async () => {
+        try {
+          const message = await invoke<string>('set_agent_permission', {
+            id: agent.id,
+            permission: select.value,
+          });
+          if (result) {
+            result.textContent = message;
+            result.hidden = false;
+          }
+        } catch (error) {
+          if (result) {
+            result.textContent = String(error);
+            result.hidden = false;
+          }
+        }
+        await refresh();
+      });
+      tier.append(select);
+
+      const claims = document.createElement('td');
+      claims.textContent = String(agent.claims);
+      const seen = document.createElement('td');
+      seen.textContent = relativeTime(agent.lastSeen);
+
+      tr.append(who, tier, claims, seen);
+      rows.append(tr);
+    }
+  }
+
+  function renderLog(data: AgentActivity) {
+    if (!logRows) return;
+    logRows.innerHTML = '';
+    if (!data.log.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 5;
+      td.textContent = '还没有调用。';
+      tr.append(td);
+      logRows.append(tr);
+      return;
+    }
+    for (const call of data.log.slice(0, 60)) {
+      const tr = document.createElement('tr');
+      for (const text of [
+        relativeTime(call.at),
+        call.agent,
+        call.surface,
+        call.asked,
+        OUTCOME_LABEL[call.outcome] ?? call.outcome,
+      ]) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.append(td);
+      }
+      // The reason is the whole point of a refused row - without it the log says an integration
+      // stopped working and not why.
+      if (call.reason) tr.title = call.reason;
+      logRows.append(tr);
+    }
+  }
+
+  async function refresh() {
+    try {
+      const data = await invoke<AgentActivity>('get_agent_activity');
+      renderAgents(data);
+      renderLog(data);
+      renderHomeAgents(data);
+      if (fieldsLabel) fieldsLabel.textContent = data.settingsFields.join(' / ');
+      if (logNote) {
+        logNote.textContent =
+          `最近 ${data.log.length} 条（最多留 200），内存里，重启清空。只记要了什么字段和结果，不记内容——`
+          + `你写给猫的话、猫记住的事，都不在这里。设置写入限速：每 ${Math.round(data.writeWindowMs / 1000)} 秒 ${data.writeLimit} 次。`;
+      }
+    } catch (error) {
+      console.error('[lingxi-management] get_agent_activity failed', error);
+      const homeSummary = document.getElementById('home-agent-summary');
+      if (homeSummary) {
+        const note = document.createElement('p');
+        note.className = 'home-empty';
+        note.textContent = '暂时读不到 Agent 状态，请稍后再看。';
+        homeSummary.replaceChildren(note);
+      }
+    }
+  }
+
+  await refresh();
+  // The log is the live half of this page: a user who just granted a tier is watching for the
+  // next call to land.
+  window.setInterval(() => void refresh(), 4000);
 }
 
 interface CodexStatus {
@@ -724,11 +1042,6 @@ async function initClaudeAdapter() {
         connected = true; // a live event is proof hooks are installed even if the earlier check raced
         renderClaudeTaskList();
         setClaudeConnectedUi(connected, hasLiveEvent);
-        const homeLine = document.getElementById('home-agent-line');
-        if (homeLine) {
-          const label = TASK_STATE_LABELS[event.payload.state] ?? event.payload.state;
-          homeLine.innerHTML = `Claude Code：<span class="badge">● 已连接</span> · 最新：${label}`;
-        }
       }
     } catch {
       // validateTaskEvent rejected it (shouldn't happen - src-tauri only emits shapes it
@@ -739,6 +1052,7 @@ async function initClaudeAdapter() {
 
 async function main() {
   setupNav();
+  setupHomeHero();
   setupAccordion();
 
   const status = await invoke<Status>('get_status');
@@ -882,6 +1196,7 @@ async function main() {
   startPerceptionPolling();
   void initClaudeAdapter();
   void initCodexAdapter();
+  void initAgentPermissions();
   void renderBridgeInfo();
 }
 

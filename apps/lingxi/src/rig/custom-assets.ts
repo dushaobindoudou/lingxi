@@ -13,6 +13,7 @@
 // just wants a darker speech bubble should not have to open either.
 import { layers, expressions as builtInExpressions, DEFAULT_FACE_GEOMETRY, type FaceGeometry, type FaceState } from './art.ts';
 import type { ArtSkin } from './art.ts';
+import type { VoxelSkin } from './skeleton.ts';
 import { parseMotions, type Motion } from '../anim/motion.ts';
 import type { BubbleStyle } from '../fx/stage-fx.ts';
 
@@ -83,7 +84,7 @@ export function parseBubbleStyle(value: unknown): Partial<BubbleStyle> {
   const raw = value as Record<string, unknown>;
   const out: Partial<BubbleStyle> = {};
 
-  for (const key of ['background', 'text', 'border'] as const) {
+  for (const key of ['background', 'text', 'accentText', 'border'] as const) {
     if (raw[key] === undefined) continue;
     const colour = raw[key];
     // Any CSS colour is allowed (named, rgb(), gradients would not work on a border but do on a
@@ -196,6 +197,13 @@ export function parseSkins(value: unknown, textures: Record<string, unknown>, ri
       materials: materials as Record<string, string>,
     };
 
+    if (skin.hiddenNodes !== undefined) {
+      if (!Array.isArray(skin.hiddenNodes) || !skin.hiddenNodes.every((node) => typeof node === 'string' && node.length > 0)) {
+        throw new Error(`${id}.hiddenNodes 必须是非空字符串数组`);
+      }
+      result.hiddenNodes = [...new Set(skin.hiddenNodes as string[])];
+    }
+
     // --- optional hand-painted body atlas ---
     if (skin.bodyTexture !== undefined) {
       const spec = skin.bodyTexture as Record<string, unknown>;
@@ -234,6 +242,50 @@ export function parseSkins(value: unknown, textures: Record<string, unknown>, ri
         throw new Error(`${id}.faceSheet.fallback 超出格子范围`);
       }
       result.faceSheet = { src, columns, rows, cells, fallback };
+    }
+
+    // --- optional proportion overrides (体型参数, e.g. a bigger pair of shoes) ---
+    if (skin.proportions !== undefined) {
+      const raw = skin.proportions as Record<string, unknown>;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error(`${id}.proportions 必须是对象`);
+      }
+      const entries = Object.entries(raw);
+      if (entries.length > 60) throw new Error(`${id}.proportions 最多 60 个部位`);
+      const proportions: NonNullable<VoxelSkin['proportions']> = {};
+      for (const [node, override] of entries) {
+        if (!/^[A-Za-z][-A-Za-z0-9]{0,23}$/.test(node)) {
+          throw new Error(`${id}.proportions 的部位名不合法：${node}`);
+        }
+        if (!override || typeof override !== 'object' || Array.isArray(override)) {
+          throw new Error(`${id}.proportions.${node} 必须是对象`);
+        }
+        const record = override as Record<string, unknown>;
+        const built: { size?: [number, number, number]; segmentLength?: number } = {};
+        for (const key of Object.keys(record)) {
+          if (key !== 'size' && key !== 'segmentLength') {
+            throw new Error(`${id}.proportions.${node}.${key} 不是可调项，可用的是：size / segmentLength`);
+          }
+          if (key === 'size') {
+            const size = record.size;
+            if (
+              !Array.isArray(size) || size.length !== 3 ||
+              !size.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.2 && v <= 16)
+            ) {
+              throw new Error(`${id}.proportions.${node}.size 必须是三个 0.2–16 的数字`);
+            }
+            built.size = [size[0] as number, size[1] as number, size[2] as number];
+          } else {
+            const length = record.segmentLength;
+            if (typeof length !== 'number' || !Number.isFinite(length) || length < 0.2 || length > 16) {
+              throw new Error(`${id}.proportions.${node}.segmentLength 需要 0.2–16 的数字`);
+            }
+            built.segmentLength = length;
+          }
+        }
+        proportions[node] = built;
+      }
+      result.proportions = proportions;
     }
 
     return result;
@@ -436,6 +488,7 @@ export const ASSETS_README = `# 灵犀 · 自定义资源
     "name": "我家的猫",
     "description": "一句话描述",
     "pattern": "tabby",            // tabby / point / solid / bicolor / tuxedo / atelier-*
+    "hiddenNodes": ["earL", "earR"], // 可选：从轮廓中隐藏骨骼节点（人物化皮肤可去掉猫耳/尾巴）
     "materials": {                 // 全部必填，#RRGGBB
       "fur": "#E29A46", "pattern": "#B97835", "cream": "#F3E2C4",
       "iris": "#F2E7C9", "pupil": "#2E2118", "nose": "#DE8C8C",

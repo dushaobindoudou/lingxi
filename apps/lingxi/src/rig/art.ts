@@ -187,7 +187,7 @@ export function paintFace(
     const offset=(i-(rows-1)/2)*g.whiskers.spread*2;
     path(
       `M${128+direction*47} ${g.whiskers.y+offset} L${128+direction*(47+g.whiskers.length)} ${g.whiskers.y+offset*(1+g.whiskers.droop)}`,
-      c.cream,true,g.whiskers.width,
+      c.whisker ?? c.cream,true,g.whiskers.width,
     );
   }
   const symbol=state.symbol;

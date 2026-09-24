@@ -64,7 +64,7 @@ export interface StageFx {
    * fetch anything external no matter what the markup says. That is the browser's own guarantee
    * and it is worth more than any sanitiser we could write.
    */
-  setBubbleAttribution(attribution: { name: string; logo?: string | null; color?: string } | null): void;
+  setBubbleAttribution(attribution: { name: string; badge?: string; logo?: string | null; color?: string } | null): void;
   /** True while a bubble is showing - the host uses it to skip the anchor work otherwise. */
   readonly speaking: boolean;
   /** Take any bubble down immediately. */
@@ -84,6 +84,8 @@ export interface StageFx {
 export interface BubbleStyle {
   background: string;
   text: string;
+  /** Attribution label; body text keeps `text`. */
+  accentText: string;
   border: string;
   borderWidth: number;
   radius: number;
@@ -98,6 +100,7 @@ export interface BubbleStyle {
 export const DEFAULT_BUBBLE_STYLE: BubbleStyle = {
   background: '#fffdf8',
   text: '#2f2a33',
+  accentText: '#675666',
   border: '#2f2a33',
   borderWidth: 2.5,
   radius: 16,
@@ -195,8 +198,14 @@ const CSS = `
    same border and background as the body and always joins it cleanly. */
 .lingxi-fx-bubble {
   position: absolute;
-  transform: translate(-50%, -100%);
-  max-width: 280px;
+  --bubble-y: -100%;
+  transform: translate(-50%, var(--bubble-y));
+  /* Keep intrinsic width independent from the left edge. With width:auto an absolutely
+     positioned bubble can shrink-to-fit the remaining space after we move it toward the
+     right edge; for CJK that degenerates into one glyph per line. */
+  width: max-content;
+  max-width: min(280px, calc(100% - 24px));
+  box-sizing: border-box;
   padding: 10px 14px;
   border-radius: var(--bubble-radius);
   border: var(--bubble-border-width) solid var(--bubble-border);
@@ -206,9 +215,12 @@ const CSS = `
   font-size: var(--bubble-size);
   font-weight: var(--bubble-weight);
   line-height: 1.45;
-  text-align: center;
+  text-align: left;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  max-height: calc(100% - 24px);
+  overflow: auto;
   box-shadow: var(--bubble-shadow);
   animation: lingxi-bubble-in 240ms cubic-bezier(.2,1.5,.4,1) forwards;
   transform-origin: 50% 100%;
@@ -218,7 +230,7 @@ const CSS = `
 .lingxi-fx-bubble::after {
   content: "";
   position: absolute;
-  left: 50%;
+  left: var(--bubble-tail-x, 50%);
   bottom: calc(var(--bubble-border-width) * -3.6);
   width: 15px;
   height: 15px;
@@ -227,6 +239,18 @@ const CSS = `
   border-right: var(--bubble-border-width) solid var(--bubble-border);
   border-bottom: var(--bubble-border-width) solid var(--bubble-border);
   border-bottom-right-radius: 3px;
+  transform: rotate(45deg);
+}
+.lingxi-fx-bubble.below {
+  --bubble-y: 0%;
+}
+.lingxi-fx-bubble.below::after {
+  top: calc(var(--bubble-border-width) * -3.6);
+  bottom: auto;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: var(--bubble-border-width) solid var(--bubble-border);
+  border-top: var(--bubble-border-width) solid var(--bubble-border);
   transform: rotate(45deg);
 }
 /* A thought bubble trails little puffs instead of a pointer. */
@@ -240,6 +264,15 @@ const CSS = `
   transform: none;
   box-shadow: -10px 13px 0 calc(var(--bubble-border-width) * -0.8) var(--bubble-bg),
     -10px 13px 0 calc(var(--bubble-border-width) * 0.2) var(--bubble-border);
+}
+.lingxi-fx-bubble.shape-cloud.below::after {
+  top: -14px;
+  bottom: auto;
+  border: var(--bubble-border-width) solid var(--bubble-border);
+  border-radius: 50%;
+  transform: none;
+  box-shadow: 10px -13px 0 calc(var(--bubble-border-width) * -0.8) var(--bubble-bg),
+    10px -13px 0 calc(var(--bubble-border-width) * 0.2) var(--bubble-border);
 }
 /* A shout: the outline itself is jagged, so the tail is folded into the clip path. */
 .lingxi-fx-bubble.shape-spiky {
@@ -261,14 +294,26 @@ const CSS = `
 
 /* Who the cat is speaking for. Sits on the bubble's corner and leaves with it - attribution is
    only meaningful while there is something to attribute, so it needs no life of its own. */
-.lingxi-fx-bubble.has-mark { padding-left: 34px; }
+.lingxi-bubble-source {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+  color: var(--bubble-accent-text);
+  font-size: .78em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.lingxi-bubble-source-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingxi-bubble-body.short { text-align: center; }
 .lingxi-bubble-mark {
-  position: absolute;
-  left: 6px;
-  top: 50%;
   width: 22px;
   height: 22px;
-  margin-top: -11px;
+  flex: none;
   border-radius: 6px;
   object-fit: contain;
   background: var(--mark-color, rgba(255, 255, 255, 0.14));
@@ -276,13 +321,26 @@ const CSS = `
   box-sizing: border-box;
   pointer-events: none;
 }
+.lingxi-bubble-badge {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--mark-color, rgba(255, 255, 255, 0.14));
+  color: var(--bubble-text);
+  font: 700 9px/1 system-ui, sans-serif;
+  overflow: hidden;
+  pointer-events: none;
+}
 @keyframes lingxi-bubble-in {
-  0%   { opacity: 0; transform: translate(-50%, -100%) scale(.5); }
-  100% { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+  0%   { opacity: 0; transform: translate(-50%, var(--bubble-y, -100%)) scale(.5); }
+  100% { opacity: 1; transform: translate(-50%, var(--bubble-y, -100%)) scale(1); }
 }
 @keyframes lingxi-bubble-out {
-  0%   { opacity: 1; transform: translate(-50%, -100%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -112%) scale(.86); }
+  0%   { opacity: 1; transform: translate(-50%, var(--bubble-y, -100%)) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, calc(var(--bubble-y, -100%) - 12%)) scale(.86); }
 }
 .lingxi-fx-shaking { animation: lingxi-shake var(--dur) cubic-bezier(.36,.07,.19,.97); }
 @keyframes lingxi-shake {
@@ -310,7 +368,7 @@ const HEART_GLYPHS = ['💗', '💖', '❤️', '💕', '💞'];
 export function createStageFx(): StageFx {
   let layer: HTMLDivElement | null = null;
   /** Who the next bubble speaks for, or null for the cat speaking as itself. */
-  let attribution: { name: string; logo?: string | null; color?: string } | null = null;
+  let attribution: { name: string; badge?: string; logo?: string | null; color?: string } | null = null;
   let shakeTarget: HTMLElement | null = null;
   let bubbleStyle: BubbleStyle = { ...DEFAULT_BUBBLE_STYLE };
   let bubble: HTMLDivElement | null = null;
@@ -534,6 +592,7 @@ export function createStageFx(): StageFx {
       node.className = `lingxi-fx-bubble shape-${bubbleStyle.shape}`;
       node.style.setProperty('--bubble-bg', bubbleStyle.background);
       node.style.setProperty('--bubble-text', bubbleStyle.text);
+      node.style.setProperty('--bubble-accent-text', bubbleStyle.accentText);
       node.style.setProperty('--bubble-border', bubbleStyle.border);
       node.style.setProperty('--bubble-border-width', `${bubbleStyle.borderWidth}px`);
       node.style.setProperty('--bubble-radius', bubbleStyle.shape === 'rect' ? '2px' : `${bubbleStyle.radius}px`);
@@ -544,23 +603,50 @@ export function createStageFx(): StageFx {
         '--bubble-shadow',
         bubbleStyle.shadow ? '0 6px 0 rgba(47, 42, 51, 0.18), 0 10px 22px rgba(0, 0, 0, 0.28)' : 'none',
       );
-      node.textContent = trimmed;
-      if (attribution?.logo) {
+      const body = document.createElement('div');
+      body.className = `lingxi-bubble-body${trimmed.length <= 12 && !trimmed.includes('\n') ? ' short' : ''}`;
+      body.textContent = trimmed;
+      const source = attribution;
+      const sourceRow = source ? document.createElement('div') : null;
+      if (sourceRow) sourceRow.className = 'lingxi-bubble-source';
+      const makeBadge = () => {
+        if (!source?.badge) return null;
+        const fallback = document.createElement('span');
+        fallback.className = 'lingxi-bubble-badge';
+        fallback.textContent = source.badge.slice(0, 2);
+        fallback.title = source.name;
+        if (source.color) fallback.style.setProperty('--mark-color', source.color);
+        return fallback;
+      };
+      if (source?.logo) {
         // <img> rather than inline markup, deliberately: an <img> is a hard sandbox for SVG -
         // no script, no external fetches - so an agent-generated document cannot reach anything.
         const mark = document.createElement('img');
         mark.className = 'lingxi-bubble-mark';
-        mark.alt = attribution.name;
-        mark.title = attribution.name;
-        mark.src = attribution.logo.startsWith('data:')
-          ? attribution.logo
-          : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(attribution.logo)}`;
-        if (attribution.color) mark.style.setProperty('--mark-color', attribution.color);
-        // A logo that fails to decode must not leave a broken-image glyph on the bubble.
-        mark.addEventListener('error', () => mark.remove());
-        node.append(mark);
-        node.classList.add('has-mark');
+        mark.alt = source.name;
+        mark.title = source.name;
+        mark.src = source.logo.startsWith('data:')
+          ? source.logo
+          : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source.logo)}`;
+        if (source.color) mark.style.setProperty('--mark-color', source.color);
+        // Fall back to the short registered badge if a supplied image cannot be decoded.
+        mark.addEventListener('error', () => {
+          const fallback = makeBadge();
+          if (fallback) mark.replaceWith(fallback);
+          else mark.remove();
+        });
+        sourceRow?.append(mark);
+      } else if (source?.badge) {
+        sourceRow?.append(makeBadge()!);
       }
+      if (sourceRow && source) {
+        const name = document.createElement('span');
+        name.className = 'lingxi-bubble-source-name';
+        name.textContent = source.name;
+        sourceRow.append(name);
+        node.append(sourceRow);
+      }
+      node.append(body);
       layer.append(node);
       bubble = node;
       bubbleTimer = setTimeout(() => {
@@ -582,8 +668,38 @@ export function createStageFx(): StageFx {
 
     anchorBubble(x, y) {
       if (!bubble) return;
-      bubble.style.left = `${Math.round(x)}px`;
-      bubble.style.top = `${Math.round(y)}px`;
+      // Keep the entire bubble inside the transparent companion window. The cat is allowed to
+      // roam to the display edge, but a centred bubble there would lose its left/right half.
+      // Width is explicit in CSS (rather than auto) so measuring it here cannot create a
+      // right-edge feedback loop where each reposition makes the next layout narrower.
+      const width = bubble.offsetWidth;
+      const height = bubble.offsetHeight;
+      const viewportWidth = layer?.clientWidth ?? width;
+      const viewportHeight = layer?.clientHeight ?? height;
+      const inset = 12;
+      const minCenter = Math.min(viewportWidth / 2, width / 2 + inset);
+      const maxCenter = Math.max(viewportWidth / 2, viewportWidth - width / 2 - inset);
+      const safeX = Math.max(minCenter, Math.min(maxCenter, x));
+      const left = safeX - width / 2;
+      // The tail should continue to point toward the cat after the bubble is pulled inward,
+      // while staying away from a rounded corner where it would look detached.
+      const tailPercent = Math.max(8, Math.min(92, ((x - left) / Math.max(1, width)) * 100));
+      bubble.style.setProperty('--bubble-tail-x', `${tailPercent}%`);
+
+      // Prefer above-head placement. If the cat is near the top edge, flip below it; when
+      // neither side has enough room (small window / unusually long text), clamp the visible
+      // rectangle instead of letting it disappear off-screen.
+      const aboveTop = y - height;
+      const belowTop = y;
+      const canFitAbove = aboveTop >= inset;
+      const canFitBelow = belowTop + height <= viewportHeight - inset;
+      const below = !canFitAbove && canFitBelow;
+      bubble.classList.toggle('below', below);
+      const visualTop = below
+        ? belowTop
+        : Math.max(inset, Math.min(Math.max(inset, viewportHeight - height - inset), aboveTop));
+      bubble.style.left = `${Math.round(safeX)}px`;
+      bubble.style.top = `${Math.round(below ? visualTop : visualTop + height)}px`;
     },
 
     hush() {

@@ -4,12 +4,51 @@ import { faceRects, type AtlasLayout } from './atlas.ts';
 /** Deliberately authored anatomical zones, packed into ONE PNG; not one image tiled on all boxes. */
 export function paintAtelier(ctx:CanvasRenderingContext2D,nodes:NodeSpec[],layout:AtlasLayout,c:Record<string,string>,style:string){
   const calico=style==='atelier-calico';
+  const formal=style==='atelier-formal';
   for(const node of nodes){
     const id=node.id,r=layout.regions[id];
     for(const [face,[x,y,w,h]] of Object.entries(faceRects(r))){
       ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.translate(x,y);ctx.scale(w,h);
       const rect=(a:number,b:number,sw:number,sh:number,col:string)=>{ctx.fillStyle=col;ctx.fillRect(a,b,sw,sh);};
       const path=(points:number[][],col:string)=>{ctx.beginPath();points.forEach(([a,b],i)=>i?ctx.lineTo(a,b):ctx.moveTo(a,b));ctx.closePath();ctx.fillStyle=col;ctx.fill();};
+
+      if(formal){
+        // A formal human-inspired silhouette: dark jacket/hair, a pale shirt and trousers,
+        // and black leather shoes. The face decal supplies the human face; these painted zones
+        // keep the shared voxel rig coherent even though it is still animated by the cat engine.
+        rect(0,0,1,1,c.fur);
+        if(/^head$/.test(id)){
+          if(face==='py')rect(0,0,1,1,c.fur);
+          if(face==='pz')rect(0,0,1,1,c.fur);
+        }else if(/^(hipC|spine[123])$/.test(id)){
+          if(face==='pz'){
+            path([[.08,.04],[.38,.04],[.49,.23],[.38,.54],[.08,.35]],c.accent);
+            path([[.92,.04],[.62,.04],[.51,.23],[.62,.54],[.92,.35]],c.accent);
+            path([[.39,.10],[.61,.10],[.69,.92],[.31,.92]],c.cream);
+            path([[.39,.10],[.50,.27],[.61,.10],[.58,.43],[.50,.56],[.42,.43]],c.paw);
+          }
+          if(face==='ny')rect(0,0,1,1,c.fur);
+        }else if(/^neck/.test(id)){
+          if(face==='pz')rect(.18,.30,.64,.70,c.cream);
+        }else if(/^ear/.test(id)){
+          if(face==='pz')path([[.18,.88],[.32,.15],[.68,.15],[.82,.88]],c.nose);
+        }else if(/^(scap|upperF|lowerF)/.test(id)){
+          if(face==='pz')rect(.08,.08,.84,.84,c.accent);
+        }else if(/^(thigh|shin)/.test(id)){
+          rect(0,0,1,1,c.cream);
+          if(face==='pz')rect(.08,.06,.14,.88,c.paw);
+        }else if(/^(foot|pawB)/.test(id)){
+          rect(0,0,1,1,c.pattern);
+          if(face==='pz')rect(.08,.10,.84,.18,c.accent);
+        }else if(/^tail/.test(id)){
+          rect(0,0,1,1,c.fur);
+        }else if(/^pawF/.test(id)){
+          rect(0,0,1,1,c.paw);
+        }
+        ctx.restore();
+        continue;
+      }
+
       rect(0,0,1,1,c.fur);
       if(/^head$/.test(id)){
         if(calico){

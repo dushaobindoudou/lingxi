@@ -1,12 +1,12 @@
 :root {
-  color-scheme: light dark;
-  --bg: #fff8f3;
-  --card: #ffffff;
-  --ink: #3a2e2a;
-  --muted: #8a7a72;
-  --accent: #ff9db8;
-  --accent-ink: #7a3049;
-  --border: #f1e2da;
+  color-scheme: light;
+  --bg: #FBF7F1;
+  --card: #FFFDF9;
+  --ink: #423A33;
+  --muted: #72675C;
+  --accent: #936746;
+  --accent-ink: #68472F;
+  --border: #E5D9CA;
 }
 
 * {
@@ -28,13 +28,13 @@ body {
 }
 
 .sidebar {
-  width: 150px;
+  width: 190px;
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 16px 10px;
-  background: #fff2ea;
+  background: #F5EFE6;
   border-right: 1px solid var(--border);
 }
 
@@ -76,12 +76,12 @@ h1 {
 }
 
 .nav-item:hover {
-  background: #ffe6ef;
+  background: #EDE3D6;
 }
 
 .nav-item.active {
-  background: var(--accent);
-  color: #fff;
+  background: #EAD9C7;
+  color: #68472F;
   font-weight: 600;
 }
 
@@ -269,7 +269,7 @@ h2.section-gap {
   border-top: 1px solid var(--border);
 }
 
-/* 全局顶栏：docs/18 §4/§5 - 每页都在，模式/大小/找回猫咪三个托盘能力的镜像（决策 5 去掉了免打扰） */
+/* 全局顶栏：docs/21 - 页面标题与真实可用的全局控制。 */
 .topbar {
   display: flex;
   align-items: center;
@@ -280,11 +280,19 @@ h2.section-gap {
   flex-wrap: wrap;
 }
 
+.page-title {
+  margin: 0 auto 0 0;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 .topbar-button {
   padding: 7px 12px;
   border-radius: 8px;
   border: 1.5px solid var(--border);
-  background: #fffaf7;
+  background: var(--card);
   color: var(--ink);
   font-size: 12px;
   cursor: pointer;
@@ -300,7 +308,7 @@ h2.section-gap {
   height: 30px;
   border-radius: 8px;
   border: 1.5px solid var(--border);
-  background: #fffaf7;
+  background: var(--card);
   color: var(--ink);
   font-size: 12px;
   cursor: pointer;
@@ -308,8 +316,199 @@ h2.section-gap {
 
 .topbar-sizes button.active {
   border-color: var(--accent);
-  background: #fff0f4;
+  background: #F4E4CF;
   color: var(--accent-ink);
+}
+
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  min-height: 365px;
+  overflow: hidden;
+  border: 1px solid rgba(112, 87, 62, 0.12);
+  border-radius: 20px;
+  background-color: #EBDCC9;
+  background-position: center 58%;
+  background-size: cover;
+}
+
+.home-hero::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: '';
+  background: linear-gradient(90deg, rgba(251, 247, 241, 0.94) 0%, rgba(251, 247, 241, 0.78) 38%, rgba(251, 247, 241, 0.04) 75%);
+}
+
+.home-copy {
+  z-index: 1;
+  width: 55%;
+  padding: 36px 0 36px 42px;
+}
+
+.home-eyebrow {
+  margin: 0 0 18px;
+  color: #725A43;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.home-copy h2 {
+  margin: 0;
+  color: #423A33;
+  font-size: clamp(30px, 4vw, 44px);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.home-state {
+  min-height: 24px;
+  margin: 18px 0 20px;
+  color: #5F735C;
+  font-size: 14px;
+}
+
+.home-play-button {
+  min-width: 112px;
+  padding: 11px 20px;
+  border: 0;
+  border-radius: 999px;
+  background: #936746;
+  color: #fffdf9;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.home-play-button:hover {
+  background: #795337;
+  transform: translateY(-1px);
+}
+
+.home-play-result {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: #68472F;
+  font-size: 12px;
+}
+
+.home-cat {
+  position: absolute;
+  right: 4%;
+  bottom: -1%;
+  width: min(46%, 380px);
+  height: 96%;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 9px 9px rgba(84, 63, 43, 0.12));
+  pointer-events: none;
+}
+
+.home-lower {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 26px;
+}
+
+.home-agent-summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.home-section-heading h2 {
+  margin: 0;
+  color: #594C3F;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.home-live-note,
+.home-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.home-agent-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.home-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 253, 249, 0.76);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-agent-row:hover { background: var(--card); border-color: #C9B59F; }
+
+.home-agent-badge {
+  display: grid;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.home-agent-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.home-agent-copy strong { font-size: 12px; }
+.home-agent-detail { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.home-agent-arrow { margin-left: auto; color: #8B745C; font-size: 20px; }
+.home-agent-row[data-agent-target=""] { cursor: default; }
+.home-empty { margin: 0; }
+.home-footer { margin: 22px 0 0; color: #8A7D70; font-size: 12px; }
+
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid #5F735C;
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .sidebar { width: 164px; }
+  main { padding: 16px; }
+  .home-hero { min-height: 330px; }
+  .home-copy { padding-left: 28px; }
+}
+
+@media (max-width: 720px) {
+  .home-hero { min-height: 290px; }
+  .home-copy { width: 64%; padding: 24px 0 24px 20px; }
+  .home-cat { right: 0; width: 48%; height: 88%; }
+  .home-copy h2 { font-size: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }
 
 .card {

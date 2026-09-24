@@ -29,8 +29,9 @@
       </nav>
 
       <main>
-        <!-- 全局顶栏：docs/18 §4/§5 - 模式/大小/找回猫咪（决策 5 已去掉免打扰） -->
+        <!-- 全局顶栏：按 docs/21 的桌面首页与全局控制布局。 -->
         <div class="topbar">
+          <h1 class="page-title" id="page-title">此刻</h1>
           <div class="topbar-sizes" id="topbar-sizes">
             <button data-scale="0.25" title="小 0.25x">小</button>
             <button data-scale="0.5" title="中 0.5x">中</button>
@@ -39,32 +40,30 @@
           <button id="topbar-reset" class="topbar-button">找回猫咪</button>
         </div>
 
-        <!-- 6.1 首页 -->
+        <!-- 首页：场景图和猫像是独立图层；状态和操作继续由可访问 DOM 承载。 -->
         <section class="page active" id="page-home">
-          <h2>猫</h2>
-          <div class="card cat-card">
-            <div class="cat-card-row">
-              <strong id="home-cat-name">灵犀</strong>
+          <div class="home-hero" id="home-hero">
+            <div class="home-copy">
+              <p class="home-eyebrow">桌边伙伴 · <span id="home-cat-name">灵犀</span></p>
+              <h2>你忙你的，<br />我在这里。</h2>
+              <p class="home-state" id="home-cat-state" role="status">正在看一眼…</p>
+              <button id="home-play" class="home-play-button" type="button">逗一逗</button>
+              <p class="home-play-result" id="home-play-result" aria-live="polite"></p>
+            </div>
+            <img class="home-cat" id="home-cat-image" alt="灵犀坐在窗边的浅木桌上" />
+          </div>
+          <div class="home-lower">
+            <section class="home-agent-summary" aria-labelledby="home-agents-heading">
+              <div class="home-section-heading">
+                <h2 id="home-agents-heading">身边的工作伙伴</h2>
+                <span class="home-live-note">状态实时更新</span>
               </div>
-            <p class="cat-card-line" id="home-cat-state">状态：读取中…</p>
-            <p class="cat-card-line" id="home-cat-personality-line">性格：还没设定</p>
-            <p class="cat-card-line" id="home-growth-line">成长：Lv.0 · 参与度 0/100</p>
+              <div id="home-agent-summary" class="home-agent-rows" aria-live="polite">
+                <p class="home-empty">正在读取接入状态…</p>
+              </div>
+            </section>
           </div>
-
-          <h2 class="section-gap">今天</h2>
-          <div class="card">
-            <p class="cat-card-line" id="home-activity-line">互动 0 次 · 拖拽 0 次</p>
-          </div>
-
-          <h2 class="section-gap">Agent</h2>
-          <div class="card" id="home-agent-summary">
-            <p class="cat-card-line" id="home-agent-line">Claude Code：<span class="badge badge-muted">未接入</span></p>
-          </div>
-
-          <p class="hint">
-            这一页每 2 秒读一次 <code>get_perception</code>（跟本机 <code>GET /perception</code> 桥同一份快照），不需要手动刷新。主界面对
-            agent 任务只观察，不提供批准/取消等操作。
-          </p>
+          <p class="home-footer">安静地待着，也算一起度过一段时间。</p>
         </section>
 
         <!-- 6.2 Agent 接入：手风琴，Claude Code 首发、真实一键接入 -->
@@ -125,8 +124,13 @@
                   <p class="hint"><code id="codex-conflict-existing"></code></p>
                   <p class="hint">
                     TOML 的 <code>notify</code> 只能有一个，直接覆盖会让那个工具静默失效，所以这里不会动它。
-                    要两个都要，写一个分发脚本把 payload 同时转给两边，做法见
-                    <code>integrations/plugins/codex/README.md</code>。
+                    <strong>两个都要是可以的</strong>——仓库里的安装器会把它合并成一个 fanout，
+                    你原来的程序排在前面，灵犀并排跟上，两边都拿到完整载荷：
+                  </p>
+                  <pre class="hint">bash &lt;repo&gt;/integrations/hosts/codex/install.sh</pre>
+                  <p class="hint">
+                    这个按钮做不了这件事：它要在没有仓库的 .app 上也能用，所以只做不需要仓库、
+                    又绝对安全的那部分。
                   </p>
                 </div>
                 <p class="hint" id="codex-mcp-hint">
@@ -146,13 +150,47 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             <div class="accordion-item" data-agent-panel="dsh">
               <button class="accordion-header">
                 <span class="accordion-title">▸ DeepSeek Harness</span>
-                <span class="badge badge-muted">○ 未接入</span>
+                <span class="badge badge-muted" id="dsh-status-badge">读取中…</span>
               </button>
               <div class="accordion-body">
-                <p class="hint">通道已核实（<code>dsh-acp</code> 的 <code>dsh/sessions/watch</code>），一键接入还没实现。</p>
+                <p class="hint" id="dsh-status-detail">通过 DSH 动态插件向本机 <code>POST /task-event</code> 报告任务开始、进度和结束。每次调用都应带稳定的 <code>taskId</code> 与简洁的 <code>summary</code>；结束事件的摘要会显示在灵犀气泡里。</p>
+                <ol class="hint">
+                  <li>在 DSH 会话中用 <code>cordis_define</code> 创建插件，将 <code>integrations/hosts/dsh/lingxi-dsh-plugin.js</code> 内容放入 <code>code.host</code>。</li>
+                  <li>用 <code>cordis_run</code> 激活返回的 packageId；确认主界面显示最近任务后即可使用。</li>
+                </ol>
+                <p class="hint">完整参数、鉴权和故障排查：<code>integrations/hosts/dsh/README.md</code>。插件需在 DSH 会话重启后重新激活。</p>
               </div>
             </div>
           </div>
+
+          <h2 class="section-gap">权限与日志</h2>
+          <p class="hint">
+            界线划在<strong>会不会留下来</strong>，不是划在重要不重要。表情播错了四秒后就没了；
+            而一次 <code>visible: false</code> 会让你的猫消失，还看不出是哪个 agent 干的。
+            所以表演类（表情、动作、说话、玩具、任务事件）是 <code>performer</code> 就能做，
+            会保存下来的设置（<span id="perm-settings-fields">主题、视角、大小、显示</span>）
+            和写入备忘 / 提醒，要 <code>trusted</code>。
+          </p>
+          <p class="hint">
+            新 agent 默认是 <code>performer</code>——白名单的意思就是没列就不给。
+            这会改变以前的行为：之前任何 agent 都能改设置。被挡下的调用会在响应里说明原因，
+            也会记进下面的日志，不会静默。
+          </p>
+          <table class="tool-table">
+            <thead><tr><th>Agent</th><th>权限</th><th>调用次数</th><th>最近</th></tr></thead>
+            <tbody id="agent-permission-rows"></tbody>
+          </table>
+          <p class="hint" id="agent-permission-result" hidden></p>
+
+          <h2 class="section-gap">调用日志</h2>
+          <p class="hint" id="agent-log-note">
+            最近 200 条，内存里，重启清空。只记<strong>要了什么字段</strong>和结果，不记内容——
+            你写给猫的话、猫记住的事，都不在这里。
+          </p>
+          <table class="tool-table">
+            <thead><tr><th>时间</th><th>Agent</th><th>接口</th><th>要了什么</th><th>结果</th></tr></thead>
+            <tbody id="agent-log-rows"></tbody>
+          </table>
         </section>
 
         <!-- 6.3 性格与行为 -->

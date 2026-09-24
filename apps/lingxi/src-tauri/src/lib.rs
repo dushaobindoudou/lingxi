@@ -303,6 +303,7 @@ struct TrayState {
     size_medium: CheckMenuItem<tauri::Wry>,
     size_large: CheckMenuItem<tauri::Wry>,
     toggle_visibility: MenuItem<tauri::Wry>,
+    attention_summary: MenuItem<tauri::Wry>,
     visible: AtomicBool,
     current_scale: Mutex<f64>,
     cat_name: Mutex<String>,
@@ -1252,8 +1253,9 @@ fn codex_install_into(text: &str) -> Result<String, String> {
         if !codex_notify_is_ours(existing) {
             return Err(format!(
                 "已经有一个 notify，是别的工具的，没有改动：\n  {}\n\nTOML 的 notify 只能有一个，\
-                 覆盖它会让那个工具静默失效。要两个都要，写一个分发脚本同时转发给两边——\
-                 做法见 integrations/plugins/codex/README.md。",
+                 覆盖它会让那个工具静默失效。\n\n要两个都要，用仓库里的安装器——\
+                 integrations/hosts/codex/install.sh 会把 notify 合并成一个 fanout，\
+                 你原来的程序排在前面，灵犀并排跟上，两边都拿到完整载荷。",
                 existing.to_string().trim(),
             ));
         }
@@ -1282,13 +1284,101 @@ fn codex_uninstall_from(text: &str) -> Result<(String, Vec<&'static str>), Strin
     Ok((doc.to_string(), removed))
 }
 
+/// Everything 主界面 needs for the Agent permissions panel: who has called, what they may do,
+/// and what they have actually been doing.
+#[tauri::command]
+fn get_agent_activity(app: tauri::AppHandle) -> serde_json::Value {
+    let registry = app.state::<AgentRegistry>();
+    let mut agents: Vec<serde_json::Value> = registry
+        .agents
+        .lock()
+        .unwrap()
+        .values()
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id, "name": a.name, "badge": a.badge, "color": a.color,
+                "lastSeen": a.last_seen, "claims": a.claims, "permission": a.permission.as_str(),
+                "seen": true,
+            })
+        })
+        .collect();
+    // Grants for agents that have not called yet this session still belong on the page - a user
+    // who granted something yesterday should see it today, not an empty list that looks like the
+    // grant was lost.
+    let known: std::collections::HashSet<String> =
+        agents.iter().filter_map(|a| a["id"].as_str().map(str::to_string)).collect();
+    for (id, permission) in registry.saved.lock().unwrap().iter() {
+        if !known.contains(id) {
+            agents.push(serde_json::json!({
+                "id": id, "name": id, "badge": id.chars().take(2).collect::<String>(),
+                "color": "#8b95a5", "lastSeen": 0, "claims": 0,
+                "permission": permission.as_str(), "seen": false,
+            }));
+        }
+    }
+    // Newest first for the log: the page shows the most recent slice, and "what just happened"
+    // is the question it is open to answer.
+    let mut log = registry.log.lock().unwrap().clone();
+    log.reverse();
+    let registered = registry.agents.lock().unwrap().clone();
+    let activity: Vec<serde_json::Value> = app
+        .state::<ActivityState>()
+        .by_provider
+        .lock()
+        .unwrap()
+        .values()
+        .map(|row| {
+            let identity = row.agent.as_ref().and_then(|id| registered.get(id))
+                .or_else(|| registered.get(&row.provider));
+            let mut value = serde_json::to_value(row).unwrap_or(serde_json::Value::Null);
+            if let (Some(object), Some(identity)) = (value.as_object_mut(), identity) {
+                object.insert("name".into(), serde_json::json!(identity.name));
+                object.insert("badge".into(), serde_json::json!(identity.badge));
+                object.insert("color".into(), serde_json::json!(identity.color));
+            }
+            value
+        })
+        .collect();
+    serde_json::json!({
+        "agents": agents,
+        "activity": activity,
+        "log": log,
+        "permissions": AGENT_PERMISSIONS,
+        "writeLimit": AGENT_WRITE_LIMIT,
+        "writeWindowMs": AGENT_WRITE_WINDOW_MS,
+        "settingsFields": SETTINGS_FIELDS,
+    })
+}
+
+/// Grant or revoke a tier. The user's decision, made in 主界面 - never something an agent can
+/// ask for, which is the whole reason this is a Tauri command and not a bridge endpoint.
+#[tauri::command]
+fn set_agent_permission(app: tauri::AppHandle, id: String, permission: String) -> Result<String, String> {
+    let Some(parsed) = AgentPermission::parse(&permission) else {
+        return Err(format!("不认识的权限档位「{permission}」，只能是 {AGENT_PERMISSIONS:?}"));
+    };
+    let id = id.trim().chars().take(64).collect::<String>();
+    if id.is_empty() {
+        return Err("agent id 不能为空".to_string());
+    }
+    app.state::<AgentRegistry>().set_permission(&id, parsed);
+    Ok(format!("「{id}」现在是 {}。", parsed.as_str()))
+}
+
 /// What the management window needs to draw the Codex panel.
 ///
 /// Three outcomes, not two, and the third is the whole reason this is a separate command rather
 /// than a boolean: `notify` is a single TOML key, so a machine that already has one is a machine
-/// where installing would DELETE someone else's integration. integrations/plugins/codex/README.md
-/// puts it plainly - "别直接覆盖用户已有的 notify。那是别人的功能，猫不值得" - and a one-click
-/// button that silently did it anyway would be the most damaging thing in this app.
+/// where installing would DELETE someone else's integration - silently, because Codex simply
+/// stops calling it. A one-click button that did that would be the most damaging thing in this
+/// app.
+///
+/// This command refuses rather than merging. `integrations/hosts/codex/install.sh` DOES merge -
+/// it rewrites `notify` into a fanout that keeps the user's own notifier first and runs 灵犀
+/// alongside it - and that is the better answer whenever a checkout is available. Two mechanisms
+/// for one key is not ideal, so the division is by capability rather than by preference: this
+/// one runs from an .app with no checkout and therefore only does what is safe without one, and
+/// it points at the installer for the case it will not handle itself.
 #[tauri::command]
 fn codex_integration_status() -> serde_json::Value {
     let Some(path) = codex_config_path() else {
@@ -1332,8 +1422,8 @@ fn codex_integration_status() -> serde_json::Value {
 /// Add the notify hook and the MCP server block to ~/.codex/config.toml.
 ///
 /// Refuses, rather than overwrites, when `notify` already belongs to something else. The
-/// fan-out script that lets both coexist is in integrations/plugins/codex/README.md; deciding
-/// to run it is the user's call, not this button's.
+/// merging installer that lets both coexist is integrations/hosts/codex/install.sh; deciding to
+/// run it is the user's call, not this button's.
 #[tauri::command]
 fn install_codex_notify() -> Result<String, String> {
     let path = codex_config_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
@@ -1716,6 +1806,10 @@ struct AgentIdentity {
     /// Stage claims this agent has made, for the per-agent budget and for the user to see who is
     /// noisiest.
     claims: u64,
+    /// What this agent may do. Set by the user in 主界面, never by the agent itself -
+    /// an identity that can choose its own permissions is not a permission.
+    #[serde(default)]
+    permission: AgentPermission,
 }
 
 #[derive(Clone, Serialize)]
@@ -1745,10 +1839,137 @@ struct QueuedReaction {
     expires_at: u64,
 }
 
+/// What an agent is allowed to do.
+///
+/// Three tiers, because there are three genuinely different kinds of ask and collapsing them
+/// loses the distinction that matters:
+///
+///   observer   read only. It can look at the cat and register a name; it cannot touch anything.
+///   performer  can drive the PERFORMANCE - expression, action, a line, a toy, a task event.
+///              All of it transient: the next thing the cat does overwrites it, so the worst a
+///              misbehaving performer can do is be annoying for a few seconds.
+///   trusted    can additionally change SETTINGS that persist across restarts (theme, camera,
+///              size, visibility) and write to the owner notes and reminders.
+///
+/// The line is drawn at persistence, not at importance. A wrong expression is gone in four
+/// seconds; a wrong `visible: false` leaves the user with no cat and no obvious way to work out
+/// which of their agents did it. Those deserve different answers.
+///
+/// ## Why the default is `performer` and not `trusted`
+///
+/// Every agent could change settings until now, which is the missing `write_settings` whitelist.
+/// A whitelist means not-listed is not-allowed, so settings writing becomes something the user
+/// grants rather than something every caller inherits.
+///
+/// That does change behaviour for an existing integration that was changing themes, and the
+/// honest way to do it is loudly: the call is REJECTED with a reason naming the tier and where
+/// to change it, and it lands in the call log either way. A silent downgrade would be the same
+/// class of mistake as the silent overwrite this codebase has already learned about elsewhere.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AgentPermission {
+    Observer,
+    Performer,
+    Trusted,
+}
+
+impl Default for AgentPermission {
+    fn default() -> Self {
+        Self::Performer
+    }
+}
+
+impl AgentPermission {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "observer" => Some(Self::Observer),
+            "performer" => Some(Self::Performer),
+            "trusted" => Some(Self::Trusted),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Observer => "observer",
+            Self::Performer => "performer",
+            Self::Trusted => "trusted",
+        }
+    }
+
+    /// May it change how the cat behaves right now?
+    fn may_perform(self) -> bool {
+        matches!(self, Self::Performer | Self::Trusted)
+    }
+
+    /// May it change something that survives a restart, or write to the owner's notes?
+    fn may_write_settings(self) -> bool {
+        matches!(self, Self::Trusted)
+    }
+}
+
+const AGENT_PERMISSIONS: [&str; 3] = ["observer", "performer", "trusted"];
+
+/// Fields of POST /control that persist. Everything else is performance and expires on its own.
+///
+/// Listed explicitly rather than derived: a new control field should have to be classified by
+/// whoever adds it, and an unclassified one defaulting to "performance" is the safe direction -
+/// it means a new knob is never accidentally granted to every caller as a persistent write.
+const SETTINGS_FIELDS: [&str; 4] = ["skin", "camera", "scale", "visible"];
+
+/// One thing an agent asked for, and what happened to it.
+///
+/// Permissions without visibility are unusable: a user who grants a tier cannot check whether it
+/// was the right call, and a user whose integration stopped working cannot find out that a
+/// permission is why. Both questions are answered by the same record.
+#[derive(Clone, Serialize)]
+struct AgentCall {
+    at: u64,
+    agent: String,
+    /// The endpoint, e.g. "control", "memory", "task-event".
+    surface: String,
+    /// What was asked for, as a short field list - never the payload, which can contain the
+    /// user's own words.
+    asked: String,
+    /// "applied" | "rejected" | "denied" | "throttled"
+    outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+/// How many calls are kept. A log that grows without limit is the memory leak this file has
+/// already named once, under a different pleasant name.
+const AGENT_LOG_CAP: usize = 200;
+
+/// Per-agent write budget: how many persistent writes in how long.
+///
+/// Not about malice, about loops. An agent retrying a write in a tight loop would otherwise
+/// rewrite settings.json as fast as it can post, and the first sign would be disk churn.
+/// Generous enough that no reasonable caller ever meets it.
+const AGENT_WRITE_LIMIT: usize = 10;
+const AGENT_WRITE_WINDOW_MS: u64 = 60_000;
+
 #[derive(Default)]
 struct AgentRegistry {
     agents: Mutex<HashMap<String, AgentIdentity>>,
     stage: Mutex<Option<StageClaim>>,
+    /// Newest last, capped at AGENT_LOG_CAP.
+    log: Mutex<Vec<AgentCall>>,
+    /// Timestamps of recent persistent writes, per agent - see AGENT_WRITE_LIMIT.
+    writes: Mutex<HashMap<String, Vec<u64>>>,
+    /// Grants the user has made, by agent id.
+    ///
+    /// Kept separately from `agents` and outliving it, because the two answer different
+    /// questions. `agents` is who has called recently - it is capped, it evicts the stalest
+    /// entry, and it is empty after a restart. A GRANT is a decision the user made, and it has
+    /// to survive both: an agent that gets evicted for being quiet for a week, or that is simply
+    /// the first to call after a reboot, must not come back with its permission silently reset.
+    /// Fail-safe would be the wrong instinct here - it would quietly revoke a decision instead
+    /// of quietly keeping one, and the user would have no way to tell which happened.
+    saved: Mutex<HashMap<String, AgentPermission>>,
+    /// Where `saved` is written. None when the config dir is unavailable, in which case grants
+    /// last for this session only.
+    permissions_path: Mutex<Option<PathBuf>>,
     /// Waiting reactions, highest rank first then oldest first. Bounded: a queue that grows
     /// without limit is a memory leak with a pleasant name.
     queue: Mutex<Vec<QueuedReaction>>,
@@ -1764,6 +1985,89 @@ const DEFAULT_REACTION_TTL_MS: u64 = 8000;
 const REACTION_QUEUE_CAP: usize = 16;
 
 impl AgentRegistry {
+    /// What this id is allowed to do. An id we have never seen gets the default tier rather than
+    /// being refused: an agent that has not registered yet is not suspicious, it is new.
+    fn permission_of(&self, id: &str) -> AgentPermission {
+        if let Some(agent) = self.agents.lock().unwrap().get(id) {
+            return agent.permission;
+        }
+        // Not called yet this session - fall back to what the user granted before.
+        self.saved.lock().unwrap().get(id).copied().unwrap_or_default()
+    }
+
+    /// Grant (or revoke) a tier, and write it down.
+    fn set_permission(&self, id: &str, permission: AgentPermission) {
+        self.saved.lock().unwrap().insert(id.to_string(), permission);
+        if let Some(agent) = self.agents.lock().unwrap().get_mut(id) {
+            agent.permission = permission;
+        }
+        self.save_permissions();
+    }
+
+    fn save_permissions(&self) {
+        let Some(path) = self.permissions_path.lock().unwrap().clone() else { return };
+        let saved = self.saved.lock().unwrap();
+        let map: HashMap<&str, &str> = saved.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let Ok(body) = serde_json::to_string_pretty(&map) else { return };
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        // Same write-then-rename as the settings file: a half-written permissions file that
+        // parsed as valid JSON would silently drop grants.
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, body).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+
+    fn load_permissions(&self, path: PathBuf) {
+        *self.permissions_path.lock().unwrap() = Some(path.clone());
+        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&text) else { return };
+        let mut saved = self.saved.lock().unwrap();
+        for (id, tier) in map {
+            // An unrecognised tier is dropped rather than defaulted: a file written by a newer
+            // build should not silently downgrade a grant it does not understand.
+            if let Some(permission) = AgentPermission::parse(&tier) {
+                saved.insert(id, permission);
+            }
+        }
+    }
+
+    /// Record one call. Oldest entries fall off the front once the cap is reached.
+    fn record(&self, agent: &str, surface: &str, asked: String, outcome: &str, reason: Option<String>) {
+        let mut log = self.log.lock().unwrap();
+        if log.len() >= AGENT_LOG_CAP {
+            let overflow = log.len() + 1 - AGENT_LOG_CAP;
+            log.drain(0..overflow);
+        }
+        log.push(AgentCall {
+            at: now_millis(),
+            agent: agent.to_string(),
+            surface: surface.to_string(),
+            // Bounded like every other string that came from outside and ends up in the UI.
+            asked: asked.chars().take(160).collect(),
+            outcome: outcome.to_string(),
+            reason: reason.map(|r| r.chars().take(200).collect()),
+        });
+    }
+
+    /// Take one unit of this agent's write budget, or refuse.
+    ///
+    /// A sliding window rather than a fixed one: a fixed window lets a caller spend the whole
+    /// budget at 0:59 and the whole budget again at 1:01, which is exactly the burst it is
+    /// supposed to prevent.
+    fn take_write_budget(&self, id: &str, now: u64) -> bool {
+        let mut writes = self.writes.lock().unwrap();
+        let stamps = writes.entry(id.to_string()).or_default();
+        stamps.retain(|t| now.saturating_sub(*t) < AGENT_WRITE_WINDOW_MS);
+        if stamps.len() >= AGENT_WRITE_LIMIT {
+            return false;
+        }
+        stamps.push(now);
+        true
+    }
+
     /// Decide whether `agent` may drive the cat's face right now.
     ///
     /// Returns Err with a human-readable reason when it may not. A refusal is NOT a queue: a
@@ -1937,6 +2241,7 @@ fn registry_entry<'a>(
     agents: &'a mut HashMap<String, AgentIdentity>,
     id: &str,
     now: u64,
+    seeded_permission: AgentPermission,
 ) -> &'a mut AgentIdentity {
     if !agents.contains_key(id) {
         while agents.len() >= AGENT_REGISTRY_CAP {
@@ -1960,6 +2265,8 @@ fn registry_entry<'a>(
             registered_at: now,
             last_seen: now,
             claims: 0,
+            // Seeded from the saved grants, not from the default - see AgentRegistry::saved.
+            permission: seeded_permission,
         });
     entry.last_seen = now;
     entry
@@ -1974,10 +2281,61 @@ fn resolve_agent(registry: &AgentRegistry, id: Option<&str>, now: u64) -> AgentI
     // The id comes from outside this process and becomes a map key and UI text, so it gets the
     // same treatment as every other external string: bounded.
     let id: String = id.chars().take(64).collect();
+    // Read before taking the agents lock: permission_of takes it too, and taking it twice on
+    // one thread is a deadlock, not a slow path.
+    let seeded = registry.saved.lock().unwrap().get(&id).copied().unwrap_or_default();
     let mut agents = registry.agents.lock().unwrap();
-    let entry = registry_entry(&mut agents, &id, now);
+    let entry = registry_entry(&mut agents, &id, now, seeded);
     entry.claims += 1;
     entry.clone()
+}
+
+/// Refuse a persistent write from an agent that is not trusted, or None to let it through.
+///
+/// `/control` filters per field, because a control call usually asks for several things and one
+/// over-reaching field should not cost the caller the rest. These two endpoints do exactly one
+/// thing each, so there is nothing to filter: it is allowed or it is not.
+///
+/// The caller id comes from the `X-Lingxi-Agent` header rather than the body, because the body
+/// is read once and consumed, and reading it here to look for an `agent` key would leave the
+/// handler below with nothing. A caller that sends no header is `anonymous`, which gets the
+/// default tier like any other unregistered id.
+fn refuse_untrusted_write(
+    app: &tauri::AppHandle,
+    request: &tiny_http::Request,
+    surface: &str,
+) -> Option<tiny_http::Response<std::io::Cursor<Vec<u8>>>> {
+    let id = request
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv("X-Lingxi-Agent"))
+        .map(|h| h.value.as_str().trim().chars().take(64).collect::<String>())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "anonymous".to_string());
+    let registry = app.state::<AgentRegistry>();
+    let permission = registry.permission_of(&id);
+    let now = now_millis();
+    if !permission.may_write_settings() {
+        let reason = format!(
+            "「{id}」的权限档位是 {}，不能写 {surface}。要放行，去 主界面 → Agent 接入 → 权限，改成 trusted。",
+            permission.as_str()
+        );
+        registry.record(&id, surface, "write".to_string(), "denied", Some(reason.clone()));
+        return Some(json_response(
+            403,
+            serde_json::json!({ "ok": false, "rejected": [reason] }).to_string(),
+        ));
+    }
+    if !registry.take_write_budget(&id, now) {
+        let reason = format!("「{id}」一分钟内的写入超过 {AGENT_WRITE_LIMIT} 次，这次先挡下。");
+        registry.record(&id, surface, "write".to_string(), "throttled", Some(reason.clone()));
+        return Some(json_response(
+            429,
+            serde_json::json!({ "ok": false, "rejected": [reason] }).to_string(),
+        ));
+    }
+    registry.record(&id, surface, "write".to_string(), "applied", None);
+    None
 }
 
 /// Reject an intent the cat cannot act on, at the boundary, with a reason.
@@ -2023,6 +2381,87 @@ fn apply_control_command(
     let registry = app.state::<AgentRegistry>();
     let now = now_millis();
     let identity = resolve_agent(&registry, command.get("agent").and_then(|v| v.as_str()), now);
+
+    // --- permissions ---------------------------------------------------------------------
+    //
+    // Filtered once, here, rather than guarded at each of the field sites below. A check that
+    // has to be remembered at every site is a check that will eventually be forgotten at one,
+    // and the one it is forgotten at is a persistent write granted to everybody.
+    //
+    // A denied field is REMOVED from the command and reported in `rejected`, so the rest of the
+    // call still applies. A themed-and-expressive request from a performer sets the expression
+    // and is told, in the same response, that the theme did not change and why. Refusing the
+    // whole call instead would make a single over-reaching field silently cost the caller
+    // everything else it asked for.
+    let permission = identity.permission;
+    let mut command_owned = command.clone();
+    let asked: String = command
+        .as_object()
+        .map(|o| {
+            o.keys()
+                .filter(|k| !k.starts_with("__") && *k != "agent" && *k != "priority")
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default();
+
+    if !permission.may_perform() {
+        // observer: nothing to filter, there is nothing it may do.
+        registry.record(
+            &identity.id,
+            "control",
+            asked,
+            "denied",
+            Some("权限档位是 observer（只读）".to_string()),
+        );
+        rejected.push(format!(
+            "「{}」的权限档位是 observer（只读），这次调用没有任何改动。要放行，去 主界面 → Agent 接入 → 权限。",
+            identity.name
+        ));
+        return (applied, rejected, serde_json::Value::Object(detail));
+    }
+
+    if let Some(object) = command_owned.as_object_mut() {
+        let wanted_settings: Vec<String> =
+            SETTINGS_FIELDS.iter().filter(|f| object.contains_key(**f)).map(|f| f.to_string()).collect();
+        if !wanted_settings.is_empty() {
+            let allowed = permission.may_write_settings();
+            // The budget is spent only by a caller that is actually allowed to write, so a
+            // denied agent retrying cannot exhaust a budget it was never going to use.
+            let within_budget = allowed && registry.take_write_budget(&identity.id, now);
+            if !allowed || !within_budget {
+                for field in &wanted_settings {
+                    object.remove(field);
+                }
+                let reason = if !allowed {
+                    format!(
+                        "「{}」的权限档位是 {}，不能改会保存下来的设置（{}）。要放行，去 主界面 → Agent 接入 → 权限，改成 trusted。",
+                        identity.name,
+                        permission.as_str(),
+                        wanted_settings.join("、"),
+                    )
+                } else {
+                    format!(
+                        "「{}」一分钟内的设置写入超过 {} 次，这次先挡下（{}）。",
+                        identity.name,
+                        AGENT_WRITE_LIMIT,
+                        wanted_settings.join("、"),
+                    )
+                };
+                registry.record(
+                    &identity.id,
+                    "control",
+                    wanted_settings.join(","),
+                    if allowed { "throttled" } else { "denied" },
+                    Some(reason.clone()),
+                );
+                rejected.push(reason);
+            }
+        }
+    }
+    let command = &command_owned;
+
     let priority = command
         .get("priority")
         .and_then(|v| v.as_str())
@@ -2355,6 +2794,12 @@ fn apply_control_command(
         rejected.push(format!(
             "empty command: expected at least one of {CONTROL_FIELDS:?}"
         ));
+    }
+    // Successes are logged too, not only refusals. A log that only records what went wrong
+    // answers "why did this stop working" but not "what has this agent actually been doing",
+    // and the second is the question a user asks before granting a tier.
+    if !applied.is_empty() {
+        registry.record(&identity.id, "control", applied.join(","), "applied", None);
     }
     (applied, rejected, serde_json::Value::Object(detail))
 }
@@ -2829,9 +3274,13 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 // The id becomes a registry key and UI text; bound it like any
                                 // other external string (resolve_agent caps at the same 64).
                                 let id: String = id.chars().take(64).collect();
+                                // Same ordering rule as resolve_agent: read the saved grant
+                                // before taking the agents lock.
+                                let seeded =
+                                    registry.saved.lock().unwrap().get(&id).copied().unwrap_or_default();
                                 let identity = {
                                     let mut agents = registry.agents.lock().unwrap();
-                                    let entry = registry_entry(&mut agents, &id, now);
+                                    let entry = registry_entry(&mut agents, &id, now, seeded);
                                     if let Some(logo) = logo {
                                         entry.logo = Some(logo.to_string());
                                     }
@@ -2962,6 +3411,13 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     json_response(200, serde_json::to_string(&*memory).unwrap_or_else(|_| "{}".into()))
                 }
                 (tiny_http::Method::Post, "/memory") => {
+                    // The owner notes and the reminder list are the user's own writing, and
+                    // they persist - so they sit on the same side of the line as settings, and
+                    // need the same tier. See AgentPermission.
+                    if let Some(refusal) = refuse_untrusted_write(&app, &request, "memory") {
+                        request.respond(refusal).ok();
+                        continue;
+                    }
                     let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(value) => {
@@ -3033,6 +3489,13 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     }
                 }
                 (tiny_http::Method::Post, "/reminders") => {
+                    // The owner notes and the reminder list are the user's own writing, and
+                    // they persist - so they sit on the same side of the line as settings, and
+                    // need the same tier. See AgentPermission.
+                    if let Some(refusal) = refuse_untrusted_write(&app, &request, "reminders") {
+                        request.respond(refusal).ok();
+                        continue;
+                    }
                     let body = read_body_capped(&mut request);
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(value) => {
@@ -3747,6 +4210,23 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
             busy: state_is_busy(&event.state),
         },
     );
+    drop(map);
+    update_tray_attention(app);
+}
+
+/// Keep the native tray's read-only task summary in sync with the same latest-per-agent snapshot
+/// used by the home surface. Only actionable waits and failures need an attention count.
+fn update_tray_attention(app: &tauri::AppHandle) {
+    let attention_count = app.state::<ActivityState>().by_provider.lock().unwrap().values()
+        .filter(|activity| matches!(activity.state.as_str(), "failed" | "needs_input" | "needs_approval"))
+        .count();
+    let tray = app.state::<TrayState>();
+    let text = if attention_count == 0 {
+        "目前没有需要留意的任务".to_string()
+    } else {
+        format!("有 {attention_count} 个任务需要留意")
+    };
+    let _ = tray.attention_summary.set_text(&text);
 }
 
 /// Should this event produce anything visible at all?
@@ -3864,13 +4344,52 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         action.as_deref(),
         line.as_deref(),
     );
-    let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": 4000 }));
-    if let Some(action) = action {
-        let _ = app.emit("play-action", serde_json::json!({ "id": action }));
-    }
-    // Only the states a person actually wants narrated get a bubble. "running" fires constantly.
-    if let Some(line) = line {
-        let _ = app.emit("say", serde_json::json!({ "text": line, "durationMs": 3200 }));
+    // A task event that speaks is a report on behalf of its source. Route that one command
+    // through the same stage claim as /control so the bubble receives the registered logo and
+    // respects cross-agent priority. Silent progress still changes only the cat's face/action;
+    // it must not leave an attribution waiting for some unrelated future bubble.
+    let report_line = if event.state == "completed" {
+        let summary = event.summary.trim();
+        // A host notify says only that its chat turn ended. It is not evidence that the
+        // user's underlying task succeeded, so never announce this kind as “搞定啦”.
+        let lead = if event.kind == "chat" { "本轮回复结束" } else { line.unwrap_or("已完成") };
+        let default_summary = format!("{}: completed", event.kind);
+        Some(if summary.is_empty() || summary == default_summary.as_str() {
+            lead.chars().take(SAY_MAX_CHARS).collect::<String>()
+        } else {
+            format!("{lead} · {summary}").chars().take(SAY_MAX_CHARS).collect()
+        })
+    } else {
+        line.map(str::to_string)
+    };
+    if let Some(report_line) = report_line {
+        let agent = if event.source_id.is_empty() {
+            &event.provider
+        } else {
+            &event.source_id
+        };
+        let priority = match event.state.as_str() {
+            "failed" | "needs_input" | "needs_approval" => "alert",
+            "completed" => "report",
+            _ => "status",
+        };
+        let mut command = serde_json::json!({
+            "agent": agent,
+            "priority": priority,
+            "expression": expression,
+            "say": report_line,
+            "sayMs": 5200,
+            "holdMs": 5200,
+        });
+        if let Some(action) = action {
+            command["action"] = serde_json::json!(action);
+        }
+        let _ = apply_control_command(app, &command);
+    } else {
+        let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": 4000 }));
+        if let Some(action) = action {
+            let _ = app.emit("play-action", serde_json::json!({ "id": action }));
+        }
     }
     // Every finished task is a small deposit in the relationship - see MemoryState.
     if event.state == "completed" {
@@ -3963,47 +4482,30 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     let size_small = CheckMenuItem::with_id(app, "size-small", "小 (0.25x)", true, false, None::<&str>)?;
     let size_medium = CheckMenuItem::with_id(app, "size-medium", "中 (0.5x)", true, false, None::<&str>)?;
     let size_large = CheckMenuItem::with_id(app, "size-large", "大 (1x)", true, true, None::<&str>)?;
-    let shape_submenu = Submenu::with_items(app, "形状", true, &[&size_small, &size_medium, &size_large])?;
+    let size_submenu = Submenu::with_items(app, "大小", true, &[&size_small, &size_medium, &size_large])?;
 
-
-    // 玩具 / 特效: plain menu items rather than checkmarks. A toy is a thing you put down and
-    // pick up, and a performance is a one-shot - neither is a persistent mode the tray should
-    // claim to be showing the state of.
-    let toy_yarn = MenuItem::with_id(app, "toy-yarn", "毛线球", true, None::<&str>)?;
-    let toy_feather = MenuItem::with_id(app, "toy-feather", "逗猫棒", true, None::<&str>)?;
-    let toy_laser = MenuItem::with_id(app, "toy-laser", "激光笔", true, None::<&str>)?;
-    let toy_none = MenuItem::with_id(app, "toy-none", "收起玩具", true, None::<&str>)?;
-    let toy_submenu = Submenu::with_items(
-        app,
-        "玩具",
-        true,
-        &[&toy_yarn, &toy_feather, &toy_laser, &PredefinedMenuItem::separator(app)?, &toy_none],
-    )?;
-
-    let fx_angry = MenuItem::with_id(app, "fx-angry-claw", "愤怒抓屏", true, None::<&str>)?;
-    let fx_kiss = MenuItem::with_id(app, "fx-kiss-rush", "飞奔亲亲", true, None::<&str>)?;
-    let fx_zoomies = MenuItem::with_id(app, "fx-zoomies", "半夜暴走", true, None::<&str>)?;
-    let fx_submenu = Submenu::with_items(app, "特效", true, &[&fx_angry, &fx_kiss, &fx_zoomies])?;
-
-    // "主界面" first, per the requested layout - it's the primary entry point (identity,
-    // agent connection, settings), with the tray itself staying a lean quick-access menu.
-    let main_window = MenuItem::with_id(app, "main-window", "主界面", true, None::<&str>)?;
-    let debug_window = MenuItem::with_id(app, "debug-window", "调试台", true, None::<&str>)?;
+    // These disabled rows make the tray a glanceable status surface without pretending a task
+    // can be approved or controlled from a native menu.
+    let status_summary = MenuItem::with_id(app, "status-summary", "灵犀 · 陪你工作中", false, None::<&str>)?;
+    let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有需要留意的任务", false, None::<&str>)?;
+    let play = MenuItem::with_id(app, "play", "逗一逗", true, None::<&str>)?;
+    let clear_toy = MenuItem::with_id(app, "clear-toy", "收起玩具", true, None::<&str>)?;
+    let interaction_submenu = Submenu::with_items(app, "互动", true, &[&play, &clear_toy])?;
+    let main_window = MenuItem::with_id(app, "main-window", "打开灵犀…", true, None::<&str>)?;
     let toggle_visibility = MenuItem::with_id(app, "toggle-visibility", "隐藏", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出灵犀", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
         &[
-            &main_window,
-            &debug_window,
-            &PredefinedMenuItem::separator(app)?,
-            &shape_submenu,
-            &toy_submenu,
-            &fx_submenu,
+            &status_summary,
+            &attention_summary,
             &PredefinedMenuItem::separator(app)?,
             &toggle_visibility,
+            &size_submenu,
+            &interaction_submenu,
             &PredefinedMenuItem::separator(app)?,
+            &main_window,
             &quit,
         ],
     )?;
@@ -4029,14 +4531,8 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
                 "size-medium" => state.apply_scale(app, SCALE_MEDIUM),
                 "size-large" => state.apply_scale(app, SCALE_LARGE),
                 "main-window" => open_or_focus_management_window(app),
-                "debug-window" => open_or_focus_debug_window(app),
-                "toy-yarn" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "yarn" })); }
-                "toy-feather" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "feather" })); }
-                "toy-laser" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "laser" })); }
-                "toy-none" => { let _ = app.emit("clear-toy", ()); }
-                "fx-angry-claw" => { let _ = app.emit("perform", serde_json::json!({ "id": "angry-claw" })); }
-                "fx-kiss-rush" => { let _ = app.emit("perform", serde_json::json!({ "id": "kiss-rush" })); }
-                "fx-zoomies" => { let _ = app.emit("perform", serde_json::json!({ "id": "zoomies" })); }
+                "play" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "feather" })); }
+                "clear-toy" => { let _ = app.emit("clear-toy", ()); }
                 "toggle-visibility" => {
                     let next = !state.visible.load(Ordering::SeqCst);
                     state.set_visible(app, next);
@@ -4052,6 +4548,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         size_medium,
         size_large,
         toggle_visibility,
+        attention_summary,
         visible: AtomicBool::new(true),
         current_scale: Mutex::new(SCALE_LARGE),
         skin: Mutex::new(DEFAULT_SKIN.to_string()),
@@ -4283,8 +4780,9 @@ fn open_or_focus_management_window(app: &tauri::AppHandle) {
     }
     let builder = WebviewWindowBuilder::new(app, "management", WebviewUrl::App("management.html".into()))
         .title("灵犀 · 主界面")
-        .inner_size(640.0, 560.0)
-        .resizable(false)
+        .inner_size(960.0, 680.0)
+        .min_inner_size(860.0, 620.0)
+        .resizable(true)
         .visible(true);
     if let Err(e) = builder.build() {
         eprintln!("[lingxi-desktop] failed to open management window: {e}");
@@ -4330,6 +4828,8 @@ pub fn run() {
             install_claude_hooks,
             uninstall_claude_hooks,
             claude_hooks_installed,
+            get_agent_activity,
+            set_agent_permission,
             codex_integration_status,
             install_codex_notify,
             uninstall_codex_notify,
@@ -4448,6 +4948,13 @@ pub fn run() {
             app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
             app.manage(AssetErrorState { errors: Mutex::new(Vec::new()) });
             app.manage(AgentRegistry::default());
+            // Grants the user made in a previous session. Loaded before the bridge starts
+            // listening, so the first call after a restart is already judged by the right tier
+            // rather than by the default - otherwise a trusted agent that posts on launch gets
+            // one refusal for no reason a user could explain.
+            if let Ok(dir) = app.path().app_config_dir() {
+                app.state::<AgentRegistry>().load_permissions(dir.join("agent-permissions.json"));
+            }
             app.manage(TaskProgressState::default());
             app.manage(BridgeBindState::default());
             app.manage(BridgeToken::load_or_create(app.handle()));
@@ -4739,10 +5246,107 @@ mod tests {
     }
 
     #[test]
+    fn permission_tiers_draw_the_line_at_persistence() {
+        // The classification the whole design rests on: transient performance vs. things that
+        // outlive the process. A wrong expression is gone in four seconds; a wrong
+        // `visible: false` leaves the user with no cat and no idea which agent did it.
+        assert!(!AgentPermission::Observer.may_perform());
+        assert!(!AgentPermission::Observer.may_write_settings());
+        assert!(AgentPermission::Performer.may_perform());
+        assert!(!AgentPermission::Performer.may_write_settings());
+        assert!(AgentPermission::Trusted.may_perform());
+        assert!(AgentPermission::Trusted.may_write_settings());
+        // Default is performer, NOT trusted: a whitelist means not-listed is not-allowed.
+        assert_eq!(AgentPermission::default(), AgentPermission::Performer);
+    }
+
+    #[test]
+    fn every_persisting_control_field_is_classified() {
+        // SETTINGS_FIELDS is hand-maintained, so this asserts it still names exactly the fields
+        // that survive a restart. A new persisting knob added to CONTROL_FIELDS without being
+        // listed here would silently be granted to every caller as a performance field - the
+        // exact hole the whitelist exists to close.
+        for field in SETTINGS_FIELDS {
+            assert!(CONTROL_FIELDS.contains(&field), "{field} is not a control field at all");
+        }
+        // These persist through TrayState::persist() - see the struct.
+        for field in ["skin", "camera", "scale", "visible"] {
+            assert!(SETTINGS_FIELDS.contains(&field), "{field} persists but is not gated");
+        }
+    }
+
+    #[test]
+    fn permission_parse_rejects_anything_it_does_not_know() {
+        for name in AGENT_PERMISSIONS {
+            assert_eq!(AgentPermission::parse(name).unwrap().as_str(), name, "round trip {name}");
+        }
+        // Not defaulted - an unrecognised tier must never resolve to a usable one.
+        assert!(AgentPermission::parse("admin").is_none());
+        assert!(AgentPermission::parse("Trusted").is_none(), "case matters, the file is machine-written");
+        assert!(AgentPermission::parse("").is_none());
+    }
+
+    #[test]
+    fn a_grant_outlives_the_agent_being_evicted_or_the_app_restarting() {
+        // The reason grants are kept apart from `agents`: that map is capped and evicts the
+        // stalest entry, and it is empty after a restart. A decision the user made must survive
+        // both, or a quiet week silently revokes it.
+        let registry = AgentRegistry::default();
+        registry.set_permission("codex", AgentPermission::Trusted);
+        assert_eq!(registry.permission_of("codex"), AgentPermission::Trusted);
+
+        // Evicted from `agents` (or never there - same thing to permission_of).
+        registry.agents.lock().unwrap().clear();
+        assert_eq!(registry.permission_of("codex"), AgentPermission::Trusted);
+
+        // An id nobody granted anything gets the default, not the last one set.
+        assert_eq!(registry.permission_of("someone-else"), AgentPermission::Performer);
+    }
+
+    #[test]
+    fn a_new_agent_is_seeded_from_the_saved_grant_not_the_default() {
+        let registry = AgentRegistry::default();
+        registry.set_permission("codex", AgentPermission::Trusted);
+        let identity = resolve_agent(&registry, Some("codex"), 1_000);
+        assert_eq!(
+            identity.permission,
+            AgentPermission::Trusted,
+            "first call after a restart must already be trusted, not refused once and then fixed",
+        );
+    }
+
+    #[test]
+    fn the_write_budget_is_a_sliding_window() {
+        let registry = AgentRegistry::default();
+        let start = 1_000_000u64;
+        for i in 0..AGENT_WRITE_LIMIT {
+            assert!(registry.take_write_budget("a", start + i as u64), "call {i} should fit");
+        }
+        assert!(!registry.take_write_budget("a", start + 10), "the budget must actually run out");
+        // Sliding, not fixed: a fixed window would let a caller spend the whole budget at 0:59
+        // and the whole budget again at 1:01, which is the burst it exists to prevent.
+        assert!(registry.take_write_budget("a", start + AGENT_WRITE_WINDOW_MS + 1));
+        // Budgets are per agent - one noisy caller must not throttle a quiet one.
+        assert!(registry.take_write_budget("b", start + 10));
+    }
+
+    #[test]
+    fn the_call_log_is_bounded_and_keeps_the_newest() {
+        let registry = AgentRegistry::default();
+        for i in 0..(AGENT_LOG_CAP + 25) {
+            registry.record("a", "control", format!("field{i}"), "applied", None);
+        }
+        let log = registry.log.lock().unwrap();
+        assert_eq!(log.len(), AGENT_LOG_CAP, "an unbounded log is a memory leak with a nice name");
+        assert_eq!(log.last().unwrap().asked, format!("field{}", AGENT_LOG_CAP + 24));
+        assert!(log.first().unwrap().asked.starts_with("field"));
+    }
+
+    #[test]
     fn codex_install_refuses_to_overwrite_someone_elses_notify() {
         // The case the whole design turns on. `notify` is one TOML key, so installing over an
         // existing one deletes another tool's integration - silently, because Codex will simply
-        // stop calling it. integrations/plugins/codex/README.md is explicit that we must not:
+        // stop calling it. integrations/hosts/codex/README.md is explicit that we must not:
         // "别直接覆盖用户已有的 notify。那是别人的功能，猫不值得。"
         let existing = r#"
 model = "o3"
@@ -4750,7 +5354,11 @@ notify = ["/Users/someone/bin/SkyComputerUseClient", "turn-ended"]
 "#;
         let error = codex_install_into(existing).expect_err("must refuse");
         assert!(error.contains("SkyComputerUseClient"), "the refusal has to show WHOSE it is: {error}");
-        assert!(error.contains("分发脚本"), "and how to keep both: {error}");
+        // And how to keep both - the refusal has to be actionable, or it is just a wall.
+        assert!(
+            error.contains("integrations/hosts/codex/install.sh"),
+            "the refusal must name the installer that CAN merge the two: {error}",
+        );
     }
 
     #[test]
@@ -4908,6 +5516,7 @@ command = "node"
             registered_at: 0,
             last_seen: 0,
             claims: 0,
+            permission: AgentPermission::default(),
         };
         let item = QueuedReaction {
             agent: identity,

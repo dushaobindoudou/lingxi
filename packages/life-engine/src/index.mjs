@@ -1279,7 +1279,7 @@ export function createLifeEngine(config = {}) {
    * cat and holds still has not stopped meaning it, and re-deciding as the travel sums decay
    * would have the cat warm up and then flee without the user doing anything.
    */
-  function updatePointerInitiative(cursor, deltaSeconds) {
+  function updatePointerInitiative(cursor, deltaSeconds, pointerOnPet) {
     if (!cursor) {
       pointerEngaged = false;
       pointerEngagedByUser = false;
@@ -1296,7 +1296,11 @@ export function createLifeEngine(config = {}) {
     lastCursor = { ...cursor };
     lastPosition = { ...position };
 
-    pointerEngaged = distance(position, cursor) < cfg.pointerEngageRadius;
+    // A renderer can provide a precise silhouette hit. The distance fallback remains for
+    // headless clients, but the desktop must not call a cursor below the feet "touching".
+    pointerEngaged = pointerOnPet == null
+      ? distance(position, cursor) < cfg.pointerEngageRadius
+      : pointerOnPet;
     if (!pointerEngaged) {
       pointerEngagedByUser = false;
       return;
@@ -1306,7 +1310,7 @@ export function createLifeEngine(config = {}) {
     pointerEngagedByUser = cursorTravel > catTravel * cfg.pointerInitiativeRatio && cursorTravel > 4;
   }
 
-  function tick(now, cursor) {
+  function tick(now, cursor, pointerOnPet) {
     // Before anything reads position or heading. A recovery here is recorded rather than
     // hidden, because "the cat vanished and then came back and nobody could say why" is
     // exactly the report this is meant to make impossible to file again.
@@ -1323,7 +1327,7 @@ export function createLifeEngine(config = {}) {
     batThisTick = false;
     turning = 0; // set by moveToward when it actually steers this tick
     chargeAmount = charge ? Math.min(1, (now - charge.since) / cfg.toyChargeMaxMs) : 0;
-    updatePointerInitiative(cursor, deltaSeconds);
+    updatePointerInitiative(cursor, deltaSeconds, pointerOnPet);
 
     // The toy moves whatever the cat is doing - a thrown ball keeps rolling while the cat is
     // being held, and the wand still follows your hand.

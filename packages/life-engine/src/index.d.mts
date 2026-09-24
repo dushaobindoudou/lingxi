@@ -186,7 +186,8 @@ export interface LifeEngine {
   /** Reposition the current toy (a drag), zeroing its velocity. */
   moveToy(point: Vec2): void;
   readonly toy: ToyState | null;
-  tick(now: number, cursor: Vec2 | null): LifeEngineSnapshot;
+  /** A renderer may pass its silhouette hit so contact follows the visible body. */
+  tick(now: number, cursor: Vec2 | null, pointerOnPet?: boolean): LifeEngineSnapshot;
 }
 export function createLifeEngine(config?: LifeEngineConfig): LifeEngine;
 export const BEHAVIOR_STATES: readonly BehaviorState[];

@@ -199,37 +199,45 @@ function createFeather(): ToyProp {
   const rodTip = new THREE.Vector3(1.6, 0.6, -1.2);
   const strike = new THREE.Vector3();
   const forward = new THREE.Vector3();
+  const localPoint = new THREE.Vector3();
+  const localAbove = new THREE.Vector3();
+  const worldScaleVector = new THREE.Vector3();
+  const inverseGroupWorld = new THREE.Matrix4();
   let started = false;
+  let previousScale = 0;
 
   return {
     object: group,
     // The hand. Everything below it dangles, so this is what belongs on the pointer.
     anchorHeight: 0,
     update(deltaSeconds) {
-      // The rope is simulated in the prop's LOCAL space, with the rod tip as the hand. The prop
-      // is moved by the renderer every frame, so a local anchor means the rope experiences the
-      // hand moving through it exactly as a real one would - no velocity bookkeeping needed.
-      ropeHand.copy(rodTip);
-      if (!started) {
+      // Simulate in world-aligned voxel units. A rope simulated in the moving group's local
+      // space sees a stationary hand, so its feather follows rigidly and never swings.
+      group.updateWorldMatrix(true, false);
+      const scale = Math.max(1e-6, group.getWorldScale(worldScaleVector).x);
+      group.localToWorld(ropeHand.copy(rodTip)).multiplyScalar(1 / scale);
+      if (!started || Math.abs(scale - previousScale) > 1e-6) {
         started = true;
         rope.reset(ropeHand);
       }
+      previousScale = scale;
       rope.update(ropeHand, deltaSeconds);
 
       const positions = stringGeometry.getAttribute('position') as THREE.BufferAttribute;
+      inverseGroupWorld.copy(group.matrixWorld).invert();
       for (let i = 0; i < ROPE_POINTS; i += 1) {
-        const point = rope.points[i];
-        positions.setXYZ(i, point.x, point.y, point.z);
+        // Convert the simulated world point back to the prop's local frame for rendering.
+        localPoint.copy(rope.points[i]).multiplyScalar(scale).applyMatrix4(inverseGroupWorld);
+        positions.setXYZ(i, localPoint.x, localPoint.y, localPoint.z);
+        if (i === ROPE_POINTS - 2) localAbove.copy(localPoint);
       }
       positions.needsUpdate = true;
       stringGeometry.computeBoundingSphere();
 
-      const tip = rope.points[ROPE_POINTS - 1];
-      const above = rope.points[ROPE_POINTS - 2];
-      plume.position.copy(tip);
+      plume.position.copy(localPoint);
       // Point the feather along the last link, so it flies out sideways on a hard swing
       // instead of always hanging straight down.
-      forward.subVectors(tip, above);
+      forward.subVectors(localPoint, localAbove);
       if (forward.lengthSq() > 1e-6) {
         plume.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), forward.normalize());
       }

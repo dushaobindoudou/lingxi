@@ -372,9 +372,9 @@ async function main() {
   // the cat: a mark pinned to the body is a HUD with no natural moment to leave, while a bubble
   // already has one. Arrives before the `say` that follows it, because the Rust side claims the
   // stage before it applies the rest of the command.
-  void listen<{ name: string; logo: string | null; color: string }>('agent-stage', (event) => {
-    const { name, logo, color } = event.payload;
-    fx.setBubbleAttribution(logo ? { name, logo, color } : null);
+  void listen<{ name: string; badge: string; logo: string | null; color: string }>('agent-stage', (event) => {
+    const { name, badge, logo, color } = event.payload;
+    fx.setBubbleAttribution(logo || badge ? { name, badge, logo, color } : null);
   });
 
   void listen('reload-custom-assets', () => {
@@ -659,7 +659,10 @@ async function main() {
 
       // Drag position updates now come from the native mousemove listener above (faster,
       // no relay round-trip) - nothing to do here for dragging specifically.
-      const snapshot = engine.tick(now, cursor);
+      // The engine's radial fallback is useful in headless tests, but the live cat has an
+      // actual silhouette. Use that for touch so approaching from below cannot trigger early.
+      const pointerOnPet = cursor ? renderer.hitTest(cursor, true) : false;
+      const snapshot = engine.tick(now, cursor, pointerOnPet);
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the
       // gait integrates would be wrong.

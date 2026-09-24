@@ -273,7 +273,7 @@ export function createThreeRenderer(): Renderer {
       if (object instanceof THREE.Mesh) object.material = bodyMaterial;
     });
     for (const node of SKELETON.nodes) {
-      if (!FACE_BOX.test(node.id)) continue;
+      if (!FACE_BOX.test(node.id) && !skin.hiddenNodes?.includes(node.id)) continue;
       for (const child of rig.node(node.id).children) {
         if (child instanceof THREE.Mesh) child.visible = false;
       }
@@ -1137,7 +1137,7 @@ export function createThreeRenderer(): Renderer {
       // to one side. Good behaviour in general; wrong while the camera is rolling.
       const performing = performanceScale != null;
       if (performing) targetHeadYaw = 0; // square to the lens, not merely un-glanced
-      if (cursor && !performing) {
+      if (cursor && state.pointer?.engaged && !performing) {
         const toCursorX = cursor.x - state.position.x;
         const toCursorY = cursor.y - state.position.y;
         const reach = Math.hypot(toCursorX, toCursorY);
@@ -1168,13 +1168,14 @@ export function createThreeRenderer(): Renderer {
       renderer.render(scene, camera);
     },
 
-    hitTest(point: { x: number; y: number }) {
+    hitTest(point: { x: number; y: number }, precise = false) {
       ndc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
       // Precise: intersect the actual boxes. The old bounding-sphere test treated a
       // cat-shaped object as a ball, so a click in the empty space beside it still counted
       // as a grab and teleported the pet ("点击有时候会空白的地方影响整个位置").
       if (raycaster.intersectObject(rig.root, true).length > 0) return true;
+      if (precise) return false;
       // ...but a precise silhouette is impossible to grab at the smallest size presets, so
       // keep the generous circle as a fallback only while the model really is that small.
       const worldRadius = rig.boundingRadius * effectiveScale();

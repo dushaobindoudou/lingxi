@@ -174,15 +174,15 @@ export interface Renderer {
   /**
    * Apply one frame of life-engine state. `position` is in the same logical (CSS-pixel)
    * space as `resize` was called with. `cursor` (same space, null if unknown/off-desktop)
-   * lets a 3D renderer do something better than pure left/right facing - e.g. a subtle
-   * head-turn toward the cursor - without the life engine needing to know it exists.
+   * lets a 3D renderer draw contact responses. `pointer.engaged` is the rendered silhouette
+   * hit when the host supports precise hit testing.
    */
   render(
-    state: { state: string; position: { x: number; y: number }; facing: 1 | -1 },
+    state: { state: string; position: { x: number; y: number }; facing: 1 | -1; pointer?: { engaged: boolean; byUser: boolean } },
     deltaSeconds: number,
     cursor: { x: number; y: number } | null,
   ): void;
   /** True if the given point (CSS pixels, same space as resize/render) hits the model. */
-  hitTest(point: { x: number; y: number }): boolean;
+  hitTest(point: { x: number; y: number }, precise?: boolean): boolean;
   dispose(): void;
 }

@@ -51,6 +51,8 @@ export interface VoxelSkin {
   rigId: string;
   /** slot -> hex colour. Sparse: unknown slots fall back (see DEFAULT_SLOT_COLOURS). */
   materials: Record<string, string>;
+  /** Optional body nodes that a silhouette skin deliberately removes (e.g. cat ears/tail). */
+  hiddenNodes?: string[];
   proportions?: Record<string, ProportionOverride>;
 }
 

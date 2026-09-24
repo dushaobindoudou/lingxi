@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../node_modules/three/build/three.module.js';
 import { createRope } from '../src/rig/rope.ts';
+import { createToyProp } from '../src/rig/toys.ts';
 
 const step = 1 / 60;
 function settle(rope, anchor, frames = 240) {
@@ -40,6 +41,31 @@ test('the tip LAGS the hand - which is the whole point of a cat wand', () => {
     worstLag = Math.max(worstLag, hand.x - rope.points[5].x);
   }
   assert.ok(worstLag > 2, `the tip should trail well behind the hand, lagged only ${worstLag.toFixed(2)}`);
+});
+
+test('the rendered wand feather lags a moving prop instead of staying rigidly attached', () => {
+  for (const scale of [1, 0.03]) {
+    const prop = createToyProp('feather');
+    prop.object.scale.setScalar(scale);
+    const plume = prop.object.children.find((child) => child instanceof THREE.Group);
+    const string = prop.object.children.find((child) => child instanceof THREE.Line);
+    assert.ok(plume && string, 'the wand has a visible feather and string');
+    for (let frame = 0; frame < 180; frame += 1) prop.update(step, 0, 0);
+    let greatestLag = 0;
+    for (let frame = 1; frame <= 12; frame += 1) {
+      prop.object.position.x = frame * 1.2 * scale;
+      prop.update(step, 0, 0);
+      prop.object.updateMatrixWorld(true);
+      const handX = prop.object.position.x + 1.6 * scale;
+      const featherX = plume.getWorldPosition(new THREE.Vector3()).x;
+      greatestLag = Math.max(greatestLag, (handX - featherX) / scale);
+      const first = new THREE.Vector3().fromBufferAttribute(string.geometry.getAttribute('position'), 0);
+      string.localToWorld(first);
+      assert.ok(Math.abs(first.x - handX) < 1e-6, 'the string stays attached to the rod tip');
+    }
+    prop.dispose();
+    assert.ok(greatestLag > 2, `at scale ${scale}, the visible feather lagged only ${greatestLag.toFixed(2)} voxels`);
+  }
 });
 
 test('it keeps swinging after the hand stops, then comes to rest', () => {

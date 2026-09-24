@@ -845,6 +845,17 @@ test('a pointer the user moves onto the cat is affection - the cat stays', () =>
   assert.equal(snap.pointer.byUser, true, 'the verdict must latch while the hand rests on the cat');
 });
 
+test('approaching from below does not count as touching until the pointer reaches the cat', () => {
+  const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 700, y: 450 } });
+  engine.tick(0, { x: 700, y: 600 }, false);
+  const below = engine.tick(16, { x: 700, y: 530 }, false);
+  assert.equal(below.pointer.engaged, false, '80px below the cat is not contact');
+  assert.equal(below.pointer.byUser, false, 'approaching empty space must not trigger affection');
+  const onCat = engine.tick(32, { x: 700, y: 450 }, true);
+  assert.equal(onCat.pointer.engaged, true, 'contact starts on the rendered cat');
+  assert.equal(onCat.pointer.byUser, true, 'the user moved the pointer onto the cat');
+});
+
 test('a parked pointer the cat wanders into is not affection - the cat moves off', () => {
   const engine = createLifeEngine({ bounds: { width: 1400, height: 900 }, position: { x: 700, y: 450 } });
   const parked = { x: 700, y: 450 }; // never moves; the cat starts standing on it
