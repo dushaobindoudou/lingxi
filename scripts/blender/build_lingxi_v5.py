@@ -23,6 +23,8 @@ pink=softmat('PinkPawPads',(.65,.32,.30),.5,.12)
 nosemat=softmat('PinkNose',(.62,.28,.25),.36,.10)
 mouthmat=softmat('PinkMouth',(.46,.14,.17),.4,.16)
 iris=softmat('HazelIris',(.22,.26,.13),.42)
+# Eyelids are face skin, not the bright white belly down - see where they are built.
+lidmat=softmat('LidSkin',(.70,.63,.55),.78,.14)
 cornea=softmat('ClearCornea',(1,1,1),.035)
 cornea.node_tree.nodes.get('Principled BSDF').inputs['Transmission Weight'].default_value=1
 strand=bpy.data.materials.new('LX_ShortFur_Strand');strand.use_nodes=True
@@ -146,8 +148,17 @@ for s in [-1,1]:
 # Eyes: photo-derived iris mapped on front disk, shallow corneal cap, actual eyelid shape keys.
 eyelids=[];eye_shapes=[]
 def add_eye_blink(obj,center_z):
+ """Squash the eye part to 3.5% of its height, so the closing lids have nothing to clip through.
+
+ The pivot is `center_z`. It used to be `obj.data.vertices[i].co.z` - the basis vertex's own z -
+ and a new shape key starts as a copy of the basis, so that bracket was identically zero and
+ every vertex landed on `center_z`. The eye did not squash, it collapsed into one horizontal
+ plane wider than the socket: the white stripe across the face in every frame where Blink
+ approached 1. Only Sleep ever held Blink at 1, and the pose sheet sampled every other clip
+ near a sine zero crossing, so it showed up exactly once and read as a lighting artefact.
+ """
  obj.shape_key_add(name='Basis');key=obj.shape_key_add(name='Blink')
- for i,v in enumerate(key.data):v.co.z=center_z+(v.co.z-obj.data.vertices[i].co.z)*.035
+ for i,v in enumerate(key.data):v.co.z=center_z+(obj.data.vertices[i].co.z-center_z)*.035
  eye_shapes.append(obj)
 for s in [-1,1]:
  suf='L' if s<0 else 'R';cx=s*.066;cy=-.409;cz=.547;r=.031
@@ -171,8 +182,13 @@ for s in [-1,1]:
     vs.append((cx+math.cos(a)*rad,cy-.009+.012*t,cz+math.sin(a)*rad))
   for j in range(8):
    for i in range(40):a=j*41+i;fs.append((a,a+1,a+42,a+41))
-  me=bpy.data.meshes.new('Eyelid');me.from_pydata(vs,[],fs);me.update();o=bpy.data.objects.new('LX_Lid'+('Upper' if upper else 'Lower')+'.'+suf,me);scene.collection.objects.link(o);me.materials.append(cream)
+  me=bpy.data.meshes.new('Eyelid');me.from_pydata(vs,[],fs);me.update();o=bpy.data.objects.new('LX_Lid'+('Upper' if upper else 'Lower')+'.'+suf,me);scene.collection.objects.link(o)
+  # The lid is skin, so it wears the coat and carries thickness like the ear shell does. As a
+  # zero-thickness fan in flat cream it read as a paper cut-out pasted in front of the face -
+  # visible the moment the pose sheet stopped sampling every clip at a sine zero crossing.
+  me.materials.append(lidmat)
   for p in me.polygons:p.use_smooth=True
+  lidmod=o.modifiers.new('Lid shell','SOLIDIFY');lidmod.thickness=.0035;lidmod.offset=0
   bind(o,'Head');o.shape_key_add(name='Basis');key=o.shape_key_add(name='Blink')
   for j in range(9):
    t=j/8
@@ -220,27 +236,29 @@ def fur_color(p,reg):
   col=light[None,:]*(1-s[:,None])+dark[None,:]*s[:,None]
   return col
  if reg=='Head':
-  # forehead M: vertical bars over the brow, warping outward at the edges
-  forehead=np.clip((z-.495)/.05,0,1)*np.clip((-.30-y)/.06,0,1)
-  m1=(np.sin(x*240+np.sign(x)*y*30+np.sin(z*40)*.8)+1)/2
-  # cheek side bars: horizontal bands behind the eye line
+  # forehead M: a few wide bars over the brow plus a narrow centre line,
+  # fading out on the crown instead of striping the whole top of the head
+  forehead=np.clip((z-.495)/.05,0,1)*np.clip((-.305-y)/.05,0,1)*np.clip((.63-z)/.06,0,1)
+  m1=(np.sin(x*150+np.sign(x)*y*45+np.sin(z*40)*.8)+1)/2
+  centre=np.exp(-(x/.013)**2)*np.clip((-.315-y)/.05,0,1)
+  # cheek side bars: soft horizontal bands on the flanks behind the eye line
   cheek=np.clip((.535-z)/.04,0,1)*np.clip((.50-z)/.04,0,1)*np.clip((abs(x)-.050)/.03,0,1)*np.clip((-.335-y)/.04,0,1)
   m2=(np.sin((y+.40)*170+np.sin(x*60)*.6)+1)/2
-  strength=np.clip(.85*forehead+.8*cheek,0,1)[:,None]
-  col=light[None,:]*(1-strength)+dark[None,:]*strength
+  stripe=np.clip(.8*forehead*m1+.55*cheek*m2+.75*centre,0,1)[:,None]
+  col=light[None,:]*(1-stripe)+dark[None,:]*stripe
   # white muzzle/chin (a narrow oval around the mouth, not the whole lower face),
   # plus two round brow dots (the "gentle" signature)
   wmask=np.clip((-.358-y)/.026,0,1)*np.clip((.505-z)/.022,0,1)*np.clip((.062-np.abs(x))/.014,0,1)
   for sx in [-1,1]:
-   wmask=np.maximum(wmask,np.exp(-(((np.abs(x)-sx*.047)/.011)**2+((z-.585)/.011)**2+((y+.385)/.014)**2)))
+   wmask=np.maximum(wmask,np.exp(-(((np.abs(x)-sx*.045)/.013)**2+((z-.588)/.012)**2+((y+.385)/.014)**2)))
   return col*(1-wmask[:,None])+white[None,:]*wmask[:,None]
  if reg=='body':
-  # spine stripes: phase across x (left-right), warping gently as they run down the back
-  warp=.9*np.sin(y*15+.7*z*20)
-  s=(np.sin(x*125+warp)+1)/2
+  # spine stripes: phase across x (left-right), bending as they run down the back
+  warp=1.3*np.sin(y*13+.7*z*20)
+  s=(np.sin(x*115+warp)+1)/2
   up=np.clip((z-.19)/.13,0,1)          # stripes live on the back/flanks, fade to the belly
-  strength=(.2+.8*up)[:,None]
-  col=light[None,:]*(1-strength)+dark[None,:]*strength
+  stripe=(s*(.25+.75*up))[:,None]
+  col=light[None,:]*(1-stripe)+dark[None,:]*stripe
   # belly white; a small chest patch; socks on all four legs
   wmask=np.maximum(np.clip((.15-z)/.055,0,1),np.clip((-.21-y)/.05,0,1))
   return col*(1-wmask[:,None])+white[None,:]*wmask[:,None]
@@ -295,6 +313,7 @@ def pose(name,u):
  for o in shapeobs:
   for k in o.data.shape_keys.key_blocks[1:]:k.value=0
  phase=u*math.tau;pb=rig.pose.bones
+ # Idle is the baseline every other clip is measured against, so it stays small on purpose.
  pb['Head'].rotation_euler[1]=.035*math.sin(phase);pb['Ear.L'].rotation_euler[1]=.10*math.sin(phase);pb['Tail3'].rotation_euler[0]=.12*math.sin(phase)
  blink=max(0,1-abs(u-.65)/.065)
  if name in ['Walk','Run']:
@@ -309,7 +328,11 @@ def pose(name,u):
   for suf in ['L','R']:
    pb['FrontUpper.'+suf].rotation_euler[0]=-.65*lift;pb['RearUpper.'+suf].rotation_euler[0]=.7*lift;pb['RearLower.'+suf].rotation_euler[0]=-.9*lift
  if name in ['LieDown','SideLie','Sleep','Stretch']:
-  f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.11*f
+  # The body has to come DOWN with the legs. Folding them 117 degrees while dropping the root
+  # 11cm left the silhouette 0.721 tall against Idle's 0.755 - a 4cm difference on a 75cm cat,
+  # which is why "lying down" looked like "standing with odd legs".
+  f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.28*f
+  pb['Spine'].rotation_euler[0]=.10*f
   for suf in ['L','R']:
    pb['FrontUpper.'+suf].rotation_euler[0]=-1.05*f;pb['FrontLower.'+suf].rotation_euler[0]=2.05*f;pb['RearUpper.'+suf].rotation_euler[0]=.95*f;pb['RearLower.'+suf].rotation_euler[0]=-2.05*f
   if name=='SideLie':pb['Root'].rotation_euler[2]=1.25*f;pb['Root'].location.y=-.025*f
@@ -318,8 +341,29 @@ def pose(name,u):
    pb['Root'].rotation_euler[2]=1.15;pb['Root'].location.y=-.025
    blink=1;pb['Head'].rotation_euler[0]=.20
   if name=='Stretch':pb['Spine'].rotation_euler[0]=.18*math.sin(math.pi*u);pb['Head'].rotation_euler[0]=-.15
- if name=='Curious':pb['Head'].rotation_euler[1]=.23*math.sin(phase);pb['Eye.L'].rotation_euler[2]=.1*math.sin(phase);pb['Eye.R'].rotation_euler[2]=.1*math.sin(phase)
- if name=='Happy':blink=.65;pb['Jaw'].rotation_euler[0]=-.09;pb['Tail2'].rotation_euler[0]=.25*math.sin(phase)
+ if name=='Curious':
+  # Leaning in, head cocked, weight forward. The old version rotated the head 13 degrees at its
+  # peak and moved nothing else, which is inside the noise of the idle wobble.
+  lean=.5-.5*math.cos(phase)
+  pb['Head'].rotation_euler[1]=.52*math.sin(phase);pb['Head'].rotation_euler[0]=-.28*lean
+  pb['Neck'].rotation_euler[0]=-.20*lean
+  pb['Spine'].rotation_euler[0]=-.16*lean
+  pb['Root'].location.y=-.030*lean
+  for suf in ['L','R']:
+   pb['Ear.'+suf].rotation_euler[0]=-.34*lean
+   pb['FrontUpper.'+suf].rotation_euler[0]=.22*lean;pb['RearUpper.'+suf].rotation_euler[0]=-.26*lean
+  pb['Eye.L'].rotation_euler[2]=.1*math.sin(phase);pb['Eye.R'].rotation_euler[2]=.1*math.sin(phase)
+  pb['Tail2'].rotation_euler[0]=.30*math.sin(phase*1.5)
+ if name=='Happy':
+  # Tail up, chest lifted, ears forward, a small bounce. Was a 5-degree jaw and a 4-degree tail
+  # swish around an otherwise untouched standing pose.
+  bounce=.5-.5*math.cos(phase*2)
+  blink=.55+.25*bounce;pb['Jaw'].rotation_euler[0]=-.20
+  pb['Root'].location.y=.022*bounce
+  pb['Spine'].rotation_euler[0]=-.14*bounce;pb['Head'].rotation_euler[0]=-.22*bounce
+  for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=-.26
+  pb['Tail1'].rotation_euler[0]=-.85;pb['Tail2'].rotation_euler[0]=-.35+.42*math.sin(phase*2)
+  pb['Tail3'].rotation_euler[0]=.30*math.sin(phase*2+1)
  if name in ['Yawn','Bite','Lick']:
   fac=math.sin(math.pi*u)**2 if name=='Yawn' else (.5-.5*math.cos(phase*2))
   pb['Jaw'].rotation_euler[0]=-1*(.65 if name=='Yawn' else .25)*fac
