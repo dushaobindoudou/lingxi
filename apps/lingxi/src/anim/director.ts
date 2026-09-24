@@ -6,10 +6,10 @@
 // or retuning an action never touches this file. What lives here is only the policy: which
 // categories suit which life-engine state, how long to wait between actions, and how a clip
 // crossfades in and out.
-import { sampleMotion, parseMotions, type Motion } from './motion.ts';
+import { sampleMotion, parseMotions, leavesFloor, type Motion } from './motion.ts';
 import { expressions, layers, type FaceState } from '../rig/art.ts';
 import { POSES } from './poses.ts';
-import actionData from '../data/actions.json';
+import actionData from '../data/actions.json' with { type: 'json' };
 
 export type PetState = 'idle' | 'dragged' | 'ai_directed' | 'wander' | 'play_toy';
 
@@ -172,7 +172,8 @@ export function createDirector(nodeIds: readonly string[], custom?: readonly Mot
   function pick(petState: PetState, movingNow: boolean): Motion | null {
     const allowed = STATE_CATEGORIES[petState];
     if (!allowed.length) return null;
-    let pool = actions.filter((action) => allowed.includes(action.category ?? ''));
+    // Never a jump: those are reactions to a toy or to a caller asking by name (see leavesFloor).
+    let pool = actions.filter((action) => allowed.includes(action.category ?? '') && !leavesFloor(action));
     // While moving, only clips that leave the legs alone are eligible - anything else would be
     // cancelled the moment it started.
     if (movingNow) pool = pool.filter((action) => legFree.get(action.id));

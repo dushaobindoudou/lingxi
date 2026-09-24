@@ -7,7 +7,7 @@
 // free: a skin ships a sparse override of box sizes, and the IK/gait adapt on their own.
 // The moment something downstream writes `13` for shoulder height, that capability is gone.
 import * as THREE from 'three';
-import skeletonData from '../data/skeleton.json';
+import skeletonData from '../data/skeleton.json' with { type: 'json' };
 import { computeAtlasLayout, applyAtlasUVs, paintAtlas } from './atlas.ts';
 
 export type Vec3Tuple = [number, number, number];
@@ -59,6 +59,12 @@ export interface VoxelSkin {
 export interface Rig {
   /** Ground anchor. The renderer positions this; y=0 on it means paws touching the floor. */
   root: THREE.Group;
+  /**
+   * The only child of `root`, in the rig's own voxel units and facing. Unlike `root`, nothing
+   * outside the body controller moves it, so a clip's `root.position.*` offsets land here -
+   * in the space they were authored in - instead of on a scaled anchor the renderer overwrites.
+   */
+  body: THREE.Group;
   node(id: string): THREE.Object3D;
   /** Post-skin segment length. IK and gait read lengths from here, never from the JSON. */
   segmentLength(id: string): number;
@@ -191,6 +197,7 @@ export function buildRig(skin: VoxelSkin, data: SkeletonData = DEFAULT_SKELETON)
 
   return {
     root,
+    body,
     node(id: string) {
       const node = nodes.get(id);
       if (!node) throw new Error(`unknown rig node "${id}"`);

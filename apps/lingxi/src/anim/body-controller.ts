@@ -9,6 +9,16 @@ export function createBodyController(rig:Rig,data:SkeletonData){
   const box=new THREE.Box3(),part=new THREE.Box3();
   const end=new THREE.Vector3(),jointPos=new THREE.Vector3(),toEnd=new THREE.Vector3(),toTarget=new THREE.Vector3();
   const worldQ=new THREE.Quaternion(),delta=new THREE.Quaternion(),parentQ=new THREE.Quaternion();
+  // A clip's `root.position.*` is in VOXELS and in the cat's own facing, like every other
+  // position channel and like the authoring README says. It used to be added straight onto
+  // rig.root, which is scaled by VOXEL_TO_WORLD x size: `hop-catch`'s 1.6 became 1.6 WORLD
+  // units, 58 voxels at the medium size - nearly six shoulder heights in 0.12s, about 12g, and
+  // worse the smaller the cat. x and z fared differently but no better: the renderer places
+  // the root after apply(), so every authored lunge was overwritten and never drawn at all.
+  // Horizontal offsets now go on the inner body group, which nothing else moves; the lift goes
+  // through the contact rule below, converted to world units there.
+  const bodyRest=rig.body.position.clone();
+  const lunge=new THREE.Vector3();
   const head=data.nodes.find(n=>n.id==='head')!;
   const startPaw=rig.node('pawFL').getWorldPosition(new THREE.Vector3());
   const target=new THREE.Vector3();
@@ -43,16 +53,19 @@ export function createBodyController(rig:Rig,data:SkeletonData){
     paw.rotation.x=-.7*weight;
   }
   return {
-    reset(){rig.root.position.set(0,0,0);rig.root.rotation.set(0,0,0);for(const frame of original){frame.node.position.copy(frame.position);frame.node.rotation.copy(frame.rotation);}},
+    reset(){rig.root.position.set(0,0,0);rig.root.rotation.set(0,0,0);rig.body.position.copy(bodyRest);for(const frame of original){frame.node.position.copy(frame.position);frame.node.rotation.copy(frame.rotation);}},
     apply(offsets:Record<string,number>){
       const expanded={...offsets};
       for(const [channel,weight] of Object.entries(offsets))if(channel.startsWith('pose.'))for(const [target,value] of Object.entries(POSES[channel.slice(5)]??{}))expanded[target]=(expanded[target]??0)+value*weight;
+      lunge.set(0,0,0);
       for(const [channel,value] of Object.entries(expanded)){
         const [id,kind,axis]=channel.split('.');
         if((kind==='rotation'||kind==='position')&&(axis==='x'||axis==='y'||axis==='z')){
+          if(id==='root'&&kind==='position'){lunge[axis]+=value;continue;}
           const node=id==='root'?rig.root:rig.node(id);node[kind][axis]+=value;
         }
       }
+      rig.body.position.set(bodyRest.x+lunge.x,bodyRest.y,bodyRest.z+lunge.z);
       solvePaw(offsets['groom.paw']??0,offsets['groom.wash']??0);
 
       // --- ground contact -----------------------------------------------------------------
@@ -65,8 +78,10 @@ export function createBodyController(rig:Rig,data:SkeletonData){
       // stable on its own. (probe-gait.html is the regression check.)
       rig.root.updateMatrixWorld(true);box.makeEmpty();
       for(const mesh of meshes){if(!mesh.visible)continue;part.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld);box.union(part);}
-      // Contact with the floor also applies to rolls and crouches; explicit positive lift = jump.
-      if(!box.isEmpty())rig.root.position.y+=-box.min.y+Math.max(0,offsets['root.position.y']??0);
+      // Contact with the floor also applies to rolls and crouches; explicit positive lift = jump,
+      // and only a jump: nothing but a ballistic arc may put daylight under the paws (see
+      // test/airborne.test.mjs). The box is in world units, the lift in voxels.
+      if(!box.isEmpty())rig.root.position.y+=-box.min.y+Math.max(0,lunge.y)*rig.root.scale.y;
     },
   };
 }

@@ -74,8 +74,8 @@ built-in version running and shows the user exactly what is wrong. So:
 |---|---|
 | `<bone>.rotation.<x\|y\|z>` | radians, added to the rest pose |
 | `<bone>.position.<x\|y\|z>` | voxels |
-| `root.position.y` | positive = leaves the ground (a jump). The contact rule respects it |
-| `root.position.z` | positive = toward the viewer (a lunge) |
+| `root.position.y` | voxels; positive = leaves the ground. **Jumps only** - see below |
+| `root.position.z` | voxels along the cat's own facing (a lunge); `x` is sideways |
 | `pose.sit` `pose.crouch` `pose.loaf` `pose.tuck` `pose.stretch` `pose.curl` | whole-body pose blend, 0-1 |
 | `face.blink` `face.tongue` `face.open` | 0-1 |
 | `groom.paw` `groom.wash` | 0-1, drives the paw-to-face IK |
@@ -93,6 +93,7 @@ Bone names are listed in the 调试台 (debug console). The spine runs
 `休息` `清洁` `伸展` `尾巴` `互动` `探索` `玩耍` get picked automatically while the cat is idle.
 
 - **`特效` is never auto-picked.** Use it for anything big that should only fire when asked.
+- **Nor is anything that leaves the floor**, in any category (see Jumps below).
 - A clip that touches **no leg bones and no `root.position`** can play *while the cat walks*.
   Anything else waits until it stops. So a tail flick or a head turn is "free"; a full-body
   stretch costs the cat a pause.
@@ -106,6 +107,25 @@ Bone names are listed in the 调试台 (debug console). The spine runs
   an action feel alive rather than mechanical.
 - **Check it for clipping.** `apps/lingxi/probe-clips.html` (dev server) ranks every clip by how
   far unrelated body parts push into each other. Anything over ~1.0 voxel may be visible.
+
+### Jumps: real gravity, or not at all
+
+Every track may set `"interp"`: `smooth` (default - eases in and out, right for a pose settling),
+`linear`, or `ballistic`. A jump's `root.position.y` **must** be `ballistic`; under the default the
+cat leaves the floor at zero speed and stops dead at the top, which reads as being hauled up on a
+string.
+
+- One hop is three keys: `[takeoff, 0]`, `[apex, h]`, `[land, 0]`, with **rise time = fall time
+  = √(2h/g)** - h in metres (voxels × 0.015), g = 9.81. A 3-voxel hop rises in 0.096 s.
+- Keep `h` at or under **3.5 voxels** (a third of the shoulder). A desktop pet does not launch itself.
+- **Push off before takeoff**: finish un-crouching by the takeoff key and put no `pose.*` key inside
+  the flight - legs can only push against a floor that is there.
+- **Never hover.** Rearing up or leaning in is a pose plus `z`, with the paws on the floor. Any
+  positive `y` that is not a ballistic hop fails `apps/lingxi/test/airborne.test.mjs`.
+- A clip that leaves the floor is **never auto-picked**, whatever its category - it plays only
+  when the toy logic, the debug console or an agent asks for it by name.
+- `apps/lingxi/probe-airborne.html` (dev server) measures the jump on the actual posed body:
+  height in cm, hang time, and the gravity the torso really falls at.
 
 ## expressions.json
 

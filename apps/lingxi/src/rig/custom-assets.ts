@@ -15,6 +15,8 @@ import { layers, expressions as builtInExpressions, DEFAULT_FACE_GEOMETRY, type 
 import type { ArtSkin } from './art.ts';
 import type { VoxelSkin } from './skeleton.ts';
 import { parseMotions, type Motion } from '../anim/motion.ts';
+import { followBundled } from '../anim/clip-history.ts';
+import bundledActions from '../data/actions.json' with { type: 'json' };
 import type { BubbleStyle } from '../fx/stage-fx.ts';
 
 export interface CustomAssetPayload {
@@ -37,6 +39,11 @@ export interface LoadedAssets {
   face?: FaceGeometry;
   /** Problems found, one per file. Surfaced in the UI rather than swallowed. */
   errors: string[];
+  /**
+   * Built-ins in the custom actions.json that were unedited copies of an older bundled version,
+   * and now play as the current one (see anim/clip-history.ts).
+   */
+  upgradedActions?: string[];
   dir?: string;
 }
 
@@ -371,6 +378,18 @@ export function loadCustomAssets(
       loaded.errors.push(`actions.json：${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  if (loaded.actions) {
+    const followed = followBundled(loaded.actions, (bundledActions as { actions: Motion[] }).actions);
+    if (followed.upgraded.length) {
+      // Re-validated as a whole: the current bundled clip may name an expression this user's
+      // expressions.json does not have. If so the stale copy stays - that is the old behaviour,
+      // not a new failure.
+      try {
+        loaded.actions = parseMotions({ schemaVersion: 2, actions: followed.actions }, context.nodeIds, expressionNames, context.poseNames);
+        loaded.upgradedActions = followed.upgraded;
+      } catch { /* keep the file's own versions */ }
+    }
+  }
 
   if (payload.bubble != null) {
     try {
@@ -430,9 +449,16 @@ export const ASSETS_README = `# 灵犀 · 自定义资源
 \`\`\`
 
 **通道 (channel) 可以是：**
-- \`<骨骼>.rotation.<x|y|z>\` 或 \`<骨骼>.position.<x|y|z>\`，骨骼名见调试台
+- \`<骨骼>.rotation.<x|y|z>\` 或 \`<骨骼>.position.<x|y|z>\`，骨骼名见调试台。\`position\` 的单位是
+  **体素**（1 体素 = 1.5 cm，猫肩高 10 体素），和猫当前的大小档位无关
+- \`root.position.<x|y|z>\` —— 整只猫平移，同样是体素，方向跟着猫的朝向走（\`z\` 是它面朝的前方）。
+  \`y\` 大于 0 就是**离地**，只能用在跳跃上，见下面的 \`ballistic\`
 - \`pose.<sit|crouch|loaf|tuck|stretch|curl>\` —— 整体姿势混合，0–1
 - \`face.blink\` / \`face.tongue\` / \`face.open\` / \`groom.paw\` / \`groom.wash\` —— 0–1
+
+**这个文件会整个替换内置动作库**：想加一个动作，就得把内置的整份复制进来再追加。复制进来的内置动作
+**只要一个数都没改**，就会自动跟随新版本——以后内置动作修了 bug，你这份也会用上；改过任何一个数，
+就完全按你的版本播放，不会被覆盖。
 
 **每条轨道必须从 \`[0, 0]\` 开始、在 \`[duration, 0]\` 结束**（动作结束要回到中立姿态，否则和别的
 动作叠加时会漂移）。关键帧 2–128 个，时间必须递增。
@@ -447,15 +473,28 @@ export const ASSETS_README = `# 灵犀 · 自定义资源
 
 \`\`\`jsonc
 { "channel": "root.position.y", "interp": "ballistic",
-  "keys": [[0, 0], [0.5, 0], [0.62, 1.6], [0.74, 0], [1.5, 0]] }
+  "keys": [[0, 0], [0.5, 0], [0.596, 3], [0.692, 0], [1.5, 0]] }
 \`\`\`
 
 跳跃一定要用 \`ballistic\`。默认的 smoothstep 把跳跃演反了：猫以零速度离地、在空中加速、
 到最高点停住再被放下来——看起来是被绳子吊上去的。
 
-上升和下降的**时长必须相等**（重力对上下一视同仁），顶点高度和上升时长决定了隐含重力
-\`g = 2h/t²\`（h 用体素，1 体素 = 1.5 cm）。猫肩高 10 体素；内置的 \`hop-catch\` 是
-1.6 体素 / 0.12 秒，约 0.34 个地球重力——真按 1g 配，滞空只有 5 帧，看起来像闪了一下。
+一次跳跃就是**「0 → 顶点 → 0」三个关键帧**，上升和下降的**时长必须相等**（重力对上下一视同仁）。
+按真实重力配：上升时长 \`t = √(2h / g)\`，h 换算成米（体素 × 0.015），g = 9.81。几个现成的数：
+
+| 顶点高度 | 上升 = 下降 | 滞空 |
+|---|---|---|
+| 1.5 体素（2.3 cm） | 0.068 秒 | 0.14 秒 |
+| 2.5 体素（3.8 cm） | 0.087 秒 | 0.17 秒 |
+| 3 体素（4.5 cm，内置 \`hop-catch\`） | 0.096 秒 | 0.19 秒 |
+
+别超过肩高的三分之一（3.5 体素）——桌宠够一下玩具不需要腾空而起。
+
+另外两条：**蓄力要在起跳之前伸展完**（腿只能蹬着地面发力，离地后不要再改 \`pose.*\`）；
+**不要用 \`y\` 做「悬停」**——站起来、凑近这类动作靠姿势和 \`z\` 表现，爪子留在地上。
+
+会离地的动作**永远不会被自动挑中**：只有追玩具时的反应、调试台或 Agent 点名才会播放。
+一只猫对着空气原地起跳，看起来就是抽了一下。
 
 \`category\` 决定它什么时候会被自动挑中：\`特效\` 分类**永远不会**被自动播放，只能显式触发，
 适合放大招。不碰腿部骨骼的动作可以在走路时播放，碰腿的会等它停下来。

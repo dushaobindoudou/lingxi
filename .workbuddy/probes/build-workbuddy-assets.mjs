@@ -60,7 +60,10 @@ const wbActions = [
     description: '起跳、抬头、尾巴立起 —— 一次成功的发布',
     duration: 3.5, priority: 70, expression: '上线',
     tracks: [
-      { channel: 'root.position.y', keys: [[0, 0], [0.5, 0.85], [1.15, 0], [3.5, 0]] },
+      // 真重力的一次小跳：蓄力在起跳前伸展完，2.5 体素顶点，上升=下降=√(2h/g)=0.087 秒。
+      // 原来是 smoothstep 的 0.65 秒「悬停」，看起来是被吊起来的（apps/lingxi/test/airborne.test.mjs）。
+      { channel: 'pose.crouch', keys: [[0, 0], [0.3, 0.6], [0.38, 0.6], [0.45, 0.05], [0.624, 0.05], [0.75, 0.3], [1.3, 0], [3.5, 0]] },
+      { channel: 'root.position.y', interp: 'ballistic', keys: [[0, 0], [0.45, 0], [0.537, 2.5], [0.624, 0], [3.5, 0]] },
       { channel: 'head.rotation.x', keys: [[0, 0], [1.3, -0.28], [1.8, 0.08], [3.5, 0]] },
       { channel: 'tail5.rotation.z', keys: [[0, 0], [0.8, 0.5], [1.6, -0.3], [2.4, 0.42], [3.5, 0]] },
       { channel: 'earL.rotation.x', keys: [[0, 0], [0.4, -0.3], [2.0, 0], [3.5, 0]] },

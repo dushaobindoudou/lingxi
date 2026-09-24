@@ -57,6 +57,8 @@ let assetSources = {
 let faceLayout: FaceGeometry = DEFAULT_FACE_GEOMETRY;
 let lastAssetLoadAt: number | null = null;
 let lastAssetErrors: string[] = [];
+/** Built-ins in the custom actions.json that were stale, unedited copies and now play as bundled. */
+let lastUpgradedActions: string[] = [];
 export const DEFAULT_SKIN_ID = 'honey-mittens';
 
 /** Ear pose implied by each expression's ear layer, in radians. */
@@ -704,6 +706,7 @@ export function createThreeRenderer(): Renderer {
       };
       lastAssetLoadAt = Date.now();
       lastAssetErrors = loaded.errors;
+      lastUpgradedActions = loaded.upgradedActions ?? [];
       // Handed back to the caller rather than applied here: the fx layer belongs to the host,
       // not to the renderer, and the renderer has no business reaching into it.
       lastLoadedBubbleStyle = loaded.bubble ?? null;
@@ -885,6 +888,7 @@ export function createThreeRenderer(): Renderer {
           active: { ...assetSources },
           lastLoadedAt: lastAssetLoadAt,
           lastErrors: [...lastAssetErrors],
+          upgradedActions: [...lastUpgradedActions],
         },
       };
     },

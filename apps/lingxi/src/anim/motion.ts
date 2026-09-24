@@ -43,6 +43,19 @@ export function sampleMotion(motion:Motion, elapsed:number): Record<string,numbe
   return result;
 }
 
+/**
+ * True if the clip ever puts daylight under the paws. `root.position.y` is the one channel the
+ * ground-contact rule does not cancel - a positive value there is flight, by definition.
+ *
+ * Derived rather than tagged so it holds for a user's own library with no extra field to forget.
+ * The director uses it to keep jumps out of the idle rotation: a cat that springs straight up
+ * at nothing, every minute or so, is the "偶尔会跳一下，跳这个动作是不合理的" report. Jumping is
+ * a reaction to something - the toy, or a caller asking by name.
+ */
+export function leavesFloor(motion: Motion): boolean {
+  return motion.tracks.some((track) => track.channel === 'root.position.y' && track.keys.some(([, value]) => value > 0));
+}
+
 /** External clips are data only; supported channels are explicitly enumerated. */
 export function parseMotions(value:unknown,nodeIds:readonly string[],expressionNames:readonly string[],poseNames:readonly string[]):Motion[]{
   if(!value||typeof value!=='object')throw new Error('动作 JSON 必须是对象');
