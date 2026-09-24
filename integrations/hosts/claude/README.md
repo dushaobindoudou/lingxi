@@ -59,6 +59,8 @@ Claude 自己用的是 `lingxi`（插件把它放进了 Bash 的 PATH）：`ling
 | 会话开始时自动打开灵犀 | 开 | 关掉后插件只投递事件，不启动应用 |
 | 猫对会话的反应 | `all` | `important` 不发每条提问的事件；`off` 不发生命周期事件（Claude 报的心情照常） |
 
+安装时 Claude Code 会提示「3 userConfig options not yet set」——不用管，不设置就是上表的默认值。
+
 环境变量 `LINGXI_AUTOSTART=0`、`LINGXI_AUTOINSTALL=0` 对所有灵犀接入生效，优先于这里的选项。
 
 ## 数据与卸载
