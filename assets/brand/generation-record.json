@@ -16,6 +16,33 @@
       "path": "assets/characters/lingxi/reference/turnaround-v1.png",
       "status": "candidate references; not geometrically calibrated",
       "prompt": "Use case: stylized-concept. Asset: production-oriented character reference sheet for Blender, single cat identity, no typography. Use ONLY the kitten in the LARGE TOP LEFT HERO PANEL of reference board as character identity, not other panels. This is 灵犀 Lingxi: intensely soothing, soft, young gray-brown tabby and warm white longhair kitten, round gentle face, large moist olive-hazel eyes, small pink nose, inverted white V-shaped blaze, white muzzle/chest/belly/paws, gray-brown softly striped forehead/ears/back and striped fluffy tail. Anatomically convincing tiny four-legged kitten, mildly larger head, no toys or figurine. Create a clean 2x2 evenly spaced grid of FOUR FULL BODY views on plain warm light-gray background: top left FRONT orthographic standing neutral relaxed quadruped with all paws on level ground; top right LEFT SIDE orthographic with body facing right, full tail; bottom left BACK orthographic showing haunches and complete tail; bottom right THREE QUARTER FRONT in the signature relaxed lying pose with two white front paws together and gently tilted head. The three standing views share identical anatomical proportions and fur markings, consistent ground baseline per row and same scale, ears and tail never cropped. True animal anatomy with four paws, no human stance. Soft even neutral studio illumination for accurate colors, no dramatic shadows, no props, no room, no warm lighting filters altering coat. Finely detailed dense fluffy groom, airy guard hairs, very soft cheeks, lifelike natural eyes. Full subject entirely visible with generous margins. Focus on identity consistency and soothing appeal, avoid exaggerated round toy body, avoid gigantic ears, avoid flat vector art. No text, no labels, no measurements invented, no logos, no borders, no watermark. This is a character design reference, not proof of true geometric consistency."
+    },
+    {
+      "path": "assets/tray-menu/v1/lingxi-resting-cat.png",
+      "date": "2026-09-23",
+      "status": "tray home design asset; logo identity reference; visual approval pending",
+      "reference": "assets/brand/lingxi-icon-v3.png",
+      "prompt": "Create a transparent full-body resting cutout of the exact Lingxi logo cat. Preserve its round broad face, gray-brown tabby cap, centered white inverted-V blaze, white chest/paws, hazel-green eyes and pink nose. Soft realistic fur, relaxed seated posture, no backdrop, no props, no text."
+    },
+    {
+      "path": "assets/tray-menu/v1/window-desk-scene.png",
+      "date": "2026-09-23",
+      "status": "tray home design background; composable without character; visual approval pending",
+      "prompt": "Wide quiet warm interior background only: pale oak desk across lower third, diffuse cream window light, faint defocused leafy shadow, negative space for UI text and a separately composited cat, no animals, no props, no typography."
+    },
+    {
+      "path": "assets/tray-menu/v1/personality/quiet-preset.png",
+      "date": "2026-09-23",
+      "status": "personality preset preview; logo identity reference; visual approval pending",
+      "reference": "assets/brand/lingxi-icon-v3.png",
+      "prompt": "Exact Lingxi logo cat as transparent cutout, compact resting loaf on its paws with relaxed half-closed hazel-green eyes and softly curled tail. Preserve face, inverted-V white blaze, gray-brown markings, white chest/paws and pink nose; calm, natural, no background or text."
+    },
+    {
+      "path": "assets/tray-menu/v1/personality/lively-preset.png",
+      "date": "2026-09-23",
+      "status": "personality preset preview; logo identity reference; visual approval pending",
+      "reference": "assets/brand/lingxi-icon-v3.png",
+      "prompt": "Exact Lingxi logo cat as transparent cutout, relaxed seated with one front paw gently lifted in curious anticipation. Preserve face, inverted-V white blaze, gray-brown markings, white chest/paws, hazel-green eyes and pink nose; restrained natural pose, no toy, background or text."
     }
   ]
 }

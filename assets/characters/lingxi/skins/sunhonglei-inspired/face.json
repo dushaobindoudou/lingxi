@@ -1,0 +1,17 @@
+{
+  "muzzle": { "x": 78, "y": 162, "width": 100, "height": 58, "radius": 12 },
+  "eyes": {
+    "spacing": 53,
+    "top": 104,
+    "width": 48,
+    "height": 35,
+    "radius": 10,
+    "pupilRadiusX": 9,
+    "pupilRadiusY": 12,
+    "browY": 88,
+    "browRaisedY": 82
+  },
+  "nose": { "y": 172, "halfWidth": 12, "depth": 8 },
+  "mouth": { "y": 195, "halfWidth": 22, "openRadiusX": 13, "openRadiusY": 13 },
+  "whiskers": { "rows": 2, "spread": 7, "length": 34, "width": 2, "droop": 0.4, "y": 186 }
+}

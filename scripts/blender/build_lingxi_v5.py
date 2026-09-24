@@ -1,5 +1,5 @@
 """Rebuild an editable short-fur character with shared skin weights and named actions.
-Uses the approved generated material sources; preserves v4 unchanged.
+Materials are self-contained so the rig can be rebuilt from a clean checkout.
 """
 import bpy, math, json
 import numpy as np
@@ -10,18 +10,48 @@ OUT=ROOT/'assets/characters/lingxi/v5';OUT.mkdir(exist_ok=True)
 rng=np.random.default_rng(512)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene=bpy.context.scene;scene.name='Lingxi • Short Fur Rig v5'
-lib=ROOT/'assets/characters/lingxi/materials/short-fur-v1/lingxi-short-fur-materials.blend'
-with bpy.data.libraries.load(str(lib),link=False) as (a,b):b.materials=list(a.materials)
-M=lambda n:bpy.data.materials['LX_ShortFur_'+n]
 def mat(name,col,rough=.5):
  m=bpy.data.materials.new(name);m.use_nodes=True;p=m.node_tree.nodes.get('Principled BSDF');p.inputs['Base Color'].default_value=(*col,1);p.inputs['Roughness'].default_value=rough;return m
-cream=M('WhiteDownBase');coat=M('CoatBase');pink=M('PinkPawPads');nosemat=M('PinkNose');mouthmat=M('PinkMouth')
+def softmat(name,col,rough=.5,subsurface=0):
+ m=bpy.data.materials.new('LX_ShortFur_'+name);m.use_nodes=True
+ p=m.node_tree.nodes.get('Principled BSDF');p.inputs['Base Color'].default_value=(*col,1)
+ p.inputs['Roughness'].default_value=rough;p.inputs['Subsurface Weight'].default_value=subsurface
+ p.inputs['Subsurface Radius'].default_value=(.9,.48,.28);return m
+cream=softmat('WhiteDownBase',(.82,.77,.69),.82,.08)
+coat=softmat('CoatBase',(.46,.36,.27),.82,.07)
+pink=softmat('PinkPawPads',(.65,.32,.30),.5,.12)
+nosemat=softmat('PinkNose',(.62,.28,.25),.36,.10)
+mouthmat=softmat('PinkMouth',(.46,.14,.17),.4,.16)
+iris=softmat('HazelIris',(.22,.26,.13),.42)
+cornea=softmat('ClearCornea',(1,1,1),.035)
+cornea.node_tree.nodes.get('Principled BSDF').inputs['Transmission Weight'].default_value=1
+strand=bpy.data.materials.new('LX_ShortFur_Strand');strand.use_nodes=True
+strand.node_tree.nodes.clear();hout=strand.node_tree.nodes.new('ShaderNodeOutputMaterial');hairnode=strand.node_tree.nodes.new('ShaderNodeBsdfHairPrincipled')
+hairnode.parametrization='COLOR';hairnode.inputs['Color'].default_value=(.45,.36,.28,1);hairnode.inputs['Roughness'].default_value=.38
+strand.node_tree.links.new(hairnode.outputs[0],hout.inputs['Surface'])
 dark=mat('LX_MouthInterior',(.035,.009,.014));black=mat('LX_Pupil',(.004,.006,.004),.13);toothmat=mat('LX_IvoryTeeth',(.85,.80,.67),.3)
-# Triplanar source mapping eliminates seams on the merged body. This is not a baked UV atlas.
-for material in [coat,pink,nosemat,mouthmat]:
- nt=material.node_tree
- for t in [n for n in nt.nodes if n.type=='TEX_IMAGE']:
-  c=nt.nodes.new('ShaderNodeTexCoord');nt.links.new(c.outputs['Generated'],t.inputs['Vector']);t.projection='BOX';t.projection_blend=.3
+M=lambda n:{'HazelIris':iris,'ClearCornea':cornea,'Strand':strand}[n]
+
+def coat_material(name,region):
+ m=softmat(name,(.30,.22,.15),.84,.08);nt=m.node_tree;p=nt.nodes.get('Principled BSDF')
+ geo=nt.nodes.new('ShaderNodeNewGeometry');sep=nt.nodes.new('ShaderNodeSeparateXYZ');nt.links.new(geo.outputs['Position'],sep.inputs['Vector'])
+ coords=nt.nodes.new('ShaderNodeCombineXYZ');nt.links.new(sep.outputs['X' if region=='head' else 'Y'],coords.inputs['X']);nt.links.new(sep.outputs['Y' if region=='head' else 'X'],coords.inputs['Y']);nt.links.new(sep.outputs['Z'],coords.inputs['Z'])
+ wave=nt.nodes.new('ShaderNodeTexWave');wave.wave_type='BANDS';wave.bands_direction='X';wave.inputs['Scale'].default_value=8.5 if region=='head' else 3.4;wave.inputs['Distortion'].default_value=1.8 if region=='head' else 1.25;wave.inputs['Detail'].default_value=2
+ nt.links.new(coords.outputs['Vector'],wave.inputs['Vector'])
+ ramp=nt.nodes.new('ShaderNodeValToRGB');ramp.color_ramp.interpolation='EASE';ramp.color_ramp.elements[0].position=.31;ramp.color_ramp.elements[0].color=(.15,.105,.082,1) if region=='head' else (.20,.14,.10,1);ramp.color_ramp.elements[1].position=.68;ramp.color_ramp.elements[1].color=(.37,.28,.22,1) if region=='head' else (.38,.29,.21,1);nt.links.new(wave.outputs['Fac'],ramp.inputs['Fac'])
+ if region=='body':
+  mask=nt.nodes.new('ShaderNodeMapRange');mask.clamp=True;mask.inputs['From Min'].default_value=.17;mask.inputs['From Max'].default_value=.235;mask.inputs['To Min'].default_value=1;mask.inputs['To Max'].default_value=0;nt.links.new(sep.outputs['Z'],mask.inputs['Value']);factor=mask.outputs['Result']
+ elif region=='head':
+  ab=nt.nodes.new('ShaderNodeMath');ab.operation='ABSOLUTE';nt.links.new(sep.outputs['X'],ab.inputs[0])
+  xm=nt.nodes.new('ShaderNodeMapRange');xm.clamp=True;xm.inputs['From Min'].default_value=.017;xm.inputs['From Max'].default_value=.050;xm.inputs['To Min'].default_value=1;xm.inputs['To Max'].default_value=0;nt.links.new(ab.outputs[0],xm.inputs['Value'])
+  ym=nt.nodes.new('ShaderNodeMapRange');ym.clamp=True;ym.inputs['From Min'].default_value=-.31;ym.inputs['From Max'].default_value=-.39;ym.inputs['To Min'].default_value=0;ym.inputs['To Max'].default_value=1;nt.links.new(sep.outputs['Y'],ym.inputs['Value'])
+  mul=nt.nodes.new('ShaderNodeMath');mul.operation='MULTIPLY';nt.links.new(xm.outputs['Result'],mul.inputs[0]);nt.links.new(ym.outputs['Result'],mul.inputs[1]);factor=mul.outputs[0]
+ else:factor=None
+ if factor:
+  mix=nt.nodes.new('ShaderNodeMixRGB');mix.blend_type='MIX';mix.inputs[2].default_value=(.68,.63,.55,1);nt.links.new(factor,mix.inputs[0]);nt.links.new(ramp.outputs['Color'],mix.inputs[1]);nt.links.new(mix.outputs['Color'],p.inputs['Base Color'])
+ else:nt.links.new(ramp.outputs['Color'],p.inputs['Base Color'])
+ return m
+bodycoat=coat_material('BodyTabby','body');headcoat=coat_material('FaceTabby','head')
 
 def sphere(name,loc,scale,material=None):
  bpy.ops.mesh.primitive_uv_sphere_add(segments=40,ring_count=24,location=loc)
@@ -42,9 +72,9 @@ def merge(objects,name,voxel=.009):
 parts=[sphere('Torso',(0,.07,.34),(.16,.30,.17)),sphere('Chest',(0,-.14,.35),(.14,.16,.18)),sphere('Rump',(0,.25,.32),(.155,.16,.17))]
 for s in [-1,1]:
  parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.047),(.064,.088,.047)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.046),(.061,.085,.045))]
-body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(coat)
+body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
 head=merge([sphere('Cranium',(0,-.285,.525),(.172,.145,.162)),sphere('MuzzleL',(-.037,-.405,.465),(.051,.039,.037)),sphere('MuzzleR',(.037,-.405,.465),(.051,.039,.037))],'LX_Head',.005)
-head.data.materials.clear();head.data.materials.append(cream)
+head.data.materials.clear();head.data.materials.append(headcoat)
 # Muzzle remains divided from lower jaw; dark recessed opening gives a real oral interior.
 jaw=sphere('LX_Jaw',(0,-.378,.433),(.068,.065,.023),cream)
 cavity=sphere('LX_MouthCavity',(0,-.393,.445),(.045,.039,.019),dark)
@@ -128,17 +158,24 @@ for s in [-1,1]:
  mod=o.modifiers.new('Ear shell','SOLIDIFY');mod.thickness=.006
  bind(o,'Ear.'+suf);ears.append(o)
 # Eyes: photo-derived iris mapped on front disk, shallow corneal cap, actual eyelid shape keys.
-eyelids=[]
+eyelids=[];eye_shapes=[]
+def add_eye_blink(obj,center_z):
+ obj.shape_key_add(name='Basis');key=obj.shape_key_add(name='Blink')
+ for i,v in enumerate(key.data):v.co.z=center_z+(v.co.z-obj.data.vertices[i].co.z)*.035
+ eye_shapes.append(obj)
 for s in [-1,1]:
- suf='L' if s<0 else 'R';cx=s*.072;cy=-.409;cz=.543;r=.037
- eyeb=sphere('LX_Eyeball.'+suf,(cx,cy+.014,cz),(r,r*.76,r),black);bind(eyeb,'Eye.'+suf)
+ suf='L' if s<0 else 'R';cx=s*.072;cy=-.409;cz=.543;r=.029
+ eyeb=sphere('LX_Eyeball.'+suf,(cx,cy+.014,cz),(r,r*.76,r),black);bind(eyeb,'Eye.'+suf);add_eye_blink(eyeb,cz)
  vs=[(cx,cy-.017,cz)]+[(cx+math.cos(a)*r,cy-.006,cz+math.sin(a)*r) for a in np.linspace(0,2*math.pi,97)[:-1]]
  me=bpy.data.meshes.new('Iris');me.from_pydata(vs,[],[(0,i+1,(i+1)%96+1) for i in range(96)]);me.update();uv=me.uv_layers.new()
  for p in me.polygons:
   for li in p.loop_indices:
    v=me.vertices[me.loops[li].vertex_index].co;uv.data[li].uv=((v.x-cx)/r/2+.5,(v.z-cz)/r/2+.5)
- o=bpy.data.objects.new('LX_Iris.'+suf,me);scene.collection.objects.link(o);me.materials.append(M('HazelIris'));bind(o,'Eye.'+suf)
- cor=sphere('LX_Cornea.'+suf,(cx,cy-.005,cz),(r*1.008,.015,r*1.008),M('ClearCornea'));bind(cor,'Eye.'+suf)
+ o=bpy.data.objects.new('LX_Iris.'+suf,me);scene.collection.objects.link(o);me.materials.append(M('HazelIris'));bind(o,'Eye.'+suf);add_eye_blink(o,cz)
+ pupil=sphere('LX_Pupil.'+suf,(cx,cy-.025,cz),(.012,.0025,.016),black);bind(pupil,'Eye.'+suf);add_eye_blink(pupil,cz)
+ glintmat=mat('LX_Catchlight',(1,.97,.88),.18)
+ glint=sphere('LX_Catchlight.'+suf,(cx-.007,cy-.028,cz+.009),(.0045,.002,.005),glintmat);bind(glint,'Eye.'+suf);add_eye_blink(glint,cz)
+ cor=sphere('LX_Cornea.'+suf,(cx,cy-.005,cz),(r*1.008,.015,r*1.008),M('ClearCornea'));bind(cor,'Eye.'+suf);add_eye_blink(cor,cz)
  for upper in [True,False]:
   vs=[];fs=[]
   for j in range(9):
@@ -186,11 +223,20 @@ bind(tail,'tail')
 furmat=M('Strand');nt=furmat.node_tree;sh=next(n for n in nt.nodes if n.type=='BSDF_HAIR_PRINCIPLED');att=nt.nodes.new('ShaderNodeAttribute');att.attribute_name='fur_color';nt.links.new(att.outputs['Color'],sh.inputs['Color'])
 def fur_color(p,reg):
  x,y,z=p.T;stripe=(np.sin(y*49+np.sin(z*32)*1.4)+1)/2
- col=np.array([.26,.205,.155])[None,:]*(1-stripe[:,None]) + np.array([.48,.39,.30])[None,:]*stripe[:,None]
+ col=np.array([.12,.085,.060])[None,:]*(1-stripe[:,None]) + np.array([.32,.24,.17])[None,:]*stripe[:,None]
  white=np.zeros(len(p))
  if reg=='Head':white=np.maximum(np.clip((.513-z)/.025,0,1),np.clip((.019+.18*(.64-z)-abs(x))/.012,0,1))*np.clip((-y-.31)/.045,0,1)
  if reg=='body':white=np.maximum(np.clip((-y-.18)/.06,0,1),np.clip((.105-z)/.04,0,1))
- return col*(1-white[:,None])+np.array([.80,.75,.66])[None,:]*white[:,None]
+ return col*(1-white[:,None])+np.array([.68,.61,.51])[None,:]*white[:,None]
+
+# Keep the groom and the underlying continuous surfaces on the same authored coat map.
+# This avoids the old failure mode where only the floating strands carried the markings.
+attribute=coat.node_tree.nodes.new('ShaderNodeVertexColor');attribute.layer_name='fur_color'
+coat.node_tree.links.new(attribute.outputs['Color'],coat.node_tree.nodes.get('Principled BSDF').inputs['Base Color'])
+for obj,region in [(body,'body'),(head,'Head'),(tail,'tail')]:
+ colors=fur_color(np.array([obj.data.vertices[loop.vertex_index].co[:] for loop in obj.data.loops]),region)
+ attr=obj.data.attributes.new('fur_color','FLOAT_COLOR','CORNER')
+ attr.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
 furs=[]
 def groom(o,n,length,reg):
  me=o.data;me.calc_loop_triangles();v=np.array([v.co[:] for v in me.vertices]);norm=np.array([v.normal[:] for v in me.vertices]);tri=np.array([t.vertices[:] for t in me.loop_triangles]);corn=v[tri];area=np.linalg.norm(np.cross(corn[:,1]-corn[:,0],corn[:,2]-corn[:,0]),axis=1);ids=rng.choice(len(tri),n,p=area/area.sum());b=rng.random((n,2));b[b.sum(1)>1]=1-b[b.sum(1)>1];b=np.column_stack((1-b.sum(1),b));root=(corn[ids]*b[:,:,None]).sum(1);normal=(norm[tri[ids]]*b[:,:,None]).sum(1);normal/=np.maximum(np.linalg.norm(normal,axis=1)[:,None],1e-8)
@@ -205,7 +251,7 @@ def groom(o,n,length,reg):
  edges=np.column_stack((np.arange(n*4).reshape(n,4)[:,:-1].ravel(),np.arange(n*4).reshape(n,4)[:,1:].ravel()))
  mesh=bpy.data.meshes.new('FurStrands');mesh.from_pydata(pts.reshape(-1,3),edges,[]);mesh.update();ob=bpy.data.objects.new('LX_Fur_'+o.name,mesh);scene.collection.objects.link(ob);bind(ob,reg)
  colors=np.repeat(fur_color(root,reg),4,axis=0);a=mesh.attributes.new('fur_color','FLOAT_COLOR','POINT');a.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
- radius=mesh.attributes.new('fur_radius','FLOAT','POINT');radius.data.foreach_set('value',np.tile([.00024,.00018,.00010,.000015],n).astype('f'))
+ radius=mesh.attributes.new('fur_radius','FLOAT','POINT');radius.data.foreach_set('value',np.tile([.00042,.00030,.00017,.000035],n).astype('f'))
  ng=bpy.data.node_groups.new('Skin strands to render curves','GeometryNodeTree');ng.interface.new_socket(name='Geometry',in_out='INPUT',socket_type='NodeSocketGeometry');ng.interface.new_socket(name='Geometry',in_out='OUTPUT',socket_type='NodeSocketGeometry');nodes=ng.nodes;links=ng.links;inp=nodes.new('NodeGroupInput');out=nodes.new('NodeGroupOutput');cv=nodes.new('GeometryNodeMeshToCurve');rr=nodes.new('GeometryNodeSetCurveRadius');at=nodes.new('GeometryNodeInputNamedAttribute');at.data_type='FLOAT';at.inputs['Name'].default_value='fur_radius';sm=nodes.new('GeometryNodeSetMaterial');sm.inputs['Material'].default_value=furmat;links.new(inp.outputs['Geometry'],cv.inputs['Mesh']);links.new(cv.outputs['Curve'],rr.inputs['Curve']);links.new(at.outputs['Attribute'],rr.inputs['Radius']);links.new(rr.outputs['Curve'],sm.inputs['Geometry']);links.new(sm.outputs['Geometry'],out.inputs['Geometry']);mod=ob.modifiers.new('Render native short hairs','NODES');mod.node_group=ng;ob['strand_count']=n;furs.append(ob)
 for o,n,l,r in [(body,65000,.015,'body'),(head,70000,.010,'Head'),(tail,13000,.016,'tail'),(jaw,4000,.008,'Jaw')]:groom(o,n,l,r)
 # Belly breathing applies identically to body surface and its bound hairs.
@@ -222,7 +268,7 @@ for s in [-1,1]:
   o=bpy.data.objects.new('LX_Whisker',cu);scene.collection.objects.link(o);cu.materials.append(cream);bpy.context.view_layer.objects.active=o;o.select_set(True);bpy.ops.object.convert(target='MESH');bind(o,'Whisker.'+suf)
 # Named actions with synchronized shape key actions. One timeline demonstrates all clips.
 clips=[('Idle',72),('Walk',48),('Run',32),('Jump',48),('LieDown',48),('SideLie',48),('Sleep',72),('Curious',48),('Happy',48),('Yawn',60),('Lick',48),('Bite',48),('Knead',48),('Stretch',60),('PawPlay',48)]
-shapeobs=eyelids+claws+[body,furs[0]];offset=1;manifest=[]
+shapeobs=eyelids+eye_shapes+claws+[body,furs[0]];offset=1;manifest=[]
 def pose(name,u):
  for p in rig.pose.bones:p.location=(0,0,0);p.rotation_euler=(0,0,0);p.scale=(1,1,1)
  for o in shapeobs:
@@ -235,17 +281,21 @@ def pose(name,u):
   for suf,ph in [('L',0),('R',math.pi)]:
    for pre,extra in [('Front',0),('Rear',math.pi if name=='Walk' else .7)]:
     a=math.sin(phase+ph+extra);pb[pre+'Upper.'+suf].rotation_euler[0]=amp*a;pb[pre+'Lower.'+suf].rotation_euler[0]=amp*.65*max(0,-a);pb[pre+'Paw.'+suf].rotation_euler[0]=-amp*.4*a
+  # PoseBone.location is in the root bone's local basis. Its local Y axis is world Z here.
   pb['Root'].location.y=.015*abs(math.sin(phase))*(2 if name=='Run' else 1)
  if name=='Jump':
   lift=math.sin(math.pi*u)**2;pb['Root'].location.y=.32*lift;pb['Spine'].rotation_euler[0]=-.12*math.sin(phase)
   for suf in ['L','R']:
    pb['FrontUpper.'+suf].rotation_euler[0]=-.65*lift;pb['RearUpper.'+suf].rotation_euler[0]=.7*lift;pb['RearLower.'+suf].rotation_euler[0]=-.9*lift
  if name in ['LieDown','SideLie','Sleep','Stretch']:
-  f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.14*f
+  f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.11*f
   for suf in ['L','R']:
-   pb['FrontUpper.'+suf].rotation_euler[0]=-.65*f;pb['FrontLower.'+suf].rotation_euler[0]=1.1*f;pb['RearUpper.'+suf].rotation_euler[0]=.7*f;pb['RearLower.'+suf].rotation_euler[0]=-1.0*f
-  if name=='SideLie':pb['Root'].rotation_euler[2]=1.25*f;pb['Root'].location.y=.035*f
-  if name=='Sleep':blink=1;pb['Head'].rotation_euler[0]=.20
+   pb['FrontUpper.'+suf].rotation_euler[0]=-1.05*f;pb['FrontLower.'+suf].rotation_euler[0]=2.05*f;pb['RearUpper.'+suf].rotation_euler[0]=.95*f;pb['RearLower.'+suf].rotation_euler[0]=-2.05*f
+  if name=='SideLie':pb['Root'].rotation_euler[2]=1.25*f;pb['Root'].location.y=-.025*f
+  if name=='Sleep':
+   # A real sleep pose lies on the flank, with a relaxed head and closed lids.
+   pb['Root'].rotation_euler[2]=1.15;pb['Root'].location.y=-.025
+   blink=1;pb['Head'].rotation_euler[0]=.20
   if name=='Stretch':pb['Spine'].rotation_euler[0]=.18*math.sin(math.pi*u);pb['Head'].rotation_euler[0]=-.15
  if name=='Curious':pb['Head'].rotation_euler[1]=.23*math.sin(phase);pb['Eye.L'].rotation_euler[2]=.1*math.sin(phase);pb['Eye.R'].rotation_euler[2]=.1*math.sin(phase)
  if name=='Happy':blink=.65;pb['Jaw'].rotation_euler[0]=-.09;pb['Tail2'].rotation_euler[0]=.25*math.sin(phase)
@@ -260,6 +310,7 @@ def pose(name,u):
    for i in range(4):pb[f'FrontToe{i}.'+suf].rotation_euler[0]=.35*a
   if name=='PawPlay':pb['FrontUpper.L'].rotation_euler[0]=-.8*(.5+.5*math.sin(phase))
  for o in eyelids:o.data.shape_keys.key_blocks['Blink'].value=blink
+ for o in eye_shapes:o.data.shape_keys.key_blocks['Blink'].value=blink
  for o in [body,furs[0]]:o.data.shape_keys.key_blocks['Breath'].value=.5+.5*math.sin(phase*2)
  for o in claws:o.data.shape_keys.key_blocks['Extend'].value=.7*(.5+.5*math.sin(phase*2)) if name=='Knead' else 0
 
@@ -298,7 +349,7 @@ scene.frame_start=1;scene.frame_end=offset-1;scene.render.fps=24
 world=bpy.data.worlds.new('Warm studio');scene.world=world;world.use_nodes=True;world.node_tree.nodes['Background'].inputs[0].default_value=(.64,.60,.55,1);world.node_tree.nodes['Background'].inputs[1].default_value=.35
 floor=sphere('Studio ground',(0,0,-.045),(200,200,.04),mat('Ground',(.65,.61,.54),.9))
 def aim(o,target):o.rotation_euler=(Vector(target)-o.location).to_track_quat('-Z','Y').to_euler()
-for n,loc,power,size in [('Key',(-1,-1.2,1.8),150,1.3),('Fill',(1,-.7,1.1),60,1.2),('Rim',(0,1,1.5),120,1)]:
+for n,loc,power,size in [('Key',(-1,-1.2,1.8),82,1.3),('Fill',(1,-.7,1.1),34,1.2),('Rim',(0,1,1.5),68,1)]:
  d=bpy.data.lights.new(n,'AREA');d.energy=power;d.shape='DISK';d.size=size;o=bpy.data.objects.new(n,d);scene.collection.objects.link(o);o.location=loc;aim(o,(0,0,.35))
 d=bpy.data.cameras.new('Portrait');cam=bpy.data.objects.new('Portrait',d);scene.collection.objects.link(cam);cam.location=(.9,-1.8,.91);aim(cam,(0,-.03,.37));d.type='ORTHO';d.ortho_scale=1.22;scene.camera=cam
 scene.render.engine='CYCLES';scene.cycles.samples=24;scene.cycles.use_denoising=True;scene.render.resolution_x=900;scene.render.resolution_y=900;scene.render.resolution_percentage=100;scene.view_settings.view_transform='AgX';scene.render.image_settings.file_format='PNG';scene.render.film_transparent=False

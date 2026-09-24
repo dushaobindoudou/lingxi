@@ -1,0 +1,23 @@
+[
+  {
+    "schemaVersion": 1,
+    "id": "sunhonglei-inspired",
+    "name": "硬朗黑檀猫",
+    "description": "亚洲气质的硬朗猫：强眉窄眼、暖棕肤色口鼻、黑西装、白裤子、黑皮鞋；保留猫耳、尾巴和胡须。",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "atelier-formal",
+    "materials": {
+      "fur": "#3A2D28",
+      "pattern": "#171419",
+      "cream": "#C78F6A",
+      "iris": "#4B3429",
+      "pupil": "#201A16",
+      "nose": "#B67667",
+      "paw": "#D1A17F",
+      "mouth": "#4A2524",
+      "whisker": "#E9D6C2",
+      "tongue": "#C97977",
+      "accent": "#514448"
+    }
+  }
+]

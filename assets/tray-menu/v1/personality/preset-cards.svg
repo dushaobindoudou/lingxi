@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="780" height="220" viewBox="0 0 780 220">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#423A33" flood-opacity=".06"/></filter>
+  </defs>
+  <rect width="780" height="220" rx="18" fill="#FBF7F1"/>
+  <g filter="url(#shadow)">
+    <rect x="8" y="8" width="244" height="204" rx="16" fill="#FFFDF9" stroke="#E5D9CA"/>
+    <rect x="268" y="8" width="244" height="204" rx="16" fill="#F7EEE2" stroke="#CBB79F" stroke-width="1.5"/>
+    <rect x="528" y="8" width="244" height="204" rx="16" fill="#FFFDF9" stroke="#E5D9CA"/>
+  </g>
+  <image x="77" y="15" width="106" height="106" preserveAspectRatio="xMidYMid meet" xlink:href="quiet-preset.png"/>
+  <image x="337" y="15" width="106" height="106" preserveAspectRatio="xMidYMid meet" xlink:href="../lingxi-resting-cat.png"/>
+  <image x="597" y="15" width="106" height="106" preserveAspectRatio="xMidYMid meet" xlink:href="lively-preset.png"/>
+  <text x="130" y="146" text-anchor="middle" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="15" font-weight="600">安静</text>
+  <text x="130" y="171" text-anchor="middle" fill="#72675C" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="11">更喜欢待在附近</text>
+  <text x="390" y="146" text-anchor="middle" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="15" font-weight="600">均衡 · 当前</text>
+  <text x="390" y="171" text-anchor="middle" fill="#72675C" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="11">偶尔好奇地看看你</text>
+  <text x="650" y="146" text-anchor="middle" fill="#423A33" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="15" font-weight="600">活泼</text>
+  <text x="650" y="171" text-anchor="middle" fill="#72675C" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="11">更愿意回应互动</text>
+  <text x="130" y="194" text-anchor="middle" fill="#9A8A79" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="10">70 px</text>
+  <text x="390" y="194" text-anchor="middle" fill="#936746" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="10">100 px</text>
+  <text x="650" y="194" text-anchor="middle" fill="#9A8A79" font-family="system-ui,-apple-system,PingFang SC,sans-serif" font-size="10">150 px</text>
+</svg>

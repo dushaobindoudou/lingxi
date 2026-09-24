@@ -1,0 +1,22 @@
+[
+  {
+    "schemaVersion": 1,
+    "id": "workbuddy-mint",
+    "name": "薄荷值班",
+    "description": "品牌薄荷青 · 云白围嘴 · 蜜金瞳",
+    "rigId": "lingxi-cat-v1",
+    "pattern": "tuxedo",
+    "materials": {
+      "fur": "#0AC89F",
+      "pattern": "#06806A",
+      "cream": "#EDFBF6",
+      "iris": "#F2CD7A",
+      "pupil": "#0A3A31",
+      "nose": "#F0939C",
+      "paw": "#EDFBF6",
+      "mouth": "#2F6F60",
+      "whisker": "#EDFBF6",
+      "tongue": "#E998A6"
+    }
+  }
+]
