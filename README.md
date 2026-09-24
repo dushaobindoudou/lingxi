@@ -36,8 +36,16 @@ npm ci --ignore-scripts
 cd apps/lingxi && npm ci
 
 npm run tauri dev            # 开发
-npm run tauri build          # 打包出 .app
 ```
+
+**打包和发布**走脚本，不要直接 `tauri build`——那样出来的包签名不完整，发给别人会显示"已损坏"：
+
+```sh
+./scripts/release.sh               # 测试 → 通用二进制 → 签名 → 校验，产物在 release/v<版本>/
+./scripts/publish-release.sh       # 打 tag、推送、发布到 GitHub Releases
+```
+
+版本号、签名证书、CI 发布和排查见 [`docs/RELEASING.md`](docs/RELEASING.md)。
 
 托盘图标里有（7 行，按 [`docs/21`](docs/21-tray-menu-and-home-surface.md) 收敛过）：
 状态摘要两行、显示/隐藏、大小（小/中/大）、互动（逗一逗 / 收起玩具）、打开灵犀…、退出灵犀。
@@ -52,6 +60,7 @@ npm run tauri build          # 打包出 .app
 | `/app-harness.html` | 不经 Tauri 直接跑真实渲染路径，在浏览器里调试 |
 | `/probe-gait.html` | **回归探针**：身体抖动、脚底打滑、自由模式行为统计 |
 | `/probe-clips.html` | 逐个动作检测穿模，按严重程度排序 |
+| `/probe-airborne.html` | **回归探针**：跳跃的真实高度、滞空和躯干下落的重力；加 `?strip` 出侧视图 |
 | `/probe-framing.html` | **回归探针**：各视角 / 各尺寸下屏幕四边各裁掉猫的多少 |
 | `/probe-unproject.html` | **回归探针**：屏幕坐标↔世界坐标是否处处可逆（曾经在屏幕底部失效） |
 | `/rig-preview.html` `/style-lab.html` | 骨架和配色试验 |
@@ -180,6 +189,7 @@ cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
 | 入口 | 内容 |
 | --- | --- |
 | [**文档分层索引**](docs/README.md) | 哪份文档描述现在，哪份只是记录当时 |
+| [English docs](docs/en/README.md) | 同一套文档的英文译本。中文是原文 |
 | [接入 Agent 的完整规范](docs/19-agent-integration.md) | **写接入先看这个**：词汇表、优先级、定制、自证生效 |
 | [技术架构](docs/05-technical-architecture.md) | 三层分工与契约 |
 | [行为系统](docs/04-life-engine.md) | 纯状态机的行为设计 |

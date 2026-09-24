@@ -1,0 +1,134 @@
+name: Release
+# Builds a pushed v* tag into a signed universal .dmg and publishes it as a GitHub release.
+#
+# The same two scripts as a local release - scripts/release.sh builds, signs, verifies (and, with
+# a Developer ID, notarises); scripts/publish-release.sh writes the notes and uploads - so a CI
+# release and a laptop release cannot drift apart. See docs/RELEASING.md.
+#
+# Skipped for tags that scripts/publish-release.sh pushed itself (they carry a
+# `Release-Build: local` trailer): those already have their files, and rebuilding them here would
+# spend macOS minutes to overwrite them. Run it by hand (Actions -> Release -> Run workflow) to
+# rebuild any tag anyway.
+#
+# Signing comes from repository secrets, all optional - see scripts/apple-signing.sh github:
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY   the Developer ID
+#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID                                 notarisation
+# With none of them the build is ad-hoc signed, exactly like a local build without a certificate.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and (re)publish, e.g. v0.2.0
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: macos-latest
+    timeout-minutes: 75
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          # Full history and tags: the release notes list the commits since the previous tag.
+          fetch-depth: 0
+
+      - name: Built locally already?
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = push ] \
+             && git for-each-ref "refs/tags/$TAG" --format='%(contents)' | grep -q '^Release-Build: local'; then
+            echo "::notice::$TAG was built and uploaded by scripts/publish-release.sh - nothing to do. Run this workflow by hand to rebuild it anyway."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/lingxi/package-lock.json
+      - name: Install dependencies
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          npm ci --ignore-scripts
+          (cd apps/lingxi && npm ci --ignore-scripts)
+
+      # The fast gates run here; the Rust tests run in ci.yml on every push to main, and the
+      # release build below compiles every line of Rust anyway.
+      - name: Contracts and behaviour tests
+        if: steps.gate.outputs.skip != 'true'
+        run: npm run check && npm test
+
+      - name: Rust targets for a universal binary
+        if: steps.gate.outputs.skip != 'true'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Cache cargo
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/lingxi/src-tauri/target
+          key: release-cargo-${{ runner.os }}-${{ hashFiles('apps/lingxi/src-tauri/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: release-cargo-${{ runner.os }}-
+
+      - name: Import the Developer ID certificate
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::notice::No APPLE_CERTIFICATE secret - this release is ad-hoc signed (users allow it once in System Settings). See docs/RELEASING.md."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASSWORD="$(openssl rand -hex 24)"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Build, sign, verify, notarise
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          [ "v$(node scripts/version.mjs | awk '/^version /{print $2}')" = "$TAG" ] \
+            || { echo "::error::$TAG does not match the version in the sources - run node scripts/version.mjs ${TAG#v} and re-tag"; exit 1; }
+          ./scripts/release.sh --skip-tests
+
+      - name: Publish
+        if: steps.gate.outputs.skip != 'true'
+        run: ./scripts/publish-release.sh --no-push
+
+      - name: Keep the build as a workflow artifact
+        if: steps.gate.outputs.skip != 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingxi-${{ env.TAG }}
+          path: release/
+          if-no-files-found: ignore
+          retention-days: 14

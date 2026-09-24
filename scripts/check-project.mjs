@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve, dirname, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { validateSkin, validatePersonality } from '../packages/contracts/src/index.mjs';
+import { currentVersion } from './version.mjs';
 const root=process.cwd();
 async function files(dir) {
  const out=[];
@@ -66,6 +67,9 @@ for(const p of await files(root)) {
  }
 }
 
+// One version, everywhere: a release tag, the bundle's "About" and the crate must not disagree.
+try { currentVersion(); } catch(error) { problems.push(`${error.message}\n  fix: node scripts/version.mjs <version>`); }
+
 const ignored=ignoredPaths(missing.map((m)=>m.rel));
 const excused=missing.filter((m)=>ignored.has(m.rel));
 for(const m of missing.filter((x)=>!ignored.has(x.rel))) problems.push(`${m.doc}: broken local link -> ${m.link}`);
@@ -77,4 +81,4 @@ if(problems.length) {
 // Say so rather than passing silently: "OK" on a machine where a documented asset is absent
 // should not look identical to "OK" on the machine that has it.
 if(excused.length) console.log(`${excused.length} link(s) point at git-ignored working material (not in this checkout) - see .gitignore`);
-console.log('JSON, preset contracts and local Markdown links: OK');
+console.log(`JSON, preset contracts, local Markdown links and version ${currentVersion()}: OK`);

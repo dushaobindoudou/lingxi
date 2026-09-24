@@ -5,6 +5,8 @@ build/
 target/
 .cache/
 *.log
+# scripts/release.sh output - published as GitHub release assets, never committed
+release/
 
 # --- environment --------------------------------------------------------------------------
 .env
