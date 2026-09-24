@@ -57,7 +57,7 @@
 
 ## 代码路径与接入点
 
-- `apps/lingxi/src/style-lab/texture-import.ts`：PNG 文件头尺寸校验、JSON 校验、三种 UV 映射、旧清单兼容。UV 计算是纯函数，不依赖 DOM 或 WebGL，可单测。
+- `apps/lingxi/src/rig/texture-import.ts`：PNG 文件头尺寸校验、JSON 校验、三种 UV 映射、旧清单兼容。UV 计算是纯函数，不依赖 DOM 或 WebGL，可单测。
 - `apps/lingxi/src/style-lab/main.ts`：选择/拖入文件、解码 PNG、替换全身材质、更新每个盒子的 UV、控制过滤方式、恢复预设与资源释放。
 - `scripts/test-voxel-texture-import.mjs`：非方形 PNG、统一物理密度、居中裁切、JSON 局部 UV、无效配置、atlas 缺失、旧格式兼容测试。
 
@@ -78,6 +78,24 @@
 任意 PNG 的方向无法自动对应猫的解剖部位：自动模式负责覆盖，精确对位由 JSON 指定。全身平铺是每个盒子局部面重复，跨关节和相邻盒子不保证图案连续；若要把一幅完整画连续包到整个角色，应制作 UV 展开图，或后续增加 rest-space 投影。不要把“随便一张图片能导入”宣传成“任意图片自动识别五官和无缝包裹”。
 
 透明像素当前叠在所选预设主毛色上，保持不透明实体；不会把身体打洞。PNG 8 MB 上限、宽高各 1–4096；JSON 256 KB 上限。尺寸在解码前检查，UV 禁止越界，快速连续选择通过请求序号丢弃过期结果。配置校验失败保留当前皮肤。
+
+## 皮肤还能改的两件事：藏节点、改比例
+
+除了贴图，`skins.json` 的每一项还接受两个可选字段。它们改的是**轮廓**，不是颜色，
+所以做"人物化"皮肤（去掉猫耳、加大鞋子）时不需要另外准备一套骨架。
+
+| 字段 | 形状 | 约束 | 用途 |
+|---|---|---|---|
+| `hiddenNodes` | 非空字符串数组 | 节点名来自 `apps/lingxi/src/data/skeleton.json`；重复项会去重 | 从轮廓里隐藏骨骼节点，例如 `["earL","earR"]` 去掉猫耳 |
+| `proportions` | 对象，键是节点名 | 最多 60 个部位；节点名须匹配 `^[A-Za-z][-A-Za-z0-9]{0,23}$` | 逐部位覆盖体型 |
+| `proportions.<节点>.size` | 三个数字 | 每个都在 0.2–16 之间 | 覆盖该节点盒子的三轴尺寸 |
+| `proportions.<节点>.segmentLength` | 数字 | 0.2–16 | 覆盖该节点的段长 |
+
+`size` 和 `segmentLength` 之外的键会被**拒绝并报出可用项**，而不是静默忽略——
+写错字段名是这里最容易犯的错，静默忽略会让人以为是渲染没生效。
+
+校验实现在 `apps/lingxi/src/rig/custom-assets.ts` 的 `parseSkins`；任何一条不合法，
+整份 `skins.json` 都不生效，内置皮肤原样保留，错误在 `GET /assets/status` 的 `lastErrors` 里。
 
 ## 验证
 

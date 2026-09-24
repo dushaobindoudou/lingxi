@@ -20,7 +20,7 @@
 | DesktopHost 实现 | `apps/lingxi/src/desktop-host.ts` | 用 `@tauri-apps/api` 实现上述接口，是前端唯一直接引用 Tauri SDK 的文件 |
 | Cat Life Engine | `packages/life-engine/src/index.mjs` | 纯状态机（idle/wander/follow_cursor/dragged），零依赖，6 个单元测试全部通过（`node --test packages/life-engine/test/*.test.mjs`） |
 | Renderer | `apps/lingxi/src/renderer.ts` | Three.js 正交相机 + 透明 WebGLRenderer，实现 `Renderer` 契约的 mount/resize/render/hitTest |
-| 占位模型 | `apps/lingxi/src/placeholder-cat.ts` | 纯 Box 几何拼的"像素猫"，用于验证流程，不依赖 Blender 导出管线 |
+| 占位模型 | `apps/lingxi/src/placeholder-cat.ts` ⚠️ **已删除** | 纯 Box 几何拼的"像素猫"，用于验证流程，不依赖 Blender 导出管线。现在的角色由 `apps/lingxi/src/rig/skeleton.ts` 的体素骨架生成，动画在 `src/anim/` —— 本行保留是为了读懂当时的记录 |
 | Animation Director | `apps/lingxi/src/main.ts` | 唯一同时认识 DesktopHost 和 LifeEngine/Renderer 的粘合层 |
 
 `packages/life-engine` 和 `packages/desktop-host-contract` 沿用 `packages/contracts` 已有的约定：纯 `.mjs`/`.d.ts`，不引入构建步骤，用相对路径引入，不依赖尚未建立的 npm workspaces。

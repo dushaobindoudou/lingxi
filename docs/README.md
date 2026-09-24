@@ -43,6 +43,9 @@
 | [`06-roadmap-and-decisions.md`](06-roadmap-and-decisions.md) | 路线图与阶段决策 |
 | [`16-desktop-shell-prototype.md`](16-desktop-shell-prototype.md) | 桌面壳原型期的架构落地与一场误诊 |
 | [`14-daily-life-action-atlas.md`](14-daily-life-action-atlas.md) | 64 格日常动作图集（图不在仓库里，见下） |
+| [`22-character-v5-lookdev.md`](22-character-v5-lookdev.md) | 短毛骨架 v5 的 look-dev（未批准、未接入应用） |
+| [`12-character-study-review.md`](12-character-study-review.md) | 角色研究阶段的评审结论（v1 时期，早于现在的体素骨架） |
+| [`lingxi-完整技术方案 v0.1.md`](lingxi-完整技术方案%20v0.1.md) | 最初的完整技术方案（3904 行，立项期文档；接口以 `19` 和运行时为准） |
 | [`evidence/`](evidence/) | Blender / MCP 时期的实测记录 |
 
 ## 三、已修复问题归档 —— 当时的快照，不是现状
@@ -52,6 +55,7 @@
 
 | 文档 | 快照日期 | 状态 |
 |---|---|---|
+| [`../RELEASE-READINESS-2026-09-24.md`](../RELEASE-READINESS-2026-09-24.md) | 2026-09-24 | 发布前盘点：过期文档、未完成项、bug 清单。文档订正部分已落地，代码部分未动 |
 | [`../ISSUES-2026-09-19.md`](../ISSUES-2026-09-19.md) | 2026-09-19 | 顶部有逐条修复结论；作为接口回归清单仍然有效 |
 | [`../CODE-AUDIT-2026-09-13.md`](../CODE-AUDIT-2026-09-13.md) | 2026-09-13 | 部分结论已被后续实现推翻，顶部有说明 |
 | [`archive/`](archive/) | — | Blender 资产管线时期的文档，见 [`archive/README.md`](archive/README.md) |
