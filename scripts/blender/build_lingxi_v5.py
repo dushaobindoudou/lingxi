@@ -19,10 +19,33 @@ def softmat(name,col,rough=.5,subsurface=0):
  p.inputs['Subsurface Radius'].default_value=(.9,.48,.28);return m
 cream=softmat('WhiteDownBase',(.82,.77,.69),.82,.08)
 coat=softmat('CoatBase',(.46,.36,.27),.82,.07)
-pink=softmat('PinkPawPads',(.65,.32,.30),.5,.12)
-nosemat=softmat('PinkNose',(.62,.28,.25),.36,.10)
-mouthmat=softmat('PinkMouth',(.46,.14,.17),.4,.16)
-iris=softmat('HazelIris',(.22,.26,.13),.42)
+
+TEXDIR=OUT/'textures'
+def texmat(name,albedo,bump=None,rough=.5,sss=.08,fallback=(.6,.3,.3)):
+ """Detail material sampling the generated PBR maps (scripts/blender/make_skin_textures.py).
+  Falls back to a flat colour when the maps are absent, so a clean checkout without
+  numpy/Pillow still builds - the rig contract promises materials are self-contained."""
+ try:
+  alb=bpy.data.images.load(str(TEXDIR/albedo),check_existing=True)
+ except RuntimeError:
+  return softmat('LX_Flat_'+name,fallback,rough,sss)
+ alb.colorspace_settings.name='sRGB'
+ m=bpy.data.materials.new('LX_Tex_'+name);m.use_nodes=True;nt=m.node_tree;p=nt.nodes.get('Principled BSDF')
+ t=nt.nodes.new('ShaderNodeTexImage');t.image=alb;t.extension='EXTEND';t.interpolation='Cubic'
+ nt.links.new(t.outputs['Color'],p.inputs['Base Color'])
+ if bump and (TEXDIR/bump).exists():
+  bi=bpy.data.images.load(str(TEXDIR/bump),check_existing=True);bi.colorspace_settings.name='Non-Color'
+  bt=nt.nodes.new('ShaderNodeTexImage');bt.image=bi;bp=nt.nodes.new('ShaderNodeBump')
+  bp.inputs['Strength'].default_value=.28
+  nt.links.new(bt.outputs['Color'],bp.inputs['Height']);nt.links.new(bp.outputs['Normal'],p.inputs['Normal'])
+ p.inputs['Roughness'].default_value=rough;p.inputs['Subsurface Weight'].default_value=sss
+ p.inputs['Subsurface Radius'].default_value=(.9,.48,.28)
+ return m
+pink=texmat('Pad','pad_skin.png','pad_bump.png',rough=.5,sss=.15,fallback=(.65,.32,.30))
+nosemat=texmat('Nose','nose_skin.png','nose_bump.png',rough=.35,sss=.12,fallback=(.62,.28,.25))
+mouthmat=texmat('Tongue','tongue.png',rough=.22,sss=.20,fallback=(.46,.14,.17))
+earmat=texmat('Ear','ear_fur.png','ear_bump.png',rough=.72,sss=.10,fallback=(.65,.32,.30))
+iris=texmat('Iris','iris_albedo.png','iris_bump.png',rough=.28,sss=.05,fallback=(.22,.26,.13))
 # Eyelids are face skin, not the bright white belly down - see where they are built.
 lidmat=softmat('LidSkin',(.70,.63,.55),.78,.14)
 cornea=softmat('ClearCornea',(1,1,1),.035)
@@ -31,7 +54,7 @@ strand=bpy.data.materials.new('LX_ShortFur_Strand');strand.use_nodes=True
 strand.node_tree.nodes.clear();hout=strand.node_tree.nodes.new('ShaderNodeOutputMaterial');hairnode=strand.node_tree.nodes.new('ShaderNodeBsdfHairPrincipled')
 hairnode.parametrization='COLOR';hairnode.inputs['Color'].default_value=(.45,.36,.28,1);hairnode.inputs['Roughness'].default_value=.38
 strand.node_tree.links.new(hairnode.outputs[0],hout.inputs['Surface'])
-dark=mat('LX_MouthInterior',(.035,.009,.014));black=mat('LX_Pupil',(.004,.006,.004),.13);toothmat=mat('LX_IvoryTeeth',(.85,.80,.67),.3)
+dark=texmat('Mouth','mouth_dark.png',rough=.55,sss=0,fallback=(.035,.009,.014));black=mat('LX_Pupil',(.004,.006,.004),.13);toothmat=mat('LX_IvoryTeeth',(.85,.80,.67),.3)
 M=lambda n:{'HazelIris':iris,'ClearCornea':cornea,'Strand':strand}[n]
 
 def coat_material(name,region):
@@ -46,6 +69,15 @@ def sphere(name,loc,scale,material=None):
  if material:o.data.materials.append(material)
  for p in o.data.polygons:p.use_smooth=True
  return o
+
+def planar_uv(o,ua,va,flip_v=False):
+ """Flat UVs along two axes, normalised to the mesh bounds (0=x, 1=y, 2=z).
+  The nose, tongue and pad maps are painted flat - nostrils either side of centre, tongue root at
+  v=0. A UV sphere wraps u around the equator with u=.25 facing -Y and u=.75 facing +Y, so on
+  default UVs one nostril landed mid-nose and the other inside the head."""
+ me=o.data;co=np.array([v.co[:] for v in me.vertices]);lo=co.min(0);span=np.maximum(co.max(0)-lo,1e-9)
+ c=(co[[l.vertex_index for l in me.loops]]-lo)/span;v=1-c[:,va] if flip_v else c[:,va]
+ me.uv_layers.active.data.foreach_set('uv',np.column_stack((c[:,ua],v)).astype('f').ravel())
 
 def merge(objects,name,voxel=.009):
  bpy.ops.object.select_all(action='DESELECT')
@@ -65,10 +97,11 @@ head.data.materials.clear();head.data.materials.append(headcoat)
 # Muzzle remains divided from lower jaw; dark recessed opening gives a real oral interior.
 jaw=sphere('LX_Jaw',(0,-.378,.433),(.068,.065,.023),cream)
 cavity=sphere('LX_MouthCavity',(0,-.393,.445),(.045,.039,.019),dark)
-tongue=sphere('LX_Tongue',(0,-.414,.435),(.022,.034,.006),mouthmat)
+tongue=sphere('LX_Tongue',(0,-.414,.435),(.022,.034,.006),mouthmat);planar_uv(tongue,0,1,flip_v=True)  # tip at v=1
 nose=sphere('LX_Nose',(0,-.443,.486),(.022,.010,.013),nosemat)
 for v in nose.data.vertices:
  if v.co.z<0:v.co.x*=max(.22,1+v.co.z/.015)
+planar_uv(nose,0,2)  # seen from the front
 # Skeleton: common bind space shared by body, separate face parts, and fur vertices.
 ad=bpy.data.armatures.new('LingxiSkeleton');rig=bpy.data.objects.new('LX_Rig',ad);scene.collection.objects.link(rig);bpy.context.view_layer.objects.active=rig;rig.select_set(True);bpy.ops.object.mode_set(mode='EDIT')
 def bone(n,a,b,parent=None):
@@ -141,7 +174,13 @@ for s in [-1,1]:
    u=k/6-1;vs.append((s*(.098+.026*t)+wid*u,-.273+.024*t+.032*(1-u*u)*math.sin(math.pi*t),.616+.128*t))
  for j in range(12):
   for k in range(12):a=j*13+k;fs.append((a,a+1,a+14,a+13))
- me=bpy.data.meshes.new('Ear');me.from_pydata(vs,[],fs);me.update();o=bpy.data.objects.new('LX_Ear.'+suf,me);scene.collection.objects.link(o);me.materials.append(nosemat)
+ me=bpy.data.meshes.new('Ear');me.from_pydata(vs,[],fs);me.update();o=bpy.data.objects.new('LX_Ear.'+suf,me);scene.collection.objects.link(o);me.materials.append(earmat)
+ # UV: u across the width, v from base to tip - matches ear_fur.png's flow convention.
+ uv=me.uv_layers.new()
+ for p in me.polygons:
+  for li in p.loop_indices:
+   vi=me.loops[li].vertex_index
+   uv.data[li].uv=((vi%13)/12,(vi//13)/12)
  for p in me.polygons:p.use_smooth=True
  mod=o.modifiers.new('Ear shell','SOLIDIFY');mod.thickness=.006
  bind(o,'Ear.'+suf);ears.append(o)
@@ -201,10 +240,10 @@ claws=[]
 for s in [-1,1]:
  suf='L' if s<0 else 'R'
  for pre,y,x in [('Front',-.17,s*.108),('Rear',.26,s*.12)]:
-  pad=sphere('LX_'+pre+'Pad.'+suf,(x,y-.022,.009),(.035,.046,.009),pink);bind(pad,pre+'Paw.'+suf)
+  pad=sphere('LX_'+pre+'Pad.'+suf,(x,y-.022,.009),(.035,.046,.009),pink);planar_uv(pad,0,1);bind(pad,pre+'Paw.'+suf)
   for i in range(4):
    toe=sphere('LX_'+pre+f'Toe{i}.'+suf,(x+(i-1.5)*.023,y-.080,.040),(.017,.030,.024),cream);bind(toe,pre+f'Toe{i}.'+suf)
-   p=sphere('LX_'+pre+f'Bean{i}.'+suf,(x+(i-1.5)*.023,y-.078,.017),(.013,.016,.006),pink);bind(p,pre+f'Toe{i}.'+suf)
+   p=sphere('LX_'+pre+f'Bean{i}.'+suf,(x+(i-1.5)*.023,y-.078,.017),(.013,.016,.006),pink);planar_uv(p,0,1);bind(p,pre+f'Toe{i}.'+suf)
    c=sphere('LX_'+pre+f'Claw{i}.'+suf,(x+(i-1.5)*.023,y-.100,.035),(.004,.016,.004),toothmat);bind(c,pre+f'Toe{i}.'+suf);c.shape_key_add(name='Basis');k=c.shape_key_add(name='Extend')
    for v in k.data:v.co.y-=.015
    claws.append(c)
@@ -274,27 +313,58 @@ for obj,region,mtl in [(body,'body',bodycoat),(head,'Head',headcoat),(tail,'tail
  att=mtl.node_tree.nodes.new('ShaderNodeVertexColor');att.layer_name='fur_color'
  mtl.node_tree.links.new(att.outputs['Color'],mtl.node_tree.nodes.get('Principled BSDF').inputs['Base Color'])
 furs=[]
-def groom(o,n,length,reg):
+def fur_direction(root,reg):
+ """Per-strand growth direction. One global vector made the coat read as felt;
+  the real thing changes across the body: down the belly and limbs, along the
+  tail, radiating outward from the face."""
+ x,y,z=root.T;n=len(root)
+ if reg=='body':
+  d=np.tile([0,1,-.22],(n,1))
+  low=np.clip((.21-z)/.15,0,1)[:,None]            # belly + upper legs: gravity wins
+  d=d*(1-low)+np.array([[0,.20,-1.0]])*low
+  d[:,0]+=np.sign(x)*.30                          # outward on the flanks keeps it soft
+ elif reg=='tail':
+  d=np.tile([0,1,-.12],(n,1))
+ elif reg=='Head':
+  centre=np.array([0,-.47,.505])                  # radiate away from the nose
+  d=root-centre;d/=np.maximum(np.linalg.norm(d,axis=1)[:,None],1e-8);d[:,1]-=.18
+ else:
+  d=np.tile([0,-.5,-.6],(n,1))
+ return d
+# guard hairs sit above a thinner, shorter undercoat and carry most of the colour;
+# the undercoat lifts the silhouette and fills the visible gaps between strands.
+RADII={'guard':[.00042,.00030,.00017,.000035],'under':[.00030,.00021,.00012,.000025]}
+def groom(o,n,length,reg,layer='guard'):
  me=o.data;me.calc_loop_triangles();v=np.array([v.co[:] for v in me.vertices]);norm=np.array([v.normal[:] for v in me.vertices]);tri=np.array([t.vertices[:] for t in me.loop_triangles]);corn=v[tri];area=np.linalg.norm(np.cross(corn[:,1]-corn[:,0],corn[:,2]-corn[:,0]),axis=1);ids=rng.choice(len(tri),n,p=area/area.sum());b=rng.random((n,2));b[b.sum(1)>1]=1-b[b.sum(1)>1];b=np.column_stack((1-b.sum(1),b));root=(corn[ids]*b[:,:,None]).sum(1);normal=(norm[tri[ids]]*b[:,:,None]).sum(1);normal/=np.maximum(np.linalg.norm(normal,axis=1)[:,None],1e-8)
  if reg=='Head':
   keep=np.ones(n,dtype=bool)
   for s in [-1,1]:keep &= ~((((root[:,0]-s*.066)/.046)**2+((root[:,2]-.547)/.048)**2<1)&(root[:,1]<-.375))
   keep &= ~((abs(root[:,0])<.024)&(root[:,1]<-.427)&(root[:,2]<.503))
   root=root[keep];normal=normal[keep];n=len(root)
- direction=np.tile([0,1,-.2],(n,1)) if reg in ['body','tail'] else np.column_stack((np.sign(root[:,0])*.8,np.ones(n)*.1,-np.ones(n)*.3))
+ direction=fur_direction(root,reg)
  tangent=direction-(direction*normal).sum(1)[:,None]*normal;tangent/=np.maximum(np.linalg.norm(tangent,axis=1)[:,None],1e-8)
- t=np.linspace(0,1,4)[None,:,None];ln=length*rng.uniform(.55,1.3,(n,1,1))
+ scale=.55 if layer=='under' else 1.0
+ t=np.linspace(0,1,4)[None,:,None];ln=length*scale*rng.uniform(.55,1.3,(n,1,1))
  # a slight per-strand wave keeps the coat from reading as felt
  wave=normal[:,None,:]*(.0011*rng.uniform(.5,1.4,(n,1,1))*np.sin(t*6.5+rng.random((n,1,1))*6.28))
  pts=root[:,None,:]+ln*(normal[:,None,:]*(.65*t-.25*t*t)+tangent[:,None,:]*(.65*t*t))+wave
  edges=np.column_stack((np.arange(n*4).reshape(n,4)[:,:-1].ravel(),np.arange(n*4).reshape(n,4)[:,1:].ravel()))
- mesh=bpy.data.meshes.new('FurStrands');mesh.from_pydata(pts.reshape(-1,3),edges,[]);mesh.update();ob=bpy.data.objects.new('LX_Fur_'+o.name,mesh);scene.collection.objects.link(ob);bind(ob,reg)
- colors=np.repeat(fur_color(root,reg),4,axis=0);a=mesh.attributes.new('fur_color','FLOAT_COLOR','POINT');a.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
- radius=mesh.attributes.new('fur_radius','FLOAT','POINT');radius.data.foreach_set('value',np.tile([.00042,.00030,.00017,.000035],n).astype('f'))
+ mesh=bpy.data.meshes.new('FurStrands');mesh.from_pydata(pts.reshape(-1,3),edges,[]);mesh.update();ob=bpy.data.objects.new('LX_Fur_'+layer+'_'+o.name,mesh);scene.collection.objects.link(ob);bind(ob,reg)
+ colors=np.repeat(fur_color(root,reg),4,axis=0)
+ # per-strand variation, plus a few pale hairs; a single flat colour reads as plastic fur
+ jit=1+rng.normal(0,.05,(n,1,1))+((rng.random((n,1,1))<.025)*.22)
+ colors=np.clip(colors*np.repeat(jit,4,axis=0)*(1.06 if layer=='under' else 1.0),0,1)
+ a=mesh.attributes.new('fur_color','FLOAT_COLOR','POINT');a.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
+ radius=mesh.attributes.new('fur_radius','FLOAT','POINT');radius.data.foreach_set('value',np.tile(RADII[layer],n).astype('f'))
  ng=bpy.data.node_groups.new('Skin strands to render curves','GeometryNodeTree');ng.interface.new_socket(name='Geometry',in_out='INPUT',socket_type='NodeSocketGeometry');ng.interface.new_socket(name='Geometry',in_out='OUTPUT',socket_type='NodeSocketGeometry');nodes=ng.nodes;links=ng.links;inp=nodes.new('NodeGroupInput');out=nodes.new('NodeGroupOutput');cv=nodes.new('GeometryNodeMeshToCurve');rr=nodes.new('GeometryNodeSetCurveRadius');at=nodes.new('GeometryNodeInputNamedAttribute');at.data_type='FLOAT';at.inputs['Name'].default_value='fur_radius';sm=nodes.new('GeometryNodeSetMaterial');sm.inputs['Material'].default_value=furmat;links.new(inp.outputs['Geometry'],cv.inputs['Mesh']);links.new(cv.outputs['Curve'],rr.inputs['Curve']);links.new(at.outputs['Attribute'],rr.inputs['Radius']);links.new(rr.outputs['Curve'],sm.inputs['Geometry']);links.new(sm.outputs['Geometry'],out.inputs['Geometry']);mod=ob.modifiers.new('Render native short hairs','NODES');mod.node_group=ng;ob['strand_count']=n;furs.append(ob)
-for o,n,l,r in [(body,80000,.013,'body'),(head,90000,.0085,'Head'),(tail,15000,.013,'tail'),(jaw,4000,.008,'Jaw')]:groom(o,n,l,r)
-# Belly breathing applies identically to body surface and its bound hairs.
-for o in [body,furs[0]]:
+for o,n,l,r in [(body,80000,.013,'body'),(head,90000,.0085,'Head'),(tail,15000,.013,'tail'),(jaw,4000,.008,'Jaw')]:groom(o,n,l,r,'guard')
+# A shorter, denser, slightly lighter layer underneath; it fills the gaps between
+# guard hairs so the coat stops looking like painted bristles on bare skin.
+for o,n,l,r in [(body,48000,.013,'body'),(head,48000,.0085,'Head'),(tail,9000,.013,'tail'),(jaw,2500,.008,'Jaw')]:groom(o,n,l,r,'under')
+# Belly breathing applies identically to body surface and ALL its bound hairs. With only the
+# guard layer keyed, the expanding flank swallowed the 7mm undercoat on every inhale.
+breathers=[body]+[o for o in furs if o['skin_region']=='body']
+for o in breathers:
  o.shape_key_add(name='Basis');k=o.shape_key_add(name='Breath')
  for v in k.data:
   p=v.co;fac=math.exp(-((p.y-.06)/.22)**4)*max(0,min(1,(p.z-.13)/.15));p.x*=1+.022*fac;p.z+=.003*fac
@@ -307,7 +377,7 @@ for s in [-1,1]:
   o=bpy.data.objects.new('LX_Whisker',cu);scene.collection.objects.link(o);cu.materials.append(cream);bpy.context.view_layer.objects.active=o;o.select_set(True);bpy.ops.object.convert(target='MESH');bind(o,'Whisker.'+suf)
 # Named actions with synchronized shape key actions. One timeline demonstrates all clips.
 clips=[('Idle',72),('Walk',48),('Run',32),('Jump',48),('LieDown',48),('SideLie',48),('Sleep',72),('Curious',48),('Happy',48),('Yawn',60),('Lick',48),('Bite',48),('Knead',48),('Stretch',60),('PawPlay',48)]
-shapeobs=eyelids+eye_shapes+claws+[body,furs[0]];offset=1;manifest=[]
+shapeobs=eyelids+eye_shapes+claws+breathers;offset=1;manifest=[]
 def pose(name,u):
  for p in rig.pose.bones:p.location=(0,0,0);p.rotation_euler=(0,0,0);p.scale=(1,1,1)
  for o in shapeobs:
@@ -376,7 +446,7 @@ def pose(name,u):
   if name=='PawPlay':pb['FrontUpper.L'].rotation_euler[0]=-.8*(.5+.5*math.sin(phase))
  for o in eyelids:o.data.shape_keys.key_blocks['Blink'].value=blink
  for o in eye_shapes:o.data.shape_keys.key_blocks['Blink'].value=blink
- for o in [body,furs[0]]:o.data.shape_keys.key_blocks['Breath'].value=.5+.5*math.sin(phase*2)
+ for o in breathers:o.data.shape_keys.key_blocks['Breath'].value=.5+.5*math.sin(phase*2)
  for o in claws:o.data.shape_keys.key_blocks['Extend'].value=.7*(.5+.5*math.sin(phase*2)) if name=='Knead' else 0
 
 for name,duration in clips:
