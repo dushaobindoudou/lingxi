@@ -77,8 +77,14 @@ fi
 if [ "$PUSH" = 1 ]; then
   say "Push"
   BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-  [ "$BRANCH" != HEAD ] || die "detached HEAD - check out the branch the release belongs to"
-  git push origin "$BRANCH" || die "pushing $BRANCH failed - pull, rebuild if app sources changed, retry"
+  if [ "$BRANCH" = HEAD ]; then
+    # Detached - a clean worktree made just to build the release. Fine, as long as the commit is
+    # already on the remote: a tag must never be the only thing holding a commit up.
+    git fetch -q origin
+    [ -n "$(git branch -r --contains HEAD)" ] || die "detached HEAD that no remote branch contains - push it first"
+  else
+    git push origin "$BRANCH" || die "pushing $BRANCH failed - pull, rebuild if app sources changed, retry"
+  fi
   git push origin "refs/tags/$TAG" || die "pushing $TAG failed - does the remote already have a different $TAG?"
 fi
 
