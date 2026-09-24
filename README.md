@@ -189,7 +189,6 @@ cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
 | 入口 | 内容 |
 | --- | --- |
 | [**文档分层索引**](docs/README.md) | 哪份文档描述现在，哪份只是记录当时 |
-| [English docs](docs/en/README.md) | 同一套文档的英文译本。中文是原文 |
 | [接入 Agent 的完整规范](docs/19-agent-integration.md) | **写接入先看这个**：词汇表、优先级、定制、自证生效 |
 | [技术架构](docs/05-technical-architecture.md) | 三层分工与契约 |
 | [行为系统](docs/04-life-engine.md) | 纯状态机的行为设计 |

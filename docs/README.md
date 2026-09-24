@@ -1,7 +1,5 @@
 # 文档索引
 
-英文译本在 [`en/README.md`](en/README.md)。中文是规格原文；两边不一致时以中文为准。
-
 这个仓库的文档里既有**现在的规格**，也有**当时的记录**。两者都值得留着，但混在一起读会
 得到互相矛盾的"现状"——比如一份 2026-09-13 的审计说"Agent 任务观察只有契约"，而今天
 往 `/task-event` 发一条 `completed` 事件，猫会换表情、播动作、说一句话。两句话都曾经是
@@ -27,7 +25,7 @@
 | [`18-main-interface-design.md`](18-main-interface-design.md) | 主界面（管理窗口）的信息架构 |
 | [`21-tray-menu-and-home-surface.md`](21-tray-menu-and-home-surface.md) | 托盘菜单与治愈系主界面视觉方案、素材拼接和开发映射 |
 | [`19-agent-integration.md`](19-agent-integration.md) | **接 Agent 的权威文档**：桥的接口、词汇表、反应映射 |
-| [`lingxi-完整技术方案 v0.1.md`](lingxi-完整技术方案%20v0.1.md) | 按当前实现写的总览：产品、三层架构、体素角色、行为、桌面壳、接入。细节仍以本表其他规格和 `GET /integration` 为准 |
+| [`lingxi-完整技术方案 v0.1.md`](lingxi-完整技术方案%20v0.1.md) | 最初的完整技术方案（3904 行，立项期文档；接口以 `19` 和运行时为准） |
 | [`20-arbitrary-png-skin-import.md`](20-arbitrary-png-skin-import.md) | 自定义皮肤导入 |
 | [`RELEASING.md`](RELEASING.md) | 打包、签名证书、公证、发布到 GitHub（本地脚本与 CI 同一套） |
 
