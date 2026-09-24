@@ -180,6 +180,10 @@ curl -H "Authorization: Bearer $TOKEN" localhost:47811/integration
 
 `GET /health` 是唯一免 token 的接口，它会告诉你 token 文件在哪。
 
+**应用没开也不用手工去开。** CLI、MCP server 和 DSH 插件在桥不通时会自己
+`open -g -b com.dushaobin.lingxi-desktop`（不抢焦点），等桥起来再重试那一次调用，每个进程只试一次。
+不想要这个行为就设 `LINGXI_AUTOSTART=0`。接不通时先跑 `lingxi doctor`。
+
 ---
 
 ## Claude Code hooks（可选，额外的自动反应）
@@ -204,6 +208,7 @@ hook 走的是同一个 `/task-event`，只是形状不同（应用会自动识�
 ## 装完检查
 
 ```sh
+lingxi doctor          # 全部前置条件：应用 / 鉴权 / 署名 / 权限 / skill / 宿主
 lingxi health          # 应用在不在、token 在哪
 lingxi integration     # 完整契约
 lingxi capabilities    # 全部动作 / 表情 / 主题，带 builtin/custom 来源标记

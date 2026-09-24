@@ -4,7 +4,7 @@
 // to be able to answer "what can this thing do", "what is it doing", and then to express
 // something. Every tool here maps to one intention, and the descriptions are written for the
 // agent rather than for a human reading source - they are the only documentation the model gets.
-import { bridge } from './bridge.mjs';
+import { bridge, autoStartNotice } from './bridge.mjs';
 
 /** Trim a tool result to something a model can actually read without burning its context. */
 function ok(summary, data) {
@@ -18,8 +18,15 @@ function ok(summary, data) {
  * fallback badge instead of the caller's own looks, from the model's side, exactly like success.
  */
 function attributed(summary) {
+  const notes = [];
+  // Said once, on the first result after we started the app. The model should know the cat was
+  // not there a moment ago - it changes whether "no reaction" is a bug or a cold start, and it
+  // is the sort of thing worth mentioning to the user once rather than silently doing.
+  const started = autoStartNotice();
+  if (started) notes.push(started);
   const warning = bridge.identityWarning();
-  return warning ? `${summary} (${warning})` : summary;
+  if (warning) notes.push(warning);
+  return notes.length ? `${summary} (${notes.join('; ')})` : summary;
 }
 
 /**

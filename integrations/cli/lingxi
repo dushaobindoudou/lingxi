@@ -41,6 +41,7 @@
 #   lingxi recall
 #   lingxi remind <minutes> <text> [--mood M] [--every <minutes>]
 #
+#   lingxi doctor                              # check every prerequisite, and say what to do
 #   lingxi assets                              # what custom assets are loaded, and any errors
 #   lingxi reload                              # re-read the assets folder, then report
 #   lingxi agents                              # who is driving
@@ -52,6 +53,7 @@
 #   LINGXI_TOKEN       overrides the token file
 #   LINGXI_TOKEN_FILE  overrides where the token is read from
 #   LINGXI_AGENT       default `agent` value sent with control calls
+#   LINGXI_AUTOSTART   0 to never start the app for you (default: start it if it is not running)
 #
 # Identity otherwise comes from ~/.lingxi/agent.json - see `agent_id` below.
 set -euo pipefail
@@ -119,29 +121,111 @@ if isinstance(data, dict):
   fi
 }
 
+# --- is the app there, and can we start it? -------------------------------------------------
+#
+# The bridge only exists while the app does, and until now the app was the one thing no
+# integration could start: every path ended at "灵犀 is not reachable", which is true and
+# useless when the caller is a model and the person who could open it is not watching.
+#
+# Opt out with LINGXI_AUTOSTART=0 - a command that makes a window appear on someone's desktop
+# should be refusable. They may be presenting, or simply not want the cat right now.
+
+BUNDLE_ID="com.dushaobin.lingxi-desktop"
+
+bridge_is_up() {
+  # /health needs no token, so this works before the token file exists.
+  curl -s "${NOPROXY[@]}" --max-time 2 -o /dev/null "$BASE/health" 2>/dev/null
+}
+
+# Where the app is installed, or nothing. mdfind by bundle id first, because that is the same
+# index `open -b` consults and it finds the app wherever the user actually put it.
+app_path() {
+  local found
+  if command -v mdfind >/dev/null 2>&1; then
+    found="$(mdfind "kMDItemCFBundleIdentifier == '$BUNDLE_ID'" 2>/dev/null | head -1 || true)"
+    [ -n "$found" ] && { printf '%s' "$found"; return 0; }
+  fi
+  for candidate in "/Applications/灵犀.app" "$HOME/Applications/灵犀.app" "/Applications/lingxi.app"; do
+    [ -d "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  done
+  # Not found is an answer, not a failure: callers test the output, and a non-zero return here
+  # would abort the whole script under `set -e` the moment the app is not installed - which is
+  # precisely the case `doctor` exists to report on.
+  return 0
+}
+
+# Start the app and wait for the bridge. Returns non-zero with a reason on stderr.
+start_app() {
+  case "${LINGXI_AUTOSTART:-1}" in
+    0|false|no)
+      printf '%s\n' "灵犀 is not running, and LINGXI_AUTOSTART=${LINGXI_AUTOSTART} asked me not to start it." >&2
+      return 1 ;;
+  esac
+  [ "$(uname -s)" = "Darwin" ] || {
+    printf '%s\n' "灵犀 is not running. This script only knows how to start it on macOS." >&2
+    return 1
+  }
+  local path; path="$(app_path)"
+  [ -n "$path" ] || {
+    printf '%s\n' "灵犀 is not installed - nothing to start. Build it with \`npm run tauri build\` in apps/lingxi." >&2
+    return 1
+  }
+  # -g: do not steal focus. The cat becomes visible on the desktop; the user keeps their window.
+  open -g -b "$BUNDLE_ID" 2>/dev/null || open -g "$path" 2>/dev/null || {
+    printf '%s\n' "could not start 灵犀 at $path" >&2
+    return 1
+  }
+  printf '%s' "灵犀 was not running, starting it" >&2
+  local waited=0
+  while [ "$waited" -lt 150 ]; do   # 15s, in 0.1s steps
+    if bridge_is_up; then printf '%s\n' " - up." >&2; return 0; fi
+    sleep 0.1; waited=$((waited + 1))
+    [ $((waited % 10)) -eq 0 ] && printf '.' >&2
+  done
+  printf '%s\n' "" >&2
+  printf '%s\n' "灵犀 started but its bridge did not answer within 15s. Another process may hold port $PORT:
+  lsof -nP -iTCP:$PORT -sTCP:LISTEN" >&2
+  return 1
+}
+
+# Called before the first request of a run, and at most once more if the app dies mid-run.
+# Capped because a start that did not take is not going to take on the fourth try either, and a
+# script in a loop would otherwise spend a minute of timeouts per iteration.
+AUTOSTART_TRIES=0
+ensure_running() {
+  [ "$AUTOSTART_TRIES" -ge 1 ] && return 0
+  AUTOSTART_TRIES=1
+  bridge_is_up && return 0
+  start_app
+}
+ensure_running_again() {
+  [ "$AUTOSTART_TRIES" -ge 2 ] && return 1
+  AUTOSTART_TRIES=2
+  bridge_is_up && return 0
+  start_app
+}
+
 # request METHOD PATH [json-body]
 request() {
   local method="$1" path="$2" body="${3:-}" code out hdr
   out=$(mktemp); hdr=$(mktemp)
   trap 'rm -f "$out" "$hdr"' RETURN
-  # The token goes to curl through a config FILE, not the argv. `-H "Authorization: ..."` put
-  # the bearer token in the process list for the whole request duration - `ps` shows every
-  # local user's argv - which is exactly the leak the Rust-side hook command was fixed for.
-  # Same fix, same reason.
-  printf 'header = "Authorization: Bearer %s"\n' "$(token)" > "$hdr"
-  # Who is calling, on every request. `json()` already folds `agent` into the body, which is
-  # what /control and /task-event read - but /memory and /reminders decide the permission tier
-  # from this header, and a `lingxi remember` that travelled without it was filed under
-  # `anonymous` and refused with a 403 that named an id the user had never seen.
-  cli_ident="$(agent_id)"
-  if [ -n "$cli_ident" ]; then
-    printf 'header = "X-Lingxi-Agent: %s"\n' "$cli_ident" >> "$hdr"
-  fi
-  if [ -n "$body" ]; then
-    code=$(curl -s "${NOPROXY[@]}" -K "$hdr" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
-      -H 'Content-Type: application/json' -d "$body") || true
-  else
-    code=$(curl -s "${NOPROXY[@]}" -K "$hdr" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path") || true
+
+  # Start the app before anything needs the token: the token file is written by the app, so on a
+  # machine where it has never run there is nothing to read and `token` would die here with a
+  # message about a missing file rather than about a missing cat.
+  ensure_running || true
+
+  write_headers "$hdr"
+  send_request "$method" "$path" "$body" "$hdr" "$out"; code="$REPLY_CODE"
+
+  if [ -z "$code" ] || [ "$code" = "000" ]; then
+    # Unreachable despite the check above - the app may have quit between the two. One more try,
+    # with fresh headers: a restart mints a new token, so the old one would 401.
+    if ensure_running_again; then
+      write_headers "$hdr"
+      send_request "$method" "$path" "$body" "$hdr" "$out"; code="$REPLY_CODE"
+    fi
   fi
   if [ -z "$code" ] || [ "$code" = "000" ]; then
     die "灵犀 is not reachable on $BASE. Is the app running? It listens only on localhost."
@@ -157,6 +241,34 @@ request() {
   fi
   # Non-2xx is a real failure and must be visible to the caller's `set -e`, not just readable.
   case "$code" in 2*) return 0;; *) return 1;; esac
+}
+
+# The token goes to curl through a config FILE, not the argv. `-H "Authorization: ..."` put the
+# bearer token in the process list for the whole request duration - `ps` shows every local
+# user's argv - which is exactly the leak the Rust-side hook command was fixed for. Same fix,
+# same reason. Rebuilt rather than reused after a restart, because a restart mints a new token.
+write_headers() {
+  local hdr="$1" ident
+  printf 'header = "Authorization: Bearer %s"\n' "$(token)" > "$hdr"
+  # Who is calling, on every request. `json()` already folds `agent` into the body, which is
+  # what /control and /task-event read - but /memory and /reminders decide the permission tier
+  # from this header, and a `lingxi remember` that travelled without it was filed under
+  # `anonymous` and refused with a 403 that named an id the user had never seen.
+  ident="$(agent_id)"
+  [ -n "$ident" ] && printf 'header = "X-Lingxi-Agent: %s"\n' "$ident" >> "$hdr"
+  return 0
+}
+
+# Sets REPLY_CODE. A separate function only so the retry above is the same call, not a copy.
+send_request() {
+  local method="$1" path="$2" body="$3" hdr="$4" out="$5"
+  if [ -n "$body" ]; then
+    REPLY_CODE=$(curl -s "${NOPROXY[@]}" -K "$hdr" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path" \
+      -H 'Content-Type: application/json' -d "$body") || true
+  else
+    REPLY_CODE=$(curl -s "${NOPROXY[@]}" -K "$hdr" -o "$out" -w '%{http_code}' --max-time 5 -X "$method" "$BASE$path") || true
+  fi
+  return 0
 }
 
 # Build a JSON object from key=value pairs, with `agent` folded in. Values are passed through
@@ -234,6 +346,91 @@ process.stdout.write(JSON.stringify(out));
 
 cmd="${1:-help}"; shift || true
 case "$cmd" in
+  doctor)
+    # Every prerequisite, in the order they have to hold, each with what to do about it.
+    #
+    # This exists because the failures are indistinguishable from the outside. "The cat did not
+    # react" is produced by: the app not running, the app running with a dead bridge, a token
+    # this account cannot read, a permission tier that refuses writes, a skill that was never
+    # installed, and a host whose plugin was never enabled. Six causes, one symptom, and the
+    # error text a model sees names at most one of them.
+    fail=0; warn=0
+    ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+    bad()  { printf '  \033[31m✗\033[0m %s\n' "$*"; fail=$((fail+1)); }
+    note() { printf '  \033[33m!\033[0m %s\n' "$*"; warn=$((warn+1)); }
+    hint() { printf '      %s\n' "$*"; }
+
+    printf '\n灵犀 doctor\n\n应用\n'
+    app_at="$(app_path)"
+    if [ -n "$app_at" ]; then ok "已安装  $app_at"
+    else bad "找不到 .app"; hint "在 apps/lingxi 里跑 npm run tauri build，或把 .app 拖进 /Applications"; fi
+
+    if bridge_is_up; then ok "桥接在跑  $BASE"
+    else
+      if [ -n "$app_at" ] && start_app 2>/dev/null; then ok "桥接没在跑，已启动  $BASE"
+      else bad "桥接不通  $BASE"
+         hint "端口被别的进程占着的话：lsof -nP -iTCP:$PORT -sTCP:LISTEN"; fi
+    fi
+
+    printf '\n鉴权\n'
+    if [ -n "${LINGXI_TOKEN:-}" ]; then note "token 来自 LINGXI_TOKEN 环境变量（会进 shell 历史）"
+    elif [ -r "$TOKEN_FILE" ]; then
+      perm="$(stat -f '%Lp' "$TOKEN_FILE" 2>/dev/null || echo '???')"
+      if [ "$perm" = "600" ]; then ok "token 可读，权限 0600"
+      else note "token 可读，但权限是 0${perm}（应该是 0600）"; hint "chmod 600 \"$TOKEN_FILE\""; fi
+    else bad "读不到 token  $TOKEN_FILE"; hint "应用启动一次就会生成"; fi
+
+    printf '\n署名\n'
+    ident="$(agent_id)"
+    if [ -n "$ident" ]; then
+      ok "以「${ident}」的身份调用"
+      [ -n "${LINGXI_AGENT:-}" ] && hint "来自 LINGXI_AGENT（优先于 ${AGENT_FILE}）" || hint "来自 $AGENT_FILE"
+    else
+      note "没有署名，调用会记成 anonymous"
+      hint "写一份 ${AGENT_FILE}：{\"id\":\"你的-id\",\"name\":\"...\",\"badge\":\"🐧\"}"
+    fi
+
+    printf '\n权限\n'
+    if bridge_is_up; then
+      who="${ident:-anonymous}"
+      tier="$(curl -s "${NOPROXY[@]}" --max-time 3 -H "Authorization: Bearer $(token 2>/dev/null)" "$BASE/agents" 2>/dev/null \
+        | python3 -c '
+import json,sys
+try: data=json.load(sys.stdin)
+except Exception: sys.exit(0)
+rows = data.get("agents", data) if isinstance(data, dict) else data
+if isinstance(rows, list):
+    for row in rows:
+        if isinstance(row, dict) and row.get("id") == sys.argv[1]:
+            print(row.get("permission", "")); break
+' "$who" 2>/dev/null || true)"
+      case "$tier" in
+        trusted)   ok "「${who}」是 trusted —— 表演、记忆、提醒、改设置都可以" ;;
+        performer) ok "「${who}」是 performer（默认）—— 能表演，不能写记忆/提醒/设置"
+                   hint "要 remember / remind：主界面 → Agent 接入 →「权限与日志」→ 改成 trusted" ;;
+        observer)  note "「${who}」是 observer —— 只能读" ;;
+        "")        note "「${who}」还没在注册表里出现过（注册表是内存的，重启即空）"
+                   hint "调一次就会出现；档位按默认的 performer 处理" ;;
+        *)         note "「${who}」的档位是 $tier" ;;
+      esac
+    else note "桥接不通，跳过档位检查"; fi
+
+    printf '\n技能与宿主\n'
+    for entry in "Claude Code:$HOME/.claude/skills/lingxi" "Codex:$HOME/.codex/skills/lingxi" "WorkBuddy:$HOME/.workbuddy/skills/lingxi"; do
+      host="${entry%%:*}"; dir="${entry#*:}"
+      if [ -e "$dir" ]; then ok "$host  skill 已装"
+      else printf '  \033[90m·\033[0m %s  skill 未装（integrations/install-skills.sh）\n' "$host"; fi
+    done
+    if grep -q 'lingxi' "$HOME/.claude/settings.json" 2>/dev/null; then ok "Claude Code  hooks 已装"
+    else printf '  \033[90m·\033[0m %s\n' "Claude Code  hooks 未装（主界面 → Agent 接入 → 一键接入）"; fi
+    if grep -qE '^[[:space:]]*notify[[:space:]]*=.*(lingxi|fanout)' "$HOME/.codex/config.toml" 2>/dev/null; then ok "Codex  notify 已装"
+    else printf '  \033[90m·\033[0m %s\n' "Codex  notify 未装（integrations/hosts/codex/install.sh）"; fi
+
+    printf '\n'
+    if [ "$fail" -gt 0 ]; then printf '%s\n\n' "$fail 项不通过，$warn 项需要注意。"; exit 1
+    elif [ "$warn" -gt 0 ]; then printf '%s\n\n' "都能用，$warn 项需要注意。"
+    else printf '%s\n\n' "全部通过。"; fi ;;
+
   health)
     # Deliberately unauthenticated - this is how you find out where the token lives.
     # A dead app used to exit 0 with NO OUTPUT (curl's empty body piped through the

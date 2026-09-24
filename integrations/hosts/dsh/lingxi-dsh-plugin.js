@@ -14,6 +14,7 @@
 
 const LINGXI_PORT = 47811;
 const AGENT_ID = 'dsh';
+const BUNDLE_ID = 'com.dushaobin.lingxi-desktop';
 const STATES = ['queued', 'running', 'blocked', 'needs_input', 'needs_approval', 'completed', 'failed', 'cancelled'];
 const KINDS = ['build', 'test', 'deploy', 'review', 'search', 'write', 'chat', 'other'];
 const MOODS = ['focused', 'proud', 'tender', 'sad', 'frustrated', 'anxious', 'weary', 'playful', 'curious'];
@@ -39,7 +40,49 @@ function shellService(ctx) {
   return ctx.get('shell') !== undefined ? ctx.get('shell') : ctx.get('bash');
 }
 
-async function callBridge(ctx, method, path, body) {
+/**
+ * Start the app if the bridge is not answering, and wait for it.
+ *
+ * The bridge only exists while the app does, and until this the plugin's answer to a closed app
+ * was "bridge unreachable - is the cat running?" - true, and not something a model can act on.
+ * `open -g` does not steal focus. Opt out with LINGXI_AUTOSTART=0 in the host's environment.
+ */
+function startAppCommand() {
+  return [
+    '[ "${LINGXI_AUTOSTART:-1}" = "0" ] && exit 7',
+    'curl -s -m 2 -o /dev/null http://127.0.0.1:' + LINGXI_PORT + '/health && exit 0',
+    'open -g -b ' + BUNDLE_ID + ' 2>/dev/null || exit 8',
+    'n=0; while [ $n -lt 150 ]; do',
+    '  curl -s -m 2 -o /dev/null http://127.0.0.1:' + LINGXI_PORT + '/health && exit 0',
+    '  sleep 0.1; n=$((n+1))',
+    'done',
+    'exit 9',
+  ].join('; ');
+}
+
+const START_FAILURES = {
+  7: 'the cat is not running and LINGXI_AUTOSTART=0 asked me not to start it',
+  8: 'the cat is not running and 灵犀.app does not appear to be installed',
+  9: 'the cat was asked to start but its bridge did not answer within 15s',
+};
+
+let startAttempted = false;
+
+async function ensureAppRunning(ctx) {
+  if (startAttempted) return null;
+  startAttempted = true;
+  const shell = shellService(ctx);
+  if (shell === undefined) return null;
+  try {
+    const result = await shell.run(shell.resolve({ command: startAppCommand(), timeoutMs: 20000 }));
+    const code = result ? result.exitCode : null;
+    return code === 0 ? null : (START_FAILURES[code] || null);
+  } catch (err) {
+    return null; // the real call below will report the real failure
+  }
+}
+
+async function callBridge(ctx, method, path, body, retried) {
   const shell = shellService(ctx);
   if (shell === undefined) return { ok: false, error: 'neither shell nor bash service is mounted in this host' };
   const request = { command: bridgeCommand(method, path, body !== undefined), timeoutMs: 6000, stdoutMaxBytes: 65536 };
@@ -55,8 +98,16 @@ async function callBridge(ctx, method, path, body) {
   try { parsed = JSON.parse(text); } catch (err) { parsed = null; }
   if (parsed !== null && typeof parsed === 'object') return parsed;
   if (result && result.exitCode === 0) return { ok: true, raw: text.slice(0, 400) };
+  // Nothing came back. Before reporting an unreachable bridge, try starting the app - once per
+  // plugin instance - and run the same request again against it.
+  const startError = await ensureAppRunning(ctx);
+  if (startError === null && !retried) return callBridge(ctx, method, path, body, true);
   const errText = result && result.stderr && typeof result.stderr.text === 'string' ? result.stderr.text : '';
-  return { ok: false, exitCode: result ? result.exitCode : null, error: (errText || 'bridge unreachable - is the cat running?').slice(0, 300) };
+  return {
+    ok: false,
+    exitCode: result ? result.exitCode : null,
+    error: (startError || errText || 'bridge unreachable - is the cat running?').slice(0, 300),
+  };
 }
 
 function renderJson(args, value) {

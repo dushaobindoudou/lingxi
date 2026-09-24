@@ -5,10 +5,15 @@
 // link, or spawn the app. It is a client. So it works with whatever version of 灵犀 happens to
 // be running, it cannot crash it, and if the app is not running the agent gets a clear "the cat
 // is not running" rather than a stack trace.
+//
+// It is still not an owner of the app, but it will now ASK the app to start (see ./launch.mjs)
+// when the bridge is not answering, because "the cat is not running" is a true answer that the
+// caller - a model - cannot act on.
 
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { ensureRunning, APP_NAME } from './launch.mjs';
 
 export const DEFAULT_PORT = 47811;
 
@@ -164,9 +169,34 @@ async function ensureRegistered() {
   }
 }
 
-async function call(path, init, { retriedAuth = false } = {}) {
+/**
+ * Is the bridge answering? Unauthenticated on purpose: /health is the one endpoint that does not
+ * need a token, so this stays true even before the token file exists.
+ */
+async function bridgeIsUp() {
+  try {
+    const response = await fetch(`${baseUrl()}/health`, { signal: AbortSignal.timeout(1200) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// One start attempt per process, shared by every concurrent call. Without this, a burst of tool
+// calls against a closed app would each spawn `open` and each wait out the boot timeout.
+let startAttempt = null;
+/** Set once the app was started by us, so the first successful result can mention it. */
+let startedByUs = false;
+
+export function autoStartNotice() {
+  if (!startedByUs) return null;
+  startedByUs = false; // said once, not on every call afterwards
+  return `${APP_NAME} was not running, so I started it.`;
+}
+
+async function call(path, init, { retriedAuth = false, retriedStart = false } = {}) {
   let response;
-  const token = readToken({ refresh: retriedAuth });
+  const token = readToken({ refresh: retriedAuth || retriedStart });
   try {
     response = await fetch(`${baseUrl()}${path}`, {
       ...init,
@@ -184,6 +214,20 @@ async function call(path, init, { retriedAuth = false } = {}) {
       signal: AbortSignal.timeout(2500),
     });
   } catch (cause) {
+    // Not reachable. Before reporting that, try the one thing that would fix it - but only
+    // once per process, and never from a retry of a call that already went through this.
+    if (!retriedStart) {
+      startAttempt ??= ensureRunning(bridgeIsUp);
+      const { ok, started, reason } = await startAttempt;
+      if (ok) {
+        if (started) startedByUs = true;
+        // Run the original call against the app that is now up. A fresh start mints a fresh
+        // token, so this attempt re-reads the file; `retriedStart` is what stops it recursing.
+        return call(path, init, { retriedStart: true });
+      }
+      startAttempt = null; // a failure is worth retrying on the next call; a success is not
+      throw new BridgeError(reason, { cause });
+    }
     throw new BridgeError(
       `灵犀 is not reachable on ${baseUrl()}. Start the app (it listens only on localhost), ` +
         `or set LINGXI_PORT if you changed the port.`,
@@ -200,7 +244,7 @@ async function call(path, init, { retriedAuth = false } = {}) {
   // A restarted app can have minted a new token. Re-read the file once before giving up, so a
   // long-lived MCP server survives an app restart without being restarted itself.
   if (response.status === 401 && !retriedAuth) {
-    return call(path, init, { retriedAuth: true });
+    return call(path, init, { retriedAuth: true, retriedStart });
   }
   if (response.status === 401) {
     throw new BridgeError(

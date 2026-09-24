@@ -208,38 +208,73 @@ bind(tail,'tail')
 # Thus no Python frame handler / external addon is required to keep fur attached.
 furmat=M('Strand');nt=furmat.node_tree;sh=next(n for n in nt.nodes if n.type=='BSDF_HAIR_PRINCIPLED');att=nt.nodes.new('ShaderNodeAttribute');att.attribute_name='fur_color';nt.links.new(att.outputs['Color'],sh.inputs['Color'])
 def fur_color(p,reg):
- x,y,z=p.T;stripe=(np.sin(y*49+np.sin(z*32)*1.4)+1)/2
- col=np.array([.12,.085,.060])[None,:]*(1-stripe[:,None]) + np.array([.32,.24,.17])[None,:]*stripe[:,None]
- white=np.zeros(len(p))
- if reg=='Head':white=np.maximum(np.clip((.513-z)/.025,0,1),np.clip((.019+.18*(.64-z)-abs(x))/.012,0,1))*np.clip((-y-.31)/.045,0,1)
- if reg=='body':white=np.maximum(np.clip((-y-.18)/.06,0,1),np.clip((.105-z)/.04,0,1))
- return col*(1-white[:,None])+np.array([.68,.61,.51])[None,:]*white[:,None]
+ # A real mackerel tabby, painted in world space (cat faces -Y, z up).
+ # dark saddle stripes run HEAD-TO-TAIL along the spine (not rings around the body),
+ # the forehead carries an M-mark, cheeks carry horizontal side bars, and the white
+ # parts (muzzle, chin, brow dots, belly, socks) are what makes it read as gentle.
+ dark=np.array([.225,.14,.082]);light=np.array([.58,.46,.33]);white=np.array([.92,.87,.76])
+ x,y,z=p.T
+ if reg=='tail':
+  # ring markings, which tail tabbies genuinely have
+  s=(np.sin(y*150+np.sin(x*30)*.5)+1)/2
+  col=light[None,:]*(1-s[:,None])+dark[None,:]*s[:,None]
+  return col
+ if reg=='Head':
+  # forehead M: vertical bars over the brow, warping outward at the edges
+  forehead=np.clip((z-.495)/.05,0,1)*np.clip((-.30-y)/.06,0,1)
+  m1=(np.sin(x*240+np.sign(x)*y*30+np.sin(z*40)*.8)+1)/2
+  # cheek side bars: horizontal bands behind the eye line
+  cheek=np.clip((.535-z)/.04,0,1)*np.clip((.50-z)/.04,0,1)*np.clip((abs(x)-.050)/.03,0,1)*np.clip((-.335-y)/.04,0,1)
+  m2=(np.sin((y+.40)*170+np.sin(x*60)*.6)+1)/2
+  strength=np.clip(.85*forehead+.8*cheek,0,1)[:,None]
+  col=light[None,:]*(1-strength)+dark[None,:]*strength
+  # white muzzle/chin (a narrow oval around the mouth, not the whole lower face),
+  # plus two round brow dots (the "gentle" signature)
+  wmask=np.clip((-.358-y)/.026,0,1)*np.clip((.505-z)/.022,0,1)*np.clip((.062-np.abs(x))/.014,0,1)
+  for sx in [-1,1]:
+   wmask=np.maximum(wmask,np.exp(-(((np.abs(x)-sx*.047)/.011)**2+((z-.585)/.011)**2+((y+.385)/.014)**2)))
+  return col*(1-wmask[:,None])+white[None,:]*wmask[:,None]
+ if reg=='body':
+  # spine stripes: phase across x (left-right), warping gently as they run down the back
+  warp=.9*np.sin(y*15+.7*z*20)
+  s=(np.sin(x*125+warp)+1)/2
+  up=np.clip((z-.19)/.13,0,1)          # stripes live on the back/flanks, fade to the belly
+  strength=(.2+.8*up)[:,None]
+  col=light[None,:]*(1-strength)+dark[None,:]*strength
+  # belly white; a small chest patch; socks on all four legs
+  wmask=np.maximum(np.clip((.15-z)/.055,0,1),np.clip((-.21-y)/.05,0,1))
+  return col*(1-wmask[:,None])+white[None,:]*wmask[:,None]
+ # jaw/fallback: soft cream
+ return np.tile(light,(len(p),1))
 
 # Keep the groom and the underlying continuous surfaces on the same authored coat map.
-# This avoids the old failure mode where only the floating strands carried the markings.
-attribute=coat.node_tree.nodes.new('ShaderNodeVertexColor');attribute.layer_name='fur_color'
-coat.node_tree.links.new(attribute.outputs['Color'],coat.node_tree.nodes.get('Principled BSDF').inputs['Base Color'])
-for obj,region in [(body,'body'),(head,'Head'),(tail,'tail')]:
+# Every coat material reads the fur_color attribute, so stripes line up with the strands.
+for obj,region,mtl in [(body,'body',bodycoat),(head,'Head',headcoat),(tail,'tail',coat)]:
  colors=fur_color(np.array([obj.data.vertices[loop.vertex_index].co[:] for loop in obj.data.loops]),region)
  attr=obj.data.attributes.new('fur_color','FLOAT_COLOR','CORNER')
  attr.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
+ att=mtl.node_tree.nodes.new('ShaderNodeVertexColor');att.layer_name='fur_color'
+ mtl.node_tree.links.new(att.outputs['Color'],mtl.node_tree.nodes.get('Principled BSDF').inputs['Base Color'])
 furs=[]
 def groom(o,n,length,reg):
  me=o.data;me.calc_loop_triangles();v=np.array([v.co[:] for v in me.vertices]);norm=np.array([v.normal[:] for v in me.vertices]);tri=np.array([t.vertices[:] for t in me.loop_triangles]);corn=v[tri];area=np.linalg.norm(np.cross(corn[:,1]-corn[:,0],corn[:,2]-corn[:,0]),axis=1);ids=rng.choice(len(tri),n,p=area/area.sum());b=rng.random((n,2));b[b.sum(1)>1]=1-b[b.sum(1)>1];b=np.column_stack((1-b.sum(1),b));root=(corn[ids]*b[:,:,None]).sum(1);normal=(norm[tri[ids]]*b[:,:,None]).sum(1);normal/=np.maximum(np.linalg.norm(normal,axis=1)[:,None],1e-8)
  if reg=='Head':
   keep=np.ones(n,dtype=bool)
-  for s in [-1,1]:keep &= ~((((root[:,0]-s*.072)/.043)**2+((root[:,2]-.543)/.046)**2<1)&(root[:,1]<-.375))
+  for s in [-1,1]:keep &= ~((((root[:,0]-s*.066)/.046)**2+((root[:,2]-.547)/.048)**2<1)&(root[:,1]<-.375))
   keep &= ~((abs(root[:,0])<.024)&(root[:,1]<-.427)&(root[:,2]<.503))
   root=root[keep];normal=normal[keep];n=len(root)
  direction=np.tile([0,1,-.2],(n,1)) if reg in ['body','tail'] else np.column_stack((np.sign(root[:,0])*.8,np.ones(n)*.1,-np.ones(n)*.3))
  tangent=direction-(direction*normal).sum(1)[:,None]*normal;tangent/=np.maximum(np.linalg.norm(tangent,axis=1)[:,None],1e-8)
- t=np.linspace(0,1,4)[None,:,None];ln=length*rng.uniform(.65,1.15,(n,1,1));pts=root[:,None,:]+ln*(normal[:,None,:]*(.65*t-.25*t*t)+tangent[:,None,:]*(.65*t*t))
+ t=np.linspace(0,1,4)[None,:,None];ln=length*rng.uniform(.55,1.3,(n,1,1))
+ # a slight per-strand wave keeps the coat from reading as felt
+ wave=normal[:,None,:]*(.0011*rng.uniform(.5,1.4,(n,1,1))*np.sin(t*6.5+rng.random((n,1,1))*6.28))
+ pts=root[:,None,:]+ln*(normal[:,None,:]*(.65*t-.25*t*t)+tangent[:,None,:]*(.65*t*t))+wave
  edges=np.column_stack((np.arange(n*4).reshape(n,4)[:,:-1].ravel(),np.arange(n*4).reshape(n,4)[:,1:].ravel()))
  mesh=bpy.data.meshes.new('FurStrands');mesh.from_pydata(pts.reshape(-1,3),edges,[]);mesh.update();ob=bpy.data.objects.new('LX_Fur_'+o.name,mesh);scene.collection.objects.link(ob);bind(ob,reg)
  colors=np.repeat(fur_color(root,reg),4,axis=0);a=mesh.attributes.new('fur_color','FLOAT_COLOR','POINT');a.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
  radius=mesh.attributes.new('fur_radius','FLOAT','POINT');radius.data.foreach_set('value',np.tile([.00042,.00030,.00017,.000035],n).astype('f'))
  ng=bpy.data.node_groups.new('Skin strands to render curves','GeometryNodeTree');ng.interface.new_socket(name='Geometry',in_out='INPUT',socket_type='NodeSocketGeometry');ng.interface.new_socket(name='Geometry',in_out='OUTPUT',socket_type='NodeSocketGeometry');nodes=ng.nodes;links=ng.links;inp=nodes.new('NodeGroupInput');out=nodes.new('NodeGroupOutput');cv=nodes.new('GeometryNodeMeshToCurve');rr=nodes.new('GeometryNodeSetCurveRadius');at=nodes.new('GeometryNodeInputNamedAttribute');at.data_type='FLOAT';at.inputs['Name'].default_value='fur_radius';sm=nodes.new('GeometryNodeSetMaterial');sm.inputs['Material'].default_value=furmat;links.new(inp.outputs['Geometry'],cv.inputs['Mesh']);links.new(cv.outputs['Curve'],rr.inputs['Curve']);links.new(at.outputs['Attribute'],rr.inputs['Radius']);links.new(rr.outputs['Curve'],sm.inputs['Geometry']);links.new(sm.outputs['Geometry'],out.inputs['Geometry']);mod=ob.modifiers.new('Render native short hairs','NODES');mod.node_group=ng;ob['strand_count']=n;furs.append(ob)
-for o,n,l,r in [(body,65000,.015,'body'),(head,70000,.010,'Head'),(tail,13000,.016,'tail'),(jaw,4000,.008,'Jaw')]:groom(o,n,l,r)
+for o,n,l,r in [(body,80000,.013,'body'),(head,90000,.0085,'Head'),(tail,15000,.013,'tail'),(jaw,4000,.008,'Jaw')]:groom(o,n,l,r)
 # Belly breathing applies identically to body surface and its bound hairs.
 for o in [body,furs[0]]:
  o.shape_key_add(name='Basis');k=o.shape_key_add(name='Breath')
@@ -250,7 +285,7 @@ for s in [-1,1]:
  suf='L' if s<0 else 'R'
  for i in range(5):
   cu=bpy.data.curves.new('Whisker','CURVE');cu.dimensions='3D';cu.bevel_depth=.00045;cu.bevel_resolution=2;sp=cu.splines.new('POLY');sp.points.add(7)
-  for j,p in enumerate(sp.points):t=j/7;p.co=(s*(.045+.16*t),-.431+.028*t*t,.475+(i-2)*.008+.025*(i-2)*t,1);p.radius=1-.9*t
+  for j,p in enumerate(sp.points):t=j/7;p.co=(s*(.048+.09*t),-.431+.016*t*t,.475+(i-2)*.008+.014*(i-2)*t,1);p.radius=1-.9*t
   o=bpy.data.objects.new('LX_Whisker',cu);scene.collection.objects.link(o);cu.materials.append(cream);bpy.context.view_layer.objects.active=o;o.select_set(True);bpy.ops.object.convert(target='MESH');bind(o,'Whisker.'+suf)
 # Named actions with synchronized shape key actions. One timeline demonstrates all clips.
 clips=[('Idle',72),('Walk',48),('Run',32),('Jump',48),('LieDown',48),('SideLie',48),('Sleep',72),('Curious',48),('Happy',48),('Yawn',60),('Lick',48),('Bite',48),('Knead',48),('Stretch',60),('PawPlay',48)]
@@ -338,7 +373,7 @@ def aim(o,target):o.rotation_euler=(Vector(target)-o.location).to_track_quat('-Z
 for n,loc,power,size in [('Key',(-1,-1.2,1.8),82,1.3),('Fill',(1,-.7,1.1),34,1.2),('Rim',(0,1,1.5),68,1)]:
  d=bpy.data.lights.new(n,'AREA');d.energy=power;d.shape='DISK';d.size=size;o=bpy.data.objects.new(n,d);scene.collection.objects.link(o);o.location=loc;aim(o,(0,0,.35))
 d=bpy.data.cameras.new('Portrait');cam=bpy.data.objects.new('Portrait',d);scene.collection.objects.link(cam);cam.location=(.9,-1.8,.91);aim(cam,(0,-.03,.37));d.type='ORTHO';d.ortho_scale=1.22;scene.camera=cam
-scene.render.engine='CYCLES';scene.cycles.samples=24;scene.cycles.use_denoising=True;scene.render.resolution_x=900;scene.render.resolution_y=900;scene.render.resolution_percentage=100;scene.view_settings.view_transform='AgX';scene.render.image_settings.file_format='PNG';scene.render.film_transparent=False
+scene.render.engine='CYCLES';scene.cycles.samples=48;scene.cycles.use_denoising=True;scene.render.resolution_x=900;scene.render.resolution_y=900;scene.render.resolution_percentage=100;scene.view_settings.view_transform='AgX';scene.render.image_settings.file_format='PNG';scene.render.film_transparent=False
 scene.frame_set(1);bpy.ops.object.select_all(action='DESELECT');rig.select_set(True);bpy.context.view_layer.objects.active=rig
 scene['quality_status']='Editable animated reconstruction; likeness requires visual review, not approved reference equivalence.'
 scene['controls']='Named NLA clips and pose bones; Blink / Breath / Extend shape keys.'
