@@ -647,7 +647,8 @@ function activityStateLabel(activity: HomeActivity): string {
   const state = TASK_STATE_LABELS[activity.state] ?? activity.state;
   const summary = activity.summary.trim();
   if (activity.state === 'completed' && activity.kind === 'chat') {
-    return summary ? `本轮回复结束：${summary}` : '本轮回复结束';
+    if (!summary || summary === '本轮回复结束' || summary.startsWith('本轮回复完成')) return '本轮回复结束';
+    return summary;
   }
   if (activity.state === 'completed' && summary) return `已完成：${summary}`;
   if (activity.state === 'failed' && summary) return `失败：${summary}`;

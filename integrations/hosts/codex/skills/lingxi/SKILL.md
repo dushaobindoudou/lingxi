@@ -19,8 +19,9 @@ description: Drive the 灵犀 desktop cat from Codex - report the emotional shap
 | notify fanout | 回合结束（自动） | `completed` + `kind=chat`，只表示本轮回复结束，不代表用户任务完成 |
 | MCP `lingxi_task` / CLI | 你主动调 | state + kind + **mood** + 一句话 |
 
-notify 只能让猫知道"回合结束了"。开始一件事、卡住、需要授权、失败——以及所有心情，
-都靠你。用 MCP 工具 `lingxi_task`，或 CLI：
+notify 只能让猫知道"回合结束了"。会话名是打开时起的，后面的话题会离开它，不要用它当结束提示。
+开始一件事、卡住、需要授权、失败——以及所有心情，都靠你。结束前用一句话写清这一轮刚做成什么，或卡在哪。
+用 MCP 工具 `lingxi_task`，或 CLI：
 
 ```bash
 lingxi task <state> <kind> <mood> "一句话"

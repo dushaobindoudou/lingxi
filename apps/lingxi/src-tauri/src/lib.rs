@@ -1768,6 +1768,9 @@ fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Curs
 /// Longest line the speech bubble can show. Enforced here rather than trusted from the caller,
 /// because this is reachable from any process on the loopback interface.
 const SAY_MAX_CHARS: usize = 140;
+/// A bubble stays about 1.8s + 0.13s per character, and the forced hold below is only a few
+/// seconds. Past ~24 characters the line disappears before it can be read.
+const BUBBLE_SAY_CHARS: usize = 24;
 /// Longest a single remembered fact may be.
 const MEMORY_MAX_CHARS: usize = 280;
 /// Longest a reminder's text may be.
@@ -1945,16 +1948,19 @@ struct QueuedReaction {
 /// seconds; a wrong `visible: false` leaves the user with no cat and no obvious way to work out
 /// which of their agents did it. Those deserve different answers.
 ///
-/// ## Why the default is `performer` and not `trusted`
+/// ## Why a named agent starts at `trusted`
 ///
-/// Every agent could change settings until now, which is the missing `write_settings` whitelist.
-/// A whitelist means not-listed is not-allowed, so settings writing becomes something the user
-/// grants rather than something every caller inherits.
+/// Memory and reminders sit on this tier. A cat that cannot write them cannot remember yesterday.
+/// The user can lower a named agent in the UI, and a saved grant always wins.
 ///
-/// That does change behaviour for an existing integration that was changing themes, and the
-/// honest way to do it is loudly: the call is REJECTED with a reason naming the tier and where
-/// to change it, and it lands in the call log either way. A silent downgrade would be the same
-/// class of mistake as the silent overwrite this codebase has already learned about elsewhere.
+/// `anonymous` stays `performer`. Loopback is not a trust boundary: any process running as this
+/// user can reach the bridge, and a caller that never gave a name is not one of the agents the
+/// user connected. Open source means the cat's code can be read. It does not mean every caller
+/// inherits a write that persists.
+///
+/// A call above the caller's tier is rejected with a reason naming the tier and where to change
+/// it, and it lands in the call log either way. A silent downgrade would be the same class of
+/// mistake as the silent overwrite this codebase has already learned about elsewhere.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum AgentPermission {
@@ -1966,6 +1972,18 @@ enum AgentPermission {
 impl Default for AgentPermission {
     fn default() -> Self {
         Self::Performer
+    }
+}
+
+/// Starting tier for an id the user has not set.
+///
+/// A named agent is trusted so it can remember and remind. `anonymous` is not a named agent.
+/// `AgentPermission::default` stays `performer` so an unspecified value cannot become a grant.
+fn default_permission_for(id: &str) -> AgentPermission {
+    if id == "anonymous" {
+        AgentPermission::Performer
+    } else {
+        AgentPermission::Trusted
     }
 }
 
@@ -2075,14 +2093,19 @@ const DEFAULT_REACTION_TTL_MS: u64 = 8000;
 const REACTION_QUEUE_CAP: usize = 16;
 
 impl AgentRegistry {
-    /// What this id is allowed to do. An id we have never seen gets the default tier rather than
-    /// being refused: an agent that has not registered yet is not suspicious, it is new.
+    /// What this id is allowed to do. An id we have never seen gets `default_permission_for`
+    /// rather than being refused: an agent that has not registered yet is not suspicious, it is new.
     fn permission_of(&self, id: &str) -> AgentPermission {
         if let Some(agent) = self.agents.lock().unwrap().get(id) {
             return agent.permission;
         }
         // Not called yet this session - fall back to what the user granted before.
-        self.saved.lock().unwrap().get(id).copied().unwrap_or_default()
+        self.saved
+            .lock()
+            .unwrap()
+            .get(id)
+            .copied()
+            .unwrap_or_else(|| default_permission_for(id))
     }
 
     /// Grant (or revoke) a tier, and write it down.
@@ -2373,7 +2396,13 @@ fn resolve_agent(registry: &AgentRegistry, id: Option<&str>, now: u64) -> AgentI
     let id: String = id.chars().take(64).collect();
     // Read before taking the agents lock: permission_of takes it too, and taking it twice on
     // one thread is a deadlock, not a slow path.
-    let seeded = registry.saved.lock().unwrap().get(&id).copied().unwrap_or_default();
+    let seeded = registry
+        .saved
+        .lock()
+        .unwrap()
+        .get(&id)
+        .copied()
+        .unwrap_or_else(|| default_permission_for(&id));
     let mut agents = registry.agents.lock().unwrap();
     let entry = registry_entry(&mut agents, &id, now, seeded);
     entry.claims += 1;
@@ -3394,8 +3423,13 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 let id: String = id.chars().take(64).collect();
                                 // Same ordering rule as resolve_agent: read the saved grant
                                 // before taking the agents lock.
-                                let seeded =
-                                    registry.saved.lock().unwrap().get(&id).copied().unwrap_or_default();
+                                let seeded = registry
+                                    .saved
+                                    .lock()
+                                    .unwrap()
+                                    .get(&id)
+                                    .copied()
+                                    .unwrap_or_else(|| default_permission_for(&id));
                                 let identity = {
                                     let mut agents = registry.agents.lock().unwrap();
                                     let entry = registry_entry(&mut agents, &id, now, seeded);
@@ -4303,6 +4337,44 @@ fn post_json(url: &str, body: &str) -> Result<(), String> {
 }
 
 /// Keep the live per-provider picture up to date. See ActivityState.
+/// A host lifecycle line. It says the turn started or ended, not what the turn did.
+/// The sidebar title is the same kind of mistake: it names the chat as opened, and later
+/// turns leave it behind. Neither may replace a summary the model just wrote.
+fn bubble_line(text: &str) -> String {
+    let count = text.chars().count();
+    if count <= BUBBLE_SAY_CHARS {
+        return text.to_string();
+    }
+    let cut: String = text.chars().take(BUBBLE_SAY_CHARS - 1).collect();
+    format!("{cut}…")
+}
+
+/// Match the bubble's own hold (`1.8s + 0.13s` per character) so a short cheeky line
+/// does not sit there, and a 24-character line still finishes being read.
+fn bubble_hold_ms(text: &str) -> u64 {
+    let chars = text.chars().count() as u64;
+    (1800 + chars * 130).clamp(3200, 6400)
+}
+
+fn is_lifecycle_summary(summary: &str) -> bool {
+    let summary = summary.trim();
+    summary.is_empty()
+        || summary == "本轮回复结束"
+        || summary == "会话开始"
+        || summary == "新一轮对话开始"
+        || summary.starts_with("本轮回复完成")
+        || summary.starts_with("本轮因错误终止")
+        || summary.starts_with("本轮已中止")
+        || summary.starts_with("未识别的事件")
+        || summary.starts_with("chat: ")
+}
+
+/// Keep the model's one-line result when a lifecycle event arrives a moment later.
+fn keep_turn_summary(previous: &str, incoming: &str, age_ms: u64) -> bool {
+    const FRESH_MS: u64 = 120_000;
+    !is_lifecycle_summary(previous) && is_lifecycle_summary(incoming) && age_ms <= FRESH_MS
+}
+
 fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
     let state = app.state::<ActivityState>();
     let mut map = state.by_provider.lock().unwrap();
@@ -4322,6 +4394,16 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
             map.remove(&stalest);
         }
     }
+    let summary = if let Some(previous) = map.get(&key) {
+        let age_ms = event.observed_at.saturating_sub(previous.updated_at);
+        if keep_turn_summary(&previous.summary, &event.summary, age_ms) {
+            previous.summary.clone()
+        } else {
+            event.summary.clone()
+        }
+    } else {
+        event.summary.clone()
+    };
     map.insert(
         key,
         AgentActivity {
@@ -4332,7 +4414,7 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
             kind: event.kind.clone(),
             mood: event.mood.clone(),
             progress: event.progress,
-            summary: event.summary.clone(),
+            summary,
             updated_at: event.observed_at,
             busy: state_is_busy(&event.state),
         },
@@ -4479,16 +4561,35 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         let summary = event.summary.trim();
         // A host notify says only that its chat turn ended. It is not evidence that the
         // user's underlying task succeeded, so never announce this kind as “搞定啦”.
+        // A real one-line result — what this turn just did — is the line itself. A lifecycle
+        // placeholder stays “本轮回复结束”, and is skipped when that result is already on file.
         let lead = if event.kind == "chat" { "本轮回复结束" } else { line.unwrap_or("已完成") };
         let default_summary = format!("{}: completed", event.kind);
-        Some(if summary.is_empty() || summary == default_summary.as_str() {
-            lead.chars().take(SAY_MAX_CHARS).collect::<String>()
+        if event.kind == "chat" && is_lifecycle_summary(summary) {
+            let activity = app.state::<ActivityState>();
+            let kept = activity.by_provider.lock().unwrap();
+            let key = if event.source_id.is_empty() { &event.provider } else { &event.source_id };
+            let already_said = kept.get(key).is_some_and(|row| row.summary.trim() != summary.trim() && !is_lifecycle_summary(&row.summary));
+            drop(kept);
+            if already_said {
+                None
+            } else {
+                Some(bubble_line(lead))
+            }
+        } else if summary.is_empty() || summary == default_summary.as_str() || is_lifecycle_summary(summary) {
+            Some(bubble_line(lead))
+        } else if event.kind == "chat" {
+            Some(bubble_line(summary))
         } else {
-            format!("{lead} · {summary}").chars().take(SAY_MAX_CHARS).collect()
-        })
+            Some(bubble_line(&format!("{lead} · {summary}")))
+        }
     } else {
         line.map(str::to_string)
     };
+    let suppressed = report_line.is_none()
+        && event.state == "completed"
+        && event.kind == "chat"
+        && is_lifecycle_summary(event.summary.trim());
     if let Some(report_line) = report_line {
         let agent = if event.source_id.is_empty() {
             &event.provider
@@ -4505,14 +4606,14 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
             "priority": priority,
             "expression": expression,
             "say": report_line,
-            "sayMs": 5200,
-            "holdMs": 5200,
+            "sayMs": bubble_hold_ms(&report_line),
+            "holdMs": bubble_hold_ms(&report_line),
         });
         if let Some(action) = action {
             command["action"] = serde_json::json!(action);
         }
         let _ = apply_control_command(app, &command);
-    } else {
+    } else if !suppressed {
         let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": 4000 }));
         if let Some(action) = action {
             let _ = app.emit("play-action", serde_json::json!({ "id": action }));
@@ -5142,6 +5243,21 @@ mod tests {
     }
 
     #[test]
+    fn a_turn_end_does_not_replace_what_the_turn_just_did() {
+        assert!(keep_turn_summary("登录失败提示改完了", "本轮回复结束", 1_000));
+        assert!(!keep_turn_summary("登录失败提示改完了", "本轮回复结束", 121_000));
+        assert!(!keep_turn_summary("本轮回复结束", "登录失败提示改完了", 1_000));
+        assert!(is_lifecycle_summary("本轮回复完成（end_turn）"));
+        assert!(!is_lifecycle_summary("登录失败提示改完了，相关测试过了"));
+        let line = bubble_line("登录提示改好啦，测试也乖乖过了，顺便把文案也收短了");
+        assert!(line.chars().count() <= BUBBLE_SAY_CHARS);
+        assert!(line.ends_with('…'));
+        assert_eq!(bubble_line("哼，好了"), "哼，好了");
+        assert!(bubble_hold_ms("哼，好了") >= 3200);
+        assert!(bubble_hold_ms(&"啊".repeat(24)) <= 6400);
+    }
+
+    #[test]
     fn the_cat_answers_a_bad_mood_rather_than_mirroring_it() {
         // The design rule, pinned: a frustrated person does not need a frustrated cat - that is
         // two of you cross at the same screen. Failure is met with comfort.
@@ -5388,8 +5504,10 @@ mod tests {
         assert!(!AgentPermission::Performer.may_write_settings());
         assert!(AgentPermission::Trusted.may_perform());
         assert!(AgentPermission::Trusted.may_write_settings());
-        // Default is performer, NOT trusted: a whitelist means not-listed is not-allowed.
+        // Unspecified stays performer. A named agent is trusted; anonymous is not.
         assert_eq!(AgentPermission::default(), AgentPermission::Performer);
+        assert_eq!(default_permission_for("cursor"), AgentPermission::Trusted);
+        assert_eq!(default_permission_for("anonymous"), AgentPermission::Performer);
     }
 
     #[test]
@@ -5431,8 +5549,9 @@ mod tests {
         registry.agents.lock().unwrap().clear();
         assert_eq!(registry.permission_of("codex"), AgentPermission::Trusted);
 
-        // An id nobody granted anything gets the default, not the last one set.
-        assert_eq!(registry.permission_of("someone-else"), AgentPermission::Performer);
+        // A named id nobody has set yet starts trusted. Anonymous does not inherit that.
+        assert_eq!(registry.permission_of("someone-else"), AgentPermission::Trusted);
+        assert_eq!(registry.permission_of("anonymous"), AgentPermission::Performer);
     }
 
     #[test]
@@ -5461,7 +5580,7 @@ mod tests {
         // did send sat unread in the body.
         assert_eq!(resolve_write_caller_id(None, Some(&json!({ "agent": "codex" }))), "codex");
         // A bare curl with no id anywhere is still allowed to be anonymous - docs/19 promises
-        // that an unregistered caller keeps working, it just gets the default tier.
+        // that an unregistered caller keeps working. Anonymous stays performer.
         assert_eq!(resolve_write_caller_id(None, Some(&json!({ "text": "hi" }))), "anonymous");
         assert_eq!(resolve_write_caller_id(None, None), "anonymous");
         // Blank and whitespace-only are not identities.

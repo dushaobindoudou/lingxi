@@ -24,6 +24,7 @@
 //
 //   lingxi-emit.mjs --host claude          # Claude Code hook JSON on stdin
 //   lingxi-emit.mjs --host codex           # Codex notify JSON, on argv or stdin
+//   lingxi-emit.mjs --host cursor          # Cursor hook JSON; hook_event_name selects the arm
 //   lingxi-emit.mjs --host generic         # already a task event; validated and forwarded
 //   echo '{"state":"completed"}' | lingxi-emit.mjs
 //
@@ -145,6 +146,46 @@ function fromCodex(raw) {
   }
 }
 
+/**
+ * Cursor hook payloads -> task events.
+ *
+ * Cursor's hooks are conversation lifecycle, same honesty rule as Claude: `kind` is "chat"
+ * and `mood` is omitted. The hook script stamps `hook_event_name` because Cursor does not
+ * put the event name in every payload (sessionStart and stop use different field sets).
+ * `stop` is one agent turn ending, not proof the user's task is done.
+ * The sidebar title is the name of the chat when it was opened. Later turns
+ * drift off it, so it is never used as the summary. The current prompt is only
+ * what was just asked. What the turn actually did comes from the model.
+ */
+function fromCursor(raw) {
+  const event = raw.hook_event_name;
+  const session = raw.session_id ?? raw.conversation_id ?? 'cursor-session';
+  const prompt = typeof raw.prompt === 'string' ? raw.prompt.replace(/\s+/g, ' ').trim() : '';
+  switch (event) {
+    case 'sessionStart':
+      return { state: 'queued', kind: 'chat', taskId: session, summary: '会话开始' };
+    case 'beforeSubmitPrompt':
+      return {
+        state: 'running',
+        kind: 'chat',
+        taskId: session,
+        summary: prompt || '新一轮对话开始',
+      };
+    case 'stop': {
+      const status = raw.status ?? 'completed';
+      if (status === 'error') {
+        return { state: 'failed', kind: 'chat', taskId: session, summary: '本轮因错误终止' };
+      }
+      if (status === 'aborted') {
+        return { state: 'cancelled', kind: 'chat', taskId: session, summary: '本轮已中止' };
+      }
+      return { state: 'completed', kind: 'chat', taskId: session, summary: '本轮回复结束' };
+    }
+    default:
+      return null;
+  }
+}
+
 /** Validate against the schema's vocabularies. Unknown values are dropped, not corrected. */
 function clean(event, provider) {
   if (!event || !STATES.has(event.state)) return null;
@@ -188,7 +229,10 @@ async function main() {
     return; // not our payload; say nothing
   }
 
-  const mapped = host === 'claude' ? fromClaude(raw) : host === 'codex' ? fromCodex(raw) : raw;
+  const mapped = host === 'claude' ? fromClaude(raw)
+    : host === 'codex' ? fromCodex(raw)
+    : host === 'cursor' ? fromCursor(raw)
+    : raw;
   // The configured identity is the better provider name when there is one: it is what the CLI and
   // the MCP server both report, so all three paths describe the same tool by the same name rather
   // than appearing as separate sources.
