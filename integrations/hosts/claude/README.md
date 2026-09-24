@@ -10,14 +10,20 @@
 claude plugin install /Users/liepin/workspace/lingxi/integrations/hosts/claude
 ```
 
-MCP 由插件内的 `.mcp.json` 注册（`mcp/index.mjs` 是 `packages/mcp-server/src/index.mjs`
-的同步副本——**改了 MCP server 源码要重新拷贝**，这份副本只服务这个插件）。
+MCP 由插件内的 `.mcp.json` 注册。`mcp/` 是 `packages/mcp-server/src/` **全部模块**的同步副本
+（以前只拷了 `index.mjs`，它 import 的三个文件都不在，插件的 MCP 一次都没启动成功过）。
+改了 MCP server 源码要重新拷贝：`cp packages/mcp-server/src/*.mjs integrations/hosts/claude/mcp/`
+——`packages/mcp-server/test/plugin-copy.test.mjs` 会在两边不一致时失败。
+
+**猫没开会自己拉起来。** `SessionStart` hook 每次会话开始先查应用在不在，不在就在后台
+`open -g` 拉起、等桥就绪、再补发这条事件；MCP server 在宿主连上时也查一次。其余 hook 只投递，
+不拉起——拉起只放在会话边界。`LINGXI_AUTOSTART=0` 可关。
 
 ## 分层：谁负责什么
 
 | 层 | 文件 | 职责 | 依赖 |
 |---|---|---|---|
-| hooks | `hooks/hooks.json` | 会话开始/等你授权/回合结束→猫必然有反应 | 只有 curl |
+| hooks | `hooks/hooks.json` | 会话开始（猫没开就拉起）/等你授权/回合结束→猫必然有反应 | curl + macOS 自带的 open |
 | skill | `skills/lingxi/SKILL.md` | 教模型报 `mood`、克制地让猫说话/记事/提醒 | lingxi CLI |
 | MCP | `.mcp.json` → `mcp/index.mjs` | 带类型 schema 的 13 个工具，宿主逐工具授权 | node |
 
@@ -43,9 +49,12 @@ hook 命令与 app 主界面「Agent 接入」写入的命令**逐字相同**（
 T=$(cat "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token")
 H=$(mktemp); printf 'header = "Authorization: Bearer %s"\n' "$T" > "$H"
 printf '{"session_id":"plug-e2e","hook_event_name":"Notification","message":"Claude needs your permission to use Bash"}' \
-  | curl -s -m 2 -K "$H" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @-
+  | curl -s -m 2 --noproxy '*' -K "$H" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @-
 rm -f "$H"
 # 期望 {"ok":true,"recorded":true}；lingxi events 里最新一条 state=needs_approval
+
+# 1b. 检查模块：先退出灵犀，再开一个新的 Claude Code 会话——猫应在几秒内出现（不抢焦点），
+#     lingxi events 里有一条 state=queued 的「会话开始」。LINGXI_AUTOSTART=0 时不应出现。
 
 # 2. MCP 注册：claude mcp list 应出现 lingxi 且 ✔ Connected
 # 3. skill 可见：会话内 /skills 应列出 lingxi

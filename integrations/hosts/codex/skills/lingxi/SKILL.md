@@ -32,6 +32,11 @@ lingxi remind 30 "该喝水了"
 
 CLI 不在 PATH 时用 `~/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi`。
 
+**先确认猫在跑。** `lingxi up` 是检查模块：在跑就不动，没跑就在后台拉起（不抢焦点）并等它就绪。
+lingxi MCP server 在会话开始时已经检查过一次，CLI 其它子命令遇到猫没开也会自己拉起；CLI 文件还不
+存在（应用从没跑过）时用 `open -g -b com.dushaobin.lingxi-desktop`。拉不起来（没装应用、
+`LINGXI_AUTOSTART=0`）它会说原因——照实告诉用户，不要假装做了。
+
 ## 一、报**心情**，不只是状态
 
 | 维度 | 取值 | 谁来判断 |

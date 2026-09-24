@@ -34,13 +34,22 @@
 「灵犀 is not reachable」——这句话是对的，但**调用方是模型**，而能去开应用的那个人
 不一定在看终端。
 
-所以现在**三条路都会先把应用拉起来**，再重试那一次调用：
+所以现在**每一个给第三方的入口都带同一个检查**：桥通不通？不通就
+`open -g -b com.dushaobin.lingxi-desktop`，等 `/health` 答应（最多 15 秒），再继续。区别只在**什么时候查**：
 
-| 路径 | 怎么做 |
-|---|---|
-| `lingxi` CLI | 第一次请求之前检查 `/health`；不通就 `open -g -b com.dushaobin.lingxi-desktop`，轮询最多 15 秒 |
-| MCP server | 连接失败时启动，每个进程只试一次；成功后第一条结果里会带一句"应用没在跑，我启动了它" |
-| DSH 插件 | 同上，通过宿主的 shell 服务 |
+| 入口 | 会话开始时 | 调用发现不通时 | 实现 |
+|---|---|---|---|
+| MCP server（Codex / WorkBuddy / Claude 插件 / 任何 MCP 宿主） | ✅ `initialize` 时在后台查，不拖握手 | ✅ 每进程一次，成功后第一条结果带一句"我启动了它" | `packages/mcp-server/src/launch.mjs`、`bridge.mjs` 的 `warmUp()` |
+| Claude Code hooks（插件 + 主界面「一键接入」） | ✅ `SessionStart` hook：后台检查、拉起、等就绪，再补发这条事件 | — 其余事件只投递，不拉起 | `lib.rs` 的 `CLAUDE_SESSION_START_COMMAND` |
+| DSH 插件 | ✅ 插件 `apply` 时登记身份，不通就拉起 | ✅ 每个插件实例一次 | `lingxi-dsh-plugin.js` 的 `ensureAppRunning` |
+| `lingxi` CLI / skill | skill 第一步 `lingxi up` | ✅ 第一次请求之前 | `integrations/cli/lingxi` 的 `start_app` |
+| Codex notify / `lingxi-emit` 适配器 | — | — 只投递 | Codex 的会话开始由 MCP server 那一行负责 |
+
+`lingxi up` 就是这个检查本身，单独拿出来：在跑就不动，没跑就拉起并等就绪，结果看退出码。
+给 skill 当第一步、给安装脚本当最后一步都行。
+
+**拉起只放在会话边界**，这一条是有意的：每次提问、每个回合结束都去拉，会跟一个特意把猫关掉的人
+一小时顶二十次牛。每次开会话拉一次是提醒，不是纠缠。
 
 几条边界，都是有意的：
 
@@ -49,6 +58,10 @@
   ——对方可能正在投屏、正在演示，或者就是这会儿不想看见猫。
 - **不装应用就不会装。** 找不到 `.app` 时给的是"怎么构建 / 装到哪"，不是静默失败。
 - **每个进程只试一次。** 启动不起来的应用第四次也起不来；循环里的脚本不该每轮都赔上 15 秒超时。
+- **检查绕开代理。** 所有 curl 都带 `--noproxy '*'`：环境里导出了 http_proxy 时，curl 连 127.0.0.1
+  也交给代理，本地代理回一个 502——检查会把它读成"应用在跑"，于是什么都不启动。
+- **已经装过「一键接入」的机器不用重装。** 应用每次启动会把 `~/.claude/settings.json` 里**它自己写的**
+  旧版 hook 命令原地升级成当前版本（先备份），别的 hook 一个字都不碰，也不会给你没装过的事件补装。
 
 ### `lingxi doctor` —— 接不通的时候先跑这个
 

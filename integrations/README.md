@@ -180,9 +180,11 @@ curl -H "Authorization: Bearer $TOKEN" localhost:47811/integration
 
 `GET /health` 是唯一免 token 的接口，它会告诉你 token 文件在哪。
 
-**应用没开也不用手工去开。** CLI、MCP server 和 DSH 插件在桥不通时会自己
-`open -g -b com.dushaobin.lingxi-desktop`（不抢焦点），等桥起来再重试那一次调用，每个进程只试一次。
-不想要这个行为就设 `LINGXI_AUTOSTART=0`。接不通时先跑 `lingxi doctor`。
+**应用没开也不用手工去开。** 每个入口都带同一个检查模块：MCP server 在宿主连上时（`initialize`）、
+Claude Code 的 `SessionStart` hook 在会话开始时、DSH 插件在加载时、CLI 在第一次请求前，发现桥不通就
+`open -g -b com.dushaobin.lingxi-desktop`（不抢焦点），等桥起来再继续。`lingxi up` 是这个检查单独
+拿出来的命令。不想要这个行为就设 `LINGXI_AUTOSTART=0`。接不通时先跑 `lingxi doctor`。
+各入口什么时候查、为什么只在会话边界拉起，见 [docs/19](../docs/19-agent-integration.md)「零步之前」。
 
 ---
 

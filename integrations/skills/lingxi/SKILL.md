@@ -21,31 +21,32 @@ lingxi state         # 猫在干什么
 lingxi integration   # 运行中的应用吐出的完整契约，以它为准
 ```
 
-### 找不到 `lingxi` 的时候
-
-它不在 PATH 上也没关系——**应用每次启动都会把它写到固定位置**:
+### 第一步：确认猫在跑，没跑就拉起来
 
 ```bash
-~/Library/Application\ Support/com.dushaobin.lingxi-desktop/bin/lingxi
+L="$(command -v lingxi || echo "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi")"
+if [ -x "$L" ]; then "$L" up
+elif [ "${LINGXI_AUTOSTART:-1}" != 0 ]; then open -g -b com.dushaobin.lingxi-desktop
+fi
 ```
 
-所以按这个顺序找,第一个能跑的就用:
+`lingxi up` 就是检查模块：猫在跑就什么都不做；没跑就在后台把应用拉起来（`open -g`，不抢焦点），
+等桥接就绪再返回，结果看退出码。其它子命令遇到猫没开也会自己拉起一次，所以这一步只是让第一条
+真正的命令不用等。
+
+`lingxi` 不在 PATH 上也没关系——**应用每次启动都会把它写到上面那个固定位置**。那个文件还不存在，
+说明应用从没在这台机器上跑过：直接 `open -g -b com.dushaobin.lingxi-desktop`，应用起来后几秒内
+就会把 CLI 写好。应用在跑时也可以问它自己（`/health` 是唯一免鉴权的接口，返回里有 `"cli"` 的绝对路径）：
 
 ```bash
-command -v lingxi \
-  || echo "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi"
-```
-
-也可以问应用自己(`/health` 是唯一免鉴权的接口):
-
-```bash
-curl -s localhost:47811/health    # 返回里有 "cli": "<绝对路径>"
+curl -s --noproxy '*' localhost:47811/health
 ```
 
 **它自己读鉴权 token,没有任何要配置的东西。** 依赖只有 `curl` 和 `python3`(或 `node`),
 都是现成的——**不需要 jq**。
 
-如果 `lingxi health` 连不上,**就说猫没启动**,不要假装做了。
+`lingxi up` 拉不起来时——没装应用、用户设了 `LINGXI_AUTOSTART=0`、不是 macOS——它会说明原因。
+**照实告诉用户，不要假装做了。** 用户设了 `LINGXI_AUTOSTART=0` 就是不想让你开猫，别绕过去。
 
 ### 为什么优先用它而不是 MCP
 

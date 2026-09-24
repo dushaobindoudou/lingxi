@@ -14,7 +14,8 @@ const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index
 /** Feed raw lines to a fresh server process and collect every JSON frame it writes back. */
 function converse(lines) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'] });
+    // Never the real app: a test process must not open a window on the machine running it.
+    const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, LINGXI_AUTOSTART: '0' } });
     const frames = [];
     let buffered = '';
     const timer = setTimeout(() => {

@@ -13,7 +13,8 @@
 # file the app writes on first run, so there is nothing to configure.
 #
 # Usage:
-#   lingxi health                              # is it running, where is the token
+#   lingxi up                                  # THE CHECK: running? if not, start it and wait
+#   lingxi health                              # is it running, where is the token (never starts it)
 #   lingxi capabilities                        # every action / expression / theme, with source
 #   lingxi state                               # position, state, expression, heading, intent
 #   lingxi status                              # theme, camera, size, visibility
@@ -372,6 +373,11 @@ case "$cmd" in
          hint "端口被别的进程占着的话：lsof -nP -iTCP:$PORT -sTCP:LISTEN"; fi
     fi
 
+    case "${LINGXI_AUTOSTART:-1}" in
+      0|false|no) note "LINGXI_AUTOSTART=${LINGXI_AUTOSTART}：这个环境里的接入都不会替你启动猫"
+                  hint "想让 CLI / MCP / hooks 在猫没开时拉起它，去掉这个变量" ;;
+    esac
+
     printf '\n鉴权\n'
     if [ -n "${LINGXI_TOKEN:-}" ]; then note "token 来自 LINGXI_TOKEN 环境变量（会进 shell 历史）"
     elif [ -r "$TOKEN_FILE" ]; then
@@ -421,7 +427,11 @@ if isinstance(rows, list):
       if [ -e "$dir" ]; then ok "$host  skill 已装"
       else printf '  \033[90m·\033[0m %s  skill 未装（integrations/install-skills.sh）\n' "$host"; fi
     done
-    if grep -q 'lingxi' "$HOME/.claude/settings.json" 2>/dev/null; then ok "Claude Code  hooks 已装"
+    if grep -q 'open -g -b com.dushaobin.lingxi-desktop' "$HOME/.claude/settings.json" 2>/dev/null; then
+      ok "Claude Code  hooks 已装，会话开始时猫没开会自动拉起"
+    elif grep -q '47811/task-event' "$HOME/.claude/settings.json" 2>/dev/null; then
+      note "Claude Code  hooks 是旧版：能报事件，但会话开始时不会把没开的猫拉起来"
+      hint "新版应用启动一次就会原地升级；或主界面 → Agent 接入 → 一键接入 再点一次"
     else printf '  \033[90m·\033[0m %s\n' "Claude Code  hooks 未装（主界面 → Agent 接入 → 一键接入）"; fi
     if grep -qE '^[[:space:]]*notify[[:space:]]*=.*(lingxi|fanout)' "$HOME/.codex/config.toml" 2>/dev/null; then ok "Codex  notify 已装"
     else printf '  \033[90m·\033[0m %s\n' "Codex  notify 未装（integrations/hosts/codex/install.sh）"; fi
@@ -430,6 +440,15 @@ if isinstance(rows, list):
     if [ "$fail" -gt 0 ]; then printf '%s\n\n' "$fail 项不通过，$warn 项需要注意。"; exit 1
     elif [ "$warn" -gt 0 ]; then printf '%s\n\n' "都能用，$warn 项需要注意。"
     else printf '%s\n\n' "全部通过。"; fi ;;
+
+  up|start|ensure)
+    # The check module as one command, for anything that wants the cat up before it starts -
+    # a skill's first step, a hook, an install script. Idempotent: a running app is left alone,
+    # a closed one is started without taking focus, and the answer is in the exit code. Every
+    # other subcommand already does this on its own; this is for when nothing else needs doing.
+    if bridge_is_up; then printf '%s\n' "灵犀 is running on $BASE"; exit 0; fi
+    start_app || exit 1
+    printf '%s\n' "灵犀 is running on $BASE (started just now)" ;;
 
   health)
     # Deliberately unauthenticated - this is how you find out where the token lives.

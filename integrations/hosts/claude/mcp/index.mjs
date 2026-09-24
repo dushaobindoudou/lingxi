@@ -9,7 +9,7 @@
 // with no install step and nothing to audit.
 import { createInterface } from 'node:readline';
 import { toolsByName, tools } from './tools.mjs';
-import { BridgeError } from './bridge.mjs';
+import { BridgeError, warmUp } from './bridge.mjs';
 
 const PROTOCOL_VERSION = '2024-11-05';
 
@@ -32,6 +32,9 @@ async function handle(request) {
 
   switch (method) {
     case 'initialize':
+      // The host is starting a session: check the app is up and start it if not, without
+      // holding the handshake for it. See warmUp() in bridge.mjs.
+      warmUp().catch(() => {});
       return reply(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },

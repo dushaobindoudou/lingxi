@@ -27,7 +27,9 @@ function bridgeCommand(method, path, withBody) {
     'printf \'header = "Authorization: Bearer %s"\\n\' "$T" > "$H"',
     // `agent` in the body covers /control and /task-event; /memory and /reminders read the
     // tier off this header. Sending both means the two paths cannot disagree about who we are.
-    "curl -s -m 3 -K \"$H\" -X " + method + " http://127.0.0.1:" + LINGXI_PORT + path +
+    // --noproxy: curl hands even 127.0.0.1 to an exported http_proxy, and a local proxy answers
+    // with a 502 page - which would come back here looking like a reply.
+    "curl -s -m 3 --noproxy '*' -K \"$H\" -X " + method + " http://127.0.0.1:" + LINGXI_PORT + path +
       " -H 'Content-Type: application/json' -H 'X-Lingxi-Agent: " + AGENT_ID + "'",
   ];
   // 必须跟在同一段 curl 里：拼成独立语句会变成 `curl; --data-binary @-`，curl 发空 body。
@@ -50,10 +52,11 @@ function shellService(ctx) {
 function startAppCommand() {
   return [
     '[ "${LINGXI_AUTOSTART:-1}" = "0" ] && exit 7',
-    'curl -s -m 2 -o /dev/null http://127.0.0.1:' + LINGXI_PORT + '/health && exit 0',
+    // --noproxy, or a proxy's 502 for 127.0.0.1 reads as "the app is up" and nothing is started.
+    "curl -s -m 2 --noproxy '*' -o /dev/null http://127.0.0.1:" + LINGXI_PORT + '/health && exit 0',
     'open -g -b ' + BUNDLE_ID + ' 2>/dev/null || exit 8',
     'n=0; while [ $n -lt 150 ]; do',
-    '  curl -s -m 2 -o /dev/null http://127.0.0.1:' + LINGXI_PORT + '/health && exit 0',
+    "  curl -s -m 2 --noproxy '*' -o /dev/null http://127.0.0.1:" + LINGXI_PORT + '/health && exit 0',
     '  sleep 0.1; n=$((n+1))',
     'done',
     'exit 9',

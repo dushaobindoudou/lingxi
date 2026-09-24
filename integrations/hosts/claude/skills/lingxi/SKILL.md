@@ -24,7 +24,10 @@ lingxi integration   # 运行中应用的完整契约，以它为准
 `lingxi` 不在 PATH 时，应用每次启动都会写到：
 `~/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi`。
 
-连不上就说猫没启动，不要假装做了。
+**先确认猫在跑。** `lingxi up` 是检查模块：在跑就不动，没跑就在后台拉起（不抢焦点）并等它就绪。
+插件的 SessionStart hook 每次会话开始已经做过一次，其它子命令遇到猫没开也会自己拉起，所以通常
+不用单独调；CLI 文件还不存在（应用从没跑过）时用 `open -g -b com.dushaobin.lingxi-desktop`。
+拉不起来（没装应用、`LINGXI_AUTOSTART=0`）它会说原因——照实告诉用户，不要假装做了。
 
 ## 一、最重要的事：报**心情**，不只是状态
 

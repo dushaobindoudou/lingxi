@@ -949,27 +949,69 @@ fn get_claude_task_events(state: State<ClaudeHooksState>) -> Vec<TaskEvent> {
 ///
 /// `|| true` at the end, and every failure swallowed: a desktop pet must never be able to make
 /// someone's agent fail.
+///
+/// `--noproxy '*'` because curl hands even 127.0.0.1 to an exported http_proxy/all_proxy, and a
+/// local Clash-style proxy answers 502 for it: every event went to the proxy and none reached the
+/// cat. (The shell client learned this first - see NOPROXY in integrations/cli/lingxi.)
 const CLAUDE_HOOK_COMMAND: &str = concat!(
     "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); ",
     "H=$(mktemp) || exit 0; ",
     "printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; ",
-    "curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event ",
+    "curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event ",
     "-H 'Content-Type: application/json' ",
     "--data-binary @- >/dev/null 2>&1 || true; ",
     "rm -f \"$H\""
 );
 
+/// SessionStart's hook: the CHECK. Is the app up? If not, start it, wait for the bridge, and only
+/// then deliver the event - so a session opening is enough to bring the cat back.
+///
+/// Every other hook just posts, and an event that finds the app closed is dropped, as before. The
+/// start belongs to the session boundary: relaunching on every prompt or every Stop would fight a
+/// user who quit the cat on purpose, twenty times an hour. Once per session is a nudge.
+///
+/// Everything after reading stdin runs in a DETACHED subshell with its stdio on /dev/null, so the
+/// hook returns in milliseconds and the session never waits on a GUI app booting - that can take
+/// seconds, and SessionStart hooks block the session. `open -g` does not steal focus. The token is
+/// read only after the bridge answers, because on a machine where the app has never run the app is
+/// what creates the token file. LINGXI_AUTOSTART=0 (or false/no) in the environment turns the
+/// start off; a missing app makes `open` fail and the subshell exit quietly. Plain sh throughout -
+/// the one-click install has to work for someone with the .app and no checkout.
+const CLAUDE_SESSION_START_COMMAND: &str = concat!(
+    "P=$(cat); (",
+    "lx_up() { curl -s -m 1 --noproxy '*' -o /dev/null http://127.0.0.1:47811/health; }; ",
+    "lx_up || { case \"${LINGXI_AUTOSTART:-1}\" in 0|false|no) exit 0;; esac; ",
+    "open -g -b com.dushaobin.lingxi-desktop || exit 0; ",
+    "i=0; until lx_up; do i=$((i+1)); [ $i -gt 50 ] && exit 0; sleep 0.3; done; }; ",
+    "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); ",
+    "H=$(mktemp) || exit 0; ",
+    "printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; ",
+    "printf '%s' \"$P\" | curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event ",
+    "-H 'Content-Type: application/json' --data-binary @-; ",
+    "rm -f \"$H\"",
+    ") </dev/null >/dev/null 2>&1 &"
+);
+
+/// The command a given event carries - see CLAUDE_SESSION_START_COMMAND for why they differ.
+fn claude_hook_command_for(event: &str) -> &'static str {
+    if event == "SessionStart" { CLAUDE_SESSION_START_COMMAND } else { CLAUDE_HOOK_COMMAND }
+}
+
 /// Hook lines we have written in the past. Uninstall has to recognise all of them, or an older
 /// install becomes impossible to remove through the UI that created it - and install has to
 /// REPLACE them, or a machine that installed before a fix keeps running the outdated command
 /// forever while every button involved insists it is up to date.
-const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 2] = [
+const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 3] = [
     // The tokenless original: written before the bridge grew authentication, dead (401)
     // against any bridge that has one.
     "curl -s -m 2 -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true",
     // The argv-token form: worked, but exposed the token in `ps` for every call. Superseded
     // by the -K form above.
     "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); curl -s -m 2 -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' -H \"Authorization: Bearer $T\" --data-binary @- >/dev/null 2>&1 || true",
+    // The -K form without --noproxy: routed through any exported proxy, and on SessionStart it
+    // could not start a closed app. Superseded by CLAUDE_HOOK_COMMAND and
+    // CLAUDE_SESSION_START_COMMAND.
+    "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
 ];
 
 /// The five Claude Code lifecycle events this integration speaks, shared verbatim by the
@@ -1012,7 +1054,9 @@ fn write_claude_settings(path: &PathBuf, value: &serde_json::Value) -> Result<()
 /// shared by install (skip re-adding), install's legacy upgrade and uninstall (find exactly
 /// what to remove), so all three can never disagree about what "ours" means.
 fn is_our_command(command: &str) -> bool {
-    command == CLAUDE_HOOK_COMMAND || LEGACY_CLAUDE_HOOK_COMMANDS.contains(&command)
+    command == CLAUDE_HOOK_COMMAND
+        || command == CLAUDE_SESSION_START_COMMAND
+        || LEGACY_CLAUDE_HOOK_COMMANDS.contains(&command)
 }
 
 fn has_our_hook(entries: &[serde_json::Value]) -> bool {
@@ -1025,12 +1069,13 @@ fn has_our_hook(entries: &[serde_json::Value]) -> bool {
     })
 }
 
-/// Drop entries carrying an OUTDATED form of our hook, keeping everything else - the user's
-/// own hooks and other tools' hooks are untouchable. Returns true when a current-form entry
-/// survives, which is what lets install upgrade a machine that ran an older installer
-/// (tokenless, then argv-token) instead of skipping it forever because `has_our_hook`
-/// recognised the obsolete line.
-fn prune_legacy_hook_entries(entries: &mut Vec<serde_json::Value>) -> bool {
+/// Drop entries carrying an OUTDATED form of our hook for this event, keeping everything else -
+/// the user's own hooks and other tools' hooks are untouchable. "Outdated" is per event: the
+/// plain posting command is current everywhere except SessionStart, which carries the check.
+/// Returns true when one of ours survives, which is what lets install upgrade a machine that ran
+/// an older installer instead of skipping it forever because `has_our_hook` recognised the
+/// obsolete line.
+fn prune_legacy_hook_entries(entries: &mut Vec<serde_json::Value>, current: &str) -> bool {
     entries.retain(|entry| {
         let inner_is_current_only = |entry: &serde_json::Value| {
             entry
@@ -1039,7 +1084,7 @@ fn prune_legacy_hook_entries(entries: &mut Vec<serde_json::Value>) -> bool {
                 .map(|inner| {
                     inner.iter().any(|h| {
                         let command = h.get("command").and_then(|c| c.as_str());
-                        command == Some(CLAUDE_HOOK_COMMAND)
+                        command == Some(current)
                     })
                 })
                 .unwrap_or(false)
@@ -1055,9 +1100,7 @@ fn prune_legacy_hook_entries(entries: &mut Vec<serde_json::Value>) -> bool {
             .map(|inner| {
                 !inner.is_empty()
                     && inner.iter().all(|h| {
-                        h.get("command").and_then(|c| c.as_str()).is_some_and(|c| {
-                            LEGACY_CLAUDE_HOOK_COMMANDS.contains(&c)
-                        })
+                        h.get("command").and_then(|c| c.as_str()).is_some_and(|c| c != current && is_our_command(c))
                     })
             })
             .unwrap_or(false);
@@ -1095,13 +1138,60 @@ fn install_claude_hooks() -> Result<String, String> {
         let Some(entries_arr) = entries.as_array_mut() else {
             return Err(format!("\"hooks.{event}\" 不是数组，未做任何修改"));
         };
-        if !prune_legacy_hook_entries(entries_arr) {
-            entries_arr.push(serde_json::json!({ "hooks": [ { "type": "command", "command": CLAUDE_HOOK_COMMAND } ] }));
+        let current = claude_hook_command_for(event);
+        if !prune_legacy_hook_entries(entries_arr, current) {
+            entries_arr.push(serde_json::json!({ "hooks": [ { "type": "command", "command": current } ] }));
         }
     }
 
     write_claude_settings(&path, &settings)?;
     Ok(format!("已写入 {}（原文件已备份为 .lingxi-backup）", path.display()))
+}
+
+/// Rewrite, in place, every hook command of ours that is not the current one for its event.
+/// Returns how many were rewritten. Pure, so the upgrade contract is testable without a file.
+///
+/// Only commands already there are touched: an event the user has no entry of ours under stays
+/// that way (they may have removed it on purpose), and nothing that is not ours is read twice.
+fn upgrade_our_hook_commands(hooks_obj: &mut serde_json::Map<String, serde_json::Value>) -> usize {
+    let mut rewritten = 0;
+    for event in CLAUDE_HOOK_EVENTS {
+        let current = claude_hook_command_for(event);
+        let Some(entries) = hooks_obj.get_mut(event).and_then(|e| e.as_array_mut()) else { continue };
+        for entry in entries.iter_mut() {
+            let Some(inner) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) else { continue };
+            for hook in inner.iter_mut() {
+                let outdated = hook
+                    .get("command")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|c| c != current && is_our_command(c));
+                if outdated {
+                    hook["command"] = serde_json::Value::String(current.to_string());
+                    rewritten += 1;
+                }
+            }
+        }
+    }
+    rewritten
+}
+
+/// Run at launch: a machine that clicked "一键接入" on an older build keeps the hook it got then,
+/// forever, unless something upgrades it - and the one thing that has changed since is exactly
+/// what makes a session start bring the cat back. Writes only when there is something to change,
+/// backs up first like install does, and never installs hooks nobody asked for.
+fn upgrade_installed_claude_hooks() -> Result<usize, String> {
+    let path = claude_settings_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
+    if !path.exists() {
+        return Ok(0);
+    }
+    let mut settings = read_claude_settings(&path)?;
+    let Some(hooks_obj) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) else { return Ok(0) };
+    let rewritten = upgrade_our_hook_commands(hooks_obj);
+    if rewritten > 0 {
+        let _ = std::fs::copy(&path, path.with_extension("json.lingxi-backup"));
+        write_claude_settings(&path, &settings)?;
+    }
+    Ok(rewritten)
 }
 
 /// Remove every entry carrying OUR command (current or any legacy form) from each subscribed
@@ -1206,7 +1296,7 @@ const CODEX_NOTIFY_SCRIPT: &str = concat!(
     "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); ",
     "H=$(mktemp) || exit 0; ",
     "printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; ",
-    "printf '%s' \"$1\" | curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event ",
+    "printf '%s' \"$1\" | curl -s -m 2 --noproxy '*' -K \"$H\" -X POST http://127.0.0.1:47811/task-event ",
     "-H 'Content-Type: application/json' ",
     "--data-binary @- >/dev/null 2>&1 || true; ",
     "rm -f \"$H\""
@@ -4999,6 +5089,11 @@ pub fn run() {
                 Some(path) => eprintln!("[lingxi-desktop] shell client written to {}", path.display()),
                 None => eprintln!("[lingxi-desktop] could not write the shell client; the MCP path still works"),
             }
+            match upgrade_installed_claude_hooks() {
+                Ok(0) => {}
+                Ok(n) => eprintln!("[lingxi-desktop] upgraded {n} Claude Code hook command(s) to the current form"),
+                Err(error) => eprintln!("[lingxi-desktop] left Claude Code hooks as they were: {error}"),
+            }
             {
                 let (map, errors) = load_reaction_map(app.handle());
                 for error in &errors {
@@ -5557,11 +5652,89 @@ command = "node"
         assert_eq!(stop[0]["hooks"][0]["command"], "echo someone-elses");
         // ...and upgradeable by install: the legacy form is pruned, the current one added.
         let entries = hooks["Stop"].as_array_mut().unwrap();
-        assert!(!prune_legacy_hook_entries(entries));
+        assert!(!prune_legacy_hook_entries(entries, CLAUDE_HOOK_COMMAND));
         assert_eq!(entries.len(), 1, "the legacy entry went away");
         entries.push(serde_json::json!({ "hooks": [ { "type": "command", "command": CLAUDE_HOOK_COMMAND } ] }));
-        assert!(prune_legacy_hook_entries(entries), "current form survives the prune");
+        assert!(prune_legacy_hook_entries(entries, CLAUDE_HOOK_COMMAND), "current form survives the prune");
         assert_eq!(entries.len(), 2, "and was not re-added on top of");
+    }
+
+    #[test]
+    fn only_session_start_carries_the_check_and_every_command_bypasses_proxies() {
+        for event in CLAUDE_HOOK_EVENTS {
+            let command = claude_hook_command_for(event);
+            assert!(is_our_command(command));
+            // A local proxy answers 502 for 127.0.0.1: the event never arrives, and a health
+            // check reads the 502 as "the app is up" and never starts it.
+            assert!(command.contains("--noproxy '*'"), "{event} would go through an exported proxy");
+            let starts_app = command.contains("open -g -b com.dushaobin.lingxi-desktop");
+            assert_eq!(starts_app, event == "SessionStart", "{event}: only the session boundary may start the app");
+        }
+        // The check must never hold the session: everything after reading stdin is detached.
+        assert!(CLAUDE_SESSION_START_COMMAND.starts_with("P=$(cat); ("));
+        assert!(CLAUDE_SESSION_START_COMMAND.ends_with(") </dev/null >/dev/null 2>&1 &"));
+        assert!(CLAUDE_SESSION_START_COMMAND.contains("LINGXI_AUTOSTART"), "the start must be refusable");
+    }
+
+    #[test]
+    fn every_hook_command_is_valid_posix_sh() {
+        for command in [CLAUDE_HOOK_COMMAND, CLAUDE_SESSION_START_COMMAND] {
+            let status = std::process::Command::new("sh").arg("-n").arg("-c").arg(command).status().unwrap();
+            assert!(status.success(), "sh cannot parse: {command}");
+        }
+    }
+
+    #[test]
+    fn a_machine_on_the_previous_build_is_upgraded_in_place_and_only_once() {
+        // The exact form "一键接入" wrote until now: -K, no --noproxy, no check on SessionStart.
+        let previous = LEGACY_CLAUDE_HOOK_COMMANDS[2];
+        let mut hooks = serde_json::Map::new();
+        for event in CLAUDE_HOOK_EVENTS {
+            hooks.insert(event.to_string(), serde_json::json!([ { "hooks": [ { "type": "command", "command": previous } ] } ]));
+        }
+        hooks.insert(
+            "Stop".into(),
+            serde_json::json!([
+                { "hooks": [ { "type": "command", "command": previous } ] },
+                { "hooks": [ { "type": "command", "command": "echo someone-elses" } ] }
+            ]),
+        );
+        hooks.insert("PreToolUse".into(), serde_json::json!([ { "hooks": [ { "type": "command", "command": "echo mine" } ] } ]));
+
+        assert_eq!(upgrade_our_hook_commands(&mut hooks), 5);
+        for event in CLAUDE_HOOK_EVENTS {
+            assert_eq!(hooks[event][0]["hooks"][0]["command"], claude_hook_command_for(event), "{event}");
+        }
+        assert_eq!(hooks["Stop"][1]["hooks"][0]["command"], "echo someone-elses", "not ours - untouched");
+        assert_eq!(hooks["PreToolUse"][0]["hooks"][0]["command"], "echo mine", "not ours - untouched");
+        assert_eq!(upgrade_our_hook_commands(&mut hooks), 0, "a second launch has nothing to do");
+
+        // Uninstall still recognises the upgraded forms.
+        assert_eq!(remove_our_hook_entries(&mut hooks), 5);
+    }
+
+    #[test]
+    fn install_replaces_a_plain_session_start_hook_with_the_checking_one() {
+        let mut entries = vec![serde_json::json!({ "hooks": [ { "type": "command", "command": CLAUDE_HOOK_COMMAND } ] })];
+        assert!(!prune_legacy_hook_entries(&mut entries, CLAUDE_SESSION_START_COMMAND), "the plain form is outdated here");
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn the_claude_plugin_ships_exactly_the_hooks_the_app_installs() {
+        // Two install paths, one contract: the app's uninstall recognises the plugin's hooks only
+        // because the strings are identical, and a session started under either must check the
+        // app the same way.
+        let plugin: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../integrations/hosts/claude/hooks/hooks.json")).unwrap();
+        let events = plugin["hooks"].as_object().unwrap();
+        assert_eq!(events.len(), CLAUDE_HOOK_EVENTS.len());
+        for event in CLAUDE_HOOK_EVENTS {
+            assert_eq!(
+                events[event][0]["hooks"][0]["command"], claude_hook_command_for(event),
+                "integrations/hosts/claude/hooks/hooks.json's {event} differs from what 一键接入 writes"
+            );
+        }
     }
 
     #[test]
