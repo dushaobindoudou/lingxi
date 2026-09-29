@@ -1,6 +1,6 @@
 {
   "name": "lingxi",
-  "owner": { "name": "lingxi contributors" },
+  "owner": { "name": "dushaobin" },
   "description": "灵犀 · 桌面猫的 agent 接入插件与 skill",
   "plugins": [
     {
