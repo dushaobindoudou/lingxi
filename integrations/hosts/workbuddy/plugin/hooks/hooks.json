@@ -1,0 +1,29 @@
+{
+  "description": "灵犀桌面猫的生命周期 hooks：UserPromptSubmit→running、Stop→completed。载荷与 Claude Code 同形，直接走 lingxi-emit 的 claude 适配臂。适配器不猜 mood，应用按 focused 处理；模型真有话说时由 skill 的 task event 覆盖。命令先找 PATH 里的 node，找不到再退回 WorkBuddy 自带的托管 node；猫没开时适配器静默退出，绝不阻塞宿主。",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "N=$(command -v node || true); [ -x \"$N\" ] || N=$(ls -t \"$HOME/.workbuddy/binaries/node/versions/\"*/bin/node 2>/dev/null | head -1); [ -n \"$N\" ] && exec \"$N\" \"${CODEBUDDY_PLUGIN_ROOT}/bin/lingxi-emit.mjs\" --host claude",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "N=$(command -v node || true); [ -x \"$N\" ] || N=$(ls -t \"$HOME/.workbuddy/binaries/node/versions/\"*/bin/node 2>/dev/null | head -1); [ -n \"$N\" ] && exec \"$N\" \"${CODEBUDDY_PLUGIN_ROOT}/bin/lingxi-emit.mjs\" --host claude",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

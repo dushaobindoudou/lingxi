@@ -1,20 +1,28 @@
-# WorkBuddy · 一个 MCP 包、一个 skill、一道信任闸门
+# WorkBuddy · MCP + skill + hooks + 一道信任闸门
 
 `hosts/` 下每个目录只为一个宿主负责。WorkBuddy 的形态和另外三个都不一样，值得先说清楚。
 
 | | 谁触发 | 会漏吗 | 能带 `mood` 吗 |
 |---|---|---|---|
+| hooks（5.6+） | 宿主，确定性 | **不会** | ❌ |
 | skill | 模型自己决定 | **会** | ✅ |
 | MCP | 模型自己决定 | **会** | ✅ |
 
-**WorkBuddy 没有「确定性的一半」。** Claude Code 有 hooks（会话生命周期事件外露），
-Codex 有 `notify`（回合结束必触发），两者都能保证"有事发生猫就有反应"。
-WorkBuddy 的会话事件不外露（应用里既没有 `hooks` 配置键，也没有 Claude 那套事件名的实现），
-所以这条路**两层都是建议性的**：模型想起来才用。
+**WorkBuddy 5.6+ 已经暴露 hooks，本目录的「没有确定性的一半」结论已过时。**
+实测（2026-09，WorkBuddy 5.6.2）：
 
-这不是缺陷，是取舍——它意味着 `priority` 和 `mood` 这两个字段更重要，因为没人替你兜底。
-接入方应该读 [`docs/19-agent-integration.md`](../../../docs/19-agent-integration.md)
-的「心情」一节，而不是指望 hook 帮忙。
+- hooks 配置在 `~/.workbuddy/settings.json` 的 `hooks` 键，格式与 Claude Code 兼容
+  （`UserPromptSubmit` / `Stop` / `PreToolUse` / `PostToolUse` / `SubagentStop` 等），
+  **配置实时生效，不需要重启会话**。
+- 载荷与 Claude Code 同形：`hook_event_name` / `session_id` / `cwd` / `transcript_path` /
+  `tool_name` / `tool_input`——所以适配器直接走 `--host claude` 适配臂，零改动。
+- 事件是**全局**的：所有会话（含并行会话与子代理）都会触发。
+- 因此只装两条生命周期事件：`UserPromptSubmit`→running、`Stop`→completed。
+  `PostToolUse` 每次工具调用都触发，会让猫变成通知轰炸，不要装。
+- 没有观察到 `SessionStart` / `Notification` 事件（与 Claude Code 的事件集不同）；
+  会话开始由 `UserPromptSubmit` 兜底。
+- hooks 报不出 `mood`——它们是对话生命周期事件。**想要猫真的懂在发生什么，
+  让模型自己发 task event**，这正是 skill 教它做的事。
 
 ---
 
@@ -34,6 +42,20 @@ WorkBuddy 的会话事件不外露（应用里既没有 `hooks` 配置键，也�
 | 2 | `~/.workbuddy/skills/` | 软链 `integrations/skills/{lingxi,lingxi-authoring}` |
 | 3 | `~/.lingxi/agent.json` | 机器级署名 → `workbuddy` |
 | 4 | `POST /agents` | 用 `workbuddy-mark.svg` 注册身份与徽章 |
+| 5 | `~/.workbuddy/settings.json` | 合并 hooks：`UserPromptSubmit`→running、`Stop`→completed（确定性的一半） |
+
+### 替代路径：marketplace 插件包
+
+不想跑安装器的用户可以走 marketplace 安装自包含插件包（`plugin/`，含 hooks + 两份 skill）：
+
+```sh
+/plugin marketplace add <owner>/lingxi
+/plugin install lingxi@lingxi
+```
+
+插件不带 MCP（避免与用户级 `mcp.json` 撞 server id + 信任哈希问题），也不写机器级署名——
+要完整体验再跑一次 `./install.sh`（幂等，两者共存不冲突；hooks 语义相同，重复投递幂等）。
+同步与注意事项见 `plugin/README.md`。
 
 ---
 

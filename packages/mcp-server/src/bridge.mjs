@@ -123,6 +123,7 @@ const AGENT_PROFILE = {
   name: pick(process.env.LINGXI_AGENT_NAME, fileAgent.name) || undefined,
   badge: pick(process.env.LINGXI_AGENT_BADGE, fileAgent.badge) || undefined,
   color: pick(process.env.LINGXI_AGENT_COLOR, fileAgent.color) || undefined,
+  logo: pick(process.env.LINGXI_AGENT_LOGO, fileAgent.logo) || undefined,
 };
 
 /// Only these fields take over the cat's performance, and only these contend for the stage - the

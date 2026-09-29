@@ -7,6 +7,11 @@
 #   1. ~/.workbuddy/mcp.json 里的一个 mcpServers.lingxi   带类型的工具，逐工具授权
 #   2. ~/.workbuddy/skills/ 下的 skill 软链                模型自己判断要不要用
 #
+#   5. ~/.workbuddy/settings.json 里的 hooks               确定性的一半（WorkBuddy 5.6+）
+#      WorkBuddy 的 hooks 载荷与 Claude Code 兼容（hook_event_name/session_id/cwd/transcript_path），
+#      且配置实时生效、无需重启会话。UserPromptSubmit→running、Stop→completed，
+#      直接复用 adapters/lingxi-emit.mjs 的 claude 适配臂。
+#
 # 外加两个不属于任何宿主、但也必须配对的共享件：
 #
 #   3. ~/.lingxi/agent.json   署名（WorkBuddy 的 MCP 从它读身份）
@@ -24,6 +29,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 WB_DIR="${LINGXI_WORKBUDDY_DIR:-${HOME}/.workbuddy}"
 MCP_JSON="${WB_DIR}/mcp.json"
+WB_SETTINGS="${WB_DIR}/settings.json"
 SKILLS_DIR="${WB_DIR}/skills"
 AGENT_FILE="${LINGXI_AGENT_FILE:-${HOME}/.lingxi/agent.json}"
 APP_BIN_DIR="${HOME}/Library/Application Support/com.dushaobin.lingxi-desktop"
@@ -125,6 +131,46 @@ sys.exit(0 if isinstance(data, dict) and data.get('id') == os.environ['AGENT_ID'
     fi
   else
     note "${AGENT_FILE} 不存在或署名已不是 ${AGENT_ID}，不碰"
+  fi
+  # hooks：只撤命令里带 lingxi-emit.mjs 标记的条目，用户自己的 hook 一律不碰。
+  if [ -f "${WB_SETTINGS}" ]; then
+    if [ "${DRY_RUN}" = 1 ]; then
+      note "会从 ${WB_SETTINGS} 的 hooks 里删掉命令含 lingxi-emit.mjs 的条目"
+    else
+      python3 - "${WB_SETTINGS}" <<'PY'
+import json, sys
+
+path = sys.argv[1]
+MARK = 'lingxi-emit.mjs'
+with open(path, encoding='utf-8') as f:
+    data = json.load(f)
+hooks = data.get('hooks') or {}
+removed = []
+for event in list(hooks):
+    groups = hooks[event]
+    kept = []
+    for group in groups:
+        entries = [h for h in group.get('hooks', []) if MARK not in str(h.get('command', ''))]
+        if len(entries) != len(group.get('hooks', [])):
+            removed.append(event)
+        if entries:
+            group['hooks'] = entries
+            kept.append(group)
+    if kept:
+        hooks[event] = kept
+    else:
+        hooks.pop(event, None)
+if not hooks:
+    data.pop('hooks', None)
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+print(f'  ✓ {path}: 已移除 {sorted(set(removed)) or "0 条"} lingxi hook' if removed else f'  · {path}: 没有发现 lingxi hook')
+PY
+      log "${WB_SETTINGS}: lingxi hooks 已撤销"
+    fi
+  else
+    note "${WB_SETTINGS} 不存在，跳过"
   fi
   echo
   echo "注意：~/.workbuddy/mcp-approvals.json 里那条信任记录由 WorkBuddy 自己清理。"
@@ -285,10 +331,55 @@ else
   log "已注册 ${AGENT_BADGE} ${AGENT_NAME}（${AGENT_ID} ${AGENT_COLOR}）"
 fi
 
+# ---------------------------------------------------------------- 5. hooks（确定性的一半）
+# WorkBuddy 5.6+ 暴露了与 Claude Code 兼容的 hooks：UserPromptSubmit / Stop 等事件，
+# 载荷带 hook_event_name / session_id / cwd / transcript_path，配置实时生效、无需重启会话。
+# 只装两条生命周期事件——PostToolUse 每次工具调用都触发，会让猫变成通知轰炸。
+echo "5. hooks（${WB_SETTINGS}）"
+HOOK_CMD=""
+HOOK_NODE="$(command -v node 2>/dev/null || true)"
+[ -n "${HOOK_NODE}" ] || HOOK_NODE="${WB_DIR}/binaries/node/versions/22.22.2-3/bin/node"
+if [ ! -x "${HOOK_NODE}" ]; then
+  HOOK_NODE="$(ls -t "${WB_DIR}"/binaries/node/versions/*/bin/node 2>/dev/null | head -1 || true)"
+fi
+if [ -z "${HOOK_NODE}" ] || [ ! -x "${HOOK_NODE}" ]; then
+  note "找不到 node，跳过 hooks（装好 node 后重跑本安装器即可补上）"
+elif [ ! -f "${REPO}/integrations/adapters/lingxi-emit.mjs" ]; then
+  note "找不到 adapters/lingxi-emit.mjs，跳过 hooks"
+else
+  HOOK_CMD="${HOOK_NODE} ${REPO}/integrations/adapters/lingxi-emit.mjs --host claude"
+  backup_once "${WB_SETTINGS}" "${BACKUP_TAG}"
+  if [ "${DRY_RUN}" = 1 ]; then
+    note "会合并 hooks：UserPromptSubmit + Stop → ${HOOK_CMD}（只覆盖命令含 lingxi-emit.mjs 的旧条目）"
+  else
+    python3 - "${WB_SETTINGS}" "${HOOK_CMD}" <<'PY'
+import json, sys
+
+path, cmd = sys.argv[1], sys.argv[2]
+MARK = 'lingxi-emit.mjs'
+with open(path, encoding='utf-8') as f:
+    data = json.load(f)
+    if not isinstance(data, dict):
+        raise SystemExit(f'✗ {path} 的顶层不是一个对象')
+hooks = data.setdefault('hooks', {})
+for event in ('UserPromptSubmit', 'Stop'):
+    groups = [g for g in hooks.get(event, [])
+              if MARK not in str(g.get('hooks', [{}])[0].get('command', '') if g.get('hooks') else '')]
+    groups.append({'hooks': [{'type': 'command', 'command': cmd, 'timeout': 10, 'async': True}]})
+    hooks[event] = groups
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+PY
+    log "${WB_SETTINGS}: UserPromptSubmit→running、Stop→completed（claude 兼容载荷，实时生效）"
+  fi
+fi
+
 echo
 echo "完成。验收："
 echo "  node --experimental-strip-types ${REPO}/.workbuddy/probes/verify-workbuddy-mcp.mjs"
 echo "  lingxi task completed test proud \"WorkBuddy 接好了\"   # 让猫真的反应一次"
 echo "  lingxi agents                                        # workbuddy 应带 🐧 与 #0AC89F"
+echo "  lingxi events | tail                                 # 结束一轮对话后应出现 workbuddy 的 running/completed"
 echo
 echo "别忘了去连接器管理页给 lingxi 点「信任」——在那之前 MCP 工具不会出现。"
