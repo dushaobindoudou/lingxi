@@ -7,6 +7,14 @@ from pathlib import Path
 from mathutils import Vector
 ROOT=Path(__file__).resolve().parents[2]
 OUT=Path(os.environ.get('LINGXI_OUT',ROOT/'assets/characters/lingxi/v5'));OUT.mkdir(parents=True,exist_ok=True)
+def _v6(k,d):
+ # Look-dev sweep knob (from the v6 calibration line). Env override, no-op at its default.
+ # Defaults are THIS line's authored values: a knob exists so scripts/lookdev-v6/ can sweep
+ # it without editing the script. Change a default away from 1 only with the measurement
+ # that justifies it in the comment next to it.
+ try:return float(os.environ.get(k) or d)
+ except ValueError:return float(d)
+
 rng=np.random.default_rng(512)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene=bpy.context.scene;scene.name='Lingxi • Short Fur Rig v5'
@@ -145,7 +153,8 @@ parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',(0,-.205,.
 for s in [-1,1]:
  parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.047),(.064,.088,.047)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.046),(.061,.085,.045))]
 body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
-head=merge([sphere('Cranium',(0,-.285,.518),(.165,.147,.142)),sphere('CheekL',(-.095,-.340,.466),(.070,.082,.064)),sphere('CheekR',(.095,-.340,.466),(.070,.082,.064)),sphere('MuzzleL',(-.031,-.408,.472),(.052,.047,.032)),sphere('MuzzleR',(.031,-.408,.472),(.052,.047,.032))],'LX_Head',.005)
+MG=_v6('V6_MUZZLE_GROW',0.0)   # muzzle volume grows DOWN, top edge fixed (.472+.032=.504); only needed if the lip line moves below the muzzle's reach
+head=merge([sphere('Cranium',(0,-.285,.518),(.165,.147,.142)),sphere('CheekL',(-.095,-.340,.466),(.070,.082,.064)),sphere('CheekR',(.095,-.340,.466),(.070,.082,.064)),sphere('MuzzleL',(-.031,-.408,.472-MG),(.052,.047,.032+MG)),sphere('MuzzleR',(.031,-.408,.472-MG),(.052,.047,.032+MG))],'LX_Head',.005)
 head.data.materials.clear();head.data.materials.append(headcoat)
 # --- Head sculpt ---------------------------------------------------------------------------------
 # The skull was a union of ellipsoids: every feature a kitten's face has in relief - brow over
@@ -171,11 +180,13 @@ sculpt(head)
 # Eyelids are spherical shells around a centre far behind the eye, rotated shut by their own bones
 # (see "Face rig" below). LID_APEX is how far the lid stands in front of the cornea's plane.
 LID_APEX=.0048   # .0040 left the lower lid's corner (with its 2mm shell) coincident with the cornea
-EYE_X=.064;EYE_Z=.523;EYE_R=.038   # .039 read bug-eyed on the bare skull; .034 read small inside the fuller coat
+EYE_X=.064*_v6('V6_EYE_X',1.0);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',1.0)   # knobs: reference pupil/E is .194 - sweep V6_EYE_R against v6_face_shape.py, then bake the winner
+EAR_S=_v6('V6_EAR',1.0)   # ear shell scaled about its base; the Ear bones scale with it
 LID_YC=(EYE_R**2-LID_APEX**2)/(2*LID_APEX);LID_R=LID_YC+LID_APEX   # sphere through the eye's rim, LID_APEX proud at its centre
-LIP0=.4575      # lip-line centre: 16mm under the nose leather (24mm read as a long, sad philtrum)
-MOUTH_W=.024   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
-GAPE_W=.036    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
+LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather (24mm read as a long, sad philtrum)
+LIP_DZ=LIP0-.4575   # the mouth assembly MUST ride with the lip line - cavity/floor/tongue/teeth/jaw - or pink skin peeks above the new lip (v6 lesson)
+MOUTH_W=.024*_v6('V6_MOUTH_W',1.0);MW_K=MOUTH_W/.024;MW2=MOUTH_W*(.016/.024)   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
+GAPE_W=.036*_v6('V6_GAPE_W',1.0)    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
                # yawn opens the corners back to here - a cat's gape runs well past its visible lips
 def lip_z(x):
  """Height of the upper-lip line at x: the two arcs of the omega meeting under the philtrum,
@@ -231,21 +242,21 @@ bm.to_mesh(head.data);bm.free()
 # the socket/mouth carve above); the jaw below is the chin, and between them sits a real mouth.
 # The jaw is the lower half of the muzzle: two whisker-pad lobes and a chin, the same volume the
 # carve took off the head, so a closed mouth is a closed mouth (a single sphere left a slot).
-jaw=merge([sphere('JawL',(-.029,-.402,.446),(.047,.045,.026)),sphere('JawR',(.029,-.402,.446),(.047,.045,.026)),
-           sphere('Chin',(0,-.386,.431),(.054,.056,.022))],'LX_Jaw',.004)
+jaw=merge([sphere('JawL',(-.029,-.402,.446+LIP_DZ),(.047,.045,.026)),sphere('JawR',(.029,-.402,.446+LIP_DZ),(.047,.045,.026)),
+           sphere('Chin',(0,-.386,.431+LIP_DZ),(.054,.056,.022))],'LX_Jaw',.004)
 jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True   # chin skin is the head's now
 # The mouth bag: big enough to fill the whole gap when the jaw drops (otherwise the gap shows the
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
 mouthpink=mat('LX_MouthPink',(.30,.07,.08),.5)   # rosy, like the yawn reference - near-black read as a hole
-cavity=sphere('LX_MouthCavity',(0,-.392,.455),(.034,.032,.016),mouthpink)
-floor=sphere('LX_MouthFloor',(0,-.394,.447),(.026,.028,.006),mouthpink)          # floor, on the jaw
+cavity=sphere('LX_MouthCavity',(0,-.392,.455+LIP_DZ),(.034,.032,.016),mouthpink)
+floor=sphere('LX_MouthFloor',(0,-.394,.447+LIP_DZ),(.026,.028,.006),mouthpink)          # floor, on the jaw
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
 # actually laps and how it scoops a paw.
 tongue=sphere('LX_Tongue',(0,0,0),(.0135,.0255,.0042),mouthmat)
-for v in tongue.data.vertices:v.co=(v.co.x,v.co.y-.3975,v.co.z+.444)
+for v in tongue.data.vertices:v.co=(v.co.x,v.co.y-.3975,v.co.z+.444+LIP_DZ)
 for v in tongue.data.vertices:
- if v.co.z>.444:v.co.z-=.0014*math.exp(-(v.co.x/.0045)**2)                 # centre groove
+ if v.co.z>.444+LIP_DZ:v.co.z-=.0014*math.exp(-(v.co.x/.0045)**2)                 # centre groove
 planar_uv(tongue,0,1,flip_v=True)  # tip at v=1
 tongue.shape_key_add(name='Basis');tk=tongue.shape_key_add(name='Out')
 for v,k in zip(tongue.data.vertices,tk.data):
@@ -254,7 +265,7 @@ for v,k in zip(tongue.data.vertices,tk.data):
 # Canines: two up, two down, only seen when the mouth opens.
 teeth=[]
 for s in [-1,1]:
- for up,(x,y,z,region) in [(True,(s*.015,-.436,.458,'HeadRigid')),(False,(s*.012,-.434,.452,'Jaw'))]:
+ for up,(x,y,z,region) in [(True,(s*.015*MW_K,-.436,.458+LIP_DZ,'HeadRigid')),(False,(s*.012*MW_K,-.434,.452+LIP_DZ,'Jaw'))]:
   tt=sphere('LX_Tooth',(0,0,0),(.0021,.0021,.0055 if up else .0042),toothmat)
   for v in tt.data.vertices:v.co=(v.co.x+x,v.co.y+y,v.co.z+z)
   for v in tt.data.vertices:                                                # taper to a point
@@ -263,7 +274,7 @@ for s in [-1,1]:
   teeth.append((tt,region))
 # Nose: a rounded inverted-triangle leather with a flat front, comma nostrils on the lower
 # sides and a groove down its centre - it was a squashed sphere, which read as rubber.
-nose=sphere('LX_Nose',(0,0,0),(1,1,1),nosemat);NC=(0,-.447,.487);NW,ND,NH=.0215,.0105,.0135
+nose=sphere('LX_Nose',(0,0,0),(1,1,1),nosemat);NC=(0,-.447,.487+_v6('V6_NOSE_DZ',0.0));NW,ND,NH=.0215*_v6('V6_NOSE_W',1.0),.0105*_v6('V6_NOSE_D',1.0),.0135*_v6('V6_NOSE_H',1.0)
 shade=[]
 for v in nose.data.vertices:
  nx,ny,nz=v.co.x,v.co.y,v.co.z
@@ -302,7 +313,7 @@ for side in (-1,1):
   z=float(lip_z(x))
   pts.append((x,-.4515+.020*u*u,z))
  lips.append(lip_curve('LX_LipUpper.'+('L' if side<0 else 'R'),pts,'HeadRigid'))
-lips.append(lip_curve('LX_LipLower',[(x,-.4500+.010*(x/.016)**2,float(lip_z(x))-.0016) for x in np.linspace(-.016,.016,9)],'Jaw'))
+lips.append(lip_curve('LX_LipLower',[(x,-.4500+.010*(x/MW2)**2,float(lip_z(x))-.0016) for x in np.linspace(-MW2,MW2,9)],'Jaw'))
 # Skeleton: common bind space shared by body, separate face parts, and fur vertices.
 ad=bpy.data.armatures.new('LingxiSkeleton');rig=bpy.data.objects.new('LX_Rig',ad);scene.collection.objects.link(rig);bpy.context.view_layer.objects.active=rig;rig.select_set(True);bpy.ops.object.mode_set(mode='EDIT')
 def bone(n,a,b,parent=None):
@@ -329,7 +340,7 @@ for s in [-1,1]:
    chain=[(x,.225,.305),(x,.172,.195),(x,.300,.115),(x,.205,.036)];par='Pelvis'
   bone(pre+'Upper.'+suf,chain[0],chain[1],par);bone(pre+'Lower.'+suf,chain[1],chain[2],pre+'Upper.'+suf);bone(pre+'Paw.'+suf,chain[2],chain[3],pre+'Lower.'+suf)
   for i in range(4):bone(pre+f'Toe{i}.'+suf,(x+(i-1.5)*.023,y-.06,.04),(x+(i-1.5)*.023,y-.10,.033),pre+'Paw.'+suf)
- bone('Ear.'+suf,(s*.100,-.250,.604),(s*.166,-.240,.760),'Head')  # matches the new ear shell
+ bone('Ear.'+suf,(s*.100,-.250,.604),(s*(.100+.066*EAR_S),-.250+.010*EAR_S,.604+.156*EAR_S),'Head')  # matches the new ear shell
  ey=cranium_front(s*EYE_X,EYE_Z);bone('Eye.'+suf,(s*EYE_X,ey+.012,EYE_Z),(s*EYE_X,ey-.020,EYE_Z),'Head')
  # --- Face rig: eyelid bones ---------------------------------------------------------------------
  # A lid is a patch of a sphere concentric with its bone's head, so rotating the bone slides the
@@ -448,6 +459,7 @@ for s in [-1,1]:
    u=k/6-1;vs.append((s*(.100+.066*t)+wid*u,-.250+.010*t+.024*(1-u*u)*math.sin(math.pi*t),.604+.156*t))
  for j in range(12):
   for k in range(12):a=j*13+k;fs.append((a,a+1,a+14,a+13))
+ vs=[(s*.100+(x-s*.100)*EAR_S,-.250+(y+.250)*EAR_S,.604+(z-.604)*EAR_S) for x,y,z in vs]   # EAR_S: scale the shell about its base
  me=bpy.data.meshes.new('Ear');me.from_pydata(vs,[],fs);me.update();o=bpy.data.objects.new('LX_Ear.'+suf,me);scene.collection.objects.link(o);me.materials.append(earmat)
  # UV: u across the width, v from base to tip - matches ear_fur.png's flow convention.
  uv=me.uv_layers.new()
@@ -815,7 +827,7 @@ RADII={'guard':[.00078,.00056,.00030,.00006],'under':[.00045,.00032,.00018,.0000
 # Points per strand. Four made every hair a straight stick - the coat read as combed. Six lets
 # a strand arc and its tip gather into a clump, which is most of what "fluffy" looks like.
 NP=6
-CLUMP={'Head':.0095,'body':.011,'tail':.013}
+_CK=_v6('V6_CLUMP',1.0);CLUMP={'Head':.0095*_CK,'body':.011*_CK,'tail':.013*_CK}
 def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
  me=o.data;me.calc_loop_triangles();v=np.array([v.co[:] for v in me.vertices]);norm=np.array([v.normal[:] for v in me.vertices]);tri=np.array([t.vertices[:] for t in me.loop_triangles]);corn=v[tri];area=np.linalg.norm(np.cross(corn[:,1]-corn[:,0],corn[:,2]-corn[:,0]),axis=1);ids=rng.choice(len(tri),n,p=area/area.sum());b=rng.random((n,2));b[b.sum(1)>1]=1-b[b.sum(1)>1];b=np.column_stack((1-b.sum(1),b));root=(corn[ids]*b[:,:,None]).sum(1);normal=(norm[tri[ids]]*b[:,:,None]).sum(1);normal/=np.maximum(np.linalg.norm(normal,axis=1)[:,None],1e-8)
  if reg=='Head' and not o.name.startswith('LX_Lid'):
@@ -846,7 +858,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
   ln*=np.where((root[:,1]<-.40)&(root[:,2]>=lip_z(root[:,0])),np.clip(.22+.78*(dm-.016)/.050,.22,1),1)[:,None,None]
   # The muzzle (nose, whisker pads) stays short and dense so the features read inside the
   # longer head coat; it grows to full length ~6cm out from the nose.
-  dmz=np.hypot(root[:,0],(root[:,2]-.466)*1.25)
+  dmz=np.hypot(root[:,0],(root[:,2]-(.466+_v6('V6_NOSE_DZ',0.0)))*1.25)
   ln*=np.where(root[:,1]<-.39,np.clip(.42+.58*(dmz-.018)/.055,.42,1),1)[:,None,None]
   # The face that looks at you is short and smooth (stripes and features stay crisp); the long
   # fluff grows where the head turns away - cheeks' outer edge, crown, back of the head. A single
@@ -869,9 +881,9 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
  # Fluff physics: the strand hugs the skin at the root, lifts away through the middle,
  # and the tip drifts along the coat direction - then two wave frequencies (a slow
  # bend plus a faster kink) give the micro-curl a long-haired kitten actually has.
- stand={'tail':1.7,'body':1.15,'Head':1.12}.get(reg,1.0)
+ stand={'tail':1.7,'body':1.15,'Head':1.12}.get(reg,1.0)*_v6('V6_STAND',1.0)
  if o.name.startswith('LX_Lid'):stand=.28     # lid coat lies flat: a furry lid, not a brush of lashes
- lift=(.78*t-.34*t*t)*stand;drift=(.50*t*t)/stand
+ lift=(.78*t-.34*t*t)*stand*_v6('V6_LIFT',1.0);drift=(.50*t*t)/stand
  wave=normal[:,None,:]*(.0024*rng.uniform(.5,1.5,(n,1,1))*(np.sin(t*4.2+rng.random((n,1,1))*6.28)+.55*np.sin(t*9.0+rng.random((n,1,1))*6.28)))
  pts=root[:,None,:]+ln*(normal[:,None,:]*lift+tangent[:,None,:]*drift)+wave
  # Clumping: strands rooted in the same small patch pull their tips toward the patch's mean
@@ -883,7 +895,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
   pull=(.38 if layer=='guard' else .18)*(cnt[inv]>2)
   pts+=(ctip[inv]-pts[:,-1,:])[:,None,:]*(pull[:,None,None]*t**2)
  # Frizz: a little per-point scatter growing toward the tip - no two hairs lie parallel.
- pts+=rng.normal(0,1,(n,NP,3))*(ln*(.038 if reg=='Head' else .045))*t**1.5   # one coat: the head frizzes like the body
+ pts+=rng.normal(0,1,(n,NP,3))*(ln*(.038 if reg=='Head' else .045)*_v6('V6_FRIZZ',1.0))*t**1.5   # one coat: the head frizzes like the body
  edges=np.column_stack((np.arange(n*NP).reshape(n,NP)[:,:-1].ravel(),np.arange(n*NP).reshape(n,NP)[:,1:].ravel()))
  mesh=bpy.data.meshes.new('FurStrands')
  # Raw geometry API instead of from_pydata: from_pydata materialises one Python
@@ -908,7 +920,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
  # One scalar per point, so the per-strand 4 points stay aligned with (4n,3).
  # Gentle root-to-tip lift (.86 -> 1.10). It was .84 -> 1.26, but only the root colour ever
  # reached the render; now the whole gradient does (native_fur keeps per-point colour).
- taper=np.tile(np.interp(np.linspace(0,1,NP),[0,1],[.86,1.10]),n)[:,None]
+ taper=np.tile(np.interp(np.linspace(0,1,NP),[0,1],[.86*_v6('V6_TAPER_LO',1.0),1.10*_v6('V6_TAPER_HI',1.0)]),n)[:,None]
  colors=np.clip(colors*np.repeat(jit,NP,axis=0)*taper*(1.06 if layer=='under' else 1.0),0,1)
  a=mesh.attributes.new('fur_color','FLOAT_COLOR','POINT');a.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
  rs=.78 if reg=='Head' else 1.0   # finer hair on the face: coarse strands read as a brush up close
@@ -929,16 +941,16 @@ SCALE={'preview':.25,'standard':1.0,'hero':1.0}.get(QUALITY,1.0)
 # Lengths matched to the long-haired reference: the coat must VISIBLY cover the whole
 # body with a fluffy silhouette, not tint the skin. Face stays shorter so the features
 # survive; belly/tail carry the longest hair, like a real long-haired kitten.
-GUARD=[(body,80000,.085,'body'),(head,90000,.064,'Head'),(tail,24000,.150,'tail')]
+GUARD=[(body,int(80000*_v6('V6_N',1.0)),.085*_v6('V6_LEN_BODY',1.0),'body'),(head,int(90000*_v6('V6_N',1.0)),.064*_v6('V6_LEN_HEAD',1.0),'Head'),(tail,int(24000*_v6('V6_N',1.0)),.150*_v6('V6_LEN_TAIL',1.0),'tail')]
 # Coat density x1.5 (the user accepted up to 2x cost for a softer, denser coat).
-DENSITY=1.5
+DENSITY=1.5*_v6('V6_DENSITY',1.0)
 for o,n,l,r in GUARD:groom(o,max(1,int(n*SCALE*DENSITY)),l,r,'guard')
 # A shorter, denser, slightly lighter undercoat is what makes the silhouette read as
 # fluffy instead of spiky - the reference kitten has one, so it is ON by default now.
 # `hero` multiplies it further; memory stays safe since the broadcast bug is gone.
 if QUALITY in ('standard','hero'):
  f=(1.4 if QUALITY=='hero' else 1.0)
- for o,n,l,r in [(body,50000,.055,'body'),(head,60000,.042,'Head'),(tail,14000,.100,'tail')]:
+ for o,n,l,r in [(body,int(50000*_v6('V6_N_UNDER',1.0)),.055*_v6('V6_LEN_UNDER',1.0),'body'),(head,int(60000*_v6('V6_N_UNDER',1.0)),.042*_v6('V6_LEN_UNDER',1.0),'Head'),(tail,int(14000*_v6('V6_N_UNDER',1.0)),.100*_v6('V6_LEN_UNDER',1.0),'tail')]:
   groom(o,max(1,int(n*f*DENSITY)),l,r,'under')
 # Short tabby fur on the back of each ear: bare shells read as plastic cut-outs from the side.
 for o,r in ear_outers:groom(o,max(1,int(6000*SCALE)),.022,r,'guard')
@@ -983,7 +995,7 @@ for s in [-1,1]:
 # move with their vertices.
 # 1.15 (a bigger skull) made the head read too big once it wore a coat. The skull is back at its
 # authored size and the head's fluffy outline comes from longer fur, the way the body's does.
-HEAD_S=.90;HEAD_SCALE=np.array([HEAD_S,HEAD_S,HEAD_S]);HEAD_PIVOT=np.array([0,-.16,.48])
+HEAD_S=.90;HEAD_SCALE=np.array([HEAD_S*_v6('V6_HEAD_SX',1.0),HEAD_S,HEAD_S*_v6('V6_HEAD_SZ',1.0)]);HEAD_PIVOT=np.array([0,-.16,.48])
 # Body length. Side-on the torso ran ~3.3 head-lengths where the turnaround's kitten is ~2.2 - a
 # dachshund under a kitten's head, and half of why the head "looked big" from the front. The body
 # (everything but the head) is compressed nose-to-tail about y=.06, and the head rides back with
