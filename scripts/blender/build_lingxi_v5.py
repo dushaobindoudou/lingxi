@@ -180,7 +180,7 @@ sculpt(head)
 # Eyelids are spherical shells around a centre far behind the eye, rotated shut by their own bones
 # (see "Face rig" below). LID_APEX is how far the lid stands in front of the cornea's plane.
 LID_APEX=.0048   # .0040 left the lower lid's corner (with its 2mm shell) coincident with the cornea
-EYE_X=.064*_v6('V6_EYE_X',1.0);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',1.0)   # knobs: reference pupil/E is .194 - sweep V6_EYE_R against v6_face_shape.py, then bake the winner
+EYE_X=.064*_v6('V6_EYE_X',1.0);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',.66)   # baked .66 (2026-09-29, v6_face_shape.py): at 1.0 the pupil measured .341E against the reference's .194E (+76%) - the "startled stare"; .66 lands .203E (+4.6%). The residual is the painted pupil:iris ratio (.66, an iris-texture lever), not geometry
 EAR_S=_v6('V6_EAR',1.0)   # ear shell scaled about its base; the Ear bones scale with it
 LID_YC=(EYE_R**2-LID_APEX**2)/(2*LID_APEX);LID_R=LID_YC+LID_APEX   # sphere through the eye's rim, LID_APEX proud at its centre
 LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather (24mm read as a long, sad philtrum)
