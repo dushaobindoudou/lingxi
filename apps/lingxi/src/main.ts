@@ -415,6 +415,18 @@ async function main() {
     if (!ok) dlog(`play-expression: unknown expression ${event.payload.name}`);
   });
 
+  // Agent activity (a task event from any integration) is household news: while work keeps
+  // happening, a sleeping cat gets up - and a settled one stays up - instead of napping
+  // through the user's working day. Every event pulses, terminal states included: a
+  // completion is news too, and the engine's rolling window is what turns the last event into
+  // a gentle wind-down rather than an abrupt switch-off. This is deliberately NOT gated on
+  // whether the event earned a spoken reaction - silent progress still means someone is
+  // working; waking is not narrating (see src-tauri's react_to_task_event).
+  void listen<{ busy: boolean }>('agent-activity', () => {
+    markInteresting();
+    engine.activityPulse(performance.now());
+  });
+
   // 特效编排 + 玩具. Both are "do something right now" surfaces, driven identically from the
   // debug console, the tray, the management window and an agent's HTTP POST.
   // Assigned to the forward declaration above so publishCapabilities can reach it once it
@@ -602,6 +614,9 @@ async function main() {
       // body: the cat can be facing you squarely and still be looking off to one side.
       headYaw: renderer.headYaw ?? null,
       intent: lastEngineSnapshot?.intent ?? null,
+      // True while the household-activity window opened by the last task event is still open
+      // - the answer to "why is the cat up and patrolling while I work".
+      agentBusy: lastEngineSnapshot?.agentBusy ?? false,
       // Non-null only if the engine has had to repair its own state. A driver seeing this move
       // knows something fed the cat a value it could not represent - previously that showed up
       // as `{"x":null,"y":null}`, indistinguishable from a missing field.

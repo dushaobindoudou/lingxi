@@ -114,6 +114,69 @@ test('a disturbance wakes the cat, and keeps it awake while it lasts', () => {
   assert.notEqual(justAfter.state, 'sleep');
 });
 
+test('agent activity wakes the cat, and keeps it up while the window stays open', () => {
+  const engine = createLifeEngine({ idleDurationMsRange: [1e9, 1e9] });
+  const { at: sleptAt } = runUntil(engine, at(22), (s) => s.state === 'sleep', { label: 'falling asleep' });
+
+  // Work starts while it is curled up: the next tick has it out of bed, and the snapshot says
+  // why - a reader should never have to guess what got the cat up at midnight.
+  engine.activityPulse(sleptAt + 1000);
+  const woken = engine.tick(sleptAt + 2000, null);
+  assert.notEqual(woken.state, 'sleep', 'household activity should wake the cat');
+  assert.equal(woken.agentBusy, true);
+
+  // Silent progress keeps arriving - deliberately without any reaction attached - and the cat
+  // stays up through all of it, settle time included. Waking is not narrating.
+  for (let t = sleptAt + 30000; t <= sleptAt + 120000; t += 30000) {
+    engine.activityPulse(t);
+    const snap = engine.tick(t + 1000, null);
+    assert.notEqual(snap.state, 'sleep', `pulses keep coming at t+${t - sleptAt}ms, yet it is asleep`);
+  }
+});
+
+test('the activity window lapses on its own and the ordinary sleep bar applies again', () => {
+  const engine = createLifeEngine({ idleDurationMsRange: [1e9, 1e9] });
+  const { at: sleptAt } = runUntil(engine, at(22), (s) => s.state === 'sleep', { label: 'falling asleep' });
+  engine.activityPulse(sleptAt + 1000);
+  assert.notEqual(engine.tick(sleptAt + 2000, null).state, 'sleep');
+
+  // One pulse, then silence. The cat was already sleepy when it woke, so once the window is
+  // gone the same conditions that put it down before put it down again - sleep is still what
+  // there is to do when nothing is happening.
+  const { snap } = runUntil(engine, sleptAt + 2000, (s) => s.state === 'sleep', {
+    stepMs: 30000, label: 'falling asleep again after the window lapses',
+  });
+  assert.equal(snap.agentBusy, false, 'a cat asleep again means the window is gone');
+});
+
+test('an activity wake becomes a stroll for a curious cat and sitting up for an aloof one', () => {
+  // Pinned energy at the wake: the cats are constructed one nap from sleep, so strollChance
+  // is a known number and one coin per engine sorts the personalities deterministically.
+  const preSleep = { energy: 0.5, sleepiness: 0.9, idleDurationMsRange: [1e9, 1e9] };
+  const coin = () => 0.4; // above the aloof cat's ~0.23 chance, below the curious one's ~0.6
+  const curious = createLifeEngine({ ...preSleep, random: coin });
+  const aloof = createLifeEngine({ ...preSleep, random: coin });
+  curious.setPersonality({ curiosity: 1 });
+  aloof.setPersonality({ curiosity: 0 });
+  const a = runUntil(curious, at(22), (s) => s.state === 'sleep', { label: 'curious falls asleep' });
+  const b = runUntil(aloof, at(22), (s) => s.state === 'sleep', { label: 'aloof falls asleep' });
+
+  curious.activityPulse(a.at + 1000);
+  aloof.activityPulse(b.at + 1000);
+  const upCurious = curious.tick(a.at + 2000, null);
+  const upAloof = aloof.tick(b.at + 2000, null);
+  assert.equal(upCurious.state, 'wander', 'a curious cat gets up and goes to look');
+  assert.ok(upCurious.target, '...at somewhere on the roam box, not into the void');
+  assert.equal(upAloof.state, 'idle', 'an aloof cat sits up where it lay');
+
+  // The stroll is a coin, not a law: a cat that loses the throw every time just sits up,
+  // whatever its personality. Coin 0.99 is above the 0.95 clamp.
+  const still = createLifeEngine({ ...preSleep, random: () => 0.99 });
+  const c = runUntil(still, at(22), (s) => s.state === 'sleep', { label: 'third cat falls asleep' });
+  still.activityPulse(c.at + 1000);
+  assert.equal(still.tick(c.at + 2000, null).state, 'idle', 'losing the coin means sitting up');
+});
+
 test('a dragged cat is never asleep', () => {
   const engine = createLifeEngine({ idleDurationMsRange: [1e9, 1e9] });
   const { at: sleptAt } = runUntil(engine, at(22), (s) => s.state === 'sleep', { label: 'falling asleep' });

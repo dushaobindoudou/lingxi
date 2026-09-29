@@ -92,6 +92,11 @@ export interface LifeEngineSnapshot {
   /** What an outside driver is currently asking for, and when it lapses. Null if nothing is. */
   intent: { target: Vec2; until: number; speed: number } | null;
   /**
+   * True while the household-activity window opened by activityPulse() is still open - the
+   * outside driver's fingerprint on the sleep loop, and the answer to "why is it up at 3am".
+   */
+  agentBusy: boolean;
+  /**
    * Timestamp of the last time the engine had to repair its own non-finite state, or null if it
    * never has. Serialising a broken position as `null` left callers unable to tell a broken cat
    * from a missing field; this says so outright.
@@ -119,6 +124,14 @@ export interface LifeEngine {
    * Math.min/Math.max, which propagate NaN rather than rejecting it.
    */
   suggestMoveTo(targetPoint: Vec2, now: number, holdMs?: number, speedMultiplier?: number): boolean;
+  /**
+   * Report household activity: call on every task event from any integration, busy states and
+   * terminal ones alike. Opens or extends a rolling window (`agentActivityWindowMs`) during
+   * which a sleeping cat wakes and a settled one will not lie down - sleep then keeps its
+   * meaning as what there is to do when nothing is. Repeat pulses push the deadline out; the
+   * window expires on its own, so no explicit clear exists.
+   */
+  activityPulse(now: number, windowMs?: number): void;
   /** Cancel any pending AI suggestion early. */
   clearIntent(): void;
   /**

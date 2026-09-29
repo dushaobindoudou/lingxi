@@ -4579,6 +4579,17 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
     // Progress updates are deliberately swallowed for the cat's sake (see should_react), but they
     // are exactly what "what is it doing right now" wants, so the two must not share a gate.
     record_activity(app, event);
+    // The activity window is awareness, not narration: every recorded event - silent progress
+    // included - opens the engine's household-activity window, so a sleeping cat gets up when
+    // work starts and only settles once it stops. This must NOT sit behind should_react: that
+    // gate keeps a long task from narrating itself, and waking is not narrating. Terminal
+    // states pulse too (a completion is news; the window it opens is just the wind-down).
+    let busy = state_is_busy(&event.state);
+    let _ = app.emit(
+        "agent-activity",
+        serde_json::json!({ "busy": busy }),
+    );
+
     forward_to_sinks(app, event);
     if !should_react(app, event) {
         return;

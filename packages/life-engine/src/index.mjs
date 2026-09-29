@@ -177,6 +177,24 @@ const DEFAULTS = Object.freeze({
   // A cat does not drop where it stands. It has to have been settled this long first, which
   // is also what keeps sleep from interrupting a walk.
   sleepSettleMs: 6000,
+  // --- household activity: what the outside world's work does to the sleep loop ----------
+  //
+  // The host pulses `activityPulse()` on every task event from any integration - Claude Code
+  // hooks, Codex notify, the generic form - and while the window is open, "something is
+  // happening nearby" outranks sleep exactly like a toy or a touch does: a sleeping cat gets
+  // up, and a settled one will not lie down. Sleep keeps its meaning - what there is to do
+  // when nothing is.
+  //
+  // A rolling window rather than a busy flag, because the signal is lossy: events can be
+  // missed (a dormant webview drains at 500ms ticks; a dropped notify), and a window that
+  // simply expires needs no clear path to be forgotten. Each pulse pushes the deadline out;
+  // silence lets it lapse.
+  agentActivityWindowMs: 90 * 1000,
+  // Chance that a wake caused by nearby activity turns into a short stroll rather than
+  // sitting up where it lay. `curiosity` moves it (a curious cat goes to have a look, an
+  // aloof one just sits up) and a flat cat walks less - see strollChance. Waking is already
+  // participation; strolling is the bonus a personality biases.
+  wakeStrollBaseChance: 0.5,
   // The most wall-clock time one tick may apply to the vitals.
   //
   // `deltaSeconds` is already capped at 0.25s so a stalled frame cannot teleport the cat, but
@@ -335,6 +353,10 @@ export function createLifeEngine(config = {}) {
   let settledSince = null;
   let wokeAt = null;
   let sleptAt = null;
+  // Deadline of the household-activity window opened by activityPulse(), or null until the
+  // first pulse. Compared against each tick's `now`, so a lapsed deadline simply reads as
+  // "quiet" - there is no clearing step to forget.
+  let agentBusyUntil = null;
 
   /**
    * How much the day is pulling toward sleep, 0..1, from the local clock.
@@ -422,8 +444,14 @@ export function createLifeEngine(config = {}) {
   }
 
   /** Everything that outranks sleep, i.e. every reason to be awake right now. */
-  function sleepDisturbed() {
-    return Boolean(toy) || Boolean(aiIntent) || pointerEngagedByUser || state === 'dragged';
+  function sleepDisturbed(now) {
+    return Boolean(toy)
+      || Boolean(aiIntent)
+      || pointerEngagedByUser
+      || state === 'dragged'
+      // The household-activity window: work happening nearby is as real a reason to be up as
+      // a toy on the floor. Read against this tick's `now`, so a lapsed window costs nothing.
+      || (agentBusyUntil != null && now < agentBusyUntil);
   }
 
   function fallAsleep(now) {
@@ -433,11 +461,46 @@ export function createLifeEngine(config = {}) {
     settledSince = null;
   }
 
+  /**
+   * Report household activity: the host calls this on every task event from any integration,
+   * busy states and terminal ones alike (a completion is news too; the window it opens is
+   * simply how long "recently active" lasts). Opens or extends `agentActivityWindowMs`,
+   * during which sleep yields to the work happening nearby. Passive on purpose: the next tick
+   * reads the window and wakes the cat, so every state change still goes through the one
+   * tick loop rather than reaching into the body from outside it.
+   */
+  function activityPulse(now, windowMs) {
+    if (!Number.isFinite(now)) return;
+    const window = Number.isFinite(windowMs) && windowMs > 0 ? windowMs : cfg.agentActivityWindowMs;
+    agentBusyUntil = Math.max(agentBusyUntil ?? 0, now + window);
+  }
+
+  /**
+   * Chance that a wake caused by nearby activity becomes a short stroll rather than sitting
+   * up where it lay. Three things meet here: the coin itself (a stroll is a bonus, not a
+   * duty), `curiosity` (a curious cat goes to have a look, an aloof one just sits up), and
+   * energy (a flat cat walks less). Clamped so no personality makes it certain or impossible.
+   */
+  function strollChance() {
+    const factor = (0.5 + 0.5 * energy) * traitFactor(personality.curiosity, 0.8);
+    return clamp(cfg.wakeStrollBaseChance * factor, 0.05, 0.95);
+  }
+
   function wakeUp(now) {
     state = 'idle';
     wokeAt = now;
     sleptAt = null;
     settledSince = now;
+    // Waking because work started nearby is worth getting up for: on one coin a curious cat
+    // takes a short stroll to have a look, everyone else lies there a moment first. Anything
+    // that outranks a stroll - the toy, an intent, the user's hand - reclaims the body later
+    // in this same tick, so the stroll never fights a stronger drive for it.
+    if (agentBusyUntil != null && now < agentBusyUntil && random() < strollChance()) {
+      state = 'wander';
+      target = pickEdgeRestTarget(null);
+      settledSince = null;
+      return;
+    }
     // A cat that just woke does not immediately set off - it lies there a moment first.
     idleUntil = now + idleWindow();
   }
@@ -1356,10 +1419,11 @@ export function createLifeEngine(config = {}) {
     }
 
     // Waking comes before every autonomous drive and before the intent handling below,
-    // because all of them assume a cat that is up. A disturbance wakes it immediately; being
-    // rested wakes it on its own terms.
+    // because all of them assume a cat that is up. A disturbance wakes it immediately - and
+    // so does the household-activity window: an agent starting work is exactly the sort of
+    // thing a companion gets up for. Being rested wakes it on its own terms.
     if (state === 'sleep') {
-      if (sleepDisturbed()) {
+      if (sleepDisturbed(now)) {
         wakeUp(now);
       } else if (energy >= cfg.sleepWakeEnergy && sleepiness <= cfg.sleepWakeSleepiness) {
         wakeUp(now);
@@ -1472,7 +1536,7 @@ export function createLifeEngine(config = {}) {
         sleepiness >= sleepThreshold()
         && energy < cfg.sleepRefuseAboveEnergy
         && now - settledSince >= cfg.sleepSettleMs
-        && !sleepDisturbed()
+        && !sleepDisturbed(now)
       ) {
         fallAsleep(now);
         return snapshot();
@@ -1523,6 +1587,13 @@ export function createLifeEngine(config = {}) {
       intent: aiIntent
         ? { target: { ...aiIntent.target }, until: aiIntent.until, speed: aiIntent.speed }
         : null,
+      /**
+       * True while the household-activity window opened by activityPulse() is still open -
+       * the outside driver's fingerprint on the sleep loop, and the answer to "why is it up
+       * at 3am". Read against the tick now in progress (via lastTickAt, since snapshot() has
+       * no `now` of its own), exactly the way every other derived field is.
+       */
+      agentBusy: agentBusyUntil != null && lastTickAt != null && lastTickAt < agentBusyUntil,
       /**
        * Non-null only when the engine has had to repair its own state (see enforceInvariants).
        * The value is the timestamp of the last repair. Callers that see it move have proof
@@ -1586,6 +1657,7 @@ export function createLifeEngine(config = {}) {
     updateDrag,
     endDrag,
     suggestMoveTo,
+    activityPulse,
     turnTo,
     clearIntent,
     hold,
