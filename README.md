@@ -215,3 +215,5 @@ cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
 ## 许可
 
 见 [LICENSE.md](LICENSE.md)。以 **PolyForm Noncommercial 1.0.0** 发布：非商业用途（个人学习、爱好项目、公益与科研机构等）免费使用、修改与分发；**商业使用需另行获得商业授权**（联系方式见 LICENSE.md）。
+
+**来源标注义务**：任何使用、修改、分发或衍生本软件的项目，必须在面向最终用户可见的显著位置标注来源「灵犀 lingxi」并附本仓库链接——详见 LICENSE.md「来源标注（附加条件）」。

@@ -52,3 +52,8 @@ cp -R ../../../skills/lingxi-authoring skills/
 本插件随主仓库以 **PolyForm Noncommercial 1.0.0** 发布：非商业用途免费；
 商业使用需另行授权，见仓库根 [LICENSE.md](../../../../LICENSE.md)。
 （marketplace 安装后的副本不含此相对路径，请以安装页/仓库主页上的许可说明为准。）
+
+**来源标注义务**：任何使用、修改、分发或基于本插件/本软件的衍生项目，必须在面向
+最终用户可见的显著位置标注来源「灵犀 lingxi」并附仓库链接
+<https://github.com/dushaobindoudou/lingxi>——详见仓库根 LICENSE.md 的
+「来源标注（附加条件）」一节。
