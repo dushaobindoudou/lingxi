@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>灵犀 v5 · 动作预览</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #efe7dc; color: #3b3129;
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; overflow: hidden; }
+      #stage { position: absolute; inset: 0; }
+      #panel { position: absolute; top: 14px; left: 14px; z-index: 10; width: 248px;
+        background: rgba(255, 250, 244, 0.86); backdrop-filter: blur(8px); border-radius: 14px;
+        box-shadow: 0 6px 24px rgba(80, 60, 40, 0.15); padding: 14px; font-size: 13px; }
+      #panel h1 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+      .clips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
+      .clips button { font: inherit; font-size: 12px; padding: 7px 0; border-radius: 8px; cursor: pointer;
+        border: 1px solid #e0d2c2; background: #fffaf4; color: #3b3129; }
+      .clips button.on { background: #c9855a; border-color: #c9855a; color: #fff; }
+      .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+      .row span { width: 64px; flex: none; color: #7a6a5c; }
+      .row input[type=range] { flex: 1; }
+      .row output { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+      .toggles { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+      .toggles label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+      #play { width: 100%; font: inherit; padding: 7px; border-radius: 8px; border: none; cursor: pointer;
+        background: #3b3129; color: #fffaf4; margin-top: 4px; }
+      #status { margin-top: 10px; color: #7a6a5c; font-size: 12px; line-height: 1.5; white-space: pre-line; }
+      #loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: #7a6a5c; }
+      @media (max-width: 600px) { #panel { width: calc(100% - 60px); top: auto; bottom: 14px; } }
+    </style>
+    <script type="module" src="/src/v5-demo.ts"></script>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="loading">正在加载模型…</div>
+    <div id="panel">
+      <h1>灵犀 v5 · 动作预览</h1>
+      <div class="clips" id="clips"></div>
+      <button id="play">暂停</button>
+      <div class="row"><span>速度</span><input id="speed" type="range" min="0.1" max="2" step="0.05" value="1" /><output id="speedv">1.0</output></div>
+      <div class="row"><span>时间轴</span><input id="scrub" type="range" min="0" max="1" step="0.001" value="0" /><output id="scrubv">0%</output></div>
+      <div class="row"><span>毛发层数</span><input id="shells" type="range" min="0" max="32" step="1" value="20" /><output id="shellsv">20</output></div>
+      <div class="row"><span>毛长</span><input id="furlen" type="range" min="0.3" max="2" step="0.05" value="1" /><output id="furlenv">1.0</output></div>
+      <div class="toggles">
+        <label><input id="rotate" type="checkbox" /> 自动旋转</label>
+        <label><input id="loop" type="checkbox" checked /> 循环</label>
+        <label><input id="bones" type="checkbox" /> 显示骨骼</label>
+      </div>
+      <div id="status"></div>
+    </div>
+  </body>
+</html>

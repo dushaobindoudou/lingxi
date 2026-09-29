@@ -10,14 +10,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+import time
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
 
-def gaussian_blur(field: np.ndarray, sigma: float) -> np.ndarray:
-    """Small separable Gaussian, with reflected boundaries and no SciPy."""
+IMAGEGEN_SOURCES = Path(__file__).resolve().parents[2] / "assets/characters/lingxi/v5-imagegen-sources"
+IMAGEGEN_ALBEDOS = frozenset({"iris_albedo.png", "nose_skin.png", "ear_fur.png",
+                              "pad_skin.png", "tongue.png", "lid_skin.png",
+                              "mouth_dark.png"})
+IMAGEGEN_DATA = frozenset({"iris_bump.png", "nose_bump.png", "ear_bump.png",
+                           "pad_bump.png", "lid_bump.png", "tongue_bump.png",
+                           "iris_occlusion.png"})
+
+
+def gaussian_blur(field: np.ndarray, sigma: float,
+                  *, tileable: bool = False) -> np.ndarray:
+    """Small separable Gaussian; optionally wrap boundaries onto a torus."""
     radius = max(1, int(np.ceil(3 * sigma)))
     offsets = np.arange(-radius, radius + 1, dtype=np.float32)
     kernel = np.exp(-0.5 * (offsets / sigma) ** 2)
@@ -26,7 +38,7 @@ def gaussian_blur(field: np.ndarray, sigma: float) -> np.ndarray:
     for axis in (0, 1):
         pads = [(0, 0), (0, 0)]
         pads[axis] = (radius, radius)
-        padded = np.pad(result, pads, mode="reflect")
+        padded = np.pad(result, pads, mode="wrap" if tileable else "reflect")
         filtered = np.zeros_like(result)
         for i, weight in enumerate(kernel):
             selection = [slice(None), slice(None)]
@@ -73,6 +85,100 @@ def coordinates(size: int) -> tuple[np.ndarray, np.ndarray]:
     return np.meshgrid(u, 1 - u)
 
 
+def periodic_sample(grid: np.ndarray, x: np.ndarray,
+                    y: np.ndarray) -> np.ndarray:
+    """Smooth value noise at arbitrary lattice coordinates, modulo each axis.
+
+    Wrapping the neighbouring indices as well as the coordinates makes both
+    values and first derivatives continuous across the tile boundary.
+    """
+    x, y = x % grid.shape[1], y % grid.shape[0]
+    ix, iy = np.floor(x).astype(np.int32), np.floor(y).astype(np.int32)
+    tx, ty = x - ix, y - iy
+    tx, ty = tx * tx * (3 - 2 * tx), ty * ty * (3 - 2 * ty)
+    jx, jy = (ix + 1) % grid.shape[1], (iy + 1) % grid.shape[0]
+    top = grid[iy, ix] * (1 - tx) + grid[iy, jx] * tx
+    bottom = grid[jy, ix] * (1 - tx) + grid[jy, jx] * tx
+    return top * (1 - ty) + bottom * ty
+
+
+def periodic_fbm(shape: tuple[int, int], octaves: int, seed: int,
+                 cells: tuple[int, int]) -> np.ndarray:
+    """Fine, periodic counterpart of fbm; never use reflected resizing here."""
+    rng = np.random.default_rng(seed)
+    y, x = np.indices(shape, dtype=np.float64) + 0.5
+    result = np.zeros(shape, dtype=np.float32)
+    total = 0.0
+    for octave in range(octaves):
+        grid_shape = tuple(min(size, count * 2 ** octave)
+                           for size, count in zip(shape, cells))
+        grid = gaussian_blur(rng.standard_normal(grid_shape).astype(np.float32),
+                             0.7, tileable=True)
+        grid -= grid.mean()
+        grid /= max(float(grid.std()) * 2.8, 1e-6)
+        weight = 0.53 ** octave
+        result += weight * periodic_sample(
+            grid, x * grid_shape[1] / shape[1], y * grid_shape[0] / shape[0]
+        ).astype(np.float32)
+        total += weight
+    return np.clip(result / total, -1, 1)
+
+
+def test_periodic_sampling() -> float:
+    """Compare wrapped sampling with non-wrapped sampling of explicit tiles.
+
+    Probe both seams, corners and negative coordinates, including fractional
+    positions on either side. Opposite raster edge pixels are different pixel
+    centres, so their direct difference is not a continuity test.
+    """
+    rng = np.random.default_rng(7700)
+    grid = rng.standard_normal((19, 23))
+    xs = np.concatenate((rng.uniform(-1, 24, 128),
+                         [-0.001, 0, 0.001, 22.999, 23, 23.001]))
+    ys = np.concatenate((rng.uniform(-1, 20, 128),
+                         [-0.001, 0, 0.001, 18.999, 19, 19.001]))
+    x, y = np.meshgrid(xs, ys)
+    tiled = np.tile(grid, (3, 3))
+    # Independent reference: interior indices in a 3x3 image, no modulo.
+    rx, ry = x + 23, y + 19
+    ix, iy = np.floor(rx).astype(int), np.floor(ry).astype(int)
+    tx, ty = rx - ix, ry - iy
+    tx, ty = tx * tx * (3 - 2 * tx), ty * ty * (3 - 2 * ty)
+    reference = ((1 - ty) * ((1 - tx) * tiled[iy, ix]
+                             + tx * tiled[iy, ix + 1])
+                 + ty * ((1 - tx) * tiled[iy + 1, ix]
+                         + tx * tiled[iy + 1, ix + 1]))
+    actual = periodic_sample(grid, x, y)
+    error = float(np.max(np.abs(actual - reference)))
+    for dx, dy in ((23, 0), (0, 19), (-23, -19)):
+        error = max(error, float(np.max(np.abs(
+            actual - periodic_sample(grid, x + dx, y + dy)))))
+    if error > 1e-10:
+        raise AssertionError(f"Periodic sampling seam error: {error:.3e}")
+    return error
+
+
+def micro_skin_maps() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """UV-free skin micro-detail, with shared pore cavities in all three maps.
+
+    Features span only a few pixels; anisotropic noise suggests short hair
+    without long shafts or broad colour clouds. Sample all maps at the same
+    object/generated coordinate scale and use Non-Color data with Repeat.
+    """
+    shape = (1024, 1024)
+    fine = periodic_fbm(shape, 3, 7701, (192, 224))
+    grain = periodic_fbm(shape, 2, 7702, (96, 384))
+    pores = smoothstep(0.02, 0.60, -fine)
+    bump = 0.50 + 0.045 * fine - 0.085 * pores + 0.018 * grain
+    # Wrap blur, then average pixel-centred 2x2 footprints. Unlike a generic
+    # resize, this preserves the torus and aligns the 512px maps with bump.
+    cavities = gaussian_blur(pores, 0.8, tileable=True)
+    cavities = cavities.reshape(512, 2, 512, 2).mean(axis=(1, 3))
+    rough = 0.50 + 0.09 * (cavities - cavities.mean())
+    ao = 0.88 - 0.045 * (cavities - cavities.mean())
+    return bump, rough, ao
+
+
 def smoothstep(low: float, high: float, x: np.ndarray) -> np.ndarray:
     t = np.clip((x - low) / (high - low), 0, 1)
     return t * t * (3 - 2 * t)
@@ -103,7 +209,7 @@ def radial_fibres(radius: np.ndarray, theta: np.ndarray,
     """Unequal bundles of bent, branching collagen fibres."""
     bent = theta + 0.035 * warp + 0.025 * np.sin(theta * 7 + radius * 19)
     fibres = np.zeros_like(radius)
-    for count, weight in ((160, 0.43), (330, 0.34), (710, 0.23)):
+    for count, weight in ((72, 0.56), (144, 0.29), (288, 0.15)):
         profile = angular_noise(bent + 0.014 * np.sin(radius * 31 + theta * 9),
                                 count, rng)
         # Narrow ridges and broader troughs create varied fibre widths.
@@ -123,21 +229,21 @@ def iris_maps() -> tuple[np.ndarray, np.ndarray]:
     angular = angular_noise(theta, 43, rng)
     warped_r = radius + 0.008 * angular + 0.006 * clouds
     fibres = radial_fibres(radius, theta, rng, clouds)
-    base = mix(colour("c08a3a"), colour("9aa63f"),
-               smoothstep(0.23, 0.36, warped_r))
-    base = mix(base, colour("7fa05a"), smoothstep(0.35, 0.49, warped_r))
-    collarette_r = 0.329 + 0.010 * angular_noise(theta, 61, rng) + 0.008 * clouds
+    base = mix(colour("c99339"), colour("d6b34a"),
+               smoothstep(0.18, 0.23, warped_r))
+    base = mix(base, colour("738e49"), smoothstep(0.25, 0.43, warped_r))
+    collarette_r = 0.215 + 0.010 * angular_noise(theta, 61, rng) + 0.008 * clouds
     collarette = np.exp(-((radius - collarette_r) / 0.012) ** 2)
-    limbus = smoothstep(0.467, 0.505, warped_r)
+    limbus = smoothstep(0.435, 0.49, warped_r)
     grain = rng.normal(0, 0.006, radius.shape).astype(np.float32)
     variation = 0.13 * fibres + 0.023 * clouds + grain
     base += variation[..., None] * np.array([1.0, 0.91, 0.66])
-    base -= collarette[..., None] * np.array([0.095, 0.092, 0.048])
-    base -= limbus[..., None] * np.array([0.055, 0.065, 0.035])
-    pupil_r = 0.20 + 0.0025 * angular_noise(theta, 73, rng)
+    base += collarette[..., None] * np.array([0.12, 0.095, 0.025])
+    base = mix(base, colour("211d19"), 0.86 * limbus)
+    pupil_r = 0.09 + 0.0025 * angular_noise(theta, 73, rng)
     pupil_edge = np.exp(-((radius - pupil_r - 0.006) / 0.007) ** 2)
     base -= pupil_edge[..., None] * np.array([0.09, 0.07, 0.045])
-    pupil = colour("252522") + (0.005 * clouds + grain * 0.25)[..., None]
+    pupil = np.zeros(3, dtype=np.float32)
     visible_iris = smoothstep(-0.003, 0.007, radius - pupil_r)
     base = mix(pupil, base, visible_iris)
     # Opaque bleed outside the disk prevents pale/transparent filtering seams.
@@ -146,6 +252,28 @@ def iris_maps() -> tuple[np.ndarray, np.ndarray]:
                                   - 0.035 * collarette - 0.018 * pupil_edge)
     height += grain * 0.8
     return rgba, resize(np.clip(height, 0.35, 0.65), (512, 512))
+
+
+def iris_occlusion_map() -> np.ndarray:
+    u, v = coordinates(512)
+    radius = np.hypot(u - .5, v - .5)
+    edge = smoothstep(.31, .5, radius)
+    upper = smoothstep(.5, .95, v)
+    return np.clip(1 - edge * (.48 + .11 * upper) - .10 * upper, .41, 1)
+
+
+def lid_maps() -> tuple[np.ndarray, np.ndarray]:
+    # The U coordinate follows the eyelid arc; repeatable noise has no end seam.
+    shape = (512, 1024)
+    v = (1 - (np.arange(512, dtype=np.float32) + .5) / 512)[:, None]
+    pores = periodic_fbm(shape, 3, 7703, (85, 150))
+    fine = periodic_fbm(shape, 2, 7704, (180, 235))
+    liner = 1 - smoothstep(.015, .095, v)
+    skin = colour("d5b9a1") + (0.022 * pores + 0.008 * fine)[..., None]
+    skin = mix(skin, colour("49372f"), np.broadcast_to(.83 * liner, shape))
+    groove = np.exp(-((v - .075) / .025) ** 2)
+    bump = .5 + .028 * pores + .01 * fine - .055 * groove
+    return skin, resize(bump, (512, 512))
 
 
 def ear_maps() -> tuple[np.ndarray, np.ndarray]:
@@ -206,18 +334,18 @@ def nose_maps() -> tuple[np.ndarray, np.ndarray]:
     base += ridge[..., None] * np.array([0.047, 0.039, 0.032])
     # Broad soft slits, tilted toward the centre, without hard ink-like edges.
     nostrils = np.zeros_like(u)
-    for centre, tilt in ((0.255, -0.35), (0.745, 0.35)):
+    for centre, tilt in ((0.32, -0.35), (0.68, 0.35)):
         x = u - centre
-        y = v - 0.39 - tilt * x
+        y = v - 0.50 - tilt * x
         nostrils += np.exp(-0.5 * ((x / 0.074) ** 2 + (y / 0.020) ** 2))
     base = mix(base, colour("694346"), np.clip(nostrils * 0.79, 0, 1))
-    return base, 0.50 + 0.19 * leather + grain * 0.65
+    return base, 0.50 + 0.12 * leather + grain * 0.65 - .25 * np.clip(nostrils, 0, 1)
 
 
 def pad_maps() -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(4401)
     u, v = coordinates(512)
-    velvet = gaussian_blur(rng.standard_normal(u.shape).astype(np.float32), 0.65)
+    velvet = pebbles(u.shape, 5.0, 4403)
     clouds = fbm(u.shape, 5, 4402)
     centre = np.exp(-((u - 0.48) ** 2 + (v - 0.55) ** 2) / 0.15)
     grain = rng.normal(0, 0.005, u.shape).astype(np.float32)
@@ -234,14 +362,23 @@ def tongue_map() -> np.ndarray:
     grain = rng.normal(0, 0.004, u.shape).astype(np.float32)
     base = colour("c0656b") + (0.026 * clouds + 0.085 * papillae + grain)[..., None]
     base -= ((1 - v) ** 2)[..., None] * np.array([0.058, 0.032, 0.027])
+    base += v[..., None] * np.array([.035, .018, .015])
+    base -= np.exp(-((u - .5) / .035) ** 2)[..., None] * np.array([.034, .021, .019])
     # Gentle pale papilla tips suggest moisture, without fixed specular glints.
     base += np.maximum(papillae - 0.22, 0)[..., None] * np.array([0.06, 0.042, 0.04])
     return base
 
 
+def tongue_bump_map() -> np.ndarray:
+    u, _ = coordinates(512)
+    papillae = pebbles(u.shape, 6.0, 5502)
+    groove = np.exp(-((u - .5) / .035) ** 2)
+    return .5 + .09 * papillae - .045 * groove
+
+
 def mouth_map() -> np.ndarray:
     rng = np.random.default_rng(6601)
-    clouds = fbm((256, 256), 4, 6602)
+    clouds = fbm((512, 512), 4, 6602)
     patches = smoothstep(-0.55, 0.55, clouds)
     grain = rng.normal(0, 0.004, clouds.shape).astype(np.float32)
     return colour("3a1416") - patches[..., None] * np.array([0.047, 0.020, 0.017]) + grain[..., None]
@@ -255,24 +392,86 @@ def save(img_array: np.ndarray, path: Path) -> dict[str, str | int]:
             "width": image.width, "height": image.height}
 
 
+def close_raster_seam(field: np.ndarray, *, horizontal: bool = True,
+                      vertical: bool = True) -> np.ndarray:
+    """Match endpoint texels as well as continuous periodic sampler values."""
+    field = field.copy()
+    if horizontal:
+        edge = (field[:, 0] + field[:, -1]) * .5
+        field[:, 0] = edge
+        field[:, -1] = edge
+    if vertical:
+        edge = (field[0] + field[-1]) * .5
+        field[0] = edge
+        field[-1] = edge
+    return field
+
+
+def imagegen_texture(name: str, shape: tuple[int, ...]) -> np.ndarray | None:
+    """Bake checked-in image-tool artwork to exact UV dimensions offline."""
+    source = IMAGEGEN_SOURCES / name
+    if name not in IMAGEGEN_ALBEDOS | IMAGEGEN_DATA or not source.is_file():
+        return None
+    with Image.open(source) as image:
+        image = image.convert("RGBA")
+        # Flatten image-tool alpha before resampling, so PNG edges cannot darken.
+        matte = (128, 128, 128, 255) if name in IMAGEGEN_DATA else (160, 135, 115, 255)
+        background = Image.new("RGBA", image.size, matte)
+        image = Image.alpha_composite(background, image).convert("RGB")
+        image = image.resize((shape[1], shape[0]), Image.Resampling.LANCZOS)
+        pixels = np.asarray(image, dtype=np.float32) / 255
+    if name in IMAGEGEN_DATA:
+        gray = pixels.mean(axis=2)
+        if name == "iris_occlusion.png":
+            # The image establishes the spatial shading; bound the mask's
+            # endpoints to the numeric contact-shadow contract.
+            low, high = np.percentile(gray, (2, 99.9))
+            gray = np.clip((gray - low) / max(high - low, 1e-6), 0, 1)
+            gray = .45 + .55 * gray
+            gray[shape[0] // 2, shape[1] // 2] = 1
+        else:
+            gray = np.clip(.5 + .36 * (gray - gray.mean()), .35, .65)
+        pixels = gray
+    return pixels
+
+
 def main() -> None:
+    started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path,
                         default=Path("assets/characters/lingxi/v5/textures"))
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+    seam_error = test_periodic_sampling()
+    print(f"Periodic sampling seam error (wrapped vs non-wrapped): {seam_error:.3e}",
+          file=sys.stderr)
     written = []
     for names, generator in (
         (("iris_albedo.png", "iris_bump.png"), iris_maps),
+        (("lid_skin.png", "lid_bump.png"), lid_maps),
         (("ear_fur.png", "ear_bump.png"), ear_maps),
         (("nose_skin.png", "nose_bump.png"), nose_maps),
         (("pad_skin.png", "pad_bump.png"), pad_maps),
+        (("micro_skin_bump.png", "micro_skin_rough.png", "coat_soft_ao.png"),
+         micro_skin_maps),
     ):
         for name, pixels in zip(names, generator()):
+            painted = imagegen_texture(name, pixels.shape)
+            if painted is not None:
+                pixels = painted
+            if name in ("micro_skin_bump.png", "micro_skin_rough.png", "coat_soft_ao.png"):
+                pixels = close_raster_seam(pixels)
+            elif name in ("lid_skin.png", "lid_bump.png"):
+                pixels = close_raster_seam(pixels, vertical=False)
             written.append(save(pixels, args.out / name))
-    written.append(save(tongue_map(), args.out / "tongue.png"))
-    written.append(save(mouth_map(), args.out / "mouth_dark.png"))
-    print(json.dumps({"files": written}, separators=(",", ":")))
+    for name, generated in (("tongue.png", tongue_map()),
+                            ("tongue_bump.png", tongue_bump_map()),
+                            ("mouth_dark.png", mouth_map()),
+                            ("iris_occlusion.png", iris_occlusion_map())):
+        painted = imagegen_texture(name, generated.shape)
+        written.append(save(generated if painted is None else painted, args.out / name))
+    print(json.dumps({"written": len(written), "runtime_s": round(time.perf_counter()-started, 3),
+                      "seam_max": seam_error}, separators=(",", ":")))
 
 
 if __name__ == "__main__":

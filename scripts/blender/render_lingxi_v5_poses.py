@@ -1,9 +1,9 @@
-import bpy, json, math
+import bpy, json, os, math
 from pathlib import Path
 from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / 'assets/characters/lingxi/v5'
+OUT = Path(os.environ.get('LINGXI_OUT', ROOT / 'assets/characters/lingxi/v5'))
 POSES = OUT / 'poses'
 POSES.mkdir(exist_ok=True)
 scene = bpy.context.scene
@@ -11,6 +11,9 @@ scene.render.resolution_x = scene.render.resolution_y = 480
 scene.cycles.samples = 12
 camera = scene.camera
 camera.data.type = 'ORTHO'
+# The portrait camera's depth of field is focused for the portrait's distance; carried over to
+# these per-pose framings it put every cat out of focus. A review sheet has to be sharp.
+camera.data.dof.use_dof = False
 rig = next(o for o in scene.objects if o.type == 'ARMATURE')
 
 def frame_character():

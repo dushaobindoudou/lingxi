@@ -1,9 +1,10 @@
 """Build a labeled contact sheet from the v5 pose-review renders."""
+import os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
-POSES = ROOT / "assets/characters/lingxi/v5/poses"
+POSES = Path(os.environ.get("LINGXI_OUT", ROOT / "assets/characters/lingxi/v5")) / "poses"
 NAMES = [
     "Idle", "Walk", "Run", "Jump", "LieDown", "SideLie", "Sleep", "Curious",
     "Happy", "Yawn", "Lick", "Bite", "Knead", "Stretch", "PawPlay",

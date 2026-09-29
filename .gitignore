@@ -41,3 +41,6 @@ previews/
 
 # Independent private Sites checkout; source is versioned by Sites.
 previews/threejs/
+
+# v5 look-dev export for the three.js preview (rebuilt by scripts/blender/export_lingxi_v5_glb.py)
+apps/lingxi/public/v5/
