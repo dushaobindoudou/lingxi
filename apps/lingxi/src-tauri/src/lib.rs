@@ -3848,7 +3848,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                 .or_else(|| normalize_codex_notify_event(&raw, seq))
                                 .unwrap_or_else(|| normalize_claude_hook_event(&raw, seq));
                             // An event nothing can act on must not displace one that matters.
-                            // The buffer holds 500 and is the only history there is, so anything
+                            // The buffer holds CLAUDE_TASK_EVENT_CAP and is the only history there is, so anything
                             // on the loopback interface could previously flush the real record
                             // out of it by posting `{}` in a loop. 200 still means "received",
                             // as before - it just is not also "recorded".
