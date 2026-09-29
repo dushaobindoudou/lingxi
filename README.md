@@ -1,3 +1,7 @@
+**中文** · [English](README.en.md)
+
+[![CI](https://github.com/dushaobindoudou/lingxi/actions/workflows/ci.yml/badge.svg)](https://github.com/dushaobindoudou/lingxi/actions/workflows/ci.yml)
+
 # 灵犀 Lingxi
 
 > 你忙你的，我在这里。
@@ -189,6 +193,7 @@ cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
 | 入口 | 内容 |
 | --- | --- |
 | [**文档分层索引**](docs/README.md) | 哪份文档描述现在，哪份只是记录当时 |
+| [English docs](docs/en/README.md) | 同一套文档的英文译本。中文是原文 |
 | [接入 Agent 的完整规范](docs/19-agent-integration.md) | **写接入先看这个**：词汇表、优先级、定制、自证生效 |
 | [技术架构](docs/05-technical-architecture.md) | 三层分工与契约 |
 | [行为系统](docs/04-life-engine.md) | 纯状态机的行为设计 |
@@ -203,6 +208,10 @@ cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test
 
 ---
 
+## 社区
+
+[参与开发](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [行为准则](CODE_OF_CONDUCT.md) · [更新日志](CHANGELOG.md)
+
 ## 许可
 
-见 [LICENSE.md](LICENSE.md)。
+见 [LICENSE.md](LICENSE.md)。以 **PolyForm Noncommercial 1.0.0** 发布：非商业用途（个人学习、爱好项目、公益与科研机构等）免费使用、修改与分发；**商业使用需另行获得商业授权**（联系方式见 LICENSE.md）。

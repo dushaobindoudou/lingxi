@@ -46,3 +46,9 @@ cp -R ../../../skills/lingxi-authoring skills/
 
 改了 `adapters/lingxi-emit.mjs` 或 `integrations/skills/` 之后跑一遍，再 bump
 `plugin.json` 与 `marketplace.json` 的版本号。
+
+## 许可
+
+本插件随主仓库以 **PolyForm Noncommercial 1.0.0** 发布：非商业用途免费；
+商业使用需另行授权，见仓库根 [LICENSE.md](../../../../LICENSE.md)。
+（marketplace 安装后的副本不含此相对路径，请以安装页/仓库主页上的许可说明为准。）
