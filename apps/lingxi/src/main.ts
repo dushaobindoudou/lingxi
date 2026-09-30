@@ -10,6 +10,7 @@ import './styles.css';
 import { createTauriDesktopHost } from './desktop-host.ts';
 import { createThreeRenderer } from './renderer.ts';
 import { createStageFx } from './fx/stage-fx.ts';
+import { agentLook } from './ui/icons.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
 import { createLifeEngine, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
@@ -372,10 +373,27 @@ async function main() {
   // the cat: a mark pinned to the body is a HUD with no natural moment to leave, while a bubble
   // already has one. Arrives before the `say` that follows it, because the Rust side claims the
   // stage before it applies the rest of the command.
-  void listen<{ name: string; badge: string; logo: string | null; color: string }>('agent-stage', (event) => {
-    const { name, badge, logo, color } = event.payload;
-    fx.setBubbleAttribution(logo || badge ? { name, badge, logo, color } : null);
-  });
+  //
+  // A known host (Claude Code, Codex, ...) always shows the mark this app ships for it - the
+  // same one 主界面 shows - and a session name, when the event carries one, is what the bubble
+  // says: "which Claude" is the question when several sessions are open.
+  void listen<{ agent: string; name: string; label?: string | null; badge: string; logo: string | null; color: string }>(
+    'agent-stage',
+    (event) => {
+      const { agent, name, label, badge, logo, color } = event.payload;
+      // The same rule 主界面 uses (ui/icons.ts agentLook), so an agent's icon on the cat and in
+      // the main window can never differ.
+      const look = agentLook({ id: agent, name, badge, logo, color });
+      fx.setBubbleAttribution({
+        name: label || look.name,
+        title: label ? `${look.name} · ${label}` : look.name,
+        badge: look.badge,
+        logo: null,
+        markUrl: look.src ?? undefined,
+        color: look.chip,
+      });
+    },
+  );
 
   void listen('reload-custom-assets', () => {
     void loadCustomAssets().then(() => {

@@ -521,11 +521,11 @@ export const ASSETS_README = `# 灵犀 · 自定义资源
   "text": "#f0e6ff",
   "accentText": "#c9b6ff",
   "border": "#8f7fd8",
-  "borderWidth": 3,
+  "borderWidth": 1,
   "radius": 20,
   "fontFamily": "\"LXGW WenKai\", \"PingFang SC\", sans-serif",
-  "fontSize": 16,
-  "fontWeight": 500,
+  "fontSize": 13,
+  "fontWeight": 400,
   "shape": "round",
   "shadow": true
 }

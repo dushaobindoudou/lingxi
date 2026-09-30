@@ -10,6 +10,16 @@
 //
 // Every effect cleans itself up on animationend, so nothing accumulates across a long session.
 
+/** Who a speech bubble speaks for - see StageFx.setBubbleAttribution. */
+export interface BubbleAttribution {
+  name: string;
+  title?: string;
+  badge?: string;
+  logo?: string | null;
+  markUrl?: string;
+  color?: string;
+}
+
 export interface StageFx {
   mount(container: HTMLElement): void;
   /** Three tapered scratch marks, as if clawed into the screen at this point. */
@@ -63,8 +73,12 @@ export interface StageFx {
    * rendered through an <img>, never inlined into the DOM, because an <img> cannot run script or
    * fetch anything external no matter what the markup says. That is the browser's own guarantee
    * and it is worth more than any sanitiser we could write.
+   *
+   * `markUrl` is the app's own bundled mark for a known host (ui/icons.ts), used when the agent
+   * supplied no logo. `name` is the visible text - the session name when there is one - and
+   * `title` the fuller hover text ("Claude Code · 会话名").
    */
-  setBubbleAttribution(attribution: { name: string; badge?: string; logo?: string | null; color?: string } | null): void;
+  setBubbleAttribution(attribution: BubbleAttribution | null): void;
   /** True while a bubble is showing - the host uses it to skip the anchor work otherwise. */
   readonly speaking: boolean;
   /** Take any bubble down immediately. */
@@ -99,14 +113,16 @@ export interface BubbleStyle {
 
 export const DEFAULT_BUBBLE_STYLE: BubbleStyle = {
   background: '#fffdf8',
-  text: '#2f2a33',
-  accentText: '#675666',
-  border: '#2f2a33',
-  borderWidth: 2.5,
-  radius: 16,
+  // Softer than ink: a warm dark grey reads gentle at small sizes, and the hairline border
+  // keeps the bubble present without a heavy comic outline.
+  text: '#4a4149',
+  accentText: '#8c7b6b',
+  border: 'rgba(47, 42, 51, 0.3)',
+  borderWidth: 1,
+  radius: 18,
   fontFamily: '"PingFang SC", "Hiragino Sans GB", system-ui, sans-serif',
-  fontSize: 15,
-  fontWeight: 600,
+  fontSize: 13,
+  fontWeight: 500,
   shape: 'round',
   shadow: true,
 };
@@ -206,7 +222,7 @@ const CSS = `
   width: max-content;
   max-width: min(280px, calc(100% - 24px));
   box-sizing: border-box;
-  padding: 10px 14px;
+  padding: 9px 15px;
   border-radius: var(--bubble-radius);
   border: var(--bubble-border-width) solid var(--bubble-border);
   background: var(--bubble-bg);
@@ -214,7 +230,8 @@ const CSS = `
   font-family: var(--bubble-font);
   font-size: var(--bubble-size);
   font-weight: var(--bubble-weight);
-  line-height: 1.45;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
   text-align: left;
   white-space: pre-wrap;
   word-break: normal;
@@ -222,7 +239,7 @@ const CSS = `
   max-height: calc(100% - 24px);
   overflow: auto;
   box-shadow: var(--bubble-shadow);
-  animation: lingxi-bubble-in 240ms cubic-bezier(.2,1.5,.4,1) forwards;
+  animation: lingxi-bubble-in 260ms cubic-bezier(.22,1,.36,1) forwards;
   transform-origin: 50% 100%;
 }
 /* The tail. A rotated square rather than a triangle so it inherits the same border and
@@ -297,11 +314,12 @@ const CSS = `
 .lingxi-bubble-source {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 5px;
+  gap: 6px;
+  margin-bottom: 4px;
   color: var(--bubble-accent-text);
-  font-size: .78em;
-  font-weight: 700;
+  font-size: .82em;
+  font-weight: 600;
+  letter-spacing: .02em;
   line-height: 1.2;
 }
 .lingxi-bubble-source-name {
@@ -311,8 +329,8 @@ const CSS = `
 }
 .lingxi-bubble-body.short { text-align: center; }
 .lingxi-bubble-mark {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex: none;
   border-radius: 6px;
   object-fit: contain;
@@ -322,8 +340,8 @@ const CSS = `
   pointer-events: none;
 }
 .lingxi-bubble-badge {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex: none;
   border-radius: 6px;
   display: grid;
@@ -335,12 +353,12 @@ const CSS = `
   pointer-events: none;
 }
 @keyframes lingxi-bubble-in {
-  0%   { opacity: 0; transform: translate(-50%, var(--bubble-y, -100%)) scale(.5); }
+  0%   { opacity: 0; transform: translate(-50%, var(--bubble-y, -100%)) scale(.92); }
   100% { opacity: 1; transform: translate(-50%, var(--bubble-y, -100%)) scale(1); }
 }
 @keyframes lingxi-bubble-out {
   0%   { opacity: 1; transform: translate(-50%, var(--bubble-y, -100%)) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, calc(var(--bubble-y, -100%) - 12%)) scale(.86); }
+  100% { opacity: 0; transform: translate(-50%, calc(var(--bubble-y, -100%) - 8%)) scale(.94); }
 }
 .lingxi-fx-shaking { animation: lingxi-shake var(--dur) cubic-bezier(.36,.07,.19,.97); }
 @keyframes lingxi-shake {
@@ -365,10 +383,14 @@ function ensureStyles() {
 
 const HEART_GLYPHS = ['💗', '💖', '❤️', '💕', '💞'];
 
+/** How long a set attribution waits for its bubble before it is dropped unused. */
+const ATTRIBUTION_TTL_MS = 3000;
+
 export function createStageFx(): StageFx {
   let layer: HTMLDivElement | null = null;
   /** Who the next bubble speaks for, or null for the cat speaking as itself. */
-  let attribution: { name: string; badge?: string; logo?: string | null; color?: string } | null = null;
+  let attribution: BubbleAttribution | null = null;
+  let attributionAt = 0;
   let shakeTarget: HTMLElement | null = null;
   let bubbleStyle: BubbleStyle = { ...DEFAULT_BUBBLE_STYLE };
   let bubble: HTMLDivElement | null = null;
@@ -579,6 +601,7 @@ export function createStageFx(): StageFx {
 
     setBubbleAttribution(next) {
       attribution = next;
+      attributionAt = performance.now();
     },
 
     say(text, durationMs) {
@@ -599,14 +622,24 @@ export function createStageFx(): StageFx {
       node.style.setProperty('--bubble-font', bubbleStyle.fontFamily);
       node.style.setProperty('--bubble-size', `${bubbleStyle.fontSize}px`);
       node.style.setProperty('--bubble-weight', String(bubbleStyle.fontWeight));
+      // The hard offset shadow is comic-book depth - right for a shout (spiky), too loud for a
+      // quiet line. Soft shapes get a diffuse lift instead.
       node.style.setProperty(
         '--bubble-shadow',
-        bubbleStyle.shadow ? '0 6px 0 rgba(47, 42, 51, 0.18), 0 10px 22px rgba(0, 0, 0, 0.28)' : 'none',
+        !bubbleStyle.shadow
+          ? 'none'
+          : bubbleStyle.shape === 'spiky'
+            ? '0 6px 0 rgba(47, 42, 51, 0.18), 0 10px 22px rgba(0, 0, 0, 0.28)'
+            : '0 2px 6px rgba(47, 42, 51, 0.07), 0 14px 32px rgba(47, 42, 51, 0.13)',
       );
       const body = document.createElement('div');
       body.className = `lingxi-bubble-body${trimmed.length <= 12 && !trimmed.includes('\n') ? ' short' : ''}`;
       body.textContent = trimmed;
-      const source = attribution;
+      // Attribution is for the ONE bubble it was set for, which arrives right behind it. It used
+      // to stick: after any agent spoke once, every later bubble - a reminder, the cat's own
+      // line when petted - wore that agent's mark and session name.
+      const source = attribution && performance.now() - attributionAt < ATTRIBUTION_TTL_MS ? attribution : null;
+      attribution = null;
       const sourceRow = source ? document.createElement('div') : null;
       if (sourceRow) sourceRow.className = 'lingxi-bubble-source';
       const makeBadge = () => {
@@ -618,16 +651,21 @@ export function createStageFx(): StageFx {
         if (source.color) fallback.style.setProperty('--mark-color', source.color);
         return fallback;
       };
-      if (source?.logo) {
+      // The agent's own logo wins; a known host without one falls back to the mark the app
+      // ships for it (a bundled asset URL, not agent-supplied markup).
+      const markSrc = source?.logo
+        ? source.logo.startsWith('data:')
+          ? source.logo
+          : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source.logo)}`
+        : source?.markUrl;
+      if (source && markSrc) {
         // <img> rather than inline markup, deliberately: an <img> is a hard sandbox for SVG -
         // no script, no external fetches - so an agent-generated document cannot reach anything.
         const mark = document.createElement('img');
         mark.className = 'lingxi-bubble-mark';
         mark.alt = source.name;
-        mark.title = source.name;
-        mark.src = source.logo.startsWith('data:')
-          ? source.logo
-          : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source.logo)}`;
+        mark.title = source.title ?? source.name;
+        mark.src = markSrc;
         if (source.color) mark.style.setProperty('--mark-color', source.color);
         // Fall back to the short registered badge if a supplied image cannot be decoded.
         mark.addEventListener('error', () => {
@@ -643,6 +681,7 @@ export function createStageFx(): StageFx {
         const name = document.createElement('span');
         name.className = 'lingxi-bubble-source-name';
         name.textContent = source.name;
+        if (source.title) name.title = source.title;
         sourceRow.append(name);
         node.append(sourceRow);
       }

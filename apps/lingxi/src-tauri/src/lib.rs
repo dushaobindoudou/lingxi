@@ -120,6 +120,11 @@ const KNOWN_TOYS: [&str; 3] = ["yarn", "feather", "laser"];
 /// owns the actual choreography.
 const KNOWN_PERFORMANCES: [&str; 3] = ["angry-claw", "kiss-rush", "zoomies"];
 
+/// The tray's 玩具 and 特效 submenus: every known id with the name 主界面 gives it. A test keeps
+/// these in step with KNOWN_TOYS / KNOWN_PERFORMANCES, so a new toy cannot be missing here.
+const TRAY_TOYS: [(&str, &str); 3] = [("yarn", "毛线球"), ("feather", "逗猫棒"), ("laser", "激光笔")];
+const TRAY_EFFECTS: [(&str, &str); 3] = [("angry-claw", "愤怒抓屏"), ("kiss-rush", "飞奔亲亲"), ("zoomies", "半夜暴走")];
+
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
 /// stand-in for avoidRadius (and, later, wander speed/rate) until per-trait tuning exists.
 /// Values are the doc's own numbers - "安静档 avoidRadius≈猫身+40px，均衡 100px，活泼
@@ -337,7 +342,7 @@ impl TrayState {
                 let _ = window.hide();
             }
         }
-        let _ = self.toggle_visibility.set_text(if next_visible { "隐藏" } else { "显示" });
+        let _ = self.toggle_visibility.set_text(if next_visible { "隐藏猫咪" } else { "显示猫咪" });
         let _ = app.emit("companion-visibility", next_visible);
         self.persist();
     }
@@ -655,6 +660,37 @@ struct TaskEvent {
     /// 0..1 when the agent knows it. Absent for work with no measurable progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     progress: Option<f64>,
+    /// The host's long-lived session this event belongs to (a Claude Code session id). When
+    /// set, the activity map keeps one row per SESSION instead of one per tool: several sessions
+    /// of the same tool routinely run side by side, and "which one is asking" is the question.
+    #[serde(skip)]
+    session: Option<String>,
+    /// A human name for that session - Claude Code's own title for it, else the project folder.
+    /// Display only: it rides to the bubble and the 主界面 rows, and is deliberately NOT
+    /// serialized, so it never reaches a notification sink or the event log (docs/09: the cat
+    /// does not collect what the work is about).
+    #[serde(skip)]
+    label: Option<String>,
+    /// True when `label` is only the project folder - the fallback. A session's real title, once
+    /// known, is never replaced by it (events without a title in their payload fall back).
+    #[serde(skip)]
+    label_is_folder: bool,
+    /// What this turn came to, in one bubble-sized line, taken from the host's own words (Claude
+    /// Code's `last_assistant_message`). It is what makes the cat's line about THIS task rather
+    /// than "本轮回复结束".
+    ///
+    /// Perceived, not collected: it is used for the reaction and the live 主界面 row, and is
+    /// never serialized - so it is never written to the event log or the task-event trail on
+    /// disk, and never sent to a notification sink. `summary` stays content-free for that reason.
+    #[serde(skip)]
+    result: Option<String>,
+    /// A host's delayed restatement of a wait it may already have announced - Claude Code's
+    /// Notification fires 6s after a permission dialog it has ALREADY reported through
+    /// PermissionRequest, and 60s after a turn that already ended on a question. When the
+    /// session's row is already in that same waiting state, an echo updates nothing and says
+    /// nothing (see react_to_task_event).
+    #[serde(skip)]
+    echo: bool,
 }
 
 /// docs/09's verified Claude Code hooks path, fed by POST /task-event (see
@@ -757,6 +793,10 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
         .map(|p| p.clamp(0.0, 1.0));
     let summary = raw.get("summary").and_then(|v| v.as_str()).unwrap_or("");
     let observed_at = now_millis();
+    let result_text = raw.get("result").and_then(|v| v.as_str());
+    // A chat turn whose own words end on a question is waiting on the user, whoever reports it.
+    let question = (state == "completed" && kind == "chat").then(|| result_text.and_then(closing_question)).flatten();
+    let state = if question.is_some() { "needs_input" } else { state };
     Some(TaskEvent {
         schema_version: 1,
         provider: provider.chars().take(64).collect(),
@@ -774,7 +814,18 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
         kind: kind.to_string(),
         mood: mood.to_string(),
         progress,
+        session: bounded_str(raw.get("session"), 128),
+        label: bounded_str(raw.get("label"), SESSION_LABEL_MAX_CHARS),
+        result: question.or_else(|| result_text.and_then(turn_line)),
+        echo: false,
+        label_is_folder: false,
     })
+}
+
+/// A trimmed, non-empty string field capped at `max` characters, or None.
+fn bounded_str(value: Option<&serde_json::Value>, max: usize) -> Option<String> {
+    let text: String = value?.as_str()?.trim().chars().take(max).collect();
+    (!text.is_empty()).then_some(text)
 }
 
 /// Codex's `notify` payload -> a task event, or None if this is not one.
@@ -846,11 +897,244 @@ fn normalize_codex_notify_event(raw: &serde_json::Value, sequence: u64) -> Optio
         kind: "chat".to_string(),
         mood: "focused".to_string(),
         progress: None,
+        session: None,
+        label: None,
+        result: None,
+        echo: false,
+        label_is_folder: false,
     })
 }
 
+/// Longest session name shown on the bubble / 主界面 row, in characters.
+const SESSION_LABEL_MAX_CHARS: usize = 40;
+
+/// How much of a transcript's tail is read for its title. Claude Code re-appends its session
+/// metadata (`ai-title`, `custom-title`, `last-prompt`) after every turn, so the newest copy is
+/// always near the end; reading the whole file would cost megabytes per hook on a long session.
+const TRANSCRIPT_TAIL_BYTES: u64 = 512 * 1024;
+
+/// One bubble-sized line from a host's final message: its first sentence of prose, with the
+/// markdown taken off, cut at a clause boundary when it is too long to read in one go.
+///
+/// Claude's replies lead with the conclusion more often than not ("新版已经装好了，…"), so the
+/// first sentence is usually the result. Code blocks, tables, headings and horizontal rules are
+/// skipped: none of them reads as a line a cat could say.
+fn turn_line(text: &str) -> Option<String> {
+    prose_lines(text)
+        .iter()
+        .map(|line| first_sentence(line))
+        .find(|sentence| sentence.chars().count() >= 4)
+        .map(|sentence| fit_bubble(&sentence))
+}
+
+/// The question a reply ENDS on, if it ends on one - "要按折中方案做吗？". A turn that closes by
+/// asking the user something is not finished, it is waiting; announcing it as "done" is how the
+/// question gets missed. Only the last two lines of prose are looked at: a question asked
+/// earlier and then answered in the same reply is not a question to the user.
+fn closing_question(text: &str) -> Option<String> {
+    let lines = prose_lines(text);
+    for line in lines.iter().rev().take(2) {
+        let mut sentences: Vec<String> = Vec::new();
+        let mut current = String::new();
+        for c in line.chars() {
+            current.push(c);
+            if "。！？!?".contains(c) {
+                sentences.push(std::mem::take(&mut current));
+            }
+        }
+        if !current.trim().is_empty() {
+            sentences.push(current);
+        }
+        // The last sentence of the line decides: a question followed by more prose is rhetoric.
+        let Some(last) = sentences.last().map(|s| s.trim().to_string()) else { continue };
+        if last.ends_with('？') || last.ends_with('?') {
+            let bare = drop_asides(&last);
+            return (bare.chars().count() >= 3).then(|| bubble_line(&bare));
+        }
+        return None;
+    }
+    None
+}
+
+/// A reply's lines of prose, markdown taken off: code blocks, tables, headings and rules are
+/// skipped (none of them reads as something a cat could say), list markers and quotes are
+/// stripped, and inline emphasis/code/links are reduced to their text.
+fn prose_lines(text: &str) -> Vec<String> {
+    let mut in_fence = false;
+    let mut out = Vec::new();
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence || line.is_empty() || line.starts_with('|') || line.starts_with('#') || line.chars().all(|c| "-*_= ".contains(c)) {
+            continue;
+        }
+        let mut line = line.trim_start_matches(['>', ' ']).to_string();
+        for marker in ["- ", "* ", "+ "] {
+            if let Some(rest) = line.strip_prefix(marker) {
+                line = rest.to_string();
+            }
+        }
+        if let Some((number, rest)) = line.split_once(". ") {
+            if !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()) {
+                line = rest.to_string();
+            }
+        }
+        let mut plain = String::new();
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '*' | '`' | '_' if c != '_' || plain.ends_with(' ') || chars.peek() == Some(&'_') => {}
+                // [text](url) -> text
+                ']' if chars.peek() == Some(&'(') => {
+                    for skipped in chars.by_ref() {
+                        if skipped == ')' {
+                            break;
+                        }
+                    }
+                }
+                '[' => {}
+                _ => plain.push(c),
+            }
+        }
+        let plain = plain.trim().to_string();
+        if !plain.is_empty() {
+            out.push(plain);
+        }
+    }
+    out
+}
+
+/// Up to the first full stop, without trailing punctuation that would read as unfinished.
+fn first_sentence(line: &str) -> String {
+    let mut out = String::new();
+    let mut iter = line.chars().peekable();
+    while let Some(c) = iter.next() {
+        if "。！？!?".contains(c) {
+            break;
+        }
+        if c == '.' && iter.peek().is_none_or(|n| n.is_whitespace()) {
+            break;
+        }
+        out.push(c);
+    }
+    out.trim().trim_end_matches(['：', ':', '，', ',', '；', ';']).trim().to_string()
+}
+
+/// A sentence without its asides in parentheses - the least important words in it.
+fn drop_asides(sentence: &str) -> String {
+    let mut depth = 0usize;
+    let bare: String = sentence
+        .chars()
+        .filter(|&c| match c {
+            '（' | '(' => {
+                depth += 1;
+                false
+            }
+            '）' | ')' if depth > 0 => {
+                depth -= 1;
+                false
+            }
+            _ => depth == 0,
+        })
+        .collect();
+    let bare = bare.split_whitespace().collect::<Vec<_>>().join(" ");
+    if bare.chars().count() >= 4 { bare } else { sentence.to_string() }
+}
+
+/// Make a sentence bubble-sized: drop asides first, then stop at the last comma that still
+/// leaves a real clause, and only as a last resort cut with an ellipsis.
+fn fit_bubble(sentence: &str) -> String {
+    if sentence.chars().count() <= BUBBLE_SAY_CHARS {
+        return sentence.to_string();
+    }
+    let sentence = drop_asides(sentence);
+    if sentence.chars().count() > BUBBLE_SAY_CHARS {
+        let head: Vec<char> = sentence.chars().take(BUBBLE_SAY_CHARS).collect();
+        if let Some(cut) = head.iter().rposition(|c| "，,；;、".contains(*c)).filter(|&i| i >= 4) {
+            return head[..cut].iter().collect();
+        }
+    }
+    bubble_line(&sentence)
+}
+
+/// The name Claude Code itself shows for a session, read from the transcript the hook payload
+/// points at: a `/rename` title (`custom-title`) wins over the generated one (`ai-title`).
+/// None when there is no transcript yet, it is unreadable, or it has not been titled - the
+/// first turn of a new session, before Claude Code has named it.
+///
+/// Only `.jsonl` files are opened, and only the title fields are kept: the payload arrives over
+/// the bridge, and a path it names is not a licence to read anything else.
+fn claude_transcript_title(path: &str) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let path = std::path::Path::new(path);
+    if !path.is_absolute() || path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+        return None;
+    }
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(TRANSCRIPT_TAIL_BYTES))).ok()?;
+    let mut bytes = Vec::new();
+    file.take(TRANSCRIPT_TAIL_BYTES).read_to_end(&mut bytes).ok()?;
+    transcript_title_from_tail(&String::from_utf8_lossy(&bytes))
+}
+
+/// The title-picking half of `claude_transcript_title`, separate so it can be tested. The tail
+/// usually starts mid-line; that fragment fails to parse and is skipped like any other line.
+fn transcript_title_from_tail(tail: &str) -> Option<String> {
+    let mut generated: Option<String> = None;
+    for line in tail.lines().rev() {
+        if !line.contains("-title\"") {
+            continue;
+        }
+        let Ok(record) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let pick = |key: &str| bounded_str(record.get(key), SESSION_LABEL_MAX_CHARS);
+        match record.get("type").and_then(|v| v.as_str()) {
+            Some("custom-title") => {
+                if let Some(title) = pick("customTitle") {
+                    return Some(title);
+                }
+            }
+            Some("ai-title") if generated.is_none() => generated = pick("aiTitle"),
+            _ => {}
+        }
+    }
+    generated
+}
+
+/// What to call a Claude Code session: its own title, else the project folder it runs in. The
+/// flag says which - see TaskEvent::label_is_folder.
+///
+/// SessionStart and UserPromptSubmit carry `session_title` in the payload itself; the other
+/// events do not, so the transcript is read for those (and for Claude Code versions without it).
+fn claude_session_label(raw: &serde_json::Value) -> (Option<String>, bool) {
+    let title = bounded_str(raw.get("session_title"), SESSION_LABEL_MAX_CHARS)
+        .or_else(|| raw.get("transcript_path").and_then(|v| v.as_str()).and_then(claude_transcript_title));
+    if title.is_some() {
+        return (title, false);
+    }
+    let folder = (|| {
+        let cwd = raw.get("cwd").and_then(|v| v.as_str())?;
+        let folder = std::path::Path::new(cwd).file_name()?.to_str()?;
+        bounded_str(Some(&serde_json::json!(folder)), SESSION_LABEL_MAX_CHARS)
+    })();
+    let is_folder = folder.is_some();
+    (folder, is_folder)
+}
+
+/// Claude Code's raw hook payload -> a task event.
+///
+/// The IDENTITY is the tool - `claude`, the same id the plugin's header, the node adapter, the
+/// CLI and the MCP server all use - and the session is carried beside it. It used to be the
+/// session UUID: every session then registered as its own anonymous agent, so the bubble showed
+/// a grey two-letter badge cut from a UUID and the 主界面 could not match it to the Claude mark.
+/// Nobody could tell who was talking. Now the mark comes from the identity and the name from the
+/// session (see claude_session_label), and concurrent sessions still get a row each.
 fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEvent {
-    let session_id = raw.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown-session").to_string();
+    let session = raw.get("session_id").and_then(|v| v.as_str()).map(|s| s.chars().take(128).collect::<String>());
+    let session_id = session.clone().unwrap_or_else(|| "unknown-session".to_string());
     let hook_event_name = raw.get("hook_event_name").and_then(|v| v.as_str()).unwrap_or("unknown");
     // Must stay in step with integrations/adapters/lingxi-emit.mjs's fromClaude(). Two mappers
     // exist because there are two paths in: the one-click installer writes a plain curl that
@@ -858,33 +1142,116 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
     // while the plugin routes through the node adapter. They drifted - this side knew three
     // events and the adapter knew five - so a session start and, worse, a PERMISSION PROMPT were
     // silently dropped on the path most users take.
+    let mut result: Option<String> = None;
+    let mut echo = false;
     let (state, summary) = match hook_event_name {
         "SessionStart" => ("queued".to_string(), "会话开始".to_string()),
         "UserPromptSubmit" => ("running".to_string(), "新一轮对话开始".to_string()),
         "Notification" => {
-            // Claude raises this both for permission prompts and for plain questions. They need
-            // different urgency - an approval is blocking a tool call right now - and the message
-            // text is the only thing that separates them.
+            // Claude raises this for permission prompts, plain questions, and a run of things that
+            // are not waiting on the user at all (auth_success, computer_use_enter, ...). Current
+            // Claude Code says which in `notification_type`; the message text is the fallback for
+            // versions that predate it. Treating every non-approval as "waiting for you" had the
+            // cat saying 在等你哦 about a successful login.
+            echo = true;
             let message = raw.get("message").and_then(|v| v.as_str()).unwrap_or("");
             let lower = message.to_lowercase();
-            let approval = ["permission", "approve", "allow"]
+            let approval_text = ["permission", "approve", "allow"]
                 .iter()
                 .any(|needle| lower.contains(needle))
                 || message.contains('授') && message.contains('权')
                 || message.contains("批准")
                 || message.contains("允许");
-            let state = if approval { "needs_approval" } else { "needs_input" };
-            let text = if message.is_empty() {
-                if approval { "等你批一下".to_string() } else { "在等你回一句".to_string() }
-            } else {
-                message.to_string()
+            let state = match raw.get("notification_type").and_then(|v| v.as_str()) {
+                Some("permission_prompt" | "worker_permission_prompt") => "needs_approval",
+                Some("idle_prompt" | "agent_needs_input" | "elicitation_dialog" | "elicitation_url_dialog") => "needs_input",
+                Some(_) => "unknown",
+                None if approval_text => "needs_approval",
+                None => "needs_input",
+            };
+            // "Claude needs your permission to use Bash" -> the tool is the useful part.
+            let tool = message
+                .split_once("permission to use ")
+                .map(|(_, rest)| rest.trim().trim_end_matches('.').chars().take(40).collect::<String>())
+                .filter(|t| !t.is_empty());
+            if let (true, Some(tool)) = (state == "needs_approval", &tool) {
+                result = Some(format!("想用 {tool}，等你批一下"));
+            }
+            let text = match (state, tool) {
+                ("needs_approval", Some(tool)) => format!("想用 {tool}，等你批一下"),
+                ("needs_approval", None) if message.is_empty() => "等你批一下".to_string(),
+                ("needs_input", _) if message.is_empty() => "在等你回一句".to_string(),
+                ("unknown", _) => format!("不需要你处理的通知：{}", raw.get("notification_type").and_then(|v| v.as_str()).unwrap_or("")),
+                _ => message.to_string(),
             };
             (state.to_string(), text)
         }
         "Stop" => {
-            let reason = raw.get("stop_reason").and_then(|v| v.as_str()).unwrap_or("end_turn");
-            ("completed".to_string(), format!("本轮回复完成（{reason}）"))
+            let reply = raw.get("last_assistant_message").and_then(|v| v.as_str()).unwrap_or("");
+            // A turn that ends by asking the user something is waiting on them, not done.
+            if let Some(question) = closing_question(reply) {
+                result = Some(question);
+                ("needs_input".to_string(), "回复末尾有问题等你回答".to_string())
+            } else {
+                result = turn_line(reply);
+                let reason = raw.get("stop_reason").and_then(|v| v.as_str()).unwrap_or("end_turn");
+                ("completed".to_string(), format!("本轮回复完成（{reason}）"))
+            }
         }
+        // Fired the moment a permission dialog opens - the Notification for the same dialog comes
+        // 6s later, and only if the user has not acted (it is then an echo). It carries the tool
+        // and its input, so the line can say WHAT is being asked, and it is also how an
+        // AskUserQuestion shows up: that dialog is drawn as a permission dialog.
+        "PermissionRequest" => {
+            let tool = raw.get("tool_name").and_then(|v| v.as_str()).unwrap_or("");
+            let input = raw.get("tool_input");
+            let field = |key: &str| input.and_then(|i| i.get(key)).and_then(|v| v.as_str()).map(str::trim).filter(|v| !v.is_empty());
+            match tool {
+                "AskUserQuestion" => {
+                    let question = input
+                        .and_then(|i| i.get("questions"))
+                        .and_then(|q| q.get(0))
+                        .and_then(|q| q.get("question"))
+                        .and_then(|v| v.as_str());
+                    result = Some(question.map(|q| fit_bubble(&drop_asides(q.trim()))).unwrap_or_else(|| "有个问题等你选".to_string()));
+                    ("needs_input".to_string(), "有个问题等你选".to_string())
+                }
+                "ExitPlanMode" => {
+                    result = Some("计划写好了，等你过目".to_string());
+                    ("needs_approval".to_string(), "计划写好了，等你过目".to_string())
+                }
+                _ => {
+                    // mcp__server__tool -> tool: the prefix is plumbing.
+                    let short = tool.rsplit("__").next().filter(|t| !t.is_empty()).unwrap_or("工具");
+                    let summary = format!("想用 {short}，等你批一下");
+                    let what = match tool {
+                        "Bash" => field("description").map(|d| format!("想跑：{d}")),
+                        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => field("file_path")
+                            .or_else(|| field("notebook_path"))
+                            .and_then(|p| std::path::Path::new(p).file_name()?.to_str().map(str::to_string))
+                            .map(|name| format!("想改 {name}，等你批一下")),
+                        _ => None,
+                    };
+                    result = Some(fit_bubble(&what.unwrap_or_else(|| summary.clone())));
+                    ("needs_approval".to_string(), summary)
+                }
+            }
+        }
+        // Claude's own todo list: a task ticked off is a status update. It updates the session's
+        // row in 主界面 and does not speak - a bubble per checked box is the notification spam a
+        // pet is meant to replace (running events are silent after the first; see should_react).
+        "TaskCompleted" => {
+            result = raw
+                .get("task_subject")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|subject| fit_bubble(&format!("完成：{subject}")));
+            ("running".to_string(), "完成了一项待办".to_string())
+        }
+        // Not a state of the work - the session is gone. Handled before anything is recorded:
+        // its row leaves 主界面 instead of sitting there as "running" forever.
+        "SessionEnd" => ("ended".to_string(), "会话结束".to_string()),
         "StopFailure" => {
             let error_type = raw.get("error_type").and_then(|v| v.as_str()).unwrap_or("unknown");
             ("failed".to_string(), format!("本轮因错误终止（{error_type}）"))
@@ -895,10 +1262,12 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
+    // The transcript is only read for events that can put something on screen.
+    let (label, label_is_folder) = if state == "unknown" { (None, false) } else { claude_session_label(raw) };
     TaskEvent {
         schema_version: 1,
         provider: "claude".to_string(),
-        source_id: session_id.clone(),
+        source_id: "claude".to_string(),
         task_id: session_id.clone(),
         event_id: format!("{session_id}-{hook_event_name}-{observed_at}-{sequence}"),
         state,
@@ -912,6 +1281,11 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         // of the work posts a task event itself rather than relying on the hook.
         mood: "focused".to_string(),
         progress: None,
+        session,
+        label,
+        result,
+        echo,
+        label_is_folder,
     }
 }
 
@@ -1014,15 +1388,54 @@ const LEGACY_CLAUDE_HOOK_COMMANDS: [&str; 3] = [
     "T=$(cat \"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token\" 2>/dev/null); H=$(mktemp) || exit 0; printf 'header = \"Authorization: Bearer %s\"\\n' \"$T\" > \"$H\"; curl -s -m 2 -K \"$H\" -X POST http://127.0.0.1:47811/task-event -H 'Content-Type: application/json' --data-binary @- >/dev/null 2>&1 || true; rm -f \"$H\"",
 ];
 
-/// The five Claude Code lifecycle events this integration speaks, shared verbatim by the
+/// The Claude Code lifecycle events this integration speaks, shared verbatim by the
 /// one-click installer and the plugin's hooks.json (whose scripts post the same raw payloads -
 /// see integrations/hosts/claude/scripts/event.sh). Notification is the one that carries
 /// permission prompts - the single most urgent thing an agent can be doing - and SessionStart
 /// is what makes the cat look up when a session begins; leaving either unsubscribed was the
 /// residue of the mapper drift this whole block exists to prevent. If you add one here, add it
 /// to integrations/hosts/claude/hooks/hooks.json and to the mappers in the same commit.
-const CLAUDE_HOOK_EVENTS: [&str; 5] =
-    ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "StopFailure"];
+const CLAUDE_HOOK_EVENTS: [&str; 8] = [
+    "SessionStart", "UserPromptSubmit", "Notification", "Stop", "StopFailure",
+    // Added later: a dialog is reported the moment it opens (and AskUserQuestion with its
+    // question), Claude's todo list reports progress, and an ended session leaves 主界面.
+    "PermissionRequest", "TaskCompleted", "SessionEnd",
+];
+
+/// Bumped whenever CLAUDE_HOOK_EVENTS grows; see upgrade_installed_claude_hooks.
+const CLAUDE_HOOK_GENERATION: u32 = 2;
+/// What generation 2 added over the original five.
+const CLAUDE_HOOK_EVENTS_SINCE_GEN_1: [&str; 3] = ["PermissionRequest", "TaskCompleted", "SessionEnd"];
+
+/// Add our hook under each event this app has learned since the user installed, when - and only
+/// when - they have our hooks at all. Returns how many were added. Pure, so it is testable.
+fn add_events_new_since_install(hooks_obj: &mut serde_json::Map<String, serde_json::Value>) -> usize {
+    let ours = |entries: &serde_json::Value| entries.as_array().is_some_and(|e| has_our_hook(e));
+    if !hooks_obj.values().any(ours) {
+        return 0;
+    }
+    let mut added = 0;
+    for event in CLAUDE_HOOK_EVENTS_SINCE_GEN_1 {
+        if hooks_obj.get(event).is_some_and(ours) {
+            continue;
+        }
+        let entries = hooks_obj.entry(event).or_insert_with(|| serde_json::json!([]));
+        let Some(entries) = entries.as_array_mut() else { continue };
+        let mut hook = serde_json::json!({ "type": "command", "command": claude_hook_command_for(event) });
+        if claude_hook_is_async(event) {
+            hook["async"] = serde_json::json!(true);
+        }
+        entries.push(serde_json::json!({ "hooks": [hook] }));
+        added += 1;
+    }
+    added
+}
+
+/// Events whose hook runs detached. A PermissionRequest hook sits in front of the dialog the
+/// user is about to answer: even a 2-second curl timeout is a dialog that appears late.
+fn claude_hook_is_async(event: &str) -> bool {
+    matches!(event, "PermissionRequest" | "TaskCompleted")
+}
 
 fn claude_settings_path() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(|home| PathBuf::from(home).join(".claude").join("settings.json"))
@@ -1141,7 +1554,11 @@ fn install_claude_hooks() -> Result<String, String> {
         };
         let current = claude_hook_command_for(event);
         if !prune_legacy_hook_entries(entries_arr, current) {
-            entries_arr.push(serde_json::json!({ "hooks": [ { "type": "command", "command": current } ] }));
+            let mut hook = serde_json::json!({ "type": "command", "command": current });
+            if claude_hook_is_async(event) {
+                hook["async"] = serde_json::json!(true);
+            }
+            entries_arr.push(serde_json::json!({ "hooks": [hook] }));
         }
     }
 
@@ -1180,14 +1597,28 @@ fn upgrade_our_hook_commands(hooks_obj: &mut serde_json::Map<String, serde_json:
 /// forever, unless something upgrades it - and the one thing that has changed since is exactly
 /// what makes a session start bring the cat back. Writes only when there is something to change,
 /// backs up first like install does, and never installs hooks nobody asked for.
-fn upgrade_installed_claude_hooks() -> Result<usize, String> {
+///
+/// The one exception is an event this app did not speak when the user clicked "一键接入": they
+/// never got to decline it, so it is added - ONCE, recorded in `generation_file`, so an event
+/// the user removes afterwards stays removed.
+fn upgrade_installed_claude_hooks(generation_file: Option<&std::path::Path>) -> Result<usize, String> {
     let path = claude_settings_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
     if !path.exists() {
         return Ok(0);
     }
     let mut settings = read_claude_settings(&path)?;
     let Some(hooks_obj) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) else { return Ok(0) };
-    let rewritten = upgrade_our_hook_commands(hooks_obj);
+    let mut rewritten = upgrade_our_hook_commands(hooks_obj);
+    let generation = generation_file
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .and_then(|g| g.trim().parse::<u32>().ok())
+        .unwrap_or(1);
+    if generation < CLAUDE_HOOK_GENERATION {
+        rewritten += add_events_new_since_install(hooks_obj);
+        if let Some(file) = generation_file {
+            let _ = std::fs::write(file, CLAUDE_HOOK_GENERATION.to_string());
+        }
+    }
     if rewritten > 0 {
         let _ = std::fs::copy(&path, path.with_extension("json.lingxi-backup"));
         write_claude_settings(&path, &settings)?;
@@ -1387,7 +1818,7 @@ fn get_agent_activity(app: tauri::AppHandle) -> serde_json::Value {
         .values()
         .map(|a| {
             serde_json::json!({
-                "id": a.id, "name": a.name, "badge": a.badge, "color": a.color,
+                "id": a.id, "name": a.name, "badge": a.badge, "color": a.color, "logo": a.logo,
                 "lastSeen": a.last_seen, "claims": a.claims, "permission": a.permission.as_str(),
                 "seen": true,
             })
@@ -1426,6 +1857,8 @@ fn get_agent_activity(app: tauri::AppHandle) -> serde_json::Value {
                 object.insert("name".into(), serde_json::json!(identity.name));
                 object.insert("badge".into(), serde_json::json!(identity.badge));
                 object.insert("color".into(), serde_json::json!(identity.color));
+                // So a row can be drawn exactly as the bubble draws this agent (ui/icons.ts agentLook).
+                object.insert("logo".into(), serde_json::json!(identity.logo));
             }
             value
         })
@@ -1834,7 +2267,7 @@ const MAX_HOLD_MS: u64 = 10 * 60 * 1000;
 /// the whole point: the old code silently skipped unrecognised keys and then reported
 /// "empty command", so a caller who wrote `expresssion` was told they had sent nothing at all
 /// and would retry the same misspelling forever.
-const CONTROL_FIELDS: [&str; 19] = [
+const CONTROL_FIELDS: [&str; 20] = [
     "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform",
     "toy", "say", "sayMs", "resetPosition", "reloadAssets",
     // Bring the main window forward at a page - see MANAGEMENT_PAGES.
@@ -1846,6 +2279,9 @@ const CONTROL_FIELDS: [&str; 19] = [
     // Internal: set only by the queue drain when replaying a reaction that already holds the
     // stage. Listed so the unknown-field check does not reject our own replay.
     "__stageAlreadyHeld",
+    // Internal: the session a task-event reaction speaks for (react_to_task_event), shown on
+    // the bubble beside the agent's mark.
+    "__label",
 ];
 
 /// Pull the ids out of one list in the renderer-reported capability payload.
@@ -2737,6 +3173,7 @@ fn apply_control_command(
                     serde_json::json!({
                         "agent": identity.id,
                         "name": identity.name,
+                        "label": command.get("__label").and_then(|v| v.as_str()),
                         "badge": identity.badge,
                         "logo": identity.logo,
                         "color": identity.color,
@@ -3118,6 +3555,7 @@ fn spawn_reaction_drain(app: tauri::AppHandle) {
             serde_json::json!({
                 "agent": item.agent.id,
                 "name": item.agent.name,
+                "label": item.command.get("__label").and_then(|v| v.as_str()),
                 "badge": item.agent.badge,
                 "logo": item.agent.logo,
                 "color": item.agent.color,
@@ -3145,6 +3583,135 @@ fn spawn_reaction_drain(app: tauri::AppHandle) {
     });
 }
 
+/// Pending reminders, soonest first - what 主界面's 提醒与日程 lists.
+#[tauri::command]
+fn get_reminders(state: State<MemoryState>) -> Vec<Reminder> {
+    let mut pending: Vec<Reminder> = state.reminders.lock().unwrap().iter().filter(|r| !r.done).cloned().collect();
+    pending.sort_by_key(|r| r.due);
+    pending
+}
+
+/// Cancel one, from 主界面. The user's own list: no permission tier applies.
+#[tauri::command]
+fn delete_reminder(state: State<MemoryState>, id: String) -> bool {
+    let removed = {
+        let mut reminders = state.reminders.lock().unwrap();
+        let before = reminders.len();
+        reminders.retain(|r| r.id != id);
+        reminders.len() != before
+    };
+    if removed {
+        state.persist_reminders();
+    }
+    removed
+}
+
+/// Set one from 主界面 - a schedule item the user types in themselves ("每天 09:30 站会").
+#[tauri::command]
+fn add_reminder(state: State<MemoryState>, text: String, due: u64, repeat_every_minutes: u64) -> Result<String, String> {
+    let (text, _) = truncate_chars(text.trim(), REMINDER_MAX_CHARS);
+    if text.is_empty() {
+        return Err("提醒内容不能是空的".to_string());
+    }
+    if due <= now_millis() && repeat_every_minutes == 0 {
+        return Err("这个时间已经过去了".to_string());
+    }
+    let repeat = if repeat_every_minutes == 0 { 0 } else { repeat_every_minutes.max(5) };
+    let id = format!("u{}", now_millis());
+    {
+        let mut reminders = state.reminders.lock().unwrap();
+        reminders.push(Reminder {
+            id: id.clone(),
+            text,
+            // A daily one whose time has passed today starts tomorrow.
+            due: if due <= now_millis() { next_due(due, repeat, now_millis()) } else { due },
+            done: false,
+            mood: "focused".to_string(),
+            repeat_every_minutes: repeat,
+            from: "你".to_string(),
+        });
+        let overflow = reminders.len().saturating_sub(REMINDER_CAP);
+        if overflow > 0 {
+            reminders.drain(0..overflow);
+        }
+    }
+    state.persist_reminders();
+    Ok(id)
+}
+
+/// Whether the cat is on screen at all. A hidden cat cannot deliver anything - see system_notify.
+fn cat_hidden(app: &tauri::AppHandle) -> bool {
+    !app.state::<TrayState>().visible.load(Ordering::SeqCst)
+}
+
+/// A macOS notification, for what must reach the user when the cat cannot say it: it is hidden.
+/// Used only for things that wait on them (an approval, a question, a failure) and for reminders
+/// - a hidden cat is someone asking for quiet, and a completion can wait for them to look.
+///
+/// NSUserNotification rather than UserNotifications.framework: it needs no new dependency and
+/// no permission prompt for an app like this one, and it still delivers. Deprecated, so the day
+/// it stops, this is the one function to replace.
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+fn system_notify(app: &tauri::AppHandle, title: &str, body: &str) {
+    let (title, body) = (title.to_string(), body.to_string());
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        use objc2_foundation::{NSString, NSUserNotification, NSUserNotificationCenter};
+        let note = NSUserNotification::new();
+        note.setTitle(Some(&NSString::from_str(&title)));
+        note.setInformativeText(Some(&NSString::from_str(&body)));
+        let center = NSUserNotificationCenter::defaultUserNotificationCenter();
+        center.deliverNotification(&note);
+        // Evidence, not hope: whether the system took it. A deprecated API can stop delivering
+        // in some macOS release without any error - this is where that would show.
+        log_task_event(
+            &handle,
+            serde_json::json!({
+                "dir": "notify",
+                "delivered": note.isPresented() || center.deliveredNotifications().count() > 0,
+                "presented": note.isPresented(),
+                "inCenter": center.deliveredNotifications().count(),
+            }),
+        );
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_notify(_app: &tauri::AppHandle, _title: &str, _body: &str) {}
+
+/// Keyboard and mouse both idle this long means nobody is at the machine.
+const REMINDER_AWAY_SECS: u64 = 5 * 60;
+
+/// Seconds since the last keyboard or mouse input, system-wide (IOHIDSystem's HIDIdleTime).
+/// Asked only when a reminder is due, so shelling out costs nothing that matters. None when it
+/// cannot be read - then the reminder is delivered as before rather than held forever.
+fn system_idle_secs() -> Option<u64> {
+    let out = std::process::Command::new("/usr/sbin/ioreg")
+        .args(["-c", "IOHIDSystem", "-d", "4", "-r", "-k", "HIDIdleTime"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().find(|l| l.contains("\"HIDIdleTime\""))?;
+    let nanos: u64 = line.rsplit('=').next()?.trim().parse().ok()?;
+    Some(nanos / 1_000_000_000)
+}
+
+/// The next time a standing reminder is due, kept on its own schedule.
+///
+/// It used to be "now + interval", measured from when it happened to be SAID: every firing
+/// slipped by up to a tick, and one that waited out a closed laptop moved for good - a daily
+/// 09:30 became whatever time the app was next opened. Stepping from the previous due time keeps
+/// 09:30 at 09:30; occurrences missed entirely are skipped rather than recited.
+fn next_due(previous_due: u64, every_minutes: u64, now: u64) -> u64 {
+    let step = every_minutes.max(1).saturating_mul(60_000);
+    if previous_due > now {
+        return previous_due.saturating_add(step);
+    }
+    let missed = (now - previous_due) / step + 1;
+    previous_due.saturating_add(missed.saturating_mul(step))
+}
+
 fn spawn_reminder_ticker(app: tauri::AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(30));
@@ -3167,11 +3734,31 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
                 .min_by_key(|reminder| reminder.due)
                 .cloned()
         };
-        if next.is_none() {
+        let Some(reminder) = next else { continue };
+        // Said to an empty room is the same as not said: it used to be spoken once, for six
+        // seconds, and marked done whether or not anyone was at the machine. Now it waits for
+        // them - the first thing they see coming back is what they asked to be told.
+        if system_idle_secs().is_some_and(|idle| idle >= REMINDER_AWAY_SECS) {
             continue;
         }
-        let reminder = next.unwrap();
+        if cat_hidden(&app) {
+            system_notify(&app, "灵犀 · 提醒", &reminder.text);
+        }
         {
+            // Its own attribution, so the bubble does not borrow whichever agent spoke last:
+            // the mark of whoever set it, named as a reminder.
+            let _ = app.emit(
+                "agent-stage",
+                serde_json::json!({
+                    "agent": if reminder.from.is_empty() { "lingxi" } else { reminder.from.as_str() },
+                    "name": "提醒",
+                    "badge": "⏰",
+                    "logo": null,
+                    "color": "#F4E6C8",
+                    "priority": "report",
+                    "holdMs": 6000,
+                }),
+            );
             // Delivered in the tone it was set with. "记得喝水" and "该交税了" are not the same
             // face, and a gentle nudge arriving with an alarmed expression is worse than none.
             let (expression, action, _) =
@@ -3201,7 +3788,7 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
                 // every reminder after it silently stops firing.
                 if reminder.repeat_every_minutes > 0 {
                     entry.done = false;
-                    entry.due = now_millis() + reminder.repeat_every_minutes.saturating_mul(60_000);
+                    entry.due = next_due(reminder.due, reminder.repeat_every_minutes, now_millis());
                 } else {
                     entry.done = true;
                 }
@@ -3782,6 +4369,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                                             done: false,
                                             mood: mood.to_string(),
                                             repeat_every_minutes: repeat,
+                                            from: write_caller_id(&request, Some(&value)),
                                         });
                                         let overflow = reminders.len().saturating_sub(REMINDER_CAP);
                                         if overflow > 0 {
@@ -3852,7 +4440,27 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                             // on the loopback interface could previously flush the real record
                             // out of it by posting `{}` in a loop. 200 still means "received",
                             // as before - it just is not also "recorded".
-                            if event.state == "unknown" {
+                            log_task_event(
+                                &app,
+                                serde_json::json!({
+                                    "dir": "in",
+                                    "payload": payload_shape(&raw),
+                                    "event": {
+                                        "provider": event.provider, "sourceId": event.source_id,
+                                        "taskId": event.task_id, "state": event.state,
+                                        "kind": event.kind, "mood": event.mood,
+                                        "summary": event.summary, "label": event.label,
+                                        "resultChars": event.result.as_ref().map(|r| r.chars().count()),
+                                    },
+                                }),
+                            );
+                            if event.state == "ended" {
+                                forget_session(&app, &event);
+                                json_response(
+                                    200,
+                                    serde_json::json!({ "ok": true, "recorded": false, "reason": "session ended" }).to_string(),
+                                )
+                            } else if event.state == "unknown" {
                                 json_response(
                                     200,
                                     serde_json::json!({
@@ -3955,6 +4563,10 @@ struct Reminder {
     /// Minutes between repeats, for the standing kind ("every hour, stand up"). 0 = one-shot.
     #[serde(default)]
     repeat_every_minutes: u64,
+    /// Which agent set it, so the bubble can carry its mark - "提醒" from Claude reads
+    /// differently from one the user's calendar agent set.
+    #[serde(default)]
+    from: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -4430,9 +5042,104 @@ fn is_lifecycle_summary(summary: &str) -> bool {
 }
 
 /// Keep the model's one-line result when a lifecycle event arrives a moment later.
-fn keep_turn_summary(previous: &str, incoming: &str, age_ms: u64) -> bool {
+///
+/// Never a WAIT's line, though: once "想跑：清理构建目录" has been answered and the next turn is
+/// running, keeping it would show a session still asking for something it already got.
+fn keep_turn_summary(previous: &str, previous_state: &str, incoming: &str, age_ms: u64) -> bool {
     const FRESH_MS: u64 = 120_000;
-    !is_lifecycle_summary(previous) && is_lifecycle_summary(incoming) && age_ms <= FRESH_MS
+    !matches!(previous_state, "needs_input" | "needs_approval")
+        && !is_lifecycle_summary(previous)
+        && is_lifecycle_summary(incoming)
+        && age_ms <= FRESH_MS
+}
+
+/// The trail `/task-event` leaves on disk: one JSON line per event in, and one per reaction out,
+/// in `<app config>/logs/task-events.log`. Rotated to `.1` past this size, so it never grows
+/// without bound on a machine that runs the cat all day.
+const TASK_EVENT_LOG_CAP_BYTES: u64 = 1024 * 1024;
+
+/// Without it, "the cat said nothing useful" could only be debugged by guessing what the host
+/// sent: the in-memory ring holds 50 normalized events and none of the raw payload's shape.
+fn log_task_event(app: &tauri::AppHandle, mut entry: serde_json::Value) {
+    use std::io::Write;
+    let Some(dir) = app.path().app_config_dir().ok().map(|d| d.join("logs")) else { return };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join("task-events.log");
+    if std::fs::metadata(&path).map(|m| m.len() > TASK_EVENT_LOG_CAP_BYTES).unwrap_or(false) {
+        let _ = std::fs::rename(&path, dir.join("task-events.log.1"));
+    }
+    if let Some(object) = entry.as_object_mut() {
+        object.insert("at".into(), serde_json::json!(now_millis()));
+    }
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| writeln!(file, "{entry}"));
+}
+
+/// What a raw payload carried, without what it said: every key with its type, and for text its
+/// length. docs/09 keeps the work's content out of the app, and a log is the easiest place for it
+/// to leak back in. Only the few fields that are closed vocabularies are kept verbatim - they
+/// are what tells one hook event from another.
+fn payload_shape(raw: &serde_json::Value) -> serde_json::Value {
+    const VERBATIM: [&str; 9] = [
+        "hook_event_name", "notification_type", "stop_reason", "source", "error_type",
+        "permission_mode", "state", "kind", "type",
+    ];
+    let Some(object) = raw.as_object() else { return serde_json::json!("not an object") };
+    let shape: serde_json::Map<String, serde_json::Value> = object
+        .iter()
+        .map(|(key, value)| {
+            let described = match value {
+                serde_json::Value::String(text) if VERBATIM.contains(&key.as_str()) => {
+                    serde_json::json!(text.chars().take(64).collect::<String>())
+                }
+                serde_json::Value::String(text) => serde_json::json!(format!("str({})", text.chars().count())),
+                serde_json::Value::Bool(flag) => serde_json::json!(flag),
+                serde_json::Value::Number(_) => serde_json::json!("num"),
+                serde_json::Value::Null => serde_json::json!(null),
+                serde_json::Value::Array(items) => serde_json::json!(format!("arr({})", items.len())),
+                serde_json::Value::Object(inner) => {
+                    serde_json::json!(format!("obj({})", inner.keys().cloned().collect::<Vec<_>>().join(",")))
+                }
+            };
+            (key.clone(), described)
+        })
+        .collect();
+    serde_json::Value::Object(shape)
+}
+
+/// A session that ended takes its 主界面 row with it, and its progress memory.
+fn forget_session(app: &tauri::AppHandle, event: &TaskEvent) {
+    app.state::<ActivityState>().by_provider.lock().unwrap().remove(&activity_key(event));
+    app.state::<TaskProgressState>().seen.lock().unwrap().remove(&event.task_id);
+    update_tray_attention(app);
+}
+
+/// How long an echo of a wait counts as the same wait. Claude's permission echo comes 6s after
+/// the dialog and its idle echo 60s after the turn; past this, the user plainly did not see the
+/// first one, and saying it again is the point.
+const WAIT_ECHO_WINDOW_MS: u64 = 10 * 60 * 1000;
+
+/// True when `event` only restates the wait its session's row already shows - see TaskEvent::echo.
+fn is_repeat_wait(previous: Option<&AgentActivity>, event: &TaskEvent) -> bool {
+    event.echo
+        && previous.is_some_and(|row| {
+            row.state == event.state && event.observed_at.saturating_sub(row.updated_at) < WAIT_ECHO_WINDOW_MS
+        })
+}
+
+/// The activity-map row an event belongs to: its identity, split per session when the host has
+/// sessions (see TaskEvent::session).
+fn activity_key(event: &TaskEvent) -> String {
+    let identity = if event.source_id.is_empty() { &event.provider } else { &event.source_id };
+    match &event.session {
+        Some(session) => format!("{identity}#{session}"),
+        None => identity.clone(),
+    }
 }
 
 fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
@@ -4444,7 +5151,7 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
     // provider "claude" while the CLI reports "claude-code", so the same Claude Code showed up as
     // two rows with two states. The identity is what "who is doing what" is actually about; the
     // provider is just which transport it came in on.
-    let key = if event.source_id.is_empty() { event.provider.clone() } else { event.source_id.clone() };
+    let key = activity_key(event);
     // Keys arrive from outside the process; without a cap, every distinct source_id any caller
     // ever sends is a row forever. Past the cap, the stalest row gives way - the picture is
     // "who is doing what NOW", and a source that has gone quiet longest is the least of that.
@@ -4454,15 +5161,24 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
             map.remove(&stalest);
         }
     }
+    // The live row may say what the turn came to (in memory only - see TaskEvent::result).
+    let incoming = event.result.clone().unwrap_or_else(|| event.summary.clone());
     let summary = if let Some(previous) = map.get(&key) {
         let age_ms = event.observed_at.saturating_sub(previous.updated_at);
-        if keep_turn_summary(&previous.summary, &event.summary, age_ms) {
+        if keep_turn_summary(&previous.summary, &previous.state, &incoming, age_ms) {
             previous.summary.clone()
         } else {
-            event.summary.clone()
+            incoming
         }
     } else {
-        event.summary.clone()
+        incoming
+    };
+    // A title, once known, outlives an event that could not read one (an unreadable transcript).
+    let previous_label = map.get(&key).and_then(|row| row.label.clone());
+    let label = if event.label_is_folder {
+        previous_label.or_else(|| event.label.clone())
+    } else {
+        event.label.clone().or(previous_label)
     };
     map.insert(
         key,
@@ -4475,6 +5191,7 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
             mood: event.mood.clone(),
             progress: event.progress,
             summary,
+            label,
             updated_at: event.observed_at,
             busy: state_is_busy(&event.state),
         },
@@ -4496,6 +5213,11 @@ fn update_tray_attention(app: &tauri::AppHandle) {
         format!("有 {attention_count} 个任务需要留意")
     };
     let _ = tray.attention_summary.set_text(&text);
+    // The count next to the menu-bar icon: visible without opening anything, and it stays until
+    // the wait is answered - the one place a missed bubble is still findable.
+    if let Some(icon) = app.tray_by_id("main-tray") {
+        let _ = icon.set_title(if attention_count == 0 { None } else { Some(attention_count.to_string()) });
+    }
 }
 
 /// Should this event produce anything visible at all?
@@ -4553,6 +5275,9 @@ struct AgentActivity {
     #[serde(skip_serializing_if = "Option::is_none")]
     progress: Option<f64>,
     summary: String,
+    /// The session's name, when the source has sessions - see TaskEvent::label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
     /// Unix millis of the last event from this source.
     #[serde(rename = "updatedAt")]
     updated_at: u64,
@@ -4575,10 +5300,30 @@ fn state_is_busy(state: &str) -> bool {
 }
 
 fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
+    // A restatement of a wait already on screen neither updates the row (it would replace the
+    // richer line - "想改 lib.rs" - with the host's generic one) nor speaks again.
+    let repeat = {
+        let activity = app.state::<ActivityState>();
+        let map = activity.by_provider.lock().unwrap();
+        is_repeat_wait(map.get(&activity_key(event)), event)
+    };
+    if repeat {
+        log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: same wait already shown" }));
+        return;
+    }
     // Recorded BEFORE the reaction is decided, and regardless of whether one is shown at all.
     // Progress updates are deliberately swallowed for the cat's sake (see should_react), but they
     // are exactly what "what is it doing right now" wants, so the two must not share a gate.
     record_activity(app, event);
+    // The name the session's row settled on - its real title even when this event only knew
+    // the folder (see TaskEvent::label_is_folder).
+    let label = app
+        .state::<ActivityState>()
+        .by_provider
+        .lock()
+        .unwrap()
+        .get(&activity_key(event))
+        .and_then(|row| row.label.clone());
     // The activity window is awareness, not narration: every recorded event - silent progress
     // included - opens the engine's household-activity window, so a sleeping cat gets up when
     // work starts and only settles once it stops. This must NOT sit behind should_react: that
@@ -4589,9 +5334,9 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         "agent-activity",
         serde_json::json!({ "busy": busy }),
     );
-
     forward_to_sinks(app, event);
     if !should_react(app, event) {
+        log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: repeat progress" }));
         return;
     }
     // A user-supplied map wins over the built-in one, per entry. Looked up as "state:kind"
@@ -4617,6 +5362,7 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
             })
         });
     let Some((expression, action, line)) = resolved else {
+        log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: no reaction mapped" }));
         return;
     };
     let (expression, action, line) = (
@@ -4628,7 +5374,12 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
     // through the same stage claim as /control so the bubble receives the registered logo and
     // respects cross-agent priority. Silent progress still changes only the cat's face/action;
     // it must not leave an attribution waiting for some unrelated future bubble.
-    let report_line = if event.state == "completed" {
+    // The host's own words about this turn beat every template: they are about the task.
+    let from_result = event.result.is_some()
+        && matches!(event.state.as_str(), "completed" | "needs_approval" | "needs_input");
+    let report_line = if from_result {
+        event.result.clone()
+    } else if event.state == "completed" {
         let summary = event.summary.trim();
         // A host notify says only that its chat turn ended. It is not evidence that the
         // user's underlying task succeeded, so never announce this kind as “搞定啦”.
@@ -4639,8 +5390,7 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         if event.kind == "chat" && is_lifecycle_summary(summary) {
             let activity = app.state::<ActivityState>();
             let kept = activity.by_provider.lock().unwrap();
-            let key = if event.source_id.is_empty() { &event.provider } else { &event.source_id };
-            let already_said = kept.get(key).is_some_and(|row| row.summary.trim() != summary.trim() && !is_lifecycle_summary(&row.summary));
+            let already_said = kept.get(&activity_key(event)).is_some_and(|row| row.summary.trim() != summary.trim() && !is_lifecycle_summary(&row.summary));
             drop(kept);
             if already_said {
                 None
@@ -4683,12 +5433,46 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         if let Some(action) = action {
             command["action"] = serde_json::json!(action);
         }
-        let _ = apply_control_command(app, &command);
+        // Which session is speaking rides beside the identity, so the bubble can name it. `__`
+        // keeps it internal: it is not part of /control's documented surface.
+        if let Some(label) = &label {
+            command["__label"] = serde_json::json!(label);
+        }
+        if priority == "alert" && cat_hidden(app) {
+            let who = match (&label, event.provider.as_str()) {
+                (Some(label), "claude") => format!("Claude Code · {label}"),
+                (Some(label), provider) => format!("{provider} · {label}"),
+                (None, "claude") => "Claude Code".to_string(),
+                (None, provider) => provider.to_string(),
+            };
+            system_notify(app, &format!("灵犀 · {who}"), &report_line);
+        }
+        let (applied, rejected, mut detail) = apply_control_command(app, &command);
+        if from_result {
+            // The control call echoes what it said; a line made from the reply stays off disk.
+            if let Some(object) = detail.as_object_mut() {
+                object.remove("saidText");
+            }
+        }
+        log_task_event(
+            app,
+            serde_json::json!({
+                "dir": "react", "taskId": event.task_id, "state": event.state,
+                "outcome": "spoke", "agent": agent, "label": label,
+                "expression": expression, "action": action,
+                // A line made from the reply is shown, not kept: only its length reaches disk.
+                "say": if from_result { serde_json::json!(format!("<from reply: {} chars>", report_line.chars().count())) } else { serde_json::json!(report_line) },
+                "applied": applied, "rejected": rejected, "detail": detail,
+            }),
+        );
     } else if !suppressed {
         let _ = app.emit("play-expression", serde_json::json!({ "name": expression, "holdMs": 4000 }));
         if let Some(action) = action {
             let _ = app.emit("play-action", serde_json::json!({ "id": action }));
         }
+        log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "face only", "expression": expression, "action": action }));
+    } else {
+        log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: turn result already shown" }));
     }
     // Every finished task is a small deposit in the relationship - see MemoryState.
     if event.state == "completed" {
@@ -4786,12 +5570,30 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     // These disabled rows make the tray a glanceable status surface without pretending a task
     // can be approved or controlled from a native menu.
     let status_summary = MenuItem::with_id(app, "status-summary", "灵犀 · 陪你工作中", false, None::<&str>)?;
-    let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有需要留意的任务", false, None::<&str>)?;
-    let play = MenuItem::with_id(app, "play", "逗一逗", true, None::<&str>)?;
+    // Clickable: "有 2 个任务需要留意" is only useful if it takes you to them.
+    let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有需要留意的任务", true, None::<&str>)?;
+    // Every toy and every effect, by name - the tray used to offer one fixed toy ("逗一逗") and
+    // no effect at all, so switching either meant opening the main window.
+    let toy_items = TRAY_TOYS
+        .iter()
+        .map(|(kind, name)| MenuItem::with_id(app, format!("toy:{kind}"), *name, true, None::<&str>))
+        .collect::<tauri::Result<Vec<_>>>()?;
     let clear_toy = MenuItem::with_id(app, "clear-toy", "收起玩具", true, None::<&str>)?;
-    let interaction_submenu = Submenu::with_items(app, "互动", true, &[&play, &clear_toy])?;
-    let main_window = MenuItem::with_id(app, "main-window", "打开灵犀…", true, None::<&str>)?;
-    let toggle_visibility = MenuItem::with_id(app, "toggle-visibility", "隐藏", true, None::<&str>)?;
+    let toy_separator = PredefinedMenuItem::separator(app)?;
+    let mut toy_entries: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        toy_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+    toy_entries.push(&toy_separator);
+    toy_entries.push(&clear_toy);
+    let toy_submenu = Submenu::with_items(app, "玩具", true, &toy_entries)?;
+    let effect_items = TRAY_EFFECTS
+        .iter()
+        .map(|(id, name)| MenuItem::with_id(app, format!("perform:{id}"), *name, true, None::<&str>))
+        .collect::<tauri::Result<Vec<_>>>()?;
+    let effect_entries: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        effect_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+    let effect_submenu = Submenu::with_items(app, "特效", true, &effect_entries)?;
+    let main_window = MenuItem::with_id(app, "main-window", "打开主界面…", true, None::<&str>)?;
+    let toggle_visibility = MenuItem::with_id(app, "toggle-visibility", "隐藏猫咪", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出灵犀", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -4800,11 +5602,12 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
             &status_summary,
             &attention_summary,
             &PredefinedMenuItem::separator(app)?,
+            &main_window,
             &toggle_visibility,
             &size_submenu,
-            &interaction_submenu,
+            &toy_submenu,
+            &effect_submenu,
             &PredefinedMenuItem::separator(app)?,
-            &main_window,
             &quit,
         ],
     )?;
@@ -4829,9 +5632,20 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
                 "size-small" => state.apply_scale(app, SCALE_SMALL),
                 "size-medium" => state.apply_scale(app, SCALE_MEDIUM),
                 "size-large" => state.apply_scale(app, SCALE_LARGE),
-                "main-window" => open_or_focus_management_window(app),
-                "play" => { let _ = app.emit("set-toy", serde_json::json!({ "kind": "feather" })); }
+                "main-window" | "attention-summary" => open_or_focus_management_window(app),
                 "clear-toy" => { let _ = app.emit("clear-toy", ()); }
+                id if id.starts_with("toy:") => {
+                    let kind = &id["toy:".len()..];
+                    if KNOWN_TOYS.contains(&kind) {
+                        let _ = app.emit("set-toy", serde_json::json!({ "kind": kind }));
+                    }
+                }
+                id if id.starts_with("perform:") => {
+                    let effect = &id["perform:".len()..];
+                    if KNOWN_PERFORMANCES.contains(&effect) {
+                        let _ = app.emit("perform", serde_json::json!({ "id": effect }));
+                    }
+                }
                 "toggle-visibility" => {
                     let next = !state.visible.load(Ordering::SeqCst);
                     state.set_visible(app, next);
@@ -5100,9 +5914,7 @@ fn open_management_at(app: &tauri::AppHandle, route: Option<String>) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(existing) = handle.get_webview_window("management") {
-            let _ = existing.show();
-            let _ = existing.unminimize();
-            let _ = existing.set_focus();
+            bring_to_front(&existing);
             if let Some(route) = route {
                 let _ = existing.emit("management-navigate", route);
             }
@@ -5110,6 +5922,26 @@ fn open_management_at(app: &tauri::AppHandle, route: Option<String>) {
         }
         build_management_window(&handle, route);
     });
+}
+
+/// Put a window in front of the user, whatever app they are in. Main thread only.
+///
+/// `set_focus` alone is not enough on macOS 14+: activation became cooperative, so an app that is
+/// not already active is only brought forward if the frontmost app yields - and choosing a
+/// menu-bar item does not make this app active. The window was created, but BEHIND the app in
+/// front, so the first click looked like it did nothing and only a second one surfaced it.
+/// `orderFrontRegardless` raises the window itself without asking for activation.
+fn bring_to_front(window: &tauri::WebviewWindow) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    #[cfg(target_os = "macos")]
+    if let Ok(pointer) = window.ns_window() {
+        // SAFETY: tauri hands back this window's live NSWindow, and we are on the main thread
+        // (every caller runs inside run_on_main_thread or a menu handler).
+        let ns_window = unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
+        ns_window.orderFrontRegardless();
+    }
 }
 
 fn build_management_window(app: &tauri::AppHandle, route: Option<String>) {
@@ -5126,8 +5958,13 @@ fn build_management_window(app: &tauri::AppHandle, route: Option<String>) {
         .min_inner_size(860.0, 620.0)
         .resizable(true)
         .visible(true);
-    if let Err(e) = builder.build() {
-        eprintln!("[lingxi-desktop] failed to open management window: {e}");
+    match builder.focused(true).build() {
+        // Built, then FOCUSED. A click on a menu-bar item does not activate the app, so a window
+        // created without this opened behind whatever app was in front - it looked like the
+        // click did nothing, and only the second click (which finds the window and focuses it)
+        // brought it forward. set_focus also activates the app on macOS.
+        Ok(window) => bring_to_front(&window),
+        Err(e) => eprintln!("[lingxi-desktop] failed to open management window: {e}"),
     }
 }
 
@@ -5136,6 +5973,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            get_reminders,
+            delete_reminder,
+            add_reminder,
             primary_monitor_bounds,
             debug_log,
             claude_plugin_status,
@@ -5305,7 +6145,8 @@ pub fn run() {
                 Some(path) => eprintln!("[lingxi-desktop] shell client written to {}", path.display()),
                 None => eprintln!("[lingxi-desktop] could not write the shell client; the MCP path still works"),
             }
-            match upgrade_installed_claude_hooks() {
+            let generation_file = app.path().app_config_dir().ok().map(|dir| dir.join("claude-hooks-generation"));
+            match upgrade_installed_claude_hooks(generation_file.as_deref()) {
                 Ok(0) => {}
                 Ok(n) => eprintln!("[lingxi-desktop] upgraded {n} Claude Code hook command(s) to the current form"),
                 Err(error) => eprintln!("[lingxi-desktop] left Claude Code hooks as they were: {error}"),
@@ -5359,9 +6200,9 @@ mod tests {
 
     #[test]
     fn a_turn_end_does_not_replace_what_the_turn_just_did() {
-        assert!(keep_turn_summary("登录失败提示改完了", "本轮回复结束", 1_000));
-        assert!(!keep_turn_summary("登录失败提示改完了", "本轮回复结束", 121_000));
-        assert!(!keep_turn_summary("本轮回复结束", "登录失败提示改完了", 1_000));
+        assert!(keep_turn_summary("登录失败提示改完了", "completed", "本轮回复结束", 1_000));
+        assert!(!keep_turn_summary("登录失败提示改完了", "completed", "本轮回复结束", 121_000));
+        assert!(!keep_turn_summary("本轮回复结束", "completed", "登录失败提示改完了", 1_000));
         assert!(is_lifecycle_summary("本轮回复完成（end_turn）"));
         assert!(!is_lifecycle_summary("登录失败提示改完了，相关测试过了"));
         let line = bubble_line("登录提示改好啦，测试也乖乖过了，顺便把文案也收短了");
@@ -5431,6 +6272,7 @@ mod tests {
                 task_id: "same-task".into(), event_id: "e".into(), state: state.into(),
                 sequence: 1, observed_at: 0, summary: String::new(),
                 kind: "other".into(), mood: "focused".into(), progress: Some(0.1),
+                session: None, label: None, result: None, echo: false, label_is_folder: false,
             };
             // should_react needs app state, so assert the rule it encodes directly: only
             // "running" is ever a candidate for suppression.
@@ -5521,6 +6363,36 @@ mod tests {
             "message": "Claude needs your permission to use Bash",
         });
         assert_eq!(normalize_claude_hook_event(&approval, 1).state, "needs_approval");
+        assert_eq!(normalize_claude_hook_event(&approval, 1).summary, "想用 Bash，等你批一下");
+    }
+
+    #[test]
+    fn notification_type_decides_whether_the_user_is_being_waited_on() {
+        let with = |kind: &str, message: &str| {
+            normalize_claude_hook_event(
+                &serde_json::json!({
+                    "session_id": "s", "hook_event_name": "Notification",
+                    "notification_type": kind, "message": message,
+                }),
+                1,
+            )
+            .state
+        };
+        assert_eq!(with("permission_prompt", "Claude needs your permission to use Edit"), "needs_approval");
+        assert_eq!(with("idle_prompt", "Claude is waiting for your input"), "needs_input");
+        // Not waiting on anyone: dropped (state "unknown" is answered 200 but never recorded),
+        // instead of the cat announcing 在等你哦 about a login.
+        assert_eq!(with("auth_success", "Logged in"), "unknown");
+        assert_eq!(with("computer_use_enter", ""), "unknown");
+    }
+
+    #[test]
+    fn a_session_title_in_the_payload_beats_the_transcript() {
+        let raw = serde_json::json!({
+            "session_id": "s", "hook_event_name": "UserPromptSubmit",
+            "session_title": "修复插件图标", "transcript_path": "/nonexistent.jsonl", "cwd": "/x/lingxi",
+        });
+        assert_eq!(normalize_claude_hook_event(&raw, 1).label.as_deref(), Some("修复插件图标"));
     }
 
     #[test]
@@ -5544,6 +6416,20 @@ mod tests {
         let user_prompt = serde_json::json!({ "session_id": "s1", "hook_event_name": "UserPromptSubmit" });
         assert_eq!(normalize_claude_hook_event(&user_prompt, 1).state, "running");
 
+        // The user's own words are the running row's subject; a payload without
+        // a prompt keeps the old lifecycle line instead of an empty summary.
+        let user_prompt_words = serde_json::json!({
+            "session_id": "s1", "hook_event_name": "UserPromptSubmit",
+            "prompt": "rotate the prod database password to hunter2"
+        });
+        let prompt_event = normalize_claude_hook_event(&user_prompt_words, 4);
+        assert_eq!(prompt_event.state, "running");
+        // docs/09 「不采集任务正文」: the prompt text never rides the event,
+        // even though the hook payload carries it — mirrors
+        // integrations/test/emit-privacy.test.mjs on the adapter path.
+        assert!(!prompt_event.summary.contains("hunter2"));
+        assert_eq!(prompt_event.summary, "新一轮对话开始");
+
         let stop = serde_json::json!({ "session_id": "s1", "hook_event_name": "Stop", "stop_reason": "end_turn" });
         let stop_event = normalize_claude_hook_event(&stop, 2);
         assert_eq!(stop_event.state, "completed");
@@ -5554,10 +6440,227 @@ mod tests {
         assert_eq!(failure_event.state, "failed");
         assert!(failure_event.summary.contains("rate_limit"));
 
-        // sourceId/taskId are the session id - session granularity, not sub-task (see the
-        // function's own doc comment on why)
-        assert_eq!(stop_event.source_id, "s1");
+        // The identity is the tool, so the Claude mark resolves; the session rides beside it,
+        // so concurrent sessions still get one activity row each.
+        assert_eq!(stop_event.source_id, "claude");
         assert_eq!(stop_event.task_id, "s1");
+        assert_eq!(stop_event.session.as_deref(), Some("s1"));
+        assert_eq!(activity_key(&stop_event), "claude#s1");
+    }
+
+    fn claude(event: &str, extra: serde_json::Value) -> TaskEvent {
+        let mut raw = serde_json::json!({ "session_id": "s", "hook_event_name": event });
+        for (key, value) in extra.as_object().unwrap() {
+            raw[key] = value.clone();
+        }
+        normalize_claude_hook_event(&raw, 1)
+    }
+
+    #[test]
+    fn a_turn_that_ends_on_a_question_is_waiting_not_done() {
+        let asked = claude("Stop", serde_json::json!({
+            "last_assistant_message": "测试都过了。\n\n要按折中方案做吗？",
+        }));
+        assert_eq!(asked.state, "needs_input");
+        assert_eq!(asked.result.as_deref(), Some("要按折中方案做吗？"));
+        // Rhetoric mid-reply, answered in the same breath, is not a question to the user.
+        let rhetorical = claude("Stop", serde_json::json!({
+            "last_assistant_message": "为什么会这样？因为身份用错了。已经修好。",
+        }));
+        assert_eq!(rhetorical.state, "completed");
+        // A question in a code block is code.
+        let code = claude("Stop", serde_json::json!({
+            "last_assistant_message": "已修好。\n```js\nconst ok = a ? b : c?\n```",
+        }));
+        assert_eq!(code.state, "completed");
+    }
+
+    #[test]
+    fn a_permission_request_says_what_is_being_asked() {
+        let bash = claude("PermissionRequest", serde_json::json!({
+            "tool_name": "Bash", "tool_input": { "command": "rm -rf build", "description": "清理构建目录" },
+        }));
+        assert_eq!(bash.state, "needs_approval");
+        assert_eq!(bash.result.as_deref(), Some("想跑：清理构建目录"));
+        assert_eq!(bash.summary, "想用 Bash，等你批一下");
+        assert!(!bash.echo);
+        let edit = claude("PermissionRequest", serde_json::json!({
+            "tool_name": "Edit", "tool_input": { "file_path": "/repo/src/lib.rs" },
+        }));
+        assert_eq!(edit.result.as_deref(), Some("想改 lib.rs，等你批一下"));
+        let mcp = claude("PermissionRequest", serde_json::json!({ "tool_name": "mcp__lingxi__lingxi_say" }));
+        assert_eq!(mcp.result.as_deref(), Some("想用 lingxi_say，等你批一下"));
+        let question = claude("PermissionRequest", serde_json::json!({
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{ "question": "用哪个方案？", "options": [] }] },
+        }));
+        assert_eq!(question.state, "needs_input");
+        assert_eq!(question.result.as_deref(), Some("用哪个方案？"));
+        // The question itself is content: it rides the display-only field, not the summary
+        // that reaches notification sinks.
+        assert!(!serde_json::to_string(&question).unwrap().contains("用哪个方案"));
+        let plan = claude("PermissionRequest", serde_json::json!({ "tool_name": "ExitPlanMode" }));
+        assert_eq!(plan.state, "needs_approval");
+    }
+
+    #[test]
+    fn a_waits_echo_is_silent_only_while_that_wait_is_on_screen() {
+        let row = |state: &str, updated_at: u64| AgentActivity {
+            provider: "claude".into(), agent: Some("claude".into()), task_id: "s".into(),
+            state: state.into(), kind: "chat".into(), mood: "focused".into(), progress: None,
+            summary: String::new(), label: None, updated_at, busy: true,
+        };
+        let mut echo = claude("Notification", serde_json::json!({
+            "notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash",
+        }));
+        assert!(echo.echo);
+        echo.observed_at = 10_000;
+        assert!(is_repeat_wait(Some(&row("needs_approval", 4_000)), &echo), "6s after the dialog");
+        assert!(!is_repeat_wait(Some(&row("running", 4_000)), &echo), "the dialog was answered");
+        assert!(!is_repeat_wait(None, &echo));
+        echo.observed_at = 4_000 + WAIT_ECHO_WINDOW_MS + 1;
+        assert!(!is_repeat_wait(Some(&row("needs_approval", 4_000)), &echo), "long unseen: say it again");
+        // The first report of a wait is never an echo.
+        let mut first = claude("PermissionRequest", serde_json::json!({ "tool_name": "Bash" }));
+        first.observed_at = 10_000;
+        assert!(!is_repeat_wait(Some(&row("needs_approval", 4_000)), &first));
+    }
+
+    #[test]
+    fn a_folder_name_never_replaces_a_title_and_an_answered_wait_is_not_kept() {
+        let with_title = claude("UserPromptSubmit", serde_json::json!({ "session_title": "修复插件图标", "cwd": "/x/lingxi" }));
+        assert_eq!((with_title.label.as_deref(), with_title.label_is_folder), (Some("修复插件图标"), false));
+        let folder_only = claude("TaskCompleted", serde_json::json!({ "cwd": "/x/lingxi", "task_subject": "a" }));
+        assert_eq!((folder_only.label.as_deref(), folder_only.label_is_folder), (Some("lingxi"), true));
+        // An answered approval does not linger as the running row's line...
+        assert!(!keep_turn_summary("想跑：清理构建目录", "needs_approval", "新一轮对话开始", 1_000));
+        // ...while a real result still survives the lifecycle event right behind it.
+        assert!(keep_turn_summary("登录页的对比度修好了", "completed", "本轮回复完成（end_turn）", 1_000));
+    }
+
+    #[test]
+    fn todo_progress_and_session_end_are_mapped() {
+        let done = claude("TaskCompleted", serde_json::json!({ "task_id": "7", "task_subject": "装新版到 Applications" }));
+        assert_eq!(done.state, "running");
+        assert_eq!(done.task_id, "s", "the SESSION is the task; task_id in this payload is the todo item");
+        assert_eq!(done.result.as_deref(), Some("完成：装新版到 Applications"));
+        assert_eq!(claude("SessionEnd", serde_json::json!({ "reason": "exit" })).state, "ended");
+        let url = claude("Notification", serde_json::json!({ "notification_type": "elicitation_url_dialog", "message": "x" }));
+        assert_eq!(url.state, "needs_input");
+    }
+
+    #[test]
+    fn the_tray_offers_every_toy_and_every_effect() {
+        let toys: Vec<&str> = TRAY_TOYS.iter().map(|(id, _)| *id).collect();
+        let effects: Vec<&str> = TRAY_EFFECTS.iter().map(|(id, _)| *id).collect();
+        assert_eq!(toys, KNOWN_TOYS.to_vec());
+        assert_eq!(effects, KNOWN_PERFORMANCES.to_vec());
+    }
+
+    #[test]
+    fn only_the_dialog_hooks_are_installed_async() {
+        assert!(CLAUDE_HOOK_EVENTS.contains(&"PermissionRequest"));
+        assert!(claude_hook_is_async("PermissionRequest"));
+        // SessionEnd runs as the process exits: a detached hook may never finish.
+        assert!(!claude_hook_is_async("SessionEnd"));
+        assert!(!claude_hook_is_async("SessionStart"));
+    }
+
+    #[test]
+    fn a_turn_ends_with_what_it_came_to_not_with_a_template() {
+        let reply = "新版已经装好，重启后气泡会带上 Claude 图标和会话名。\n\n## 细节\n- 日志在 logs/";
+        let raw = serde_json::json!({
+            "session_id": "s", "hook_event_name": "Stop", "last_assistant_message": reply,
+        });
+        let event = normalize_claude_hook_event(&raw, 1);
+        assert_eq!(event.result.as_deref(), Some("新版已经装好"));
+        // Perceived, not collected: the reply never reaches the serialized event (event log,
+        // notification sinks) - only the display-only field holds the line made from it.
+        let serialized = serde_json::to_string(&event).unwrap();
+        assert!(!serialized.contains("新版已经装好"), "{serialized}");
+        assert!(event.summary.starts_with("本轮回复完成"));
+        // A turn that ended on a tool call has no prose: the old lifecycle line stands.
+        let silent = serde_json::json!({ "session_id": "s", "hook_event_name": "Stop", "last_assistant_message": "" });
+        assert_eq!(normalize_claude_hook_event(&silent, 1).result, None);
+    }
+
+    #[test]
+    fn turn_line_takes_the_first_sentence_of_prose_and_keeps_it_bubble_sized() {
+        assert_eq!(turn_line("测试全部通过。接下来安装。").as_deref(), Some("测试全部通过"));
+        assert_eq!(
+            turn_line("```bash\nnpm test\n```\n| a | b |\n## 结论\n**构建完成**，已安装到 `/Applications`。").as_deref(),
+            Some("构建完成，已安装到 /Applications"),
+        );
+        // Too long: cut at the last comma inside the bubble, not mid-word.
+        assert_eq!(
+            turn_line("明白了：「不采集」指的是内容在本机处理完就丢弃，不上传、不外发，而不是让猫对内容一无所知。").as_deref(),
+            Some("明白了：「不采集」指的是内容在本机处理完就丢弃"),
+        );
+        // No comma to cut at: truncated with an ellipsis.
+        let long = turn_line("关键发现：本机这版 Claude Code 的 hook 数据比我们以为的丰富。").unwrap();
+        assert!(long.ends_with('…') && long.chars().count() == BUBBLE_SAY_CHARS, "{long}");
+        assert_eq!(turn_line("- see [the docs](https://x.y) for details.").as_deref(), Some("see the docs for details"));
+        // An aside in parentheses is dropped before cutting, rather than cut in half.
+        assert_eq!(
+            turn_line("Bash 这边一直拿不到自动模式的安全判定（服务端的问题，不是命令本身被拒），所以我没法替你启动 app。").as_deref(),
+            Some("Bash 这边一直拿不到自动模式的安全判定"),
+        );
+        assert_eq!(turn_line("```\ncode only\n```"), None);
+        assert_eq!(turn_line(""), None);
+    }
+
+    #[test]
+    fn the_task_event_log_keeps_a_payloads_shape_but_not_its_words() {
+        let raw = serde_json::json!({
+            "hook_event_name": "UserPromptSubmit", "prompt": "rotate the prod password to hunter2",
+            "session_id": "s1", "stop_hook_active": false, "n": 3, "items": [1, 2],
+        });
+        let shape = payload_shape(&raw).to_string();
+        assert!(!shape.contains("hunter2"));
+        assert!(shape.contains("\"prompt\":\"str(35)\""));
+        assert!(shape.contains("\"hook_event_name\":\"UserPromptSubmit\""));
+        assert!(shape.contains("\"stop_hook_active\":false"));
+        assert!(shape.contains("\"items\":\"arr(2)\""));
+    }
+
+    #[test]
+    fn claude_session_label_prefers_a_rename_then_the_generated_title_then_the_folder() {
+        // A tail that starts mid-line, as a seek into the middle of a transcript does.
+        let tail = concat!(
+            "le\":\"ai-title\",\"aiTitle\":\"cut off\"}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"旧标题\",\"sessionId\":\"s\"}\n",
+            "{\"type\":\"user\",\"message\":{\"content\":\"hi\"}}\n",
+            "{\"type\":\"ai-title\",\"aiTitle\":\"修复插件图标\",\"sessionId\":\"s\"}\n",
+        );
+        assert_eq!(transcript_title_from_tail(tail).as_deref(), Some("修复插件图标"));
+        let renamed = format!("{{\"type\":\"custom-title\",\"customTitle\":\"灵犀发版\"}}\n{tail}");
+        assert_eq!(transcript_title_from_tail(&renamed).as_deref(), Some("灵犀发版"));
+        assert_eq!(transcript_title_from_tail("{\"type\":\"user\"}\n"), None);
+
+        // Read from disk, end to end.
+        let dir = std::env::temp_dir().join(format!("lingxi-transcript-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let transcript = dir.join("s.jsonl");
+        std::fs::write(&transcript, tail).unwrap();
+        let raw = serde_json::json!({
+            "session_id": "s", "hook_event_name": "Stop",
+            "transcript_path": transcript.to_str().unwrap(), "cwd": "/Users/x/workspace/lingxi",
+        });
+        assert_eq!(normalize_claude_hook_event(&raw, 1).label.as_deref(), Some("修复插件图标"));
+
+        // No title yet (a first turn), or not a transcript at all: the project folder.
+        let untitled = dir.join("untitled.jsonl");
+        std::fs::write(&untitled, "{\"type\":\"user\"}\n").unwrap();
+        let secret = dir.join("secret.txt");
+        std::fs::write(&secret, "{\"type\":\"ai-title\",\"aiTitle\":\"leak\"}\n").unwrap();
+        for path in [&untitled, &secret] {
+            let raw = serde_json::json!({
+                "session_id": "s", "hook_event_name": "Stop",
+                "transcript_path": path.to_str().unwrap(), "cwd": "/Users/x/workspace/lingxi",
+            });
+            assert_eq!(normalize_claude_hook_event(&raw, 1).label.as_deref(), Some("lingxi"));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Pins the Rust Codex mapper to the node adapter's `fromCodex`, case for case.
@@ -5819,7 +6922,9 @@ command = "node"
         let empty = serde_json::json!({});
         let event = normalize_claude_hook_event(&empty, 1);
         assert_eq!(event.state, "unknown");
-        assert_eq!(event.source_id, "unknown-session");
+        assert_eq!(event.source_id, "claude");
+        assert_eq!(event.task_id, "unknown-session");
+        assert_eq!(event.label, None);
     }
 
     #[test]
@@ -5935,7 +7040,7 @@ command = "node"
         );
         hooks.insert("PreToolUse".into(), serde_json::json!([ { "hooks": [ { "type": "command", "command": "echo mine" } ] } ]));
 
-        assert_eq!(upgrade_our_hook_commands(&mut hooks), 5);
+        assert_eq!(upgrade_our_hook_commands(&mut hooks), CLAUDE_HOOK_EVENTS.len());
         for event in CLAUDE_HOOK_EVENTS {
             assert_eq!(hooks[event][0]["hooks"][0]["command"], claude_hook_command_for(event), "{event}");
         }
@@ -5944,7 +7049,40 @@ command = "node"
         assert_eq!(upgrade_our_hook_commands(&mut hooks), 0, "a second launch has nothing to do");
 
         // Uninstall still recognises the upgraded forms.
-        assert_eq!(remove_our_hook_entries(&mut hooks), 5);
+        assert_eq!(remove_our_hook_entries(&mut hooks), CLAUDE_HOOK_EVENTS.len());
+    }
+
+    #[test]
+    fn a_standing_reminder_keeps_its_own_schedule() {
+        let day = 24 * 60;
+        let nine_thirty = 1_000_000_000u64;
+        // Said a few seconds late: tomorrow is still 09:30, not 09:30 and a few seconds.
+        assert_eq!(next_due(nine_thirty, day, nine_thirty + 20_000), nine_thirty + day * 60_000);
+        // The laptop was shut for three days: the next one is the next 09:30, not "now + 1 day".
+        let back = nine_thirty + 3 * day * 60_000 + 2 * 3_600_000;
+        assert_eq!(next_due(nine_thirty, day, back), nine_thirty + 4 * day * 60_000);
+        assert!(next_due(nine_thirty, day, back) > back);
+        assert_eq!(next_due(5, 0, 10), 60_005, "a zero interval cannot spin");
+    }
+
+    #[test]
+    fn events_learned_after_install_are_added_once_and_only_for_someone_connected() {
+        // A machine that clicked 一键接入 when there were five events.
+        let mut hooks = serde_json::Map::new();
+        for event in ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "StopFailure"] {
+            hooks.insert(event.into(), serde_json::json!([ { "hooks": [ { "type": "command", "command": claude_hook_command_for(event) } ] } ]));
+        }
+        hooks.insert("PermissionRequest".into(), serde_json::json!([ { "hooks": [ { "type": "command", "command": "echo mine" } ] } ]));
+        assert_eq!(add_events_new_since_install(&mut hooks), 3);
+        assert_eq!(hooks["PermissionRequest"][0]["hooks"][0]["command"], "echo mine", "theirs kept");
+        assert_eq!(hooks["PermissionRequest"][1]["hooks"][0]["async"], true);
+        assert_eq!(hooks["SessionEnd"][0]["hooks"][0]["command"], CLAUDE_HOOK_COMMAND);
+        assert_eq!(add_events_new_since_install(&mut hooks), 0, "already there");
+        // Someone who never connected gets nothing installed behind their back.
+        let mut stranger = serde_json::Map::new();
+        stranger.insert("Stop".into(), serde_json::json!([ { "hooks": [ { "type": "command", "command": "echo mine" } ] } ]));
+        assert_eq!(add_events_new_since_install(&mut stranger), 0);
+        assert!(!stranger.contains_key("SessionEnd"));
     }
 
     #[test]
