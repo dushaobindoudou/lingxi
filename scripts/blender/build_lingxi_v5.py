@@ -7,6 +7,10 @@ from pathlib import Path
 from mathutils import Vector
 ROOT=Path(__file__).resolve().parents[2]
 OUT=Path(os.environ.get('LINGXI_OUT',ROOT/'assets/characters/lingxi/v5'));OUT.mkdir(parents=True,exist_ok=True)
+# Fur knobs default to the main line's own coat (1.0 = no-op). v6 experiment F's values were
+# baked here on 2026-09-30 (LEN .80/.72/.85, N 1.5, LIFT .85, CLUMP 1.5, TAPER .767/1.073,
+# WAVE 1.6, FRIZZ 1.2) and matched v6's fine detail, but the user preferred the main-line
+# coat ("round B") side by side, so they are env-only experiments now.
 def _v6(k,d):
  # Look-dev sweep knob (from the v6 calibration line). Env override, no-op at its default.
  # Defaults are THIS line's authored values: a knob exists so scripts/lookdev-v6/ can sweep
@@ -52,10 +56,25 @@ def texmat(name,albedo,bump=None,rough=.5,sss=.08,fallback=(.6,.3,.3)):
 pink=texmat('Pad','pad_skin.png','pad_bump.png',rough=.5,sss=.15,fallback=(.65,.32,.30))
 nosemat=texmat('Nose','nose_skin.png','nose_bump.png',rough=.35,sss=.12,fallback=(.62,.28,.25))
 mouthmat=texmat('Tongue','tongue.png','tongue_bump.png',rough=.22,sss=.20,fallback=(.46,.14,.17))
-earmat=texmat('Ear','ear_fur.png','ear_bump.png',rough=.72,sss=.10,fallback=(.65,.32,.30))
+if nosemat.name.startswith('LX_Tex_'):
+ # The painted nose leather is half as saturated as the reference's: pink peak (R - max(G,B))
+ # 57 against 115 on the face render (v6_face_shape.py, 2026-09-30) - a pale beige button where
+ # the reference kitten has a coral-pink one. The v6 line fixed the same thing in the texture
+ # (x1.85); here it is a node, so the painted source stays untouched.
+ _nt=nosemat.node_tree;_p=_nt.nodes.get('Principled BSDF');_src=_p.inputs['Base Color'].links[0].from_socket
+ _hs=_nt.nodes.new('ShaderNodeHueSaturation');_hs.inputs['Saturation'].default_value=_v6('V6_NOSE_SAT',1.2)   # round B4
+ # Hue first: the painted leather is peach, so saturation alone pushed it ORANGE (round B3, x1.5).
+ # The reference's is pink - shift toward magenta (.5 = unchanged; .47 is about -11 degrees).
+ _hs.inputs['Hue'].default_value=_v6('V6_NOSE_HUE',.47)   # round B4: pink, not orange
+ _nt.links.new(_src,_hs.inputs['Color']);_nt.links.new(_hs.outputs['Color'],_p.inputs['Base Color'])
+# V6_EAR_TEX picks the inner-ear painting. ear_fur_v2.png (codex, 2026-09-30) is painted in the
+# reference's coral skin already - deeper at the canal, faint vessels, cream rim - so it gets no
+# pink multiply; the original pale ear_fur.png needs the (1,.62,.64) tint to read pink at all.
+EAR_TEX=os.environ.get('V6_EAR_TEX','ear_fur.png')
+earmat=texmat('Ear',EAR_TEX,'ear_bump.png',rough=.72,sss=.10,fallback=(.65,.32,.30))
 if earmat.name.startswith('LX_Tex_'):                      # tint the pale painted ear to the references' pink
  _nt=earmat.node_tree;_p=_nt.nodes.get('Principled BSDF');_src=_p.inputs['Base Color'].links[0].from_socket
- _mx=_nt.nodes.new('ShaderNodeMixRGB');_mx.blend_type='MULTIPLY';_mx.inputs['Fac'].default_value=1;_mx.inputs[2].default_value=(1.0,.62,.64,1)
+ _mx=_nt.nodes.new('ShaderNodeMixRGB');_mx.blend_type='MULTIPLY';_mx.inputs['Fac'].default_value=1;_mx.inputs[2].default_value=(1.0,.62,.64,1) if EAR_TEX=='ear_fur.png' else (1.0,.84,.84,1)   # v2 rendered washed-out untinted (round E); a light pink lift
  _nt.links.new(_src,_mx.inputs[1]);_nt.links.new(_mx.outputs['Color'],_p.inputs['Base Color'])
 iris=texmat('Iris','iris_albedo.png','iris_bump.png',rough=.28,sss=.05,fallback=(.22,.26,.13))
 if (TEXDIR/'iris_occlusion.png').exists() and iris.name.startswith('LX_Tex_'):
@@ -151,9 +170,25 @@ def merge(objects,name,voxel=.009):
 # waist (torso narrower than chest and rump), a level back line and a slightly longer body.
 parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',(0,-.205,.405),(.155,.14,.115)),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',(0,-.17,.315),(.145,.17,.160)),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
 for s in [-1,1]:
- parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.047),(.064,.088,.047)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.046),(.061,.085,.045))]
+ parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.040),(.054,.064,.038)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.040),(.053,.062,.037))]
 body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
 MG=_v6('V6_MUZZLE_GROW',0.0)   # muzzle volume grows DOWN, top edge fixed (.472+.032=.504); only needed if the lip line moves below the muzzle's reach
+# Toes sit AT the front of the paw ball (round E, 2026-09-30). They used to be placed 2cm ahead of
+# the paw's centre inside a ball 17.6cm deep - buried, so the foot read as a pom-pom however the
+# coat was set. The ball is shorter now (ry .088 -> .072 front, .085 -> .070 rear) and each toe's
+# centre is 6mm proud of its front surface.
+PAW_FRONT_Y={'Front':-.215-.064,'Rear':.245-.062}
+# Round G (review b4 + round F audit): F's toes sat in one straight row 3mm AHEAD of the ball -
+# 25-33mm proud, and 42mm wide at 22mm spacing, so neighbours overlapped by 20mm and no cleft
+# showed: four cotton balls glued on the front. Now each toe sits ON the paw ellipsoid where it
+# is (the outer toes follow the round front back ~16mm), TOE_IN inside it, so the front edge
+# stands ~12mm proud; narrower toes at 24mm spacing leave a ~6mm-deep cleft between them.
+PAW={'Front':((.108,-.215,.040),(.054,.064,.038)),'Rear':((.12,.245,.040),(.053,.062,.037))}   # == the FrontPaw/RearPaw spheres above
+TOE_DX=.024;TOE_R=(.015,.020,.018);TOE_Z=.020;TOE_IN=.008*_v6('V6_TOE_IN',1.0)
+def toe_xy(pre,s,i):
+ (cx,cy,cz),(rx,ry,rz)=PAW[pre];dx=(i-1.5)*TOE_DX
+ q=max(1-(dx/rx)**2-((TOE_Z-cz)/rz)**2,.05)
+ return s*cx+dx,cy-ry*math.sqrt(q)+TOE_IN
 head=merge([sphere('Cranium',(0,-.285,.518),(.165,.147,.142)),sphere('CheekL',(-.095,-.340,.466),(.070,.082,.064)),sphere('CheekR',(.095,-.340,.466),(.070,.082,.064)),sphere('MuzzleL',(-.031,-.408,.472-MG),(.052,.047,.032+MG)),sphere('MuzzleR',(.031,-.408,.472-MG),(.052,.047,.032+MG))],'LX_Head',.005)
 head.data.materials.clear();head.data.materials.append(headcoat)
 # --- Head sculpt ---------------------------------------------------------------------------------
@@ -180,19 +215,23 @@ sculpt(head)
 # Eyelids are spherical shells around a centre far behind the eye, rotated shut by their own bones
 # (see "Face rig" below). LID_APEX is how far the lid stands in front of the cornea's plane.
 LID_APEX=.0048   # .0040 left the lower lid's corner (with its 2mm shell) coincident with the cornea
-EYE_X=.064*_v6('V6_EYE_X',1.0);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',.66)   # baked .66 (2026-09-29, v6_face_shape.py): at 1.0 the pupil measured .341E against the reference's .194E (+76%) - the "startled stare"; .66 lands .203E (+4.6%). The residual is the painted pupil:iris ratio (.66, an iris-texture lever), not geometry
-EAR_S=_v6('V6_EAR',1.0)   # ear shell scaled about its base; the Ear bones scale with it
+EYE_X=.064*_v6('V6_EYE_X',1.0);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',.95)   # .95 (2026-09-29, v6_eye_size.py): at 1.0 the outer iris measured .48E bald-rimmed and .55E once the eyeliner rim widened, against the reference's .50E; .95 splits it. The earlier .66 was a MEASUREMENT error - v6_face_shape.py sized pupils by their largest inscribed circle, which the reference's big catchlights bite into (.194E where the hole-filled pupil is .34E); at .66 the eyes were a third too small, beads instead of the reference's big round eyes
+EAR_S=_v6('V6_EAR',1.0)   # ear shell scaled about its base; the Ear bones scale with it (.82 = v6's smaller ear, tried 2026-09-30; the user preferred 1.0)
 LID_YC=(EYE_R**2-LID_APEX**2)/(2*LID_APEX);LID_R=LID_YC+LID_APEX   # sphere through the eye's rim, LID_APEX proud at its centre
 LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather (24mm read as a long, sad philtrum)
 LIP_DZ=LIP0-.4575   # the mouth assembly MUST ride with the lip line - cavity/floor/tongue/teeth/jaw - or pink skin peeks above the new lip (v6 lesson)
 MOUTH_W=.024*_v6('V6_MOUTH_W',1.0);MW_K=MOUTH_W/.024;MW2=MOUTH_W*(.016/.024)   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
+LIP_SAG=.0035*_v6('V6_LIP_SAG',1.0)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m")
 GAPE_W=.036*_v6('V6_GAPE_W',1.0)    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
                # yawn opens the corners back to here - a cat's gape runs well past its visible lips
 def lip_z(x):
  """Height of the upper-lip line at x: the two arcs of the omega meeting under the philtrum,
   rising at the corners. The mouth opens along this line."""
  u=np.minimum(np.abs(x)/MOUTH_W,1)
- return LIP0+.0035*np.sin(np.pi*np.minimum(u/.78,1))+.006*np.maximum(0,u-.78)/.22
+ # Round G: the arcs SAG from the philtrum cusp, like the bottoms of the two whisker pads (the
+ # reference's "omega", with the lower lip's pink showing in the notch under the cusp). They used
+ # to bulge UP from it, which drew an "m" - read on the render as a flat wavy pink line.
+ return LIP0-LIP_SAG*np.sin(np.pi*np.minimum(u/.78,1))+.0015*np.maximum(0,u-.78)/.22
 def jaw_share(x,y,z,below):
  """How much of a head point the jaw carries: the lip, whisker-pad bottoms and chin in front,
   fading out toward the throat and the mouth corners so the skin there stretches, not tears."""
@@ -265,7 +304,9 @@ for v,k in zip(tongue.data.vertices,tk.data):
 # Canines: two up, two down, only seen when the mouth opens.
 teeth=[]
 for s in [-1,1]:
- for up,(x,y,z,region) in [(True,(s*.015*MW_K,-.436,.458+LIP_DZ,'HeadRigid')),(False,(s*.012*MW_K,-.434,.452+LIP_DZ,'Jaw'))]:
+ # The lower canine's tip stays 1mm under the lip line AT ITS x (round G2): once the arcs sagged
+ # (round G) the line dropped 3mm there and the tips showed through the closed mouth as two white dots.
+ for up,(x,y,z,region) in [(True,(s*.015*MW_K,-.436,.458+LIP_DZ,'HeadRigid')),(False,(s*.012*MW_K,-.434,min(.452+LIP_DZ,float(lip_z(s*.012*MW_K))-.0052),'Jaw'))]:
   tt=sphere('LX_Tooth',(0,0,0),(.0021,.0021,.0055 if up else .0042),toothmat)
   for v in tt.data.vertices:v.co=(v.co.x+x,v.co.y+y,v.co.z+z)
   for v in tt.data.vertices:                                                # taper to a point
@@ -297,15 +338,18 @@ if nosemat.name.startswith('LX_'):
 # Lips: a thin dark line - the philtrum from the nose down, the two upper-lip arcs out to the
 # corners (the real omega), and a short lower lip on the jaw. Mostly hidden in the muzzle fur.
 # Pink-mauve like the nose leather (the logo's mouth), not a black line.
-lipmat=mat('LX_Lip',(.42,.16,.17),.42)
-def lip_curve(name,pts,region):
- cu=bpy.data.curves.new(name,'CURVE');cu.dimensions='3D';cu.bevel_depth=.0010;cu.bevel_resolution=2
+lipmat=mat('LX_Lip',(.76,.54,.55),.42)   # round D: a faint crease - the reference shows no drawn upper lip at all   # round C: a soft rose shadow - the dark (.42,.16,.17) line read as a drawn-on stitch; the reference's mouth is a crease between the pads, not a line
+def lip_curve(name,pts,region,bevel=.0009):
+ # use_fill_caps: an open tube shows its dark inside at each end - that was the black dot at both
+ # mouth corners (round E), not the mouth cavity.
+ cu=bpy.data.curves.new(name,'CURVE');cu.dimensions='3D';cu.bevel_depth=bevel;cu.bevel_resolution=2;cu.use_fill_caps=True   # .9mm (round C): with a soft colour, a thin crease; 1.3 read as a drawn line
  sp=cu.splines.new('POLY');sp.points.add(len(pts)-1)
  for pt,c in zip(sp.points,pts):pt.co=(c[0],c[1],c[2],1)
  o=bpy.data.objects.new(name,cu);scene.collection.objects.link(o);cu.materials.append(lipmat)
  bpy.ops.object.select_all(action='DESELECT');o.select_set(True);bpy.context.view_layer.objects.active=o
  bpy.ops.object.convert(target='MESH');return (o,region)
-lips=[lip_curve('LX_LipPhiltrum',[(0,-.4525,.4735),(0,-.4525,.466),(0,-.4515,LIP0)],'HeadRigid')]
+_NB=NC[2]-NH   # nose-leather bottom: the philtrum hangs from it wherever V6_NOSE_DZ/_H put it
+lips=[lip_curve('LX_LipPhiltrum',[(0,-.4525,_NB),(0,-.4525,.5*(_NB+LIP0)),(0,-.4515,LIP0)],'HeadRigid')]
 for side in (-1,1):
  pts=[]
  for j in range(14):
@@ -313,7 +357,9 @@ for side in (-1,1):
   z=float(lip_z(x))
   pts.append((x,-.4515+.020*u*u,z))
  lips.append(lip_curve('LX_LipUpper.'+('L' if side<0 else 'R'),pts,'HeadRigid'))
-lips.append(lip_curve('LX_LipLower',[(x,-.4500+.010*(x/MW2)**2,float(lip_z(x))-.0016) for x in np.linspace(-MW2,MW2,9)],'Jaw'))
+lipmat_lower=mat('LX_LipLowerPink',(.82,.46,.50),.40)   # round D: the reference's mouth reads as this small pink lower lip under the pads
+lips.append(lip_curve('LX_LipLower',[(x,-.4500+.010*(x/MW2)**2,float(lip_z(x))-.0016) for x in np.linspace(-MW2,MW2,9)],'Jaw',bevel=.0017))   # round E: thick enough to show a little pink under the pads
+lips[-1][0].data.materials[0]=lipmat_lower   # the lower lip in pink, the upper crease faint (round D)
 # Skeleton: common bind space shared by body, separate face parts, and fur vertices.
 ad=bpy.data.armatures.new('LingxiSkeleton');rig=bpy.data.objects.new('LX_Rig',ad);scene.collection.objects.link(rig);bpy.context.view_layer.objects.active=rig;rig.select_set(True);bpy.ops.object.mode_set(mode='EDIT')
 def bone(n,a,b,parent=None):
@@ -339,7 +385,7 @@ for s in [-1,1]:
   else:
    chain=[(x,.225,.305),(x,.172,.195),(x,.300,.115),(x,.205,.036)];par='Pelvis'
   bone(pre+'Upper.'+suf,chain[0],chain[1],par);bone(pre+'Lower.'+suf,chain[1],chain[2],pre+'Upper.'+suf);bone(pre+'Paw.'+suf,chain[2],chain[3],pre+'Lower.'+suf)
-  for i in range(4):bone(pre+f'Toe{i}.'+suf,(x+(i-1.5)*.023,y-.06,.04),(x+(i-1.5)*.023,y-.10,.033),pre+'Paw.'+suf)
+  for i in range(4):tx,ty=toe_xy(pre,s,i);bone(pre+f'Toe{i}.'+suf,(tx,ty+.024,.026),(tx,ty-.014,.021),pre+'Paw.'+suf)
  bone('Ear.'+suf,(s*.100,-.250,.604),(s*(.100+.066*EAR_S),-.250+.010*EAR_S,.604+.156*EAR_S),'Head')  # matches the new ear shell
  ey=cranium_front(s*EYE_X,EYE_Z);bone('Eye.'+suf,(s*EYE_X,ey+.012,EYE_Z),(s*EYE_X,ey-.020,EYE_Z),'Head')
  # --- Face rig: eyelid bones ---------------------------------------------------------------------
@@ -447,6 +493,15 @@ for o,_ in lips:
 # oversized (182 mm wide x 128 mm tall against a 350 mm head), and it started as a straight
 # cylinder so it met the skull like a hat. Now it is smaller, and `flare` widens the base
 # into a trumpet that blends into the skull instead of sitting on top of it.
+def ear_wid(t):
+ """Ear half-width along its height t (0 base, 1 tip). Round-topped (round C, 2026-09-30): the old
+  (1-t^1.35) taper came to a sharp point - the reference kitten's ear is broad and ROUND at the
+  top. (1-t^2.2)^.6 holds the width most of the way up and closes in a curve."""
+ # Round G (review b4): measured 147 mm wide on a 147 mm ear (w/h 1.00, and 1.06 once round F
+ # flared it to 1.30) against the 112 mm / .83 in the comment below - .058 -> .044, flare 1.20.
+ flare=1+.20*math.exp(-(t/.17)**2)
+ return EAR_W*(1-t**2.2)**.6*flare+.011*(1-t)**.7
+EAR_W=.044*_v6('V6_EAR_W',1.0)   # ear half-width scale (.058 through round F)
 ears=[];ear_outers=[]
 for s in [-1,1]:
  suf='L' if s<0 else 'R';vs=[];fs=[]
@@ -454,7 +509,7 @@ for s in [-1,1]:
   # Was 98mm tall but 166mm wide at the base (w/h 1.7) - a short flap sitting on the skull,
   # which is why it read as "too small". A cat ear is a TALL narrow triangle: 135mm tall,
   # 112mm across the base (w/h .83), set further back and further out on the skull.
-  t=j/12;flare=1+.30*math.exp(-(t/.17)**2);wid=.054*(1-t**1.35)*flare+.011*(1-t)**.7
+  t=j/12;wid=ear_wid(t)
   for k in range(13):
    u=k/6-1;vs.append((s*(.100+.066*t)+wid*u,-.250+.010*t+.024*(1-u*u)*math.sin(math.pi*t),.604+.156*t))
  for j in range(12):
@@ -486,13 +541,20 @@ for s in [-1,1]:
  back.vertex_groups.clear();back.hide_render=True;bind(back,'Ear.'+suf);ear_outers.append((back,'Ear.'+suf))
  # Furnishings: white hairs rooted ON the inner ear surface in its lower half, flaring out
  # and up past the outer rim, the way a long-haired kitten's ear tufts spill out sideways.
- cu=bpy.data.curves.new('Ear furnishings','CURVE');cu.dimensions='3D';cu.bevel_depth=.00042;cu.bevel_resolution=1
- for i in range(140):
-  u=rng.uniform(-.55,.85);t=rng.uniform(.03,.50);fl=rng.uniform(.024,.046);sp=cu.splines.new('POLY');sp.points.add(3)
-  wid=.054*(1-t**1.35)*(1+.30*math.exp(-(t/.17)**2))+.011*(1-t)**.7
+ # Round C: 320 long white furnishings rooted up to 70% of the ear, reaching well past its rim -
+ # the reference's ear is filled with them; 140 short ones in the lower half left a bare shell.
+ cu=bpy.data.curves.new('Ear furnishings','CURVE');cu.dimensions='3D';cu.bevel_depth=.00040;cu.bevel_resolution=1
+ for i in range(320):
+  u=rng.uniform(-.55,.85);t=rng.uniform(.03,.70);fl=rng.uniform(.030,.066);sp=cu.splines.new('POLY');sp.points.add(6)
+  wid=ear_wid(t)
   rx=s*(.100+.066*t)+wid*u;ry=-.250+.010*t+.024*(1-u*u)*math.sin(math.pi*t)-.002;rz=.604+.156*t
+  # Wispy, not combed (round D): each hair bows sideways by its own amount and direction and
+  # curls back at the tip, so the tuft reads as the reference's soft white wisps rather than
+  # a fan of straight parallel strokes.
+  bow=rng.uniform(-.35,.35)*fl;curl=rng.uniform(.10,.30)*fl;ph=rng.uniform(0,6.28)
   for j,p in enumerate(sp.points):
-   f=j/3;p.co=(rx+s*fl*.75*f,ry-fl*.25*f,rz+fl*(.45*f+.20*f*f),1);p.radius=1-.85*f
+   f=j/6;side=bow*math.sin(math.pi*f)+curl*math.sin(ph+4.0*f)*f
+   p.co=(rx+s*fl*.75*f+side,ry-fl*.25*f+.4*side,rz+fl*(.45*f+.20*f*f),1);p.radius=1-.88*f
  furnish=bpy.data.objects.new('LX_EarFurnish.'+suf,cu);scene.collection.objects.link(furnish);cu.materials.append(cream)
  bpy.ops.object.select_all(action='DESELECT');furnish.select_set(True);bpy.context.view_layer.objects.active=furnish
  bpy.ops.object.convert(target='MESH');bind(furnish,'Ear.'+suf)
@@ -537,7 +599,7 @@ def iris_material():
  pupil=nt.nodes.new('ShaderNodeMixRGB');pupil.inputs[1].default_value=(.003,.003,.004,1)
  nt.links.new(ramp(PUPIL-.010,PUPIL+.008),pupil.inputs['Fac']);nt.links.new(limbal.outputs['Color'],pupil.inputs[2])
  nt.links.new(pupil.outputs['Color'],p.inputs['Base Color'])
- p.inputs['Roughness'].default_value=.45;p.inputs['Subsurface Weight'].default_value=0;p.inputs['Specular IOR Level'].default_value=.15
+ p.inputs['Roughness'].default_value=.45;p.inputs['Subsurface Weight'].default_value=0;p.inputs['Specular IOR Level'].default_value=.04   # was .15: its sheen laid the studio over the pupil as a grey veil
  # No bump under a cornea: it speckled the pupil, and the two eyes caught the light differently.
  for l in list(p.inputs['Normal'].links):nt.links.remove(l)
  return m
@@ -552,7 +614,7 @@ co_out=cn.new('ShaderNodeOutputMaterial');co_mix=cn.new('ShaderNodeMixShader');c
 co_tr=cn.new('ShaderNodeBsdfTransparent');co_gl=cn.new('ShaderNodeBsdfGlossy');co_gl.inputs['Roughness'].default_value=.02
 # Half-strength mirror: the lamps are far brighter than the grey studio, so their glints survive
 # while the grey veil the studio cast over the pupil halves.
-co_gl.inputs['Color'].default_value=(.34,.34,.34,1)
+co_gl.inputs['Color'].default_value=(.16,.16,.16,1)   # .34 greyed the pupil; .22 still mirrored the whole softbox as a crescent across it
 cl.new(co_fr.outputs[0],co_mix.inputs[0]);cl.new(co_tr.outputs[0],co_mix.inputs[1]);cl.new(co_gl.outputs[0],co_mix.inputs[2]);cl.new(co_mix.outputs[0],co_out.inputs['Surface'])
 # Eyelid skin: coloured per vertex after the coat is known (see "lid colour" below) - a thin
 # dark rim against the eye, the surrounding coat beyond it. As a flat beige it was the pale
@@ -624,9 +686,10 @@ for s in [-1,1]:
  for pre,y,x in [('Front',-.17,s*.108),('Rear',.26,s*.12)]:
   pad=sphere('LX_'+pre+'Pad.'+suf,(x,y-.026,.010),(.022,.026,.007),pink);planar_uv(pad,0,1);bind(pad,pre+'Paw.'+suf)   # a kitten-sized main pad
   for i in range(4):
-   toe=sphere('LX_'+pre+f'Toe{i}.'+suf,(x+(i-1.5)*.020,y-.065,.038),(.016,.020,.014),cream);bind(toe,pre+f'Toe{i}.'+suf)
-   p=sphere('LX_'+pre+f'Bean{i}.'+suf,(x+(i-1.5)*.020,y-.068,.026),(.009,.010,.0035),pink);planar_uv(p,0,1);bind(p,pre+f'Toe{i}.'+suf)   # flush with the toe sole: seen when the paw is raised
-   c=sphere('LX_'+pre+f'Claw{i}.'+suf,(x+(i-1.5)*.023,y-.070,.030),(.003,.012,.003),toothmat);bind(c,pre+f'Toe{i}.'+suf);c.shape_key_add(name='Basis');k=c.shape_key_add(name='Extend')
+   tx,ty=toe_xy(pre,s,i)
+   toe=sphere('LX_'+pre+f'Toe{i}.'+suf,(tx,ty,TOE_Z),TOE_R,cream);bind(toe,pre+f'Toe{i}.'+suf)
+   p=sphere('LX_'+pre+f'Bean{i}.'+suf,(tx,ty+.002,.0045),(.008,.010,.003),pink);planar_uv(p,0,1);bind(p,pre+f'Toe{i}.'+suf)   # under the sole: seen only when the paw is raised (round F; it showed from the front)
+   c=sphere('LX_'+pre+f'Claw{i}.'+suf,(tx,ty-.006,.018),(.003,.012,.003),toothmat);bind(c,pre+f'Toe{i}.'+suf);c.shape_key_add(name='Basis');k=c.shape_key_add(name='Extend')
    for v in k.data:v.co.y-=.045
    claws.append(c)
 # Tail tubular mesh, smoothly weighted over five bones.
@@ -713,6 +776,21 @@ def coat_grade(col):
  t=np.clip((lum-(TAB_LO-.04))/max(TAB_HI-TAB_LO+.08,1e-3),0,1)[:,None]   # stretched, but not to zebra
  ramp=np.where(t<.55,GRADE_DARK+(GRADE_MID-GRADE_DARK)*(t/.55),GRADE_MID+(GRADE_LIGHT-GRADE_MID)*((t-.55)/.45))
  return np.clip(col*(1-tab)+ramp*tab,0,1)
+FACE_WHITE=_v6('V6_FACE_WHITE',1.0)   # 1.0 with the soft edges = round B4, which the user called very close (2026-09-30)
+def face_white(p,col,white):
+ """The reference kitten's white: an inverted V between the eyes that widens from the brow to
+  the inner eye corners, and the whole muzzle and lower cheeks. The painted coat has only a
+  narrow blaze and brown cheeks - measured 12.6% white on the face against the reference's 41%,
+  the single largest gap left (2026-09-30, v6_probe_gap.py). Front-facing only (y < -.30), so
+  the crown, the sides and the ears keep the painted tabby. FACE_WHITE scales it (0 = off)."""
+ x,y,z=p.T
+ # Soft edges (round B3): with 10-14mm transitions the white read as a pasted-on mask with a hard
+ # line across the cheeks; 30-35mm lets it melt into the tabby the way the reference's does.
+ front=np.clip((-.30-y)/.04,0,1)
+ vee=np.clip((.008+.45*np.maximum(0,.60-z)-np.abs(x))/.030,0,1)*np.clip((.63-z)/.04,0,1)
+ low=np.clip((.085+.8*np.maximum(0,.505-z)-np.abs(x))/.035,0,1)*np.clip((.512-z)/.035,0,1)
+ m=(np.maximum(vee,low)*front*FACE_WHITE).clip(0,1)[:,None]
+ return col*(1-m)+white[None,:]*m
 def fur_color(p,reg):
  # A real mackerel tabby, painted in world space (cat faces -Y, z up).
  # dark saddle stripes run HEAD-TO-TAIL along the spine (not rings around the body),
@@ -725,6 +803,7 @@ def fur_color(p,reg):
  # step down in value - dark bands ~.32, base ~.70, white markings ~.88.
  dark=np.array([.29,.235,.205]);light=np.array([.70,.625,.565]);white=np.array([.96,.945,.915])
  x,y,z=p.T
+ if COAT is not None and reg=='Head':return face_white(p,painted_coat(p,reg),white)
  if COAT is not None and reg in ('Head','body'):return painted_coat(p,reg)
  if COAT is not None and reg=='Jaw':return np.tile(white,(len(p),1))
  if COAT is not None and reg.startswith('Ear'):return coat_sample('coat_head_front',p)
@@ -786,8 +865,11 @@ for obj,region,mtl in [(body,'body',bodycoat),(head,'Head',headcoat),(tail,'tail
 # line every cat's eye has. Evaluated on the authored (pre head-scale) basis, like the coat.
 for o in eyelids:
  me=o.data;co=np.array([me.vertices[l.vertex_index].co[:] for l in me.loops]);ring=np.array([(l.vertex_index//41)/8 for l in me.loops])
- col=fur_color(co,'Head');rim=np.clip((ring-.03)/.07,0,1)[:,None]
- col=np.array([.07,.05,.04])*(1-rim)+col*.78*rim   # skin under the coat is a shade darker than the coat
+ # The dark rim runs to ~.1r like the reference's eyeliner (it was .037r - invisible), and the
+ # skin beyond sits at .62 of the coat so it recedes into the fur's shadow instead of reading
+ # as a smooth pale goggle ring round each eye.
+ col=fur_color(co,'Head');rim=np.clip((ring-.09)/.12,0,1)[:,None]   # round A's (.16,.18) read as a bold cartoon ring
+ col=np.array([.05,.035,.03])*(1-rim)+col*.62*rim   # skin under the coat is a shade darker than the coat
  at=me.attributes.new('lid_color','FLOAT_COLOR','CORNER');at.data.foreach_set('color',np.column_stack((srgb_lin(col),np.ones(len(col)))).astype('f').ravel())
 furs=[]
 def fur_direction(root,reg):
@@ -799,7 +881,9 @@ def fur_direction(root,reg):
   d=np.tile([0,1,-.22],(n,1))
   low=np.clip((.21-z)/.15,0,1)[:,None]            # belly + upper legs: gravity wins
   d=d*(1-low)+np.array([[0,.20,-1.0]])*low
-  d[:,0]+=np.sign(x)*.30                          # outward on the flanks keeps it soft
+  # Outward on the flanks keeps it soft - but EASED across the midline: np.sign(x) flipped the
+  # whole coat from left to right at x=0 and combed a straight parting down the chest and belly.
+  d[:,0]+=np.tanh(x/.035)*.30
  elif reg=='tail':
   d=np.tile([0,1,-.12],(n,1))
  elif reg.startswith('Ear'):
@@ -808,6 +892,18 @@ def fur_direction(root,reg):
   centre=np.array([0,-.47,.505])                  # radiate away from the nose
   d=root-centre;d/=np.maximum(np.linalg.norm(d,axis=1)[:,None],1e-8);d[:,1]-=.18
   d[:,2]-=.35*np.clip((.49-z)/.07,0,1)            # the lower cheeks and chin droop softly
+  # Under the nose the radiating coat split left/right at the midline and combed a dark parting
+  # down the chin and throat (still visible after the belly's was eased). Chin fur falls and
+  # overlaps: take most of the sideways component out near the midline below the nose.
+  chin=np.clip((.49-z)/.05,0,1)*np.exp(-(x/.03)**2)
+  d[:,0]*=1-.75*chin
+  # Whisker pads (round G): the coat lies SIDEWAYS off the midline, from the nose's sides down to
+  # the lip, so the pads read as two domes with the philtrum groove between them - the reference's
+  # mouth is drawn by that parting and the pads' lower edges. Radiating from the nose plus the
+  # droop combed it straight DOWN across the lip line, which hid the pads and the mouth.
+  pad=(np.clip((.058-np.abs(x))/.018,0,1)*np.clip((NC[2]+NH-z)/.008,0,1)*np.clip((z-LIP0+.006)/.004,0,1)*(y<-.40))[:,None]
+  side=np.column_stack((np.tanh(x/.0025),np.zeros(n),np.full(n,-.30)))
+  d=d*(1-pad)+side*pad
   # ...except around the eyes, where the coat radiates away from the EYE: rooted at the rim
   # and pointing outward it frames the eye instead of combing across it, so it can run right
   # up to the lens and cover the bare skin ring that otherwise shows around it.
@@ -835,7 +931,19 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
   for s in [-1,1]:keep &= ~((((root[:,0]-s*EYE_X)/(EYE_R*.90))**2+((root[:,2]-EYE_Z)/(EYE_R*.90))**2<1)&(root[:,1]<-.395))
   # Keep the coat off the nose leather only. This window used to run from the nose all the way
   # down (z<.503), shaving a 48mm-wide bald strip over the mouth and chin.
-  keep &= ~((abs(root[:,0])<.024)&(root[:,1]<-.427)&(root[:,2]<.503)&(root[:,2]>.470))
+  keep &= ~((abs(root[:,0])<NW*1.12)&(root[:,1]<-.427)&(root[:,2]<NC[2]+NH+.0025)&(root[:,2]>NC[2]-NH-.0035))   # follows V6_NOSE_W/_DZ/_H (== .024, .470-.503 at 1.0)
+  # Part the coat along the lip line. Strands rooted ON it cross the omega and stitch it into a
+  # dotted line - v6 round A: continuous on a bald render, dashes with fur, and shortening the
+  # upper-lip coat to .12 did not help. A real cat's coat parts at the lip.
+  keep &= ~((abs(root[:,0])<MOUTH_W*.85)&(abs(root[:,2]-lip_z(root[:,0]))<.0026)&(root[:,1]<-.40))   # 2.6mm (round C; was 4.2 - a bald band); to .85 of the mouth (round E) so the coat covers the corners - at 1.08 the dark cavity showed as a dot
+  root=root[keep];normal=normal[keep];n=len(root)
+ if reg=='body':
+  # No body coat on the front of the paw ball where the toes sit (round E): the toes carry their
+  # own short coat, and the paw coat over them was what hid them.
+  keep=np.ones(n,dtype=bool)
+  for s in (-1,1):
+   for pre,px in (('Front',s*.108),('Rear',s*.12)):
+    keep&=~((np.abs(root[:,0]-px)<.050)&(root[:,2]<.046)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN))   # the toe row's back edge moves in with TOE_IN (round G)
   root=root[keep];normal=normal[keep];n=len(root)
  if root_filter is not None:
   m=root_filter(root);root=root[m];normal=normal[m];n=len(root)
@@ -855,7 +963,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
   dm=np.hypot(root[:,0],(root[:,2]-LIP0)*1.4)
   # Upper lip only: below the lip the coat is the chin's and hangs away from the mouth anyway;
   # shortening it too left a bare white plate under the mouth.
-  ln*=np.where((root[:,1]<-.40)&(root[:,2]>=lip_z(root[:,0])),np.clip(.22+.78*(dm-.016)/.050,.22,1),1)[:,None,None]
+  ln*=np.where((root[:,1]<-.40)&(root[:,2]>=lip_z(root[:,0])),np.clip(.20+.80*(dm-.016)/.050,.20,1),1)[:,None,None]   # .20 (round C): .12 left a bald flat patch around the mouth; with a soft lip colour a little overlap reads as fur, not stitches
   # The muzzle (nose, whisker pads) stays short and dense so the features read inside the
   # longer head coat; it grows to full length ~6cm out from the nose.
   dmz=np.hypot(root[:,0],(root[:,2]-(.466+_v6('V6_NOSE_DZ',0.0)))*1.25)
@@ -873,10 +981,17 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
   ln*=(.78+.44*tuft)[:,None,None]
   ruff=1+.75*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # cheek fluff widens the lower face
   bib=1+.5*np.clip((.50-root[:,2])/.08,0,1)
+  # ...but not on the whisker pads (round G): the bib lengthened the upper-lip coat by ~1.3x and
+  # that is what hung over the mouth. Below the lip the chin keeps its fluff.
+  bib=np.where((root[:,1]<-.40)&(np.abs(root[:,0])<.050)&(root[:,2]>LIP0-.004),1,bib)
   ln*=np.maximum(ruff,bib)[:,None,None]
  elif reg=='body':
   bib=1+.8*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)
-  legs=np.clip(.30+.70*(root[:,2]-.08)/.20,.30,1)   # short on the lower legs and paws - a raised paw is a paw, not a mitten
+  # Short on the paws, full by mid-leg. At .30 the paw still wore 2.5cm of an 8.5cm coat and read
+  # as a pom-pom with no toes (round C, 2026-09-30); ~1cm lets the foot and its toes show.
+  # Round D: the pom-pom was the LEG coat hanging over the paw (8.5cm strands rooted at mid-leg),
+  # not the paw's own - so the whole lower leg is short now, full length only from ~32cm up.
+  legs=np.clip(.10+.90*(root[:,2]-.06)/.26,.10,1)
   ln*=(bib*legs)[:,None,None]
  # Fluff physics: the strand hugs the skin at the root, lifts away through the middle,
  # and the tip drifts along the coat direction - then two wave frequencies (a slow
@@ -884,7 +999,11 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
  stand={'tail':1.7,'body':1.15,'Head':1.12}.get(reg,1.0)*_v6('V6_STAND',1.0)
  if o.name.startswith('LX_Lid'):stand=.28     # lid coat lies flat: a furry lid, not a brush of lashes
  lift=(.78*t-.34*t*t)*stand*_v6('V6_LIFT',1.0);drift=(.50*t*t)/stand
- wave=normal[:,None,:]*(.0024*rng.uniform(.5,1.5,(n,1,1))*(np.sin(t*4.2+rng.random((n,1,1))*6.28)+.55*np.sin(t*9.0+rng.random((n,1,1))*6.28)))
+ if reg=='body':
+  # Lower legs: the coat lies along the leg instead of standing off it, so it cannot balloon
+  # out over the paw and bury the toes (round D).
+  lift=lift*np.clip((root[:,2]-.05)/.16,.30,1)[:,None,None]
+ wave=normal[:,None,:]*(.0024*_v6('V6_WAVE',1.0)*rng.uniform(.5,1.5,(n,1,1))*(np.sin(t*4.2+rng.random((n,1,1))*6.28)+.55*np.sin(t*9.0+rng.random((n,1,1))*6.28)))
  pts=root[:,None,:]+ln*(normal[:,None,:]*lift+tangent[:,None,:]*drift)+wave
  # Clumping: strands rooted in the same small patch pull their tips toward the patch's mean
  # tip. Evenly spaced independent hairs read as velvet; real long fur parts into tufts.
@@ -954,6 +1073,10 @@ if QUALITY in ('standard','hero'):
   groom(o,max(1,int(n*f*DENSITY)),l,r,'under')
 # Short tabby fur on the back of each ear: bare shells read as plastic cut-outs from the side.
 for o,r in ear_outers:groom(o,max(1,int(6000*SCALE)),.022,r,'guard')
+# Toes: a short white coat of their own, bound to each toe bone - with the paw coat shortened
+# they would otherwise show as bare cream spheres.
+for o in [o for o in list(bpy.data.objects) if o.name.startswith(('LX_FrontToe','LX_RearToe'))]:
+ groom(o,max(1,int(420*SCALE)),.005,'paw','guard',bind_as=o.vertex_groups[0].name)   # round F: shorter and denser - velvet, not a spiky halo
 # Short coat ON the lids. Without it a squint slid a bare skin-coloured plate over the eye.
 # The strands get the lids' own Blink/Squint keys - each strand moves with the lid vertex
 # nearest its root - so the fur closes with the eye.
@@ -972,12 +1095,25 @@ for o in breathers:
  for v in k.data:
   p=v.co;fac=math.exp(-((p.y-.06)/.22)**4)*max(0,min(1,(p.z-.13)/.15));p.x*=1+.022*fac;p.z+=.003*fac
 # Whiskers as skinned bevelled curves converted to mesh.
+#
+# Eight a side in three rows, leaving the pad nearly level and DROOPING along their length.
+# The first version had five straight ones fanning UPWARD - the top one climbed to eye height
+# (z .53 against EYE_Z .523), so they read as wire drawn across the face ("细铁丝横穿全脸").
+# The reference kitten's whiskers never rise past the pad: the upper row runs level, the
+# lower rows fall away, and every one bends down under its own weight toward the tip.
+# (row dz, angle in degrees above horizontal, length) - lengths vary so the tips do not line up.
+WHISKERS=[(+.006,+5,.19),(+.006,+1,.21),
+          (.000,-2,.22),(.000,-6,.20),(.000,-10,.18),
+          (-.006,-13,.19),(-.006,-18,.17),(-.006,-23,.15)]
+whiskermat=softmat('WhiskerMat',(.97,.96,.93),.34,.02)
 for s in [-1,1]:
  suf='L' if s<0 else 'R'
- for i in range(5):
-  cu=bpy.data.curves.new('Whisker','CURVE');cu.dimensions='3D';cu.bevel_depth=.00055;cu.bevel_resolution=2;sp=cu.splines.new('POLY');sp.points.add(7)
-  for j,p in enumerate(sp.points):t=j/7;p.co=(s*(.040+.20*t),-.436+.05*t*t,.470+(i-2)*.006+.030*(i-2)*t-.012*t*t,1);p.radius=1-.9*t
-  o=bpy.data.objects.new('LX_Whisker',cu);scene.collection.objects.link(o);cu.materials.append(cream)
+ for i,(dz,ang,ln) in enumerate(WHISKERS):
+  cu=bpy.data.curves.new('Whisker','CURVE');cu.dimensions='3D';cu.bevel_depth=.00062;cu.bevel_resolution=2;sp=cu.splines.new('POLY');sp.points.add(9)   # .00048 vanished into the white cheek coat
+  rise=math.tan(math.radians(ang))*ln;droop=.11*ln   # droop grows with t^2: level at the root, bowed at the tip
+  x0=.034+.0015*(i%3);z0=.466+dz
+  for j,p in enumerate(sp.points):t=j/9;p.co=(s*(x0+ln*t),-.438+.05*t*t,z0+rise*t-droop*t*t,1);p.radius=1-.93*t
+  o=bpy.data.objects.new('LX_Whisker',cu);scene.collection.objects.link(o);cu.materials.append(whiskermat)
   # Deselect first: convert() acts on the whole selection, so without this every earlier
   # whisker was converted again - which APPLIES its armature modifier and leaves it frozen
   # in rest pose while the head moves (visible as whiskers across the brow when lying down).
@@ -1116,22 +1252,31 @@ def _sit_targets(f):
   if k[0]=='H':hip=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],hip.y+.035,.046)),math.radians(-176))
   else:sh=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],sh.y-.012,.066)),_paw_rest(k))
  return T
+# Two targets in this cost are really one: the hip's height and the spine's pitch. The hip
+# has to be ~170 mm up or the rump hangs 65 mm through the floor (the mesh reaches 170 mm
+# below the hip joint), and at that height a 62 deg pitch lifts the shoulder out of the
+# forelegs' reach - so the pitch has to flatten with it. 170 mm and 44 deg holds the
+# shoulder at ~390 mm, which is where a straight foreleg already puts it.
 def solve_sit():
  def cost(v):
   rots,locs=_sit_rots(v);f=_fk(rots,locs);c=0.0
-  hip=f('RearUpper.L').translation;c+=25*abs(hip.z-.105)
+  hip=f('RearUpper.L').translation;c+=25*abs(hip.z-.170)
   for k,(tg,pa) in _sit_targets(f).items():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
-  c+=12*abs(pitch-math.radians(62))
+  c+=12*abs(pitch-math.radians(44))   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
+  # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
   mz=(f('Head')@mouth_l).z;c+=15*max(0,.50-mz)
   hd0=f('Head').translation;hd1=_tip(f,'Head');c+=3*abs(math.atan2(hd1.z-hd0.z,-(hd1.y-hd0.y))-math.radians(12))
   return c+.01*float(np.dot(v,v))
  c_,v=_search(cost,[-.45,-.12,0,-.5,.3,.4],[-1.3,-.4,-.4,-1.0,-.6,-.6],[0,.4,.4,1.0,1.0,1.0],4000,11)
  rots,locs=_sit_rots(v);f=_fk(rots,locs)
+ _sv=_tip(f,'Spine')-f('Spine').translation
+ _p=math.degrees(math.atan2(_sv.z,abs(_sv.y)))
+ _ov={k:round(1000*leg_ik(rots,locs,k,tg,pa)[2],1) for k,(tg,pa) in _sit_targets(f).items()}
  print('SIT_SOLVE',json.dumps({'cost':round(c_,4),'v':[round(float(x),3) for x in v],'hip_z':round(f('RearUpper.L').translation.z,3),
-  'mouth_z':round((f('Head')@mouth_l).z,3)}))
+  'mouth_z':round((f('Head')@mouth_l).z,3),'pitch_deg':round(_p,1),'sh_z':round(f('FrontUpper.L').translation.z,3),'over_mm':_ov}))
  return rots,locs,_sit_targets(f)
 def solve_lick(sit):
  rots0,locs,T0=sit;k='FR'
@@ -1165,6 +1310,14 @@ for _s in 'LR':
   _f=_fk({_nm:(.05,0,0)});_moved=(_f(_nm)@(_b.matrix_local.inverted()@_pt)).z-_pt.z
   LID_TH[_nm]=math.copysign(abs(_dz*EYE_R*HEAD_S)/_R,_dz*_moved)
 SIT=solve_sit()
+# The sit solver pinned the hip 105 mm off the floor, which folded the hind legs to -176 deg
+# and left the rump 164 mm BELOW the hip - 65 mm under the floor, with the tail 77 mm under it.
+# Raising the hip target to 170 mm lets the hind legs carry the rear instead of folding under it.
+# Lifting the root is not available instead: the sit already sits at the forelegs' full extension,
+# so any root lift takes the forepaws off the floor with the body (measured: +80 mm root ->
+# paws +77 mm). The hind pads sat 13 mm low on their own account, so their targets come up too.
+for _k,(_t,_a) in SIT[2].items():
+ if _k[0]=='H':_t.z+=.013;SIT[2][_k]=(_t,_a)
 LICK_UPPER=solve_lick(SIT)
 WALK=dict(duty=.62,stride=.12,lift=.035,off={'HL':0,'FL':.25,'HR':.5,'FR':.75})
 RUN=dict(duty=.40,stride=.20,lift=.060,off={'FL':0,'HR':0,'FR':.5,'HL':.5})
@@ -1182,27 +1335,46 @@ def place_legs(name,u,pb,hold=0.0):
  lie={}
  for k in LEGS:
   hy=ad.bones[LEGS[k][1]].head_local.y
-  lie[k]=(Vector((LREST[k]['x'],hy-.075,.045+.11)),math.radians(-170)) if k[0]=='F' else (Vector((LREST[k]['x'],hy+.045,.046+.11)),math.radians(-178))
+  # .045 was the folded ankle's height, and it put the folded paw 63 mm BELOW the floor
+  # (v6_ground_calib.py). Raise the target rather than the root: the silhouette still has
+  # to lose its height when the cat lies down.
+  lie[k]=(Vector((LREST[k]['x'],hy-.075,.108+.11)),math.radians(-170)) if k[0]=='F' else (Vector((LREST[k]['x'],hy+.045,.108+.11)),math.radians(-178))
  for k in LEGS:
   foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot
   if name in ('Walk','Run'):
-   dy,dz,flex=_gait(WALK if name=='Walk' else RUN,u,k);tg=foot+Vector((0,dy,dz));pa+=flex*(.9 if k[0]=='F' else .7)
+   dy,dz,flex=_gait(WALK if name=='Walk' else RUN,u,k)
+   if name=='Walk' and k[0]=='H':dy*=1.30;dz*=1.25   # 1.80 overshot: hind travel 63 mm against the front's 36
+   tg=foot+Vector((0,dy,dz))
   elif name=='Jump':
    lift=math.sin(math.pi*u)**2
    tg=foot+(Vector((0,-.09*lift,.30*lift)) if k[0]=='F' else Vector((0,.11*lift,.27*lift)));pa+=lift*(.9 if k[0]=='F' else 1.2)
-  elif name in ('LieDown','SideLie','Sleep','Stretch'):
+  elif name in ('LieDown','SideLie','Sleep'):
    fr=1.0 if name=='Sleep' else min(1,u*3);lt,la=lie[k]
-   if name=='Stretch' and k[0]=='F':lt=lt+Vector((0,-.08*math.sin(math.pi*u),0))
    if name in ('SideLie','Sleep'):
     # On its side a cat's legs lie out loose and a little bent, one pair drawn up - not folded
     # under it as in the sphinx, which rolled over became four paws in the air.
     lt=foot+(Vector((0,-.035,.06)) if k[0]=='F' else Vector((0,-.05,.07)));la=pa+.5
    tg=RD@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
    if name in ('SideLie','Sleep'):pa=pa+_ang(RD.to_3x3()@Vector((0,1,0)))
+  elif name=='Bite':
+   fac=.5-.5*math.cos(u*math.tau*2)      # the same envelope pose() drives the head with
+   # The paws pin it down. Bite's four paws travelled 0.1 mm over the whole clip - the ears
+   # (51 deg back) were the only thing acting, so the frame read as a head tilt on a stand.
+   if k=='FR':tg=foot+Vector((0,-.045*fac,.11*fac));pa+=.7*fac
+   elif k=='FL':tg=foot+Vector((0,-.020*fac,.05*fac));pa+=.4*fac
+  elif name=='Yawn':
+   fac=math.sin(math.pi*u)**2
+   # A yawn is a stretch: the forelegs push out in front. The clip moved the jaw 76 deg and
+   # the body not at all (root travel 0, nose-to-tail +13.6 mm).
+   if k[0]=='F':tg=foot+Vector((0,-.075*fac,.016*fac));pa+=.30*fac
+  elif name=='Stretch':
+   s_=math.sin(math.pi*u)
+   if k[0]=='F':tg=foot+Vector((0,-.11*s_,.018*s_));pa+=.35*s_
+   else:tg=foot                                            # hind legs stay planted: the hips are the high end
   elif name=='Knead' and k[0]=='F':
-   a=.5+.5*math.sin(u*math.tau*2+(0 if k=='FL' else math.pi));tg=foot+Vector((0,-.012*a,.035*a));pa+=.5*a
+   a=.5+.5*math.sin(u*math.tau*2+(0 if k=='FL' else math.pi));tg=foot+Vector((0,-.028*a,.050*a));pa+=.6*a   # was (-.012,.035): too small to read at desktop size
   elif name=='PawPlay' and k=='FL':
-   a=.5+.5*math.sin(u*math.tau);tg=foot+Vector((0,-.10*a,.13*a));pa+=1.0*a
+   a=max(0,math.sin(u*math.tau*1.5-.6))**1.5;tg=foot+Vector((0,-.13*a,.16*a));pa+=1.1*a   # a quick swat out of the bow, not a slow wave
   elif name=='Lick':
    st,sa=SIT[2][k];tg=foot.lerp(st,hold);pa=pa+(sa-pa)*hold
    if k=='FR':
@@ -1224,18 +1396,33 @@ def pose(name,u):
   pb['Root'].location.y=.015*abs(math.sin(phase))*(2 if name=='Run' else 1)
  if name=='Jump':
   lift=math.sin(math.pi*u)**2;pb['Root'].location.y=.32*lift;pb['Spine'].rotation_euler[0]=-.12*math.sin(phase)
- if name in ['LieDown','SideLie','Sleep','Stretch']:
+  # A cat in the air flies its tail for balance and lays its ears back. The clip measured
+  # 1.1 deg of ear and 1.4 deg of tail - it jumped with a dead face and a rigid tail.
+  pb['Tail1'].rotation_euler[0]=-.45*lift;pb['Tail2'].rotation_euler[0]=.30*lift;pb['Tail3'].rotation_euler[0]=-.30*lift
+  for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=.35*lift
+  pb['Spine'].rotation_euler[0]+=.10*lift
+ if name in ['LieDown','SideLie','Sleep']:
   # The body has to come DOWN with the legs. Folding them 117 degrees while dropping the root
   # 11cm left the silhouette 0.721 tall against Idle's 0.755 - a 4cm difference on a 75cm cat,
   # which is why "lying down" looked like "standing with odd legs".
   f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.11*f
   pb['Spine'].rotation_euler[0]=.10*f
-  if name=='SideLie':pb['Root'].rotation_euler[2]=1.25*f;pb['Root'].location.y=-.025*f
+  # Rolled onto its flank the body's width becomes its height, and the lowest thing is a hind
+  # toe 193 mm under the floor (v6_ground_calib.py). Lifting the root that much puts the
+  # pelvis at 270 mm against ~370 mm standing - which is where a cat on its side belongs.
+  if name=='SideLie':pb['Root'].rotation_euler[2]=1.25*f;pb['Root'].location.y=.139*f
   if name=='Sleep':
    # A real sleep pose lies on the flank, with a relaxed head and closed lids.
-   pb['Root'].rotation_euler[2]=1.15;pb['Root'].location.y=-.025
+   pb['Root'].rotation_euler[2]=1.15;pb['Root'].location.y=.127   # +152 mm: lands the lowest hind toe at -2 mm
    blink=1;pb['Head'].rotation_euler[0]=.20
-  if name=='Stretch':pb['Spine'].rotation_euler[0]=.18*math.sin(math.pi*u);pb['Head'].rotation_euler[0]=-.15
+ if name=='Stretch':
+  # A real stretch: the forelegs reach out along the floor, the chest drops between the
+  # shoulders and the hips stay up - the bow a cat makes on waking. It used to share the
+  # lie-down targets, so its frame was LieDown again (root -110 mm, nose-to-tail +3.9 mm
+  # against Idle's +0.8): two cards of the same pose under two names.
+  f_=min(1,u*3);s_=math.sin(math.pi*u)
+  pb['Root'].location.y=-.055*f_;pb['Spine'].rotation_euler[0]=.16*s_*f_
+  pb['Head'].rotation_euler[0]=-.22*s_*f_;pb['Tail1'].rotation_euler[0]=-.35*s_*f_
  if name=='Curious':
   # Leaning in, head cocked, weight forward. The old version rotated the head 13 degrees at its
   # peak and moved nothing else, which is inside the noise of the idle wobble.
@@ -1262,7 +1449,10 @@ def pose(name,u):
  if name in ['Yawn','Bite','Lick']:
   fac=math.sin(math.pi*u)**2 if name=='Yawn' else (.5-.5*math.cos(phase*2))
   pb['Jaw'].rotation_euler[0]=-1*(1.35 if name=='Yawn' else .32)*fac
-  if name=='Yawn':blink=.85*fac;pb['Head'].rotation_euler[0]+=-.48*fac   # a cat tips its head back to yawn
+  if name=='Yawn':
+   blink=.85*fac;pb['Head'].rotation_euler[0]+=-.48*fac   # a cat tips its head back to yawn
+   pb['Spine'].rotation_euler[0]+=.14*fac;pb['Root'].location.y+=-.030*fac   # and drops its chest as the jaw opens
+   pb['Tail1'].rotation_euler[0]+=-.30*fac;pb['Tail2'].rotation_euler[0]+=.22*fac
   if name=='Lick':
    # Paw grooming: the right forepaw comes up to the mouth (upper leg swings forward and up,
    # forearm folds back, paw curls), the head dips and turns to meet it, and the tongue laps
@@ -1270,6 +1460,10 @@ def pose(name,u):
    hold=min(1,u/.25,(1-u)/.2);hold=hold*hold*(3-2*hold)
    # Sit down, raise the paw, lick, put it down: the body's solved angles ease in by `hold`;
    # the legs follow their targets through place_legs().
+   # Sitting, the tail has to come round beside the haunch. Left alone it hung straight down
+   # through the floor: -86 mm, the lowest thing in the whole clip.
+   pb['Tail1'].rotation_euler[0]=-.40*hold;pb['Tail2'].rotation_euler[0]=1.15*hold
+   pb['Tail3'].rotation_euler[0]=1.10*hold;pb['Tail4'].rotation_euler[0]=1.05*hold   # swept on the built rig: this set lands the tip at +0.2 mm
    for bn,rv in {**SIT[0],**LICK_UPPER}.items():pb[bn].rotation_euler=tuple(c*hold for c in rv)
    for bn,lc in SIT[1].items():pb[bn].location=tuple(c*hold for c in lc)
    for i in range(4):pb[f'FrontToe{i}.R'].rotation_euler[0]=.45*hold
@@ -1284,12 +1478,33 @@ def pose(name,u):
     sgn=-1 if suf=='L' else 1
     pb['Ear.'+suf].rotation_euler[0]=-.90*fac;pb['Ear.'+suf].rotation_euler[2]=sgn*.35*fac
    squint=.25*fac
+   # ...and the head LUNGES at what it bites, the front dropping to meet it. With only the jaw
+   # and ears moving, Bite's contact-sheet frame was a standing cat, indistinguishable from Idle.
+   # (Sign: in this rig rotation_euler[0] < 0 tips UP - Yawn's head-back is -.48 - so down is +.)
+   pb['Neck'].rotation_euler[0]+=.24*fac;pb['Head'].rotation_euler[0]+=.12*fac;pb['Head'].rotation_euler[2]+=.14*fac
+   pb['Spine'].rotation_euler[0]+=.10*fac;pb['Root'].location.y+=-.028*fac
  if name in ['Knead','PawPlay']:
   for suf,ph in [('L',0),('R',math.pi)]:
    a=.5+.5*math.sin(phase*2+ph)
    for i in range(4):pb[f'FrontToe{i}.'+suf].rotation_euler[0]=.35*a
   # Kneading is the blissed-out clip; without the squint it was just paws moving.
-  if name=='Knead':squint=1.0+.10*math.sin(phase)   # the blissed-out half-closed eyes of the reference, throughout
+  if name=='Knead':
+   squint=1.0+.10*math.sin(phase)   # the blissed-out half-closed eyes of the reference, throughout
+   # The whole cat kneads, not just the paws: weight rocks onto the paw that pushes, the head
+   # hangs low and content, ears soften, tail up. Paws alone read as Idle on the contact sheet.
+   rock=math.sin(phase*2)
+   pb['Spine'].rotation_euler[2]+=.07*rock;pb['Root'].location.x+=.012*rock
+   pb['Neck'].rotation_euler[0]+=.10;pb['Head'].rotation_euler[0]+=.14;pb['Head'].rotation_euler[1]+=.05*rock   # + is down in this rig
+   for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=-.22
+   pb['Tail1'].rotation_euler[0]=-.70
+  if name=='PawPlay':
+   # A play bow and a swat: the front drops, the head goes low and cocks, the tail lashes -
+   # then the paw flicks out (see place_legs). A paw waving over a standing pose read as Idle.
+   bow=.5-.5*math.cos(phase)
+   pb['Spine'].rotation_euler[0]+=.20*bow;pb['Root'].location.z+=-.022*bow;pb['Root'].location.y+=-.015*bow   # + drops the chest
+   pb['Head'].rotation_euler[0]+=-.12*bow;pb['Head'].rotation_euler[1]+=.30*bow   # the head comes back up to keep its eyes on the target
+   for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=.18*bow   # pricked forward at the target
+   pb['Tail1'].rotation_euler[0]=-.40;pb['Tail2'].rotation_euler[2]=.55*math.sin(phase*3)
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else 0.0)
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint
  # or the lid overshoots through the eye.
