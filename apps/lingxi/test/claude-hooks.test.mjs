@@ -81,7 +81,11 @@ test('a session starting with the cat closed starts it, then delivers the event 
   const box = machine();
   const { status, ms } = runHook('SessionStart', box);
   assert.equal(status, 0, 'a hook must never fail the session');
-  assert.ok(ms < 1000, `the hook held the session for ${ms}ms - the check has to run detached`);
+  // The check has to run detached - a SessionStart hook blocks the session. The bound is a
+  // wall-clock sanity floor, not a precise budget: on a loaded machine (test runner + builds in
+  // parallel) spawning bash + curl can pass 1000ms, while a hook that genuinely fails to detach
+  // holds for many seconds (download / app boot / the 20s bridge wait).
+  assert.ok(ms < 2500, `the hook held the session for ${ms}ms - the check has to run detached`);
   assert.ok(await waitFor(join(box.state, 'posted.json'), 5000), 'the SessionStart event never arrived');
   assert.deepEqual(readFileSync(join(box.state, 'open.log'), 'utf8').trim().split('\n'), ['-g -b com.dushaobin.lingxi-desktop']);
   assert.equal(readFileSync(join(box.state, 'posted.json'), 'utf8'), PAYLOAD, 'the payload must arrive untouched');

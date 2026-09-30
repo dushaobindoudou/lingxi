@@ -194,7 +194,9 @@ test('installed but closed: opened without taking focus, then told the session b
   const box = machine();
   const r = run('session-start.sh', box, payload('SessionStart', { source: 'startup' }));
   assert.equal(r.status, 0);
-  assert.ok(r.ms < 1500, `SessionStart held the session for ${r.ms}ms`);
+  // Wall-clock floor, not a precise budget: opening the app is detached, and a genuine
+  // non-detached hold runs for seconds. Under a loaded test run the shell can take ~1.6s.
+  assert.ok(r.ms < 2500, `SessionStart held the session for ${r.ms}ms`);
   assert.ok(await until(() => box.posts().length === 1), 'the event never arrived after the start');
   assert.deepEqual(box.opened(), [`-g ${box.app}`], 'opened by its resolved path, in the background');
 });
@@ -218,7 +220,9 @@ test('not installed: installed in the background, and the user and Claude are bo
   const r = run('session-start.sh', { ...box, env: { ...box.env, CLAUDE_PLUGIN_ROOT: plugin } },
     payload('SessionStart', { source: 'startup' }));
   assert.equal(r.status, 0);
-  assert.ok(r.ms < 1500, `the install must not hold the session (${r.ms}ms)`);
+  // Same wall-clock floor as the other SessionStart tests: the work is detached, and only a
+  // genuinely non-detached hold (seconds) is a failure, not a loaded machine's ~1.6s shell.
+  assert.ok(r.ms < 2500, `the install must not hold the session (${r.ms}ms)`);
   assert.match(r.json.systemMessage, /正在后台下载安装/);
   assert.match(r.json.hookSpecificOutput.additionalContext, /being installed/);
   assert.ok(await until(() => existsSync(join(box.log, 'installer'))), 'the installer was never started');
