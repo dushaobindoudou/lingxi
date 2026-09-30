@@ -16,7 +16,7 @@
 | `claude/` | Claude Code | 标准 Claude 插件（plugin.json + hooks + skill + MCP） | hooks 用纯 `curl` 直发 `/task-event`，Rust 桥接原生映射 Claude 载荷——零 node 依赖，插件目录拷走也能用；hook 命令与 app 一键安装逐字相同，`remove_our_hook_entries` 能认出并接管卸载 |
 | `codex/` | Codex | 安装器 + fanout 脚本 + skill | Codex 没有插件清单格式，它的"插件"是一段 config.toml 与一个脚本；安装器保留既有 notify（fanout 合并而不是覆盖），身份用 `LINGXI_AGENT=codex` 而不是机器身份文件 |
 | `dsh/` | DeepSeek Harness (DSH) | 动态 Cordis 插件源码 | DSH 没有进程外插件机制——能力以动态 Cordis 插件注册为 model Tools；源码入库、`cordis_define` 加载，会话级生效 |
-| `doubao/` | 豆包（Doubao） | 安装器 + skill 软链 + CLI 包装器 + 身份注册 | 豆包没有 hooks、也没有可写的 MCP/连接器配置面，所以没有「确定性的一半」；身份不用机器级 `agent.json`，用 `bin/lingxi` 包装器每次调用钉住 `doubao` |
+| `doubao/` | 豆包（Doubao） | 安装器 + skill 软链 + CLI 包装器 + 身份注册 + 回合监听 | 豆包没有 hooks，「确定性的一半」由回合监听（LaunchAgent 读豆包日志的开始/结束/提问三种行）补上；MCP 对豆包返回空工具列表（它的 tools/call 从不送达）；身份不用机器级 `agent.json`，用 `bin/lingxi` 包装器每次调用钉住 `doubao` |
 | `workbuddy/` | WorkBuddy | 安装器 + hooks + MCP 配置 + skill 软链 + 身份注册 | **5.6+ 已有确定性的一半**：`~/.workbuddy/settings.json` 的 hooks（载荷与 Claude Code 兼容，实时生效）承担 UserPromptSubmit/Stop；身份不能用宿主 `env`（信任按配置哈希记账），只能走机器级文件 |
 | `cursor/` | Cursor | 安装器 + 用户级 hooks + MCP + skill 软链 | hooks 是确定性的一半（会话开始 / 提交 / 回合结束）；身份用 `LINGXI_AGENT=cursor` 写在 MCP 与 hook 里，**不改**机器级 `~/.lingxi/agent.json` |
 

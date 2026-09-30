@@ -1,6 +1,6 @@
 ---
 name: lingxi-doubao
-description: 豆包 (Doubao)-only rules for the 灵犀 desktop cat - Doubao has no lifecycle hooks, so the cat knows only what you report; the lingxi command on PATH always speaks as 豆包; MCP does not reach the app from Doubao tasks yet. Read alongside the lingxi skill whenever you drive the cat from 豆包. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
+description: 豆包 (Doubao)-only rules for the 灵犀 desktop cat - Doubao has no hooks, a turn watcher reports only that a turn started or ended, so the result is yours to report; the lingxi command on PATH always speaks as 豆包; MCP offers no tools here. Read alongside the lingxi skill whenever you drive the cat from 豆包. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
 ---
 
 # 灵犀 · 只在豆包上成立的事
@@ -18,19 +18,22 @@ LINGXI_TASK_ID=weekly-report lingxi task running write focused "整理本周周�
 LINGXI_TASK_ID=weekly-report lingxi task completed write proud "周报已整理好，三个项目各一段；还差你补一句下周计划"
 ```
 
-**只用 CLI。** 豆包任务里的 MCP 调用目前到不了本机（工具能列出来，调用帧从没送达），
-模型以为「调用成功」其实什么都没发生。
+**只用 CLI。** 豆包任务里的 MCP 调用从没送达过本机，所以灵犀的连接器在豆包里不提供任何工具；
+看到别处写着 `lingxi_task` 之类的工具名，在这里一律换成对应的 `lingxi` 命令。
 
-## 二、豆包没有 hook：猫只知道你报的事
+## 二、豆包没有 hook，插件用回合监听补上了一半
 
-别的宿主会在回合结束、等授权时自动告诉猫；豆包不会。**你不报，猫就什么都不知道。** 所以系统层里
-那几类消息全靠你：
+豆包本身不会告诉猫任何事。插件装了一个回合监听，读豆包自己的日志，在三个时刻自动报给猫：
 
-- 一件事开始报 `running`，结束报终态——每一轮结束都要报，点名任务、做成了什么、还要不要用户继续。
-- 需要用户回答、授权、补信息时报 `needs_input` / `needs_approval`，把问题原样写进 `summary`。
-- 失败、被挡住时报 `failed` / `blocked`，写清卡在哪、下一步是什么。
+| 时刻 | 猫知道的 |
+|---|---|
+| 你收到用户的一条消息 | 这个会话开始了一轮（气泡上用用户这句话当会话名） |
+| 你用提问工具问用户 | 在等用户回答 |
+| 这一轮结束 | 豆包回复结束——**不知道你做成了什么** |
 
-没有 hook 兜底，所以也没有「重复念一遍」的问题——报一次就是一次。
+所以**这一轮做成了什么只有你报了猫才知道**：任务开始报 `running`，结束报终态，点名任务、结果、
+还要不要用户继续；需要回答时把问题原样写进 `summary`。你报过，这一轮结束时监听就不再重复念；
+你没报，猫只能说一句「豆包回复结束，请查看结果」。失败、被挡住时报 `failed` / `blocked`，写清卡在哪。
 
 ## 三、应用的安装和启动
 

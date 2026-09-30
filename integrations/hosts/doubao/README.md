@@ -12,6 +12,7 @@
 | 技能 `lingxi-authoring`（共享版） | 同上 | 创作自定义动作/表情/主题 |
 | CLI 包装器 `bin/lingxi` | `~/.local/bin/lingxi`（豆包 agent shell 的 PATH） | 每次调用**固定以豆包身份说话**，并在桥通时带 logo 补注册，气泡显示豆包官方图标 |
 | 身份注册 `POST /agents` | 内存态 | 徽章/名字/颜色 + `doubao-logo`，包装器每次调用补注册，应用重启也不丢图标 |
+| 回合监听 `bin/lingxi-doubao-watch` | LaunchAgent `com.dushaobin.lingxi.doubao-watch` | 读豆包自己的日志里「任务开始 / 结束 / 等你回答」三种行（只含会话 id），像 hook 一样报给猫——豆包的「确定性的一半」。`LINGXI_DOUBAO_WATCH=0` 不装 |
 
 > **徽章图标**：`doubao-logo` 的内容是豆包官方人设头像的 `data:image/png;base64,…`
 > （来源：官网 CDN `doubao_avatar_new.png`，与 `/Applications/Doubao.app` 的 `app.icns` 同款人物），
@@ -19,8 +20,12 @@
 > 应用只接受纯矢量 SVG 或 PNG/WebP data URI（拒绝 SVG 内嵌光栅图），所以用 data URI 形式注册。
 > 图标版权归字节跳动所有，这里仅在本机个人工具中作为接入标识复用。
 
-> **插件是下限，skill 是上限**这句话在豆包这里不成立——豆包没有 hooks，所以 skill 既是下限
-> 也是上限。模型没想起来用 skill，猫就什么都不知道。这是豆包接入的固有形态，不是缺陷。
+> **插件是下限，skill 是上限**：豆包没有 hooks，下限由回合监听补上——每轮开始、结束、等你回答，
+> 猫都会知道；但监听不知道这一轮做成了什么，那一半仍然靠模型按 skill 主动报。
+>
+> **MCP 连接器在豆包里不提供工具**：豆包任务从没把 `tools/call` 送到本机，模型却会假装调用成功。
+> MCP 服务器从自己的 node 路径认出豆包后返回空工具列表，模型只能走 skill + CLI 这条真能到达的路。
+> 豆包修好之后，在连接器的环境变量里加 `LINGXI_DOUBAO_MCP=1` 即可恢复。
 
 ## 身份：为什么是包装器而不是 `~/.lingxi/agent.json`
 
