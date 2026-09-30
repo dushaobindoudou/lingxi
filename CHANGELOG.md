@@ -30,6 +30,14 @@
 
 - 托盘菜单重新整理：「打开主界面」放到最上面；新增「玩具」子菜单（毛线球 / 逗猫棒 / 激光笔 / 收起）
   和「特效」子菜单（愤怒抓屏 / 飞奔亲亲 / 半夜暴走）；「有 N 个任务需要留意」可点击，直接打开主界面。
+- 各宿主的 skill 改为按宿主分层：claude / codex / cursor / doubao / workbuddy 各有一层
+  `lingxi-<host>/`（宿主专属的用法说明），共享内核仍在 `integrations/skills/lingxi/`，安装脚本
+  会两层一起装。WorkBuddy 新增配额护栏（读它本地的会话用量，上下文快满时猫先提醒）；豆包新增
+  `lingxi-doubao-watch` 观察器（豆包没有 hook，读它自己的日志补上任务开始/结束）。
+- Codex 的接入对齐 Claude 的会话语义：每个会话一行、会话名取工作目录，回复以问句结尾按
+  "等你回答"提醒；一键接入时顺带把 skill 装进 `~/.codex/skills`（已有内容不会覆盖）。
+- WorkBuddy 的标识从占位圆形重画成真实的猫脸矢量；`integrations/hosts/PLUGIN-STANDARD.md`
+  落成文，新宿主照着接。
 
 ### 修复
 - 托盘打开主界面有时要点两次：新建的窗口没有被提到前面，落在当前应用后面。macOS 14 起激活是协作式的，
