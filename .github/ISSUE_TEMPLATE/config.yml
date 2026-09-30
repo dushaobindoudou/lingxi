@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞
+    url: https://github.com/dushaobindoudou/lingxi/security/advisories/new
+    about: 凭据、token 或私人会话不要发公开 issue。请走私下报告。

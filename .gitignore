@@ -25,6 +25,7 @@ __pycache__/
 # exported kits. Keeping them out of git is what makes this repo clonable; they live alongside
 # the checkout rather than inside it.
 assets/characters/**/v5/
+assets/characters/**/v5-texdev/
 assets/characters/**/v6/
 assets/characters/**/model-evaluation/
 assets/characters/**/materials/
@@ -41,3 +42,6 @@ previews/
 
 # Independent private Sites checkout; source is versioned by Sites.
 previews/threejs/
+
+# v5 look-dev export for the three.js preview (rebuilt by scripts/blender/export_lingxi_v5_glb.py)
+apps/lingxi/public/v5/

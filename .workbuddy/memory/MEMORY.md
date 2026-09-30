@@ -195,3 +195,27 @@
 
 `npm run check` + `npm test`（50 个单测全绿）。`cd apps/lingxi && npx tsc --noEmit && cd src-tauri && cargo test`。
 渲染/动画不适合单测，用 `probe-*.html` 页面量化回归。
+
+## v5 Blender 渲染管线不变量（2026-09-24 定型，改前先读）
+
+整条链：`build_lingxi_v5.py`（建模/配色/毛发）→ `native_fur_lingxi_v5.py`（strand mesh → 曲线 + 材质 + 肖像）
+→ `render_lingxi_v5_poses.py` → `make_lingxi_v5_pose_sheet.py`。**build 之后必须跑 native_fur**（build 会覆盖 blend）。
+
+几条踩过大坑、不能再犯的：
+
+1. **`LX_Fur_*` 毛源网格必须 `hide_render=True`**：它们没有材质，Cycles 会用默认白材质渲染成白绒，
+   把条纹皮肤和有色毛发全埋掉（2026-09-24 "白猫"事件的头号元凶）。
+2. **配色是显示空间数值，写进 attribute 前必须 `srgb_lin()` 转线性**：FLOAT_COLOR 按线性读，
+   直接写 .47 会渲染成 .75，整只猫淡 1.5~2 档、条纹全平。
+3. **毛发用不透明 Principled BSDF + `coat_color` 属性，不要用 Principled Hair BSDF**：
+   COLOR 参数化对浅色毛几乎不吸收，29 万根半透明毛散射成奶白纱，压 T（TT lobe）无效。
+4. **`native_fur` 必须幂等**（先删旧 `LX_RenderFur_*`），否则重复跑留下 `.001`、毛发量翻倍。
+5. Blender 5.2 API：`node.inputs[...]` 按 identifier 不是标签（毛发 Transmission = `'TT lobe'`）；
+   判定"同一个节点"用 `!=` 不用 `is not`（RNA 包装不稳定）；`remove` 过的节点引用失效。
+6. 视觉验收用 `scripts/blender/metrics_render.py`：**同曝光背景板差分**取掩码，比参考图
+   `reference/turnaround-v1.png`（中位 193 / 对比 74 / 暖度 23）。看不了图时这是唯一可信依据。
+   **背景板会过期**：改了场景或 EV 后旧板整帧都是差异，掩码失效（掩码像素数 > 图像总像素就是信号）。
+7. **改头身比不要逐个改字面量**：`HEAD_S` 绕颈关节在**最后**统一缩放整个头组件（网格+形态键+骨骼+
+   头部毛发+胡须，SOLIDIFY 厚度同步 ×HEAD_S）。必须在最后——`fur_color()` 的花纹遮罩和 groom 的
+   避眼窗口是**世界空间**写的，先缩放就错位。改完必跑 `verify_rig_deform.py`。
+8. 改完脚本先 `py_compile` + `LINGXI_QUALITY=preview`（8 秒）验一遍，再跑 standard（~4 分钟）。
