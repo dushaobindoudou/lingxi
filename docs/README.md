@@ -1,5 +1,7 @@
 # 文档索引
 
+英文译本在 [`en/README.md`](en/README.md)。中文是规格原文；两边不一致时以中文为准。
+
 这个仓库的文档里既有**现在的规格**，也有**当时的记录**。两者都值得留着，但混在一起读会
 得到互相矛盾的"现状"——比如一份 2026-09-13 的审计说"Agent 任务观察只有契约"，而今天
 往 `/task-event` 发一条 `completed` 事件，猫会换表情、播动作、说一句话。两句话都曾经是
@@ -25,7 +27,7 @@
 | [`18-main-interface-design.md`](18-main-interface-design.md) | 主界面（管理窗口）的信息架构 |
 | [`21-tray-menu-and-home-surface.md`](21-tray-menu-and-home-surface.md) | 托盘菜单与治愈系主界面视觉方案、素材拼接和开发映射 |
 | [`19-agent-integration.md`](19-agent-integration.md) | **接 Agent 的权威文档**：桥的接口、词汇表、反应映射 |
-| [`lingxi-完整技术方案 v0.1.md`](lingxi-完整技术方案%20v0.1.md) | 最初的完整技术方案（3904 行，立项期文档；接口以 `19` 和运行时为准） |
+| [`lingxi-完整技术方案 v0.1.md`](lingxi-完整技术方案%20v0.1.md) | 按当前实现写的总览：产品、三层架构、体素角色、行为、桌面壳、接入。细节仍以本表其他规格和 `GET /integration` 为准 |
 | [`20-arbitrary-png-skin-import.md`](20-arbitrary-png-skin-import.md) | 自定义皮肤导入 |
 | [`RELEASING.md`](RELEASING.md) | 打包、签名证书、公证、发布到 GitHub（本地脚本与 CI 同一套） |
 
@@ -42,10 +44,14 @@
 | [`decisions/001-realtime-desktop.md`](decisions/001-realtime-desktop.md) | 为什么是实时桌面程序 |
 | [`decisions/002-physics-and-game-libraries.md`](decisions/002-physics-and-game-libraries.md) | 为什么不引入物理/游戏引擎 |
 | [`decisions/003-multi-agent-arbitration.md`](decisions/003-multi-agent-arbitration.md) | 多 agent 同时驱动时怎么仲裁 |
+| [`decisions/004-cat-friend.md`](decisions/004-cat-friend.md) | 猫朋友的自我：天性不是时间配额，出现不靠次数 |
+| [`decisions/005-species-packs.md`](decisions/005-species-packs.md) | 其他物种以「物种包」接入，统一的是意图不是骨架；先把猫做完 |
+| [`24-species-pack-design.md`](24-species-pack-design.md) | 物种包的架构设计：意图词汇、骨骼角色、运动模块、活动空间、迁移步骤（**设计稿，未实现**） |
 | [`06-roadmap-and-decisions.md`](06-roadmap-and-decisions.md) | 路线图与阶段决策 |
 | [`16-desktop-shell-prototype.md`](16-desktop-shell-prototype.md) | 桌面壳原型期的架构落地与一场误诊 |
 | [`14-daily-life-action-atlas.md`](14-daily-life-action-atlas.md) | 64 格日常动作图集（图不在仓库里，见下） |
 | [`22-character-v5-lookdev.md`](22-character-v5-lookdev.md) | 短毛骨架 v5 的 look-dev（未批准、未接入应用） |
+| [`23-bubble-unread-and-copy.md`](23-bubble-unread-and-copy.md) | 气泡提醒与未读状态：问题说明与统一优化方案（app 侧条目待统一实施） |
 | [`12-character-study-review.md`](12-character-study-review.md) | 角色研究阶段的评审结论（v1 时期，早于现在的体素骨架） |
 | [`evidence/`](evidence/) | Blender / MCP 时期的实测记录 |
 

@@ -228,7 +228,6 @@ lingxi task failed test frustrated "第四次跑同一个测试了"
 要不要"说话"仍由上面的反应表和吞掉规则决定。窗口状态可从 `GET /perception` 的
 `agentBusy` 读到。
 
-
 ### 状态词汇表（8 个，封闭集合）
 
 | `state` | 什么时候报 |
@@ -281,14 +280,15 @@ lingxi task failed test frustrated "第四次跑同一个测试了"
 | 档位 | 能做 | 不能做 |
 |---|---|---|
 | `observer` | 读（`/status`、`/perception`、`/capabilities`）、注册身份 | 任何改动 |
-| `performer`（**默认**） | 表演：表情、动作、说话、特效、玩具、`/task-event`、`/intent` | 改会保存的设置、写备忘和提醒 |
-| `trusted` | 以上全部 + `skin` / `camera` / `scale` / `visible`、`POST /memory`、`POST /reminders` | — |
+| `performer` | 表演：表情、动作、说话、特效、玩具、`/task-event`、`/intent` | 改会保存的设置、写备忘和提醒 |
+| `trusted`（**有名字的 agent 的默认**） | 以上全部 + `skin` / `camera` / `scale` / `visible`、`POST /memory`、`POST /reminders` | — |
 
 界线划在**会不会留下来**，不是划在重要不重要。表情播错四秒后就没了；一次 `visible: false`
 会让用户的猫消失，而且看不出是哪个 agent 干的。这两件事该有不同的答案。
 
-**默认是 `performer` 而不是 `trusted`**，意味着以前"任何 agent 都能改主题"的行为变了。
-白名单的意思就是没列就不给。被挡下的调用不会静默：
+**报上名字的 agent 默认 `trusted`。** 记忆和提醒在这一档，猫才记得住昨天。用户可以在同一页把它改成
+`performer` 或 `observer`，已保存的选择优先于默认。没有身份的调用是 `anonymous`，停在 `performer`：
+本机任何进程都能打到这座桥，不能因为「没报名字」就拿到会留下来的写入。被挡下的调用不会静默：
 
 ```jsonc
 // POST /control  {"agent":"my-ci","skin":"midnight","expression":"得意"}
@@ -303,7 +303,7 @@ lingxi task failed test frustrated "第四次跑同一个测试了"
 写备忘和提醒是单一动作，没有可拆的部分，所以直接返回 `403`，body 里有同样的 `rejected`。
 
 `POST /memory` 和 `POST /reminders` 用 `X-Lingxi-Agent` 头认人（body 只读一次，不能再翻找 `agent` 字段）。
-不带头就是 `anonymous`，按默认档位处理。
+不带头就是 `anonymous`，停在 `performer`。
 
 ### 写入限速
 
