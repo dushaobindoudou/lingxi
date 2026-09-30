@@ -181,7 +181,12 @@ test('installed and running: the event is delivered and nothing is printed', asy
   assert.equal(r.out, '', 'a session where everything works should print nothing');
   assert.ok(await until(() => box.posts().length === 1), 'the SessionStart event was not delivered');
   assert.match(box.posts()[0], /"hook_event_name":"SessionStart"/);
-  assert.match(read(join(box.log, 'auth0')), /X-Lingxi-Agent: claude/, 'the plugin speaks as claude');
+  // The fake curl writes the body and the header file separately; wait for the header rather
+  // than racing it (this failed intermittently under a loaded test run).
+  const speaksAsClaude = () => {
+    try { return /X-Lingxi-Agent: claude/.test(read(join(box.log, 'auth0'))); } catch { return false; }
+  };
+  assert.ok(await until(speaksAsClaude), 'the plugin speaks as claude');
   assert.deepEqual(box.opened(), [], 'a running app is not opened again');
 });
 

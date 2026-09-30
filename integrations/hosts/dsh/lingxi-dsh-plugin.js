@@ -135,7 +135,8 @@ function buildTools(ctx) {
         '被挡 blocked、完成 completed、失败 failed、用户取消 cancelled）；mood 是只有你判断得了的' +
         '事情心情（写家书是 tender，和 flaky test 搏斗是 frustrated），猫回应的是心情而不是镜像状态。' +
         '每个任务开始时报告 running，结束时报告 completed/failed/cancelled；summary 必须说明具体做了什么或结果是什么，' +
-        '尤其 completed 要写清完成的任务，不能只写“搞定”。同一任务始终复用 taskId，不要刷屏；' +
+        '尤其 completed 要写清完成的任务，不能只写“搞定”。后台子代理结束时插件会自动带它的最后一句话提示，' +
+        '但只有你知道这个结果对全局意味着什么——值得用户知道就用本工具补一条终态报告，把结论放进 summary 的上下文里。同一任务始终复用 taskId，不要刷屏；' +
         'mood 只有确实能判断时才传，没有心情可报时省略也是正确的。',
       parameters: {
         type: 'object',

@@ -119,11 +119,17 @@ const fileAgent = readAgentFile();
 
 const AGENT_ID = pick(process.env.LINGXI_AGENT, fileAgent.id);
 
+// The file's look belongs to the file's id. A host that names itself in the environment
+// (LINGXI_AGENT=claude-code) while the machine file says "workbuddy" used to register as
+// claude-code WITH WorkBuddy's name and penguin logo - the cat spoke for Claude under the wrong
+// face. Only a file describing this same identity may dress it.
+const fileLook = !fileAgent.id || fileAgent.id === AGENT_ID ? fileAgent : {};
+
 const AGENT_PROFILE = {
-  name: pick(process.env.LINGXI_AGENT_NAME, fileAgent.name) || undefined,
-  badge: pick(process.env.LINGXI_AGENT_BADGE, fileAgent.badge) || undefined,
-  color: pick(process.env.LINGXI_AGENT_COLOR, fileAgent.color) || undefined,
-  logo: pick(process.env.LINGXI_AGENT_LOGO, fileAgent.logo) || undefined,
+  name: pick(process.env.LINGXI_AGENT_NAME, fileLook.name) || undefined,
+  badge: pick(process.env.LINGXI_AGENT_BADGE, fileLook.badge) || undefined,
+  color: pick(process.env.LINGXI_AGENT_COLOR, fileLook.color) || undefined,
+  logo: pick(process.env.LINGXI_AGENT_LOGO, fileLook.logo) || undefined,
 };
 
 /// Only these fields take over the cat's performance, and only these contend for the stage - the

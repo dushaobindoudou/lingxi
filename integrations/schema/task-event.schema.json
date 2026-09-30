@@ -76,6 +76,21 @@
       "description": "Stable id for this piece of work across its lifetime. Progress suppression is keyed on it, so reusing one id for unrelated work will silently swallow reactions.",
       "type": "string",
       "maxLength": 128
+    },
+    "session": {
+      "description": "The host's long-lived session this event belongs to (a Claude Code session id). When set, 主界面 keeps one activity row per session instead of one per agent, so several sessions of the same tool can be told apart.",
+      "type": "string",
+      "maxLength": 128
+    },
+    "label": {
+      "description": "A human name for that session - the host's own title for it, or the project folder. Shown on the speech bubble beside the agent's mark and on the 主界面 row. Display only: the app never forwards it to a notification sink or keeps it in the event log.",
+      "type": "string",
+      "maxLength": 40
+    },
+    "result": {
+      "description": "What this turn came to, in the host's own words (for Claude Code, its last reply). The app takes one bubble-sized line from it so the cat talks about THIS task, and keeps none of it: it is never written to the event log or disk, and never forwarded to a notification sink. Keep `summary` free of work content; put it here.",
+      "type": "string",
+      "maxLength": 4000
     }
   },
   "examples": [

@@ -149,7 +149,7 @@ function fromClaude(raw) {
       const type = raw.notification_type;
       let state;
       if (type === 'permission_prompt' || type === 'worker_permission_prompt') state = 'needs_approval';
-      else if (type === 'idle_prompt' || type === 'agent_needs_input' || type === 'elicitation_dialog') state = 'needs_input';
+      else if (['idle_prompt', 'agent_needs_input', 'elicitation_dialog', 'elicitation_url_dialog'].includes(type)) state = 'needs_input';
       else if (typeof type === 'string') return null; // not waiting on the user
       else state = /permission|approve|allow|授权|批准|允许/i.test(message) ? 'needs_approval' : 'needs_input';
       const tool = message.split('permission to use ')[1]?.trim().replace(/\.$/, '').slice(0, 40);
@@ -161,9 +161,33 @@ function fromClaude(raw) {
       };
     }
     case 'Stop':
-      // The reply itself goes to the local app, which cuts one line from it for the bubble and
-      // keeps none of it (TaskEvent::result) - perceived, not collected.
+      // The reply itself goes to the local app, which cuts one line from it for the bubble - or
+      // turns the event into needs_input when the reply ends on a question - and keeps none of
+      // it (TaskEvent::result). Perceived, not collected.
       return { state: 'completed', kind: 'chat', taskId: session, result: raw.last_assistant_message };
+    case 'PermissionRequest': {
+      // The dialog as it opens (the Notification for it is a later echo). AskUserQuestion is
+      // drawn as a permission dialog, so it arrives here too. Must match the app's mapper.
+      const tool = String(raw.tool_name ?? '');
+      const input = raw.tool_input ?? {};
+      if (tool === 'AskUserQuestion') {
+        return { state: 'needs_input', kind: 'chat', taskId: session, summary: '有个问题等你选', result: input.questions?.[0]?.question };
+      }
+      if (tool === 'ExitPlanMode') {
+        return { state: 'needs_approval', kind: 'chat', taskId: session, summary: '计划写好了，等你过目', result: '计划写好了，等你过目' };
+      }
+      const short = tool.split('__').pop() || '工具';
+      const file = typeof input.file_path === 'string' ? input.file_path.split('/').pop() : null;
+      const what = tool === 'Bash' && input.description ? `想跑：${input.description}`
+        : file && ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool) ? `想改 ${file}，等你批一下`
+        : `想用 ${short}，等你批一下`;
+      return { state: 'needs_approval', kind: 'chat', taskId: session, summary: `想用 ${short}，等你批一下`, result: what };
+    }
+    case 'TaskCompleted':
+      // A todo ticked off: updates the session's row, silently.
+      return { state: 'running', kind: 'chat', taskId: session, summary: '完成了一项待办', result: raw.task_subject ? `完成：${raw.task_subject}` : undefined };
+    case 'SessionEnd':
+      return null; // the generic schema has no "gone"; the raw-payload path removes the row
     case 'StopFailure':
     case 'SubagentStop':
       return event === 'StopFailure'

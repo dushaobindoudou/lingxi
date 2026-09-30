@@ -5,18 +5,20 @@
 # (session-start.sh), because relaunching on every prompt would fight someone who quit the cat
 # on purpose. The bridge maps the raw payload itself (normalize_claude_hook_event in lib.rs):
 #
-#   UserPromptSubmit  -> running          Notification -> needs_approval / needs_input
-#   Stop              -> completed        StopFailure  -> failed
+#   UserPromptSubmit  -> running          Notification      -> needs_approval / needs_input
+#   Stop              -> completed, or needs_input when the reply ends on a question
+#   StopFailure       -> failed           PermissionRequest -> needs_approval / needs_input
+#   TaskCompleted     -> running (row update, silent)       SessionEnd -> the row goes away
 #
-# The `reactions` option trims the stream: `important` drops the per-prompt event (the most
-# frequent, least informative one), `off` sends nothing. Always exits 0 - exit 2 on
+# The `reactions` option trims the stream: `important` drops the per-prompt and per-todo events
+# (the most frequent, least informative ones), `off` sends nothing. Always exits 0 - exit 2 on
 # UserPromptSubmit would erase the user's prompt, and on Stop would keep Claude talking.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 PAYLOAD="$(cat)"
 case "$(lx_option reactions all)" in
   off) exit 0 ;;
-  important) grep -q '"hook_event_name" *: *"UserPromptSubmit"' <<<"$PAYLOAD" && exit 0 ;;
+  important) grep -Eq '"hook_event_name" *: *"(UserPromptSubmit|TaskCompleted)"' <<<"$PAYLOAD" && exit 0 ;;
 esac
 lx_oneclick_hooks_installed && exit 0
 lx_bridge_up || exit 0

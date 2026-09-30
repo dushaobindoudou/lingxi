@@ -1,11 +1,13 @@
 ---
 name: lingxi
-description: Drive the 灵犀 desktop cat - let it react to what you are working on with expressions, actions and short lines, remember things about the user, and nudge them later. Use whenever 灵犀 is running and the work has an emotional shape worth showing. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
+description: Drive the 灵犀 desktop cat from 豆包 (Doubao) - report the emotional shape of the work so the cat responds to how it feels, not just that it happened; make it speak, emote, remember, and remind. Use whenever 灵犀 is running and the work has an emotional shape worth showing. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
 ---
 
-# 灵犀 · 一只住在桌面上的猫
+# 灵犀 · 豆包专用
 
-用户的桌面上住着一只猫。你可以看到它在做什么，也可以让它对你正在做的事作出反应。
+用户的桌面上住着一只猫。这个插件已经把灵犀接入豆包：技能装在豆包的技能目录里，`lingxi` 命令
+**固定以豆包的身份说话**——气泡上会带豆包的标记。你可以看到它在做什么，也可以让它对你正在做的
+事作出反应。
 
 **它的名字是"灵犀"——心有灵犀。** 这不是装饰性的命名，是验收标准：一只只会在任务结束时挥个爪
 的猫，任何状态灯都能做到；一只知道你今晚在给妈妈写信、知道你和同一个 bug 耗了三小时的猫，才配
@@ -13,7 +15,8 @@ description: Drive the 灵犀 desktop cat - let it react to what you are working
 
 ## 怎么调用
 
-**一条 shell 命令搞定全部能力,不需要 MCP。**
+**一条 shell 命令搞定全部能力,不需要 MCP。** `lingxi` 在 PATH 上（插件安装的包装器），
+每次调用都以豆包的身份发出：
 
 ```bash
 lingxi help          # 全部子命令
@@ -278,7 +281,7 @@ lingxi task completed write proud "登录提示改好啦，测试也乖了"
 - 同一会话换了话题，就写新的这句，不要沿用第一轮，也不要写会话标题。
 - 不要写「结束了」「本轮回复结束」「任务已完成」。也不要堆数字和步骤。
 
-hook 随后还会报一句空的「本轮回复结束」。那句不会盖掉你刚写的这句。你没写的时候，猫才只说结束了。
+豆包没有会话生命周期 hook——**猫只看到你报的这件事**。你没报，猫就不知道。
 
 ## 别做的事
 

@@ -8,8 +8,19 @@
 // cost of owning it is a page of code, and the benefit is `node src/index.mjs` working forever
 // with no install step and nothing to audit.
 import { createInterface } from 'node:readline';
+import { appendFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { toolsByName, tools } from './tools.mjs';
 import { BridgeError, warmUp } from './bridge.mjs';
+
+// Minimal access log to a FILE (never stdout - that would corrupt the stdio framing).
+// Lets a host integration be verified: whether the runtime actually spawns this server and
+// which tools it asks for. Disabled by LINGXI_MCP_LOG=0.
+const MCP_LOG = process.env.LINGXI_MCP_LOG === '0' ? null : (process.env.LINGXI_MCP_LOG || `${homedir()}/Library/Logs/lingxi-mcp-access.log`);
+function accessLog(entry) {
+  if (!MCP_LOG) return;
+  try { appendFileSync(MCP_LOG, `${new Date().toISOString()} ${entry}\n`); } catch { /* never take the server down for logging */ }
+}
 
 const PROTOCOL_VERSION = '2024-11-05';
 
@@ -115,6 +126,7 @@ function dispatch(request) {
       ? undefined
       : replyError(request.id, -32600, 'Invalid request: missing method');
   }
+  accessLog(`method=${request.method} id=${request.id ?? '-'}${request.method === 'tools/call' ? ` tool=${request.params?.name}` : ''}`);
   return Promise.resolve(handle(request)).catch((error) => {
     if (request.id !== undefined) return replyError(request.id, -32603, `${error?.message ?? error}`);
     return undefined;

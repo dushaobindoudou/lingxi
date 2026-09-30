@@ -31,9 +31,9 @@
 // It never fails loudly. A desktop pet must not be able to break the agent that is driving it,
 // so every error path exits 0 and writes at most one line to stderr. If the cat is not running,
 // nothing happens and the host does not care.
-import { readFileSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, extname, isAbsolute, join } from 'node:path';
 
 const PORT = Number(process.env.LINGXI_PORT ?? 47811);
 const TOKEN_FILE =
@@ -75,6 +75,54 @@ function configuredAgent() {
   }
 }
 
+/** Longest session name the cat shows - the app's SESSION_LABEL_MAX_CHARS. */
+const SESSION_LABEL_MAX = 40;
+/** How much of a transcript's tail is read for its title - the app's TRANSCRIPT_TAIL_BYTES. */
+const TRANSCRIPT_TAIL_BYTES = 512 * 1024;
+
+/**
+ * What to call a Claude Code session, as claude_session_label in the app does: the `/rename`
+ * title, else Claude Code's generated title, else the project folder. Claude Code re-appends
+ * both title records after every turn, so the newest copy is always in the transcript's tail.
+ * Only a `.jsonl` path is opened, and only the title fields are kept.
+ */
+function claudeSessionLabel(raw) {
+  const clip = (value) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, SESSION_LABEL_MAX) : null);
+  // SessionStart and UserPromptSubmit carry the title in the payload itself.
+  if (clip(raw.session_title)) return clip(raw.session_title);
+  const path = raw.transcript_path;
+  if (typeof path === 'string' && isAbsolute(path) && extname(path) === '.jsonl') {
+    let fd;
+    try {
+      fd = openSync(path, 'r');
+      const { size } = fstatSync(fd);
+      const length = Math.min(size, TRANSCRIPT_TAIL_BYTES);
+      const buffer = Buffer.alloc(length);
+      readSync(fd, buffer, 0, length, size - length);
+      let generated = null;
+      for (const line of buffer.toString('utf8').split('\n').reverse()) {
+        if (!line.includes('-title"')) continue;
+        let record;
+        try { record = JSON.parse(line); } catch { continue; } // the tail's first line is partial
+        if (record.type === 'custom-title' && clip(record.customTitle)) return clip(record.customTitle);
+        if (record.type === 'ai-title' && !generated) generated = clip(record.aiTitle);
+      }
+      if (generated) return generated;
+    } catch {
+      // unreadable transcript: fall through to the folder
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+    }
+  }
+  return typeof raw.cwd === 'string' ? clip(basename(raw.cwd)) : null;
+}
+
+/** A mapped Claude event, told which session it is and what that session is called. */
+function withClaudeSession(event, raw) {
+  if (!event || typeof raw.session_id !== 'string') return event;
+  return { ...event, session: raw.session_id, label: claudeSessionLabel(raw) };
+}
+
 /**
  * Claude Code hook payloads -> task events.
  *
@@ -89,22 +137,57 @@ function fromClaude(raw) {
     case 'SessionStart':
       return { state: 'queued', kind: 'chat', taskId: session };
     case 'UserPromptSubmit':
+      // What the user typed stays with the user (docs/09): the running row is
+      // lifecycle only, never the prompt text.
       return { state: 'running', kind: 'chat', taskId: session };
     case 'Notification': {
-      // Claude raises this both for permission prompts and for plain questions. They need
-      // different urgency - an approval is blocking a tool call right now - and the message text
-      // is the only thing that distinguishes them, so it is read rather than assumed either way.
+      // Claude raises this for permission prompts, plain questions, and notices that wait on nobody
+      // (auth_success, computer_use_enter, ...). `notification_type` says which on current Claude
+      // Code; the message text is the fallback for versions without it. Must match
+      // normalize_claude_hook_event in the app.
       const message = String(raw.message ?? '');
-      const approval = /permission|approve|allow|授权|批准|允许/i.test(message);
+      const type = raw.notification_type;
+      let state;
+      if (type === 'permission_prompt' || type === 'worker_permission_prompt') state = 'needs_approval';
+      else if (['idle_prompt', 'agent_needs_input', 'elicitation_dialog', 'elicitation_url_dialog'].includes(type)) state = 'needs_input';
+      else if (typeof type === 'string') return null; // not waiting on the user
+      else state = /permission|approve|allow|授权|批准|允许/i.test(message) ? 'needs_approval' : 'needs_input';
+      const tool = message.split('permission to use ')[1]?.trim().replace(/\.$/, '').slice(0, 40);
       return {
-        state: approval ? 'needs_approval' : 'needs_input',
+        state,
         kind: 'chat',
         taskId: session,
-        summary: message,
+        summary: state === 'needs_approval' && tool ? `想用 ${tool}，等你批一下` : message,
       };
     }
     case 'Stop':
-      return { state: 'completed', kind: 'chat', taskId: session };
+      // The reply itself goes to the local app, which cuts one line from it for the bubble - or
+      // turns the event into needs_input when the reply ends on a question - and keeps none of
+      // it (TaskEvent::result). Perceived, not collected.
+      return { state: 'completed', kind: 'chat', taskId: session, result: raw.last_assistant_message };
+    case 'PermissionRequest': {
+      // The dialog as it opens (the Notification for it is a later echo). AskUserQuestion is
+      // drawn as a permission dialog, so it arrives here too. Must match the app's mapper.
+      const tool = String(raw.tool_name ?? '');
+      const input = raw.tool_input ?? {};
+      if (tool === 'AskUserQuestion') {
+        return { state: 'needs_input', kind: 'chat', taskId: session, summary: '有个问题等你选', result: input.questions?.[0]?.question };
+      }
+      if (tool === 'ExitPlanMode') {
+        return { state: 'needs_approval', kind: 'chat', taskId: session, summary: '计划写好了，等你过目', result: '计划写好了，等你过目' };
+      }
+      const short = tool.split('__').pop() || '工具';
+      const file = typeof input.file_path === 'string' ? input.file_path.split('/').pop() : null;
+      const what = tool === 'Bash' && input.description ? `想跑：${input.description}`
+        : file && ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool) ? `想改 ${file}，等你批一下`
+        : `想用 ${short}，等你批一下`;
+      return { state: 'needs_approval', kind: 'chat', taskId: session, summary: `想用 ${short}，等你批一下`, result: what };
+    }
+    case 'TaskCompleted':
+      // A todo ticked off: updates the session's row, silently.
+      return { state: 'running', kind: 'chat', taskId: session, summary: '完成了一项待办', result: raw.task_subject ? `完成：${raw.task_subject}` : undefined };
+    case 'SessionEnd':
+      return null; // the generic schema has no "gone"; the raw-payload path removes the row
     case 'StopFailure':
     case 'SubagentStop':
       return event === 'StopFailure'
@@ -195,6 +278,10 @@ function clean(event, provider) {
     out.summary = event.summary.trim().slice(0, 240);
   }
   if (typeof event.taskId === 'string') out.taskId = event.taskId.slice(0, 128);
+  // Display only: which session this is, and its name - see TaskEvent::session/label in the app.
+  if (typeof event.session === 'string' && event.session) out.session = event.session.slice(0, 128);
+  if (typeof event.label === 'string' && event.label.trim()) out.label = event.label.trim().slice(0, SESSION_LABEL_MAX);
+  if (typeof event.result === 'string' && event.result.trim()) out.result = event.result.slice(0, 4000);
   const agent = configuredAgent() || event.agent;
   if (agent) out.agent = String(agent).slice(0, 64);
   return out;
@@ -225,7 +312,7 @@ async function main() {
     return; // not our payload; say nothing
   }
 
-  const mapped = host === 'claude' ? fromClaude(raw)
+  const mapped = host === 'claude' ? withClaudeSession(fromClaude(raw), raw)
     : host === 'codex' ? fromCodex(raw)
     : host === 'cursor' ? fromCursor(raw)
     : raw;

@@ -33,6 +33,13 @@ claude plugin install lingxi@lingxi
 
 # DSH / WorkBuddy 各有自己的形态，见 hosts/dsh/ 与 hosts/workbuddy/
 
+# Cursor：用户级 hooks + MCP + skill。不改机器级署名：
+<repo>/integrations/hosts/cursor/install.sh
+
+# 豆包（Doubao）：无 hooks、无可写的 MCP/连接器配置面，形态是 skill + CLI 包装器
+#（身份用包装器钉住 doubao，不改机器级 agent.json）：
+<repo>/integrations/hosts/doubao/install.sh
+
 # 另加 MCP（模型主动通道）：
 # [mcp_servers.lingxi]
 # command = "node"

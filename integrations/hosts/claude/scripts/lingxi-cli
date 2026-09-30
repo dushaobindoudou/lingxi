@@ -40,7 +40,8 @@
 #
 #   lingxi remember <text> [kind]
 #   lingxi recall
-#   lingxi remind <minutes> <text> [--mood M] [--every <minutes>]
+#   lingxi remind <minutes|HH:MM> <text> [--mood M] [--every <minutes>]
+#   lingxi reminders                      # what is set, with ids for unremind
 #
 #   lingxi doctor                              # check every prerequisite, and say what to do
 #   lingxi assets                              # what custom assets are loaded, and any errors
@@ -100,6 +101,11 @@ AGENT_FILE="$HOME/.lingxi/agent.json"
 
 agent_id() {
   if [ -n "${LINGXI_AGENT:-}" ]; then printf '%s' "$LINGXI_AGENT"; return; fi
+  # Inside Claude Code (which marks its shells CLAUDECODE=1) this IS Claude, whatever the
+  # machine-wide file says. That file is written by whichever host installed last - it once said
+  # "workbuddy" and every line Claude had the cat say went out under WorkBuddy's penguin. The
+  # hooks speak as "claude"; so does this.
+  if [ "${CLAUDECODE:-}" = 1 ]; then printf 'claude'; return; fi
   [ -r "$AGENT_FILE" ] || return 0
   # jq first, but NOT only jq: it is not preinstalled on macOS, and silently reporting no
   # identity on a machine without it is how the file and the tool disagree. python3 is
@@ -520,8 +526,20 @@ if isinstance(rows, list):
 
   remember) [ $# -ge 1 ] || die "usage: lingxi remember <text> [owner|project|preference|moment]"
             request POST /memory "$(json text="$1" kind="${2:-moment}")" ;;
-  remind)   [ $# -ge 2 ] || die "usage: lingxi remind <minutes> <text> [--mood M] [--every <minutes>]   (mood is an option, not positional - the text may be any number of words)"
+  remind)   [ $# -ge 2 ] || die "usage: lingxi remind <minutes|HH:MM> <text> [--mood M] [--every <minutes>]   (mood is an option, not positional - the text may be any number of words)"
             minutes="$1"; shift
+            # A clock time - "09:30" - is the next time the clock reads that, today or tomorrow.
+            # With --every 1440 it is a daily reminder that stays at 09:30 (the app keeps it on
+            # its own schedule).
+            when_field="inMinutes=number:$minutes"
+            case "$minutes" in
+              [0-9]:[0-5][0-9]|[01][0-9]:[0-5][0-9]|2[0-3]:[0-5][0-9])
+                at=$(date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-%d) $minutes:00" +%s 2>/dev/null) \
+                  || die "cannot read the time $minutes"
+                [ "$at" -gt "$(date +%s)" ] || at=$((at + 86400))
+                when_field="dueAt=number:${at}000" ;;
+              *[!0-9]*|'') die "lingxi remind: \"$minutes\" is neither minutes nor HH:MM" ;;
+            esac
             rem_every=0; rem_mood=""
             rem_args=()
             while [ $# -gt 0 ]; do
@@ -531,8 +549,10 @@ if isinstance(rows, list):
                 *) rem_args+=("$1"); shift ;;
               esac
             done
-            request POST /reminders "$(json_typed inMinutes="number:$minutes" text="${rem_args[*]}" \
+            request POST /reminders "$(json_typed "$when_field" text="${rem_args[*]}" \
               mood="$rem_mood" repeatEveryMinutes="number:$rem_every")" ;;
+
+  reminders) request GET /reminders ;;
 
   unremind)
     [ $# -ge 1 ] || die "usage: lingxi unremind <id>   (lingxi raw GET /reminders lists them)"

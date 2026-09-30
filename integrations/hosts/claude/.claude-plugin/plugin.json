@@ -24,7 +24,7 @@
     "reactions": {
       "type": "string",
       "title": "猫对会话的反应",
-      "description": "all：每条提问、等你授权、回合结束都会反应；important：只在会话开始、等你授权、回合结束和出错时反应；off：插件不发生命周期事件（Claude 自己报告的心情照常）。",
+      "description": "all：每条提问、等你授权、回合结束都会反应；important：不发每条提问和每项待办，其余（等你授权、等你回话、回合结束、出错）照常；off：插件不发生命周期事件（Claude 自己报告的心情照常）。",
       "options": ["all", "important", "off"],
       "default": "all"
     }

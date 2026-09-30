@@ -1,39 +1,99 @@
 {
-  "description": "灵犀桌面猫的生命周期 hooks。SessionStart 是检查模块：没装就后台安装、没开就后台打开、再补发这条事件，毫秒级返回，不拖住会话。其余事件只投递、异步执行，猫没开就什么都不做。与主界面「一键接入」写进 settings.json 的 hooks 共存时自动让路，不会重复。",
+  "description": "灵犀桌面猫的生命周期 hooks。SessionStart 是检查模块：没装就后台安装、没开就后台打开、再补发这条事件，毫秒级返回，不拖住会话。其余事件（含授权弹窗 PermissionRequest、待办完成 TaskCompleted、会话结束 SessionEnd）只投递、异步执行，猫没开就什么都不做。与主界面「一键接入」写进 settings.json 的 hooks 共存时自动让路，不会重复。",
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh\"", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh\"",
+            "timeout": 10
+          }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"",
+            "timeout": 10,
+            "async": true
+          }
         ]
       }
     ],
     "Notification": [
       {
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"",
+            "timeout": 10,
+            "async": true
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"",
+            "timeout": 10,
+            "async": true
+          }
         ]
       }
     ],
     "StopFailure": [
       {
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"", "timeout": 10, "async": true }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/event.sh\"",
+            "timeout": 10,
+            "async": true
+          }
         ]
       }
     ]

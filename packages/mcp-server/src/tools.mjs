@@ -221,21 +221,44 @@ export const tools = [
     name: 'lingxi_remind',
     description:
       'Have the cat bring something up later. It surfaces as the cat looking up and saying the ' +
-      'line, not as a system notification - so phrase it as the cat would. Use it for the thing ' +
-      'the user said they would come back to and probably will not.',
+      'line, not as a system notification - so phrase it as the cat would. Set one without being ' +
+      'asked when the user says they will do something later ("等下", "明天", "开完会"), when you ' +
+      'see something with a deadline (a meeting, an expiring cert), or after hours of unbroken ' +
+      'work (a tender 45-minute break). Tell them you set it. A reminder that comes due while ' +
+      'nobody is at the machine waits until they are back. For a standing one ("every day at ' +
+      '09:30", "every hour") give dueAt for the first time and repeatEveryMinutes; it keeps its ' +
+      'own schedule.',
     inputSchema: {
       type: 'object',
       properties: {
         text: { type: 'string', description: 'What the cat should say when the time comes.' },
         inMinutes: { type: 'number', description: 'How long from now. Use this OR dueAt.' },
         dueAt: { type: 'number', description: 'Unix milliseconds. Use this OR inMinutes.' },
+        mood: {
+          type: 'string',
+          enum: ['focused', 'proud', 'tender', 'sad', 'frustrated', 'anxious', 'weary', 'playful', 'curious'],
+          description: 'The tone it is delivered in: tender for "drink some water", anxious for "taxes are due".',
+        },
+        repeatEveryMinutes: {
+          type: 'number',
+          description: 'Make it a standing reminder that re-arms itself (minimum 5). 1440 = daily at the same time.',
+        },
       },
       required: ['text'],
     },
-    async run({ text, inMinutes, dueAt }) {
+    async run({ text, inMinutes, dueAt, mood, repeatEveryMinutes }) {
       if (inMinutes == null && dueAt == null) throw new Error('Give inMinutes or dueAt.');
-      const result = await bridge.remind(text, dueAt != null ? { dueAt } : { inMinutes });
-      return ok(`Reminder set (${result.id}).`);
+      const when = dueAt != null ? { dueAt } : { inMinutes };
+      const extra = {
+        ...(mood ? { mood } : {}),
+        ...(repeatEveryMinutes ? { repeatEveryMinutes } : {}),
+      };
+      const result = await bridge.remind(text, { ...when, ...extra });
+      const due = new Date(dueAt ?? Date.now() + inMinutes * 60_000).toLocaleString();
+      return ok(
+        `Reminder set (${result.id}) for ${due}` +
+          (repeatEveryMinutes ? `, repeating every ${repeatEveryMinutes} min` : '') + '.',
+      );
     },
   },
   {

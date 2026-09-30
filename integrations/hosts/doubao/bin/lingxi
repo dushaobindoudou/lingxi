@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# `lingxi` inside 豆包 (Doubao) - the plugin's installer puts this wrapper on the PATH the
+# Doubao agent's shell uses, so the model never has to discover where the shell client lives.
+#
+# It is the same client the app ships (scripts/lingxi-cli is a byte-for-byte copy of
+# integrations/cli/lingxi, held there by a test), with one difference: it always speaks as
+# 豆包. ~/.lingxi/agent.json names ONE agent per machine, and on a machine that also runs
+# WorkBuddy or Codex that name is theirs - calls from this session would be credited to the
+# wrong agent. LINGXI_DOUBAO_AGENT overrides the id if you run several Doubao identities.
+#
+# The installer symlinks ~/.local/bin/lingxi -> this file, so $BASH_SOURCE[0] is the symlink
+# path, not this file's path. Resolve it before locating scripts/lingxi-cli.
+SELF="${BASH_SOURCE[0]}"
+while [ -L "${SELF}" ]; do
+  LINK="$(readlink "${SELF}")"
+  case "${LINK}" in
+    /*) SELF="${LINK}" ;;
+    *) SELF="$(cd "$(dirname "${SELF}")" && pwd)/${LINK}" ;;
+  esac
+done
+PLUGIN_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
+CLI="${PLUGIN_DIR}/scripts/lingxi-cli"
+
+export LINGXI_AGENT="${LINGXI_DOUBAO_AGENT:-doubao}"
+export LINGXI_AGENT_NAME="${LINGXI_DOUBAO_AGENT_NAME:-豆包}"
+export LINGXI_AGENT_BADGE="${LINGXI_DOUBAO_AGENT_BADGE:-豆}"
+export LINGXI_AGENT_COLOR="${LINGXI_DOUBAO_AGENT_COLOR:-#2F54EB}"
+
+# The app's agent registry is in-memory: after a restart the app auto-registers doubao on the
+# next call, but WITHOUT the logo - the bubble would show the bare「豆」letter instead of the
+# mark. So whenever the bridge is already up, re-register the logo too (health never starts the
+# app; if the app is down we skip and let the real command auto-start it).
+if "${CLI}" health >/dev/null 2>&1; then
+  "${CLI}" register "${LINGXI_AGENT}" --logo "${PLUGIN_DIR}/doubao-logo" \
+    --name "${LINGXI_AGENT_NAME}" --badge "${LINGXI_AGENT_BADGE}" --color "${LINGXI_AGENT_COLOR}" >/dev/null 2>&1 || true
+fi
+exec "${CLI}" "$@"

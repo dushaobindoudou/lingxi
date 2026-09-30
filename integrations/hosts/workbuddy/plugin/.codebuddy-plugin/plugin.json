@@ -1,6 +1,6 @@
 {
   "name": "lingxi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "灵犀桌面猫：让桌宠对每轮对话自动反应。hooks 承担确定性的生命周期事件（回合开始/结束），skill 让模型上报任务与心情（上限），可选 MCP 提供带类型的全部工具。",
   "hooks": "./hooks/hooks.json",
   "license": "PolyForm-Noncommercial-1.0.0",
