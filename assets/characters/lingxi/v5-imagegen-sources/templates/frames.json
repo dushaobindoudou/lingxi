@@ -1,0 +1,54 @@
+{
+  "size": 1024,
+  "space": "authored (pre head scale), metres, cat faces -Y, z up",
+  "frames": {
+    "coat_head_front": {
+      "horizontal": "x",
+      "h_range": [
+        -0.21,
+        0.21
+      ],
+      "vertical": "z",
+      "v_range_top_to_bottom": [
+        0.76,
+        0.34
+      ]
+    },
+    "coat_head_top": {
+      "horizontal": "x",
+      "h_range": [
+        -0.21,
+        0.21
+      ],
+      "vertical": "y",
+      "v_range_top_to_bottom": [
+        -0.04,
+        -0.46
+      ]
+    },
+    "coat_body_top": {
+      "horizontal": "x",
+      "h_range": [
+        -0.44,
+        0.44
+      ],
+      "vertical": "y",
+      "v_range_top_to_bottom": [
+        0.48,
+        -0.4
+      ]
+    },
+    "coat_body_side": {
+      "horizontal": "y",
+      "h_range": [
+        -0.4,
+        0.48
+      ],
+      "vertical": "z",
+      "v_range_top_to_bottom": [
+        0.72,
+        -0.16
+      ]
+    }
+  }
+}
