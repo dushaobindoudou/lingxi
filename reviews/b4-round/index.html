@@ -3,232 +3,199 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Round B4 审阅 · 与参考图的差距清单</title>
+<title>Round B4 审阅 · 三处硬伤 + 15 个动作全跑</title>
 <style>
-:root{
-  --bg:#101014;--panel:#18181d;--panel2:#1e1e25;--line:#2c2c34;
-  --text:#e8e6e3;--dim:#9a97a0;--accent:#e0a458;--good:#7fb069;--bad:#c1464f;--warn:#d8842f;
-}
+:root{--bg:#101014;--panel:#18181d;--panel2:#1e1e25;--line:#2c2c34;--text:#e8e6e3;--dim:#9a97a0;
+--accent:#e0a458;--good:#7fb069;--bad:#c1464f;--warn:#d8842f}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,"PingFang SC","Helvetica Neue",sans-serif;padding-bottom:80px}
 .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
 header{padding:44px 0 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
-h1{font-size:26px;font-weight:700;letter-spacing:.5px}
+h1{font-size:26px;font-weight:700}
 .sub{color:var(--dim);margin-top:6px;font-size:14px}
-.sub b{color:var(--accent);font-weight:600}
-nav{display:flex;gap:18px;margin:18px 0 30px;flex-wrap:wrap}
+.sub b{color:var(--accent)}
+nav{display:flex;gap:16px;margin:18px 0 28px;flex-wrap:wrap}
 nav a{color:var(--dim);text-decoration:none;font-size:14px;padding:4px 12px;border-radius:14px;border:1px solid var(--line)}
 nav a:hover{color:var(--text);border-color:var(--accent)}
-h2{font-size:20px;margin:44px 0 6px;padding-top:10px}
+h2{font-size:20px;margin:44px 0 8px}
 h2 .tag{font-size:12px;color:var(--dim);font-weight:400;margin-left:10px}
-p.note{color:var(--dim);font-size:14px;margin-bottom:16px;max-width:860px}
+p.note{color:var(--dim);font-size:14px;margin-bottom:16px;max-width:900px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.card .imgbox{position:relative;cursor:crosshair}
-.card img{width:100%;display:block;background:#7d7d7d}
+.card img{width:100%;display:block}
 .card .cap{padding:10px 14px;font-size:13px;color:var(--dim);border-top:1px solid var(--line)}
 .card .cap b{color:var(--text)}
-.badge{position:absolute;top:10px;left:10px;background:rgba(16,16,20,.82);padding:2px 10px;border-radius:10px;font-size:12px;color:var(--text);backdrop-filter:blur(4px)}
-/* 标注点 */
-.pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
-  border:2px solid var(--accent);background:rgba(224,164,88,.18);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#ffd9a0;
-  transition:transform .15s}
-.pin:hover{transform:scale(1.35);background:rgba(224,164,88,.4);z-index:5}
-.pin.p2{border-color:var(--bad);background:rgba(193,70,79,.18);color:#ffb3b8}
-.pin.p2:hover{background:rgba(193,70,79,.4)}
-.pin.p3{border-color:var(--good);background:rgba(127,176,105,.18);color:#cde8c0}
-.pin.p3:hover{background:rgba(127,176,105,.4)}
-/* 弹出详情 */
-.tip{position:fixed;z-index:50;max-width:340px;background:var(--panel2);border:1px solid var(--accent);
-  border-radius:10px;padding:14px 16px;font-size:14px;box-shadow:0 8px 30px rgba(0,0,0,.5);display:none}
-.tip h4{font-size:15px;margin-bottom:6px;color:var(--accent)}
-.tip.p2 h4{color:var(--bad)}.tip.p3 h4{color:var(--good)}
-.tip .fix{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);color:var(--dim);font-size:13px}
-.tip .fix b{color:var(--text)}
-/* 结论卡 */
-.verdict{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:18px 0}
-.v{border-radius:12px;padding:16px 18px;border:1px solid var(--line);background:var(--panel)}
-.v h3{font-size:14px;margin-bottom:8px}
-.v.hit h3{color:var(--good)}.v.miss h3{color:var(--bad)}.v.mid h3{color:var(--warn)}
-.v ul{list-style:none}
-.v li{font-size:13.5px;padding:3px 0;color:var(--text)}
-.v li::before{content:"·";margin-right:8px;color:var(--dim)}
-/* 行动表 */
+.badge{position:absolute;top:10px;left:10px;background:rgba(16,16,20,.82);padding:2px 10px;border-radius:10px;font-size:12px;color:var(--text)}
+.imgbox{position:relative}
+/* 三处硬伤 */
+.hurt{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0}
+.h{border-radius:12px;border:1px solid var(--line);background:var(--panel);padding:16px 18px}
+.h.bad{border-color:#5a2a2e}
+.h h3{font-size:16px;margin-bottom:4px}
+.h .why{font-size:13px;color:var(--dim);margin-bottom:10px}
+.h table{width:100%;border-collapse:collapse;font-size:13px;margin:0}
+.h th,.h td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
+.h th{color:var(--dim);font-weight:600;font-size:12px}
+.h td.v{text-align:right;font-variant-numeric:tabular-nums}
+.h td.bad-v{color:var(--bad);font-weight:600}
+.h td.ok-v{color:var(--good)}
+.h .fix{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:13px}
+.h .fix b{color:var(--accent)}
+/* 动作卡 */
+.clips{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
+.c{border-radius:10px;border:1px solid var(--line);background:var(--panel);overflow:hidden;cursor:default}
+.c img{width:100%;display:block;background:#7d7d7d}
+.c .nm{font-size:13px;font-weight:600;padding:6px 10px 2px}
+.c .st{font-size:11px;padding:0 10px 6px}
+.c .st.ok{color:var(--good)}.c .st.warn{color:var(--warn)}.c .st.bad{color:var(--bad)}
+.c .nm span{float:right;font-weight:400;color:var(--dim);font-size:11px}
 table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
-th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--dim);font-weight:600;font-size:13px}
-td.prio-high{color:var(--bad);font-weight:600}
-td.prio-mid{color:var(--warn)}
-td.prio-low{color:var(--dim)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tag-bad{color:var(--bad);font-weight:600}
+.tag-warn{color:var(--warn)}
+.tag-ok{color:var(--good)}
 code{background:var(--panel2);padding:1px 7px;border-radius:5px;font-size:12.5px;color:#c9b98f;font-family:"SF Mono",Menlo,monospace}
-footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
-@media(max-width:900px){.grid2,.grid3,.verdict{grid-template-columns:1fr}}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+@media(max-width:1000px){.hurt,.clips{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.grid2,.hurt,.clips{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
-  <h1>Round B4 审阅</h1>
-  <div class="sub">基准 <b>lingxi-ref-face-closeup.png / turnaround-v1.png</b> · 状态 <b>lookdev/b4-review</b> · 点击图上的圆点看每一条差距与建议</div>
+  <h1>Round B4 审阅（第二轮）</h1>
+  <div class="sub">分支 <b>lookdev/b4-review</b> · 三处点名问题用几何实测定位 · <b>15 个动作全部重渲并逐项量化</b>（B4 blend，同一构建）</div>
+  <div class="sub" style="margin-top:4px">以你的判断为准：这一轮只深挖了爪 / 耳 / 嘴三处。上一轮提过的侧面腰线、毛方向、尾巴、白 blaze 没有列入本轮行动。</div>
   <nav>
-    <a href="#verdict">结论</a><a href="#front">四视图</a><a href="#face">面部</a><a href="#poses">动作</a><a href="#numbers">量化数据</a><a href="#actions">建议动作</a>
+    <a href="#hurt">三处硬伤</a><a href="#clips">15 个动作</a><a href="#table">动作数据表</a><a href="#views">四视图与面部</a><a href="#actions">下一步</a>
   </nav>
 </header>
 
-<h2 id="verdict">一句话结论</h2>
-<p class="note">B4 是目前离参考最近的一版：正面观感、毛色、鼻镜粉色、眼线都对上了。差距集中在三处——<b>身体轮廓（侧面像"面包"）、毛的方向感（脸太整齐）、动作的表现力（识别度有了但幅度还欠）</b>。</p>
-<div class="verdict">
-  <div class="v hit"><h3>值得记：已经对上的</h3><ul>
-    <li>鼻镜粉色（Δ86 vs 参考 115，可接受）</li>
-    <li>眼睛尺寸（瞳径 0.44 vs 参考 0.40，偏大 10%）</li>
-    <li>眼线 / 护目镜问题已消失</li>
-    <li>面部色相（偏灰偏暖已校正）</li>
-    <li>耳内绒毛（round C 补的 320 根）</li>
-  </ul></div>
-  <div class="v mid"><h3>部分对上，还差一点</h3><ul>
-    <li>嘴宽（几何对但检测抓不到，毛盖唇线）</li>
-    <li>爪部脚趾（趾缝已刻，但仍偏"绒球"）</li>
-    <li>白 blaze 宽度（比参考略宽）</li>
-    <li>耳长（V6_EAR=1.0，参考的耳朵更小圆）</li>
-  </ul></div>
-  <div class="v miss"><h3>没对上的（优先做）</h3><ul>
-    <li>身体侧面轮廓（太圆、没有腰线）</li>
-    <li>面部毛发方向（参考是炸毛，B4 是披发）</li>
-    <li>中景细节（detail_mid 0.26 vs 参考 0.34）</li>
-    <li>动作幅度（Bite/Yawn 头动幅度小）</li>
-    <li>尾部（毛发像刷子，参考是蓬松带环纹）</li>
-  </ul></div>
+<h2 id="hurt">三处点名问题：实测定位</h2>
+<p class="note">下面每个数字都来自 <code>scripts/lookdev-v6/v6_part_audit.py</code> 对已构建 blend 的直接量测（不是参数推算）。测量方式是：把每个部件的网格顶点投到身体网格表面求带符号距离，正值＝探出皮肤，负值＝埋在皮肤里面。</p>
+<div class="hurt">
+  <div class="h bad">
+    <h3 style="color:var(--bad)">爪子：脚趾在几何上不存在</h3>
+    <div class="why">4 个脚趾、4 个趾垫、4 个爪、主肉垫，全部埋在身体网格内部。这不是毛的问题——毛已经在 round C 缩到 1 cm，但趾最深埋了 21.6 mm。</div>
+    <table>
+      <tr><th>部件</th><th>最深</th><th class="v">外露顶点</th></tr>
+      <tr><td>脚趾 Toe0/3</td><td class="v bad-v">−10.2 mm</td><td class="v bad-v">0%</td></tr>
+      <tr><td>脚趾 Toe1/2</td><td class="v bad-v">−20.0 mm</td><td class="v bad-v">0%</td></tr>
+      <tr><td>趾垫 Bean</td><td class="v bad-v">−9.5 … −18.3</td><td class="v bad-v">0%</td></tr>
+      <tr><td>爪 Claw</td><td class="v bad-v">−11.5 … −21.7</td><td class="v bad-v">0%</td></tr>
+      <tr><td>主肉垫 Pad</td><td class="v">+0.3 mm</td><td class="v">3.3%</td></tr>
+    </table>
+    <div class="fix"><b>改法</b>：<code>build_lingxi_v5.py</code> 里把整组 toe/bean/claw/pad 沿 −y 前移约 35–40 mm、z 下移约 10 mm；或把 paw 椭球（<code>FrontPaw</code> y 半径 .088 / <code>RearPaw</code> .085）收短 ~15 mm。目标：趾前缘<b>探出皮肤 8–12 mm</b>，趾间留出可见缝。只缩毛永远救不了这一条。</div>
+  </div>
+  <div class="h bad">
+    <h3 style="color:var(--bad)">耳朵：宽高比 1.00，顶端还是尖</h3>
+    <div class="why">代码注释自己写的目标是「135 mm 高、112 mm 宽、w/h .83」，实际几何没做到；顶端在 t=0.9 只剩 18 mm、t=1.0 收到 0，是个尖。</div>
+    <table>
+      <tr><th>量</th><th>目标</th><th class="v">实测</th></tr>
+      <tr><td>耳高</td><td>135 mm</td><td class="v">146.8 (+8.7%)</td></tr>
+      <tr><td>基部宽</td><td>112 mm</td><td class="v bad-v">147.0 (+31%)</td></tr>
+      <tr><td>宽高比</td><td>0.83</td><td class="v bad-v">1.00</td></tr>
+      <tr><td>t=0.9 处宽</td><td>—</td><td class="v">18.1 mm</td></tr>
+      <tr><td>t=1.0 处宽</td><td>—</td><td class="v bad-v">0（尖）</td></tr>
+    </table>
+    <div class="fix"><b>改法</b>：<code>ear_wid()</code> 的 .058 → 约 .044（宽回到 112 mm），<code>flare</code> 1.30 → 1.20；顶端 t&gt;0.88 用半圆弧封顶（保持 ~30 mm 宽而不是收到 0）。<b>不动 <code>V6_EAR</code></b>——整体缩到 0.82 你上一轮已经否掉了，问题在比例和顶端形状，不在大小。</div>
+  </div>
+  <div class="h bad">
+    <h3 style="color:var(--bad)">嘴巴：偏宽 36%，且高了 7 mm</h3>
+    <div class="why">以瞳距 E=115.2 mm 为尺（和 <code>v6_face_shape.py</code> 同一把尺子，且这次量的是几何不是像素，不受毛干扰）。</div>
+    <table>
+      <tr><th>量</th><th>参考</th><th class="v">实测</th></tr>
+      <tr><td>鼻宽 / E</td><td>0.311</td><td class="v">0.261 (−16%)</td></tr>
+      <tr><td>嘴宽 / E</td><td>0.288</td><td class="v bad-v">0.392 (+36%)</td></tr>
+      <tr><td>嘴宽 ÷ 鼻宽</td><td>0.93</td><td class="v bad-v">1.50</td></tr>
+      <tr><td>唇线在鼻下</td><td>0.310 E</td><td class="v bad-v">0.250 E（高 ~7 mm）</td></tr>
+    </table>
+    <div class="fix"><b>改法</b>：<code>MOUTH_W</code> .024 → .0165（<code>V6_MOUTH_W</code> 0.69），<code>GAPE_W</code> 同步 .036 → .025；<code>LIP0</code> 下移 7 mm（<code>V6_LIP</code> 1.0 → 0.985，<code>LIP_DZ</code> 会自动带口腔袋/舌/牙/下颌一起走）；<code>V6_NOSE_W</code> 1.0 → 1.19 把鼻镜补到 0.311E。</div>
+  </div>
 </div>
 
-<h2 id="front">四视图对照</h2>
-<p class="note">左参考（turnaround-v1）、右 B4 渲染。圆点标在不一致的位置，颜色含义：橙 = 建议下一轮做，红 = 明显不符，绿 = 这轮已修好的。</p>
-<div class="grid2">
-  <div class="card"><div class="imgbox"><span class="badge">参考 turnaround-v1 · front</span><img src="turnaround-v1.png" data-crop="tl" class="refcrop" alt="参考正面"><span class="pin" style="top:22%;left:31%" data-tip="t1"></span><span class="pin p3" style="top:41%;left:44%" data-tip="t2"></span></div><div class="cap"><b>参考正面</b>：脸颊炸毛外扩，眼大有神，鼻镜小而粉，白色 blaze 从额头窄窄一条下来</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">B4 · front</span><img src="front.png" alt="B4正面"><span class="pin p2" style="top:20%;left:50%" data-tip="f1"></span><span class="pin" style="top:38%;left:38%" data-tip="f2"></span><span class="pin" style="top:55%;left:22%" data-tip="f3"></span><span class="pin p3" style="top:31%;left:31%" data-tip="f4"></span><span class="pin p3" style="top:30%;left:67%" data-tip="f5"></span></div><div class="cap"><b>B4 正面</b>：整体轮廓饱满、配色接近，但 blaze 略宽、前腿显得粗短、身体两侧虎斑被毛盖住</div></div>
-</div>
-<div class="grid2" style="margin-top:18px">
-  <div class="card"><div class="imgbox"><span class="badge">参考 turnaround-v1 · side</span><img src="turnaround-v1.png" data-crop="tr" class="refcrop" alt="参考侧面"></div><div class="cap"><b>参考侧面</b>：背部有明显腰线起伏，后腿有膝关节轮廓，尾巴蓬松上扬</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">B4 · side</span><img src="side.png" alt="B4侧面"><span class="pin p2" style="top:33%;left:42%" data-tip="s1"></span><span class="pin p2" style="top:70%;left:55%" data-tip="s2"></span><span class="pin" style="top:57%;left:22%" data-tip="s3"></span><span class="pin p2" style="top:38%;left:82%" data-tip="s4"></span></div><div class="cap"><b>B4 侧面</b>：整只像一个长面包，没有腰线和膝关节起伏；尾巴毛发成簇下坠</div></div>
-</div>
-<div class="grid2" style="margin-top:18px">
-  <div class="card"><div class="imgbox"><span class="badge">B4 · threequarter</span><img src="threequarter.png" alt="B4四分之三"><span class="pin" style="top:47%;left:68%" data-tip="q1"></span><span class="pin" style="top:30%;left:73%" data-tip="q2"></span></div><div class="cap"><b>B4 四分之三</b>：胸口白毛过渡自然，但后颈到肩的毛缺少方向变化</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">B4 · back</span><img src="back.png" alt="B4背面"><span class="pin" style="top:45%;left:50%" data-tip="b1"></span></div><div class="cap"><b>B4 背面</b>：背中线毛发走向刻意（左右分开），与参考的整体蓬松不符</div></div>
-</div>
+<h2 id="clips">15 个动作：全部重渲</h2>
+<p class="note">用 B4 的 blend 重跑了全部 15 个动作（<code>render_lingxi_v5_poses.py</code>，480px / 12spp，逐帧扫描挑"离静止最远"的那一帧）。这一轮顺手修了选帧逻辑：<b>之前 5 个动作渲在了眨眼/闭眼帧上</b>（Idle .85、Happy 1.0、Yawn .84、Stretch .91），因为 Blink 被排除在评分外、却没被排除在选中的帧之外；现在闭眼帧要高出一大截才会被选中，Sleep 仍然渲成闭眼。</p>
+<div class="clips" id="clipGrid"></div>
 
-<h2 id="face">面部特写</h2>
-<p class="note">左参考特写、右 B4 face 视图。两侧取景一致（眼距锁定 220px），可直接对比。</p>
-<div class="grid2">
-  <div class="card"><div class="imgbox"><span class="badge">参考 · face closeup</span><img src="lingxi-ref-face-closeup.png" alt="参考面部"></div><div class="cap"><b>参考</b>：瞳径 0.40E，鼻宽 0.31E，鼻镜珊瑚粉，眼睛周围一圈深色眼线，炸毛外扩</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">B4 · face</span><img src="face.png" alt="B4面部"><span class="pin" style="top:52%;left:38%" data-tip="e1"></span><span class="pin" style="top:63%;left:50%" data-tip="e2"></span><span class="pin p2" style="top:38%;left:30%" data-tip="e3"></span><span class="pin p3" style="top:57%;left:49%" data-tip="e4"></span><span class="pin" style="top:20%;left:20%" data-tip="e5"></span></div><div class="cap"><b>B4</b>：眼径 0.44E（大 10%），鼻形对但鼻心偏高，毛方向过于整齐，缺乏参考的炸开感</div></div>
-</div>
-
-<h2 id="poses">动作对照</h2>
-<p class="note">接触表来自 09-29 补完后的标准构建（53 骨骼 / 15 动作）。识别度已经拉开，但幅度和形体语言还不够。</p>
-<div class="card" style="margin:14px 0"><img src="contact-sheet.png" alt="动作接触表" style="width:100%"><div class="cap"><b>15 个动作接触表</b>（Idle / Walk / Run / Jump / LieDown / SideLie / Sleep / Curious / Happy / Yawn / Lick / Bite / Knead / Stretch / PawPlay）</div></div>
-<div class="grid3">
-  <div class="card"><div class="imgbox"><span class="badge">Lick</span><img src="contact-sheet.png" data-crop="custom" style="object-position:0 100%" alt="Lick"></div><div class="cap"><b>值得记</b>：坐起舔爪形体对了，脸能看到，头的偏转也限制住了</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">Bite</span><img src="contact-sheet.png" data-crop="custom" style="object-position:25% 100%" alt="Bite"></div><div class="cap"><b>差距</b>：探头和下压的幅度小，和 Walk 靠近看仍有点像；张嘴在正面看不见</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">Yawn</span><img src="contact-sheet.png" data-crop="custom" style="object-position:75% 66%" alt="Yawn"></div><div class="cap"><b>差距</b>：嘴张开的程度比参考小，下颌转动加大过但这次渲染里幅度又回落了</div></div>
-</div>
-<div class="grid3" style="margin-top:16px">
-  <div class="card"><div class="imgbox"><span class="badge">Sleep / SideLie</span><img src="contact-sheet.png" data-crop="custom" style="object-position:20% 66%" alt="Sleep"></div><div class="cap"><b>差距</b>：侧躺时身体像一整块没有脊椎曲线；眼睑合拢是三角楔形，没有贴着眼球</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">Knead</span><img src="contact-sheet.png" data-crop="custom" style="object-position:50% 100%" alt="Knead"></div><div class="cap"><b>值得记</b>：踩奶补了全身摇摆，识别度 1210（离 Idle 的距离），最远</div></div>
-  <div class="card"><div class="imgbox"><span class="badge">Jump</span><img src="contact-sheet.png" data-crop="custom" style="object-position:60% 0" alt="Jump"></div><div class="cap"><b>差距</b>：滞空姿态四肢没有蜷起来，像一只站着的猫被抬起来</div></div>
-</div>
-
-<h2 id="numbers">量化数据</h2>
-<p class="note">工具输出（<code>v6_face_shape.py</code> / <code>v6_eye_size.py</code> / <code>v6_probe_gap.py</code>），E = 瞳距。</p>
+<h2 id="table">动作数据表</h2>
+<p class="note">全部由 <code>scripts/lookdev-v6/v6_clip_review.py</code> 量出。行程＝该动作整段里每只爪走过的高度范围（单帧看不出步态，只有行程能）；最低点＝真实网格顶点最低处，站立时是 +0.9 mm，所以负值就是<b>陷进地面</b>的深度。</p>
 <table>
-<tr><th>量</th><th>参考</th><th>B4</th><th>偏差</th><th>判断</th></tr>
-<tr><td>瞳孔直径 / E</td><td>0.397</td><td>0.439</td><td>+10.6%</td><td>可接受（参考值来自高光填补后的修正）</td></tr>
-<tr><td>虹膜外径 / E</td><td>0.495</td><td>0.524</td><td>+5.9%</td><td>对上</td></tr>
-<tr><td>瞳孔:虹膜</td><td>0.80</td><td>0.84</td><td>+5%</td><td>对上</td></tr>
-<tr><td>鼻宽 / E</td><td>0.311</td><td>0.400</td><td>+28.6%</td><td>偏大，但受唇线毛的干扰，裸脸 ≈ 0.345 (+10.9%)</td></tr>
-<tr><td>鼻心 dy / E</td><td>+0.320</td><td>+0.510</td><td>+59.4%</td><td>偏下，但与「鼻形本身对、整体下移够」的早期结论不符，需裸脸复测</td></tr>
-<tr><td>鼻镜粉峰 Δ</td><td>115</td><td>86</td><td>−25%</td><td>接受（B4 加了 V6_NOSE_HUE/SAT）</td></tr>
-<tr><td>面部 detail_mid</td><td>0.338</td><td>0.256</td><td>−24%</td><td>中尺度毛发纹理不足，表面太"光滑"</td></tr>
-<tr><td>面部 white_fraction</td><td>0.412</td><td>0.201</td><td>−51%</td><td>参考的白毛区更大（脸颊+胸口），B4 的白色 blaze 窄</td></tr>
-<tr><td>身体 bbox_aspect</td><td>1.466</td><td>0.727</td><td>—</td><td>参考是站姿四格拼接，不直接可比；侧面形状靠目测</td></tr>
+<tr><th>动作</th><th class="num">身体高度</th><th class="num">最低点</th><th class="num">身长变化</th><th class="num">前爪行程</th><th class="num">后爪行程</th><th class="num">耳</th><th class="num">下颌</th><th class="num">尾</th><th>判定</th></tr>
+<tr><td>Idle</td><td class="num">0</td><td class="num">+0.9</td><td class="num">0.8</td><td class="num">0</td><td class="num">0</td><td class="num">4.9°</td><td class="num">0</td><td class="num">5.9°</td><td class="tag-ok">基准</td></tr>
+<tr><td>Walk</td><td class="num">+9.3</td><td class="num">+0.5</td><td class="num">0.8</td><td class="num">15.0 / 17.0</td><td class="num tag-bad">6.7 / 6.6</td><td class="num">3.5°</td><td class="num">0</td><td class="num">4.2°</td><td class="tag-bad">后腿摆幅只有前腿 42%</td></tr>
+<tr><td>Run</td><td class="num">+25.5</td><td class="num">+1.9</td><td class="num">0.8</td><td class="num">27.8 / 24.7</td><td class="num">26.9 / 26.7</td><td class="num">4.9°</td><td class="num">0</td><td class="num">5.8°</td><td class="tag-ok">好，四爪均衡</td></tr>
+<tr><td>Jump</td><td class="num">+317.2</td><td class="num">+284.9</td><td class="num">8.6</td><td class="num">296.4</td><td class="num">276.5</td><td class="num tag-bad">1.1°</td><td class="num">0</td><td class="num tag-bad">1.4°</td><td class="tag-bad">跳起来了，但耳和尾几乎不动</td></tr>
+<tr><td>LieDown</td><td class="num">−110.0</td><td class="num tag-bad">−62.6</td><td class="num">2.2</td><td class="num">0.8</td><td class="num">7.1</td><td class="num">5.2°</td><td class="num">0</td><td class="num">6.2°</td><td class="tag-bad">陷地 63 mm</td></tr>
+<tr><td>SideLie</td><td class="num">−25.0</td><td class="num tag-bad">−165.5</td><td class="num">2.2</td><td class="num">139.8 / 70.4</td><td class="num">150.8 / 81.1</td><td class="num">5.2°</td><td class="num">0</td><td class="num">6.2°</td><td class="tag-bad">陷地 166 mm（最严重）</td></tr>
+<tr><td>Sleep</td><td class="num">−25.0</td><td class="num tag-bad">−151.4</td><td class="num">1.7</td><td class="num">0</td><td class="num">0</td><td class="num">5.7°</td><td class="num">0</td><td class="num">6.9°</td><td class="tag-bad">陷地 151 mm</td></tr>
+<tr><td>Curious</td><td class="num">−29.2</td><td class="num">+0.8</td><td class="num">49.8</td><td class="num">0</td><td class="num">0</td><td class="num">18.9°</td><td class="num">0</td><td class="num">17.4°</td><td class="tag-warn">只有头+耳在动，识别度最低</td></tr>
+<tr><td>Happy</td><td class="num">+21.0</td><td class="num">+1.9</td><td class="num tag-ok">150.1</td><td class="num">45.6</td><td class="num">0</td><td class="num">14.9°</td><td class="num">−2.3°</td><td class="num tag-ok">96.3°</td><td class="tag-ok">尾大摆 + 弓背蹭，信号最强</td></tr>
+<tr><td>Yawn</td><td class="num">0</td><td class="num">+0.9</td><td class="num">13.6</td><td class="num">0</td><td class="num">0</td><td class="num tag-bad">1.5°</td><td class="num tag-ok">−76.0°</td><td class="num">1.8°</td><td class="tag-warn">嘴张得够大，身体完全不动</td></tr>
+<tr><td>Lick</td><td class="num">−178.8</td><td class="num tag-bad">−85.7</td><td class="num">47.2</td><td class="num tag-ok">右 438.5</td><td class="num">4.1</td><td class="num">5.7°</td><td class="num">−18.3°</td><td class="num">6.9°</td><td class="tag-warn">形体最完整，但陷地 86 mm</td></tr>
+<tr><td>Bite</td><td class="num">−28.0</td><td class="num">−6.1</td><td class="num">10.7</td><td class="num tag-bad">0.1</td><td class="num">0</td><td class="num tag-ok">51.5°</td><td class="num">−18.3°</td><td class="num">6.9°</td><td class="tag-bad">耳朵后压很好，四爪完全不动</td></tr>
+<tr><td>Knead</td><td class="num">0</td><td class="num">+0.8</td><td class="num">15.1</td><td class="num">26.0</td><td class="num">0</td><td class="num">12.6°</td><td class="num">0</td><td class="num tag-ok">45.0°</td><td class="tag-ok">好：交替踩 + 眯眼 34° + 伸爪 0.7</td></tr>
+<tr><td>Stretch</td><td class="num">−110.0</td><td class="num tag-bad">−72.2</td><td class="num tag-bad">3.9</td><td class="num tag-bad">1.6</td><td class="num">7.1</td><td class="num">4.5°</td><td class="num">0</td><td class="num">5.4°</td><td class="tag-bad">和 LieDown 几乎同一个姿态</td></tr>
+<tr><td>PawPlay</td><td class="num">−8.7</td><td class="num">+1.3</td><td class="num">32.3</td><td class="num tag-ok">左 131.7</td><td class="num">0</td><td class="num">6.0°</td><td class="num">0</td><td class="num tag-ok">57.7°</td><td class="tag-ok">好：伏低 + 挥爪 + 甩尾</td></tr>
 </table>
 
-<h2 id="actions">建议动作（下一轮）</h2>
+<h2 id="views">四视图与面部</h2>
+<p class="note">第一轮的四视图与面部对照，保留作参照。第二轮的判断改由上面的几何实测支撑。</p>
+<div class="grid2">
+  <div class="card"><div class="imgbox"><span class="badge">参考 turnaround-v1</span><img src="turnaround-v1.png" alt="参考"></div><div class="cap"><b>参考</b>：半写实四视图</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">B4 · front</span><img src="front.png" alt="B4正面"></div><div class="cap"><b>B4 正面</b>：轮廓饱满、配色接近</div></div>
+</div>
+<div class="grid2" style="margin-top:18px">
+  <div class="card"><div class="imgbox"><span class="badge">B4 · side</span><img src="side.png" alt="B4侧面"></div><div class="cap"><b>B4 侧面</b>：没有腰线，后腿膝关节折角被毛埋掉</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">参考 · face closeup</span><img src="lingxi-ref-face-closeup.png" alt="参考面部"></div><div class="cap"><b>参考面部</b>：瞳径 0.40E、鼻宽 0.311E、嘴宽 0.288E</div></div>
+</div>
+<div class="grid2" style="margin-top:18px">
+  <div class="card"><div class="imgbox"><span class="badge">B4 · face</span><img src="face.png" alt="B4面部"></div><div class="cap"><b>B4 面部</b>：眼径 0.44E（+10%），鼻镜粉已对上，嘴偏宽偏高</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">B4 · threequarter</span><img src="threequarter.png" alt="B4四分之三"></div><div class="cap"><b>B4 四分之三</b>：胸口白毛过渡自然</div></div>
+</div>
+
+<h2 id="actions">下一步（按性价比排）</h2>
 <table>
-<tr><th>#</th><th>做什么</th><th>怎么做（旋钮 / 脚本）</th><th>优先级</th><th>预期</th></tr>
-<tr><td>1</td><td>侧面轮廓：加腰线 + 膝关节起伏</td><td>调 <code>build_lingxi_v5.py</code> 里躯干 spine 的侧视曲率（当前 <code>body_xf</code> 只做了前后压缩，没有高度起伏）；参考 turnaround 的侧视图把背部最凹点卡在腹部正上方</td><td class="prio-high">高</td><td>侧面不再像长面包</td></tr>
-<tr><td>2</td><td>面部炸毛方向</td><td><code>V6_CLUMP</code> 1.5→2.2，<code>V6_FRIZZ</code> 1.2→1.6，再把毛根旋转从「沿法线」改成「从每个毛孔向外呈放射状」；脸颊两侧毛向下外，眉心向上</td><td class="prio-high">高</td><td>detail_mid 0.26 → 0.33</td></tr>
-<tr><td>3</td><td>白色 blaze 窄一档</td><td><code>V6_FACE_WHITE</code> 局部：额心 blaze 宽度减 20–25%，边缘过渡 30mm 保持</td><td class="prio-mid">中</td><td>white_fraction 0.20 → 0.30</td></tr>
-<tr><td>4</td><td>尾毛重梳</td><td>尾毛当前是「一簇长毛」，参考是环纹短毛且蓬松上扬；把尾长 ×0.8、根数 ×1.4、加轻微 V6_WAVE，尾尖成簇不要分叉</td><td class="prio-mid">中</td><td>尾巴有环纹感</td></tr>
-<tr><td>5</td><td>Bite / Yawn / Jump 动作幅度</td><td>Bite 头前伸 +0.03m、前身下压再 5°；Yawn 下颌转角 1.35→1.55；Jump 加四肢蜷起（前腿 fold、后腿蹬直）</td><td class="prio-mid">中</td><td>识别度 + 情绪感</td></tr>
-<tr><td>6</td><td>耳形再小一档</td><td><code>V6_EAR</code> 1.0 → 0.9 试一次（上一轮 0.82 用户不喜欢，折中 0.9）</td><td class="prio-low">低</td><td>耳朵更接近参考的小圆耳</td></tr>
-<tr><td>7</td><td>侧面腿长</td><td>腿骨加 5–8%，需要重跑 15 个动作的步态和着地（成本高，放最后）</td><td class="prio-low">低</td><td>侧面露出的腿更多</td></tr>
+<tr><th>#</th><th>做什么</th><th>怎么做</th><th>优先级</th><th>验收指标</th></tr>
+<tr><td>1</td><td>爪子：让脚趾探出来</td><td>整组 toe/bean/claw/pad 沿 −y 前移 35–40 mm、z 下移 10 mm（或 paw 椭球收短 15 mm）</td><td class="tag-bad">最高</td><td>外露顶点 &gt; 60%，最深点 ≥ +8 mm</td></tr>
+<tr><td>2</td><td>五个动作陷进地面</td><td>Sleep −151 / SideLie −166 / Lick −86 / Stretch −72 / LieDown −63 mm。改 <code>pose()</code> 里这些 clip 的 root 与滚转角，让最低顶点回到 0 附近</td><td class="tag-bad">最高</td><td>所有 clip 最低点 ∈ [−5, +5] mm</td></tr>
+<tr><td>3</td><td>嘴：收窄 + 下移</td><td><code>V6_MOUTH_W</code> 0.69、<code>GAPE_W</code> .036→.025、<code>V6_LIP</code> 0.985、<code>V6_NOSE_W</code> 1.19</td><td class="tag-bad">高</td><td>嘴宽 0.29E、唇线在鼻下 0.31E</td></tr>
+<tr><td>4</td><td>耳：改比例和顶端</td><td><code>ear_wid()</code> .058→.044、flare 1.30→1.20、t&gt;0.88 半圆封顶</td><td class="tag-bad">高</td><td>宽 112 mm、w/h .83、顶端宽 ~30 mm</td></tr>
+<tr><td>5</td><td>Stretch 要真的"伸"</td><td>现在和 LieDown 是同一个姿态（root −110、身长变化 3.9 mm）。改成前爪大幅前伸 + 脊柱拉开 + 屁股翘起</td><td class="tag-warn">中</td><td>身长变化 ≥ 60 mm，root 不降反升</td></tr>
+<tr><td>6</td><td>Walk 后腿摆幅</td><td>后爪行程 6.7 mm → 15–20 mm（<code>place_legs</code> 的 gait 幅度）</td><td class="tag-warn">中</td><td>后/前行程比 ≥ 0.8</td></tr>
+<tr><td>7</td><td>Bite / Yawn 补身体</td><td>Bite：前爪抬起按住 + 头 pitch 到 15–20°；Yawn：加前腿前伸、弓背、眼睑半闭（用 Lid 骨骼，别用 Blink）</td><td class="tag-warn">中</td><td>Bite 前爪行程 ≥ 80 mm；Yawn 身长变化 ≥ 40 mm</td></tr>
+<tr><td>8</td><td>Jump 加平衡信号</td><td>起跳时尾摆动 ≥ 30°、耳朵后压、身体拉长</td><td class="tag-warn">中</td><td>尾 ≥ 30°、身长变化 ≥ 40 mm</td></tr>
+<tr><td>9</td><td>侧面腰线 + 膝关节折角（<b>你没点名，暂缓</b>）</td><td>先不动，等上面八项做完再看还显不显眼</td><td>—</td><td>—</td></tr>
 </table>
 
 <footer>
-  生成于 2026-09-30 · 分支 <code>lookdev/b4-review</code> · 所有标注数据来自 <code>scripts/lookdev-v6/</code> 工具链 · 图表文件在 <code>reviews/b4-round/</code>
+  2026-09-30 · 分支 <code>lookdev/b4-review</code> · 图：<code>assets/characters/lingxi/v6/round-b4/poses/</code>（本轮重渲）· 数据：<code>clips3.json</code> / <code>audit.json</code>（同目录）· 工具：<code>scripts/lookdev-v6/v6_part_audit.py</code>、<code>v6_clip_review.py</code>
 </footer>
 </div>
 
-<div class="tip" id="tip"></div>
 <script>
-const TIPS = {
-  /* front */
-  f1:{t:'白 blaze 过宽',p:'参考 blaze 从额头到鼻尖是一条窄带（约占头宽 18%），B4 约占 28%。',
-      f:'<b>建议</b>：V6_FACE_WHITE 的 blaze 宽度字段减 20–25%，保持 30mm 软过渡。'},
-  f2:{t:'身体两侧虎斑被盖住',p:'从正面看只剩胸口一整片白，参考能看到两侧肋腹的棕纹。',
-      f:'<b>建议</b>：把 coat 贴图上的虎斑向下延到腹部两侧（make_coat_maps.py 的 pattern mask）。'},
-  f3:{t:'前腿显得粗短',p:'参考的前腿有明显的关节转折和比例，B4 正面前腿像一个短圆柱。',
-      f:'<b>建议</b>：配合 #7（腿骨加长 5–8%）+ 前腿半径略减。'},
-  f4:{t:'眼线（绿点：已修好）',p:'之前那圈光滑浅皮肤"护目镜"已经消失，深色边从 0.037r 加宽到 ~0.1r。',f:''},
-  f5:{t:'耳内绒毛（绿点：已修好）',p:'round C 补的 320 根长绒让耳朵内部有了参考那种绒感。',f:''},
-  /* side */
-  s1:{t:'没有腰线',p:'参考侧视背部有明显凹陷（腹部正上方），B4 是一条平滑曲线。',
-      f:'<b>建议</b>：调 spine 骨骼侧视曲率，让背部最凹点卡在腹正上方。这是侧面轮廓最关键的一刀。'},
-  s2:{t:'后腿缺膝关节',p:'参考后腿轮廓有明显的膝+跗关节折角，B4 是连续圆弧，看起来像"海豹肢"。',
-      f:'<b>建议</b>：不是加骨头（骨骼已重做），是毛量分布——在膝关节位置局部加毛长/毛数，让轮廓出现折角。'},
-  s3:{t:'尾巴毛成簇下坠',p:'参考尾巴蓬松上扬带环纹，B4 像一把往下掉的刷子。',
-      f:'<b>建议</b>：#4，尾长 ×0.8 + 根数 ×1.4 + V6_WAVE，尾尖成簇。'},
-  s4:{t:'头颈交界模糊',p:'后颈的毛和背毛连成一片，没有头肩分离感。参考的头是"坐在"身体上的。',
-      f:'<b>建议</b>：颈部毛长略短于背毛（V6_LEN_HEAD 0.9），让轮廓自然分节。'},
-  /* threequarter/back */
-  q1:{t:'肩部毛方向单一',p:'参考的肩毛从肩胛向外发散，B4 是顺着身体往下披。',
-      f:'<b>建议</b>：fur groom 在肩胛骨位置加一个放射源。'},
-  q2:{t:'后颈毛没有蓬起',p:'参考从后方看后颈比头部窄一点、有明显台阶，B4 是平滑过渡。',
-      f:'<b>建议</b>：颈部毛根方向略向外（45° 外翻）而非贴着皮肤。'},
-  b1:{t:'背中线刻意分缝',p:'背面看毛发左右分开，有明显的人字纹分界。参考的背毛是整体蓬松没有缝。',
-      f:'<b>建议</b>：去掉中线分缝逻辑（build_lingxi_v5.py 里 "eased across the midline" 那段），改成随机微扰方向。'},
-  /* face */
-  e1:{t:'瞳孔偏大 10%',p:'0.439 vs 参考 0.397。在可接受范围内，但如果要再收一点，把 V6_EYE_R 从 .95 微调到 .92。',
-      f:'<b>建议</b>：暂不动，等其他大项先做。'},
-  e2:{t:'鼻心偏高（存疑）',p:'测量显示 +0.510 vs 参考 +0.320，但之前裸脸复测是 +0.320 完全吻合。毛盖住了鼻梁，检测器把"鼻子"抓成了鼻尖下方的一块粉色。',
-      f:'<b>建议</b>：不要按这个数字改！先跑 V6_BALD=1 裸脸复测。'},
-  e3:{t:'眉心毛太整齐',p:'参考的额头毛是从眉心向外炸开，B4 是顺着一个方向梳下去的披发。',
-      f:'<b>建议</b>：#2，毛根方向加 radial 分量 + V6_CLUMP 2.2。'},
-  e4:{t:'鼻镜粉色（绿点：已修好）',p:'B4 加了 V6_NOSE_HUE=.47 / V6_NOSE_SAT=1.2，Δ 从 57 → 86，接近参考 115 且不再偏橙。',f:''},
-  e5:{t:'耳朵大而尖',p:'参考的耳朵小而圆，耳尖有明显弧线。B4 的耳尖偏尖偏大。',
-      f:'<b>建议</b>：#6，V6_EAR 试 0.9（上一轮 0.82 用户不喜欢）。'},
-};
-document.querySelectorAll('.pin').forEach(pin=>{
-  pin.addEventListener('click',ev=>{
-    ev.stopPropagation();
-    const data=TIPS[pin.dataset.tip];if(!data)return;
-    const tip=document.getElementById('tip');
-    tip.innerHTML=`<h4>${data.t}</h4><div>${data.p}</div>${data.f?`<div class="fix">${data.f}</div>`:''}`;
-    tip.className='tip '+(pin.classList.contains('p2')?'p2':pin.classList.contains('p3')?'p3':'');
-    tip.style.display='block';
-    const r=pin.getBoundingClientRect();
-    let x=r.left+30,y=r.top+30;
-    if(x+360>window.innerWidth)x=window.innerWidth-370;
-    if(y+220>window.innerHeight)y=window.innerHeight-230;
-    tip.style.left=x+'px';tip.style.top=y+'px';
-  });
-});
-document.addEventListener('click',()=>{document.getElementById('tip').style.display='none'});
-// 参考图裁切：从 turnaround-v1.png 四格中裁出对应单格
-document.querySelectorAll('img.refcrop').forEach(img=>{
-  img.addEventListener('load',()=>{});
-});
+const CLIPS = [
+ ['Idle','ok','静止基准：四爪行程 0，身体不动'],
+ ['Walk','bad','后腿摆幅只有前腿的 42%（6.7 vs 15–17 mm）'],
+ ['Run','ok','四爪行程 24–28 mm，身体起伏 30 mm'],
+ ['Jump','bad','跳起 317 mm，但耳 1.1°、尾 1.4° 几乎不动'],
+ ['LieDown','bad','陷地 63 mm；趴下后不再动'],
+ ['SideLie','bad','陷地 166 mm，最严重'],
+ ['Sleep','bad','陷地 151 mm；闭眼正确'],
+ ['Curious','warn','只有头（−15.6° 抬头）+ 耳 18.9°，四爪不动，识别度最低'],
+ ['Happy','ok','尾 96.3° 大摆 + 身长变化 150 mm（弓背蹭）'],
+ ['Yawn','warn','下颌 −76° 张得够大，但身体全静止'],
+ ['Lick','warn','右前爪抬起 438 mm、舌头伸出，形体最完整；陷地 86 mm'],
+ ['Bite','bad','耳朵后压 51.5° 很好，但四爪行程 0.1 mm'],
+ ['Knead','ok','交替踩 26 mm + 眯眼 34° + 伸爪 0.7'],
+ ['Stretch','bad','身长只变 3.9 mm，和 LieDown 是同一个姿态'],
+ ['PawPlay','ok','伏低 + 左爪挥出 131.7 mm + 甩尾 57.7°'],
+];
+const LABEL = {ok:'符合预期', warn:'部分欠缺', bad:'不符合预期'};
+document.getElementById('clipGrid').innerHTML = CLIPS.map(([n,st,txt])=>
+ `<div class="c"><img src="poses-b4/${n}.png" alt="${n}"><div class="nm">${n}<span>${LABEL[st]}</span></div><div class="st ${st}">${txt}</div></div>`).join('');
 </script>
 </body>
 </html>
