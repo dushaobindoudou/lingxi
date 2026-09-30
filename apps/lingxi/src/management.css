@@ -65,6 +65,9 @@ h1 {
 }
 
 .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   text-align: left;
   padding: 9px 10px;
   border-radius: 9px;
@@ -73,6 +76,17 @@ h1 {
   color: var(--ink);
   font-size: 13px;
   cursor: pointer;
+}
+
+.nav-item svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  opacity: 0.72;
+}
+
+.nav-item.active svg {
+  opacity: 1;
 }
 
 .nav-item:hover {
@@ -226,6 +240,8 @@ h2.section-gap {
   font-size: 14px;
   cursor: pointer;
 }
+
+.wide-button:disabled { opacity: 0.45; cursor: default; }
 
 .wide-button + .wide-button {
   margin-top: 8px;
@@ -411,9 +427,76 @@ h2.section-gap {
 
 .home-lower {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
   margin-top: 26px;
 }
+
+/* 提醒与日程: the same quiet rows as the agent list, one per pending reminder. */
+.home-reminder-list { display: grid; gap: 6px; }
+
+.home-reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 253, 249, 0.76);
+}
+
+.home-reminder-when {
+  flex: none;
+  min-width: 76px;
+  color: #594C3F;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-reminder-text { flex: 1; min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.home-reminder-tag { flex: none; padding: 1px 6px; border-radius: 999px; background: #EFE6DA; color: #6E5E4E; font-size: 10px; }
+.home-reminder-from { flex: none; color: var(--muted); font-size: 11px; }
+.home-reminder-row button,
+.home-reminder-form button {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.home-reminder-row button:hover,
+.home-reminder-form button:hover { border-color: #C9B59F; }
+.home-reminder-form button { padding: 7px 14px; font-size: 12px; }
+
+.home-reminder-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.home-reminder-form input[type="text"],
+.home-reminder-form input[type="time"] {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: #fffaf7;
+}
+.home-reminder-form input[type="text"] { flex: 1; min-width: 160px; }
+.home-reminder-form input:focus { outline: none; border-color: var(--accent); }
+.home-reminder-daily { display: inline-flex; align-items: center; gap: 4px; color: #594C3F; font-size: 12px; }
+.home-reminder-result { min-height: 16px; margin: 6px 0 0; color: var(--muted); font-size: 11px; }
 
 .home-agent-summary {
   flex: 1;
@@ -475,16 +558,42 @@ h2.section-gap {
   font-weight: 700;
 }
 
+/* The brand-mark variant: same round chip, the mark sized to breathe inside it. */
+.home-agent-badge img {
+  width: 18px;
+  height: 18px;
+}
+
 .home-agent-copy {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.home-agent-copy strong { font-size: 12px; }
+.home-agent-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+/* agentChip's letter fallback, in both the home rows and the permission table. */
+.agent-chip-letters { color: white; font-size: 10px; font-weight: 700; }
+.agent-mark-inline.agent-chip-letters { font-size: 8px; }
 .home-agent-detail { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.home-agent-arrow { margin-left: auto; color: #8B745C; font-size: 20px; }
+.home-agent-arrow { margin-left: auto; display: grid; place-items: center; color: #8B745C; }
+.home-agent-arrow svg { width: 16px; height: 16px; }
 .home-agent-row[data-agent-target=""] { cursor: default; }
+
+/* Small inline mark for the permission table's agent column. */
+.agent-mark-inline {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: -4px;
+}
+
+.agent-mark-inline img {
+  width: 12px;
+  height: 12px;
+}
 .home-empty { margin: 0; }
 .home-footer { margin: 22px 0 0; color: #8A7D70; font-size: 12px; }
 
@@ -721,6 +830,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   transition: all 0.15s ease;
 }
 
+/* Toys and effects: few cards, so they share the row instead of leaving empty camera columns. */
+.play-options { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+
 .camera-options button span {
   font-size: 11px;
   font-weight: 400;
@@ -779,7 +891,50 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 
 .accordion-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
+}
+
+/* The host's brand mark on a small chip, echoing the home rows' 30px badges. */
+.accordion-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.accordion-mark img {
+  width: 13px;
+  height: 13px;
+}
+
+.accordion-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The single expand/collapse affordance - the old text arrows ("▸ " in the markup plus a
+   '▾ ' ::before when open) showed both at once on an expanded panel. */
+.accordion-chevron {
+  display: grid;
+  place-items: center;
+  color: #8B745C;
+  transition: transform 0.16s ease;
+}
+
+.accordion-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.accordion-item.open .accordion-chevron {
+  transform: rotate(180deg);
 }
 
 .accordion-body {
@@ -791,10 +946,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .accordion-item.open .accordion-body {
   display: block;
   padding-top: 10px;
-}
-
-.accordion-item.open .accordion-title::before {
-  content: '▾ ';
 }
 
 .accordion-actions {

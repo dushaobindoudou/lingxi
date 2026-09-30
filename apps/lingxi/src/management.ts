@@ -17,6 +17,7 @@ import skinCatalogue from './data/skins.json';
 import actionCatalogue from './data/actions.json';
 import { BUILT_IN_EXPRESSIONS } from './rig/art.ts';
 import { ASSETS_README } from './rig/custom-assets.ts';
+import { agentChip, agentLook, agentMark, uiIcon, type AgentLook, type IconName } from './ui/icons.ts';
 import homeSceneUrl from '../../../assets/tray-menu/v1/window-desk-scene.png';
 import homeCatUrl from '../../../assets/tray-menu/v1/lingxi-resting-cat.png';
 // The MCP tool table is rendered from the server package's own catalogue rather than typed into
@@ -250,7 +251,7 @@ function setActiveSizeButton(scale: number) {
 
 function setVisibilityButtonLabel(visible: boolean) {
   const btn = document.getElementById('toggle-visibility');
-  if (btn) btn.textContent = visible ? '隐藏' : '显示';
+  if (btn) btn.textContent = visible ? '隐藏猫咪' : '显示猫咪';
 }
 
 function setIdentityFields(name: string, personality: string) {
@@ -364,15 +365,23 @@ function renderCameraOptions(activeId: string) {
   );
 }
 
-/** 玩法 page. Same shape as the camera picker - a labelled card per option, no fake state:
- *  neither a toy nor a performance is a persistent setting, so nothing here shows as "active". */
+/** 玩法 page. Same shape as the camera picker - a labelled card per option. The toy that is out
+ *  shows as active, whether it was put out here or from the tray menu (both emit set-toy). */
 function renderPlayPage() {
   const toys = document.getElementById('toy-options');
+  const markToy = (kind: string | null) => {
+    toys?.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
+      button.classList.toggle('active', button.dataset.kind === kind);
+    });
+  };
+  void listen<{ kind: string }>('set-toy', (event) => markToy(event.payload.kind));
+  void listen('clear-toy', () => markToy(null));
   if (toys) {
     toys.replaceChildren(
       ...TOYS.map((toy) => {
         const button = document.createElement('button');
         button.type = 'button';
+        button.dataset.kind = toy.kind;
         button.append(
           Object.assign(document.createElement('b'), { textContent: toy.name }),
           Object.assign(document.createElement('span'), { textContent: toy.description }),
@@ -392,18 +401,35 @@ function renderPlayPage() {
           Object.assign(document.createElement('b'), { textContent: entry.name }),
           Object.assign(document.createElement('span'), { textContent: entry.description }),
         );
-        button.addEventListener('click', () => void invoke('perform', { id: entry.id }));
+        button.addEventListener('click', () => {
+          void invoke('perform', { id: entry.id });
+          const note = document.getElementById('performance-result');
+          if (note) note.textContent = `正在表演：${entry.name}（几秒钟后自己结束，也可以点「停止当前特效」）`;
+        });
         return button;
       }),
     );
   }
   document.getElementById('clear-toy')?.addEventListener('click', () => void invoke('clear_toy'));
   const sayInput = document.getElementById('say-input') as HTMLInputElement | null;
-  const say = () => {
-    const text = sayInput?.value ?? '';
-    if (text.trim()) void invoke('say', { text });
+  const sayButton = document.getElementById('say-button') as HTMLButtonElement | null;
+  const sayResult = document.getElementById('say-result');
+  // Disabled until there is something to say: an enabled button that silently does nothing on
+  // an empty box reads as broken.
+  const syncSay = () => {
+    if (sayButton) sayButton.disabled = !(sayInput?.value.trim());
   };
-  document.getElementById('say-button')?.addEventListener('click', say);
+  sayInput?.addEventListener('input', syncSay);
+  syncSay();
+  const say = () => {
+    const text = sayInput?.value.trim() ?? '';
+    if (!text) return;
+    void invoke('say', { text });
+    if (sayResult) sayResult.textContent = `已经说了：${text}`;
+    if (sayInput) sayInput.value = '';
+    syncSay();
+  };
+  sayButton?.addEventListener('click', say);
   sayInput?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') say();
   });
@@ -483,6 +509,42 @@ function escapeHtml(s: string): string {
   return div.innerHTML;
 }
 
+/**
+ * Fill the declarative icon placeholders in the markup: [data-icon] gets its Lucide glyph,
+ * [data-agent-mark] gets the host's brand mark as an <img> on its chip. Centralised here so
+ * the HTML stays free of inline SVG noise and every glyph in the window comes from
+ * ui/icons.ts. Called once from main() before the first render touches these elements.
+ */
+function mountIcons(): void {
+  document.querySelectorAll<HTMLElement>('[data-icon]').forEach((el) => {
+    const svg = uiIcon(el.dataset.icon as IconName);
+    // PREPENDED, not assigned: `innerHTML = svg` replaced the element's own text, and the side
+    // navigation lost every label - 首页, Agent 接入, ... - leaving six bare icons.
+    if (!svg || el.querySelector(':scope > svg')) return;
+    el.insertAdjacentHTML('afterbegin', svg);
+  });
+  document.querySelectorAll<HTMLElement>('[data-agent-mark]').forEach((el) => {
+    applyAgentMark(el, el.dataset.agentMark ?? '');
+  });
+}
+
+/**
+ * Show a known host's brand mark inside `el` (as a sandboxed <img>, the same choice the
+ * bubble marks make), painting `el` with the mark's chip. Unknown ids leave `el` untouched -
+ * callers keep their letter-badge fallback.
+ */
+function applyAgentMark(el: HTMLElement, id: string): void {
+  const mark = agentMark(id);
+  if (!mark) return;
+  const img = document.createElement('img');
+  img.src = mark.url;
+  img.alt = '';
+  img.draggable = false;
+  el.replaceChildren(img);
+  el.title = mark.label;
+  el.style.backgroundColor = mark.chip;
+}
+
 interface ClaudePluginStatus { installed: boolean; enabled: boolean; version: string | null; id: string | null }
 let claudePlugin: ClaudePluginStatus = { installed: false, enabled: false, version: null, id: null };
 
@@ -528,7 +590,7 @@ interface BridgeInfo {
   port: number;
   authRequired: boolean;
   tokenFile: string | null;
-  agents: { id: string; name: string; badge: string; color: string }[];
+  agents: { id: string; name: string; badge: string; color: string; logo?: string | null }[];
 }
 
 /**
@@ -570,9 +632,8 @@ async function renderBridgeInfo(): Promise<void> {
   if (mcpBadge) mcpBadge.textContent = `${MCP_TOOLS.length} 个工具`;
   if (mcpDetail) {
     mcpDetail.textContent =
-      'MCP server 随仓库提供（packages/mcp-server），通过下面的本机桥说话。' +
-      '它是个独立进程，由你的 agent 宿主启动，所以这里看不到它是否正在运行——' +
-      '能看到的是下面「已登记的 agent」：有名字出现，就说明真的有东西接上了。';
+      '支持 MCP 的 agent（Claude Code、Codex 等）可以用下面这些工具驱动猫。' +
+      '它由 agent 自己启动，所以这里看不到它是否在运行；下面「已登记的 agent」里出现名字，就说明已经接上了。';
   }
 
   let info: BridgeInfo;
@@ -605,7 +666,7 @@ async function renderBridgeInfo(): Promise<void> {
   const agentsLine = document.getElementById('mcp-agents-line');
   if (agentsLine) {
     agentsLine.textContent = info.agents.length
-      ? `已登记的 agent：${info.agents.map((agent) => `${agent.badge} ${agent.name}`).join('、')}`
+      ? `已登记的 agent：${info.agents.map((agent) => agentLook(agent).name).join('、')}`
       : '已登记的 agent：还没有。agent 第一次调用 lingxi_register 或 POST /agents 后会出现在这里。';
   }
 }
@@ -615,6 +676,7 @@ interface AgentRow {
   name: string;
   badge: string;
   color: string;
+  logo?: string | null;
   lastSeen: number;
   claims: number;
   permission: string;
@@ -640,9 +702,12 @@ interface HomeActivity {
   summary: string;
   updatedAt: number;
   busy: boolean;
+  /** The session's name when the source has sessions (a Claude Code session title). */
+  label?: string;
   name?: string;
   badge?: string;
   color?: string;
+  logo?: string | null;
 }
 
 interface AgentActivity {
@@ -708,28 +773,33 @@ function renderHomeAgents(data: AgentActivity) {
     dshBadge.classList.toggle('badge-muted', !dshActivity);
   }
   const represented = new Set<string>();
-  const rows: { id: string; name: string; badge: string; color: string; detail: string }[] = [];
+  const rows: { id: string; look: AgentLook; title: string; label?: string; detail: string }[] = [];
   for (const activity of activities) {
     const id = activity.agent || activity.provider;
     represented.add(id);
     const registeredAgent = registered.find((agent) => agent.id === id || agent.id === activity.provider);
+    const look = agentLook({
+      id,
+      provider: activity.provider,
+      name: activity.name || registeredAgent?.name,
+      badge: activity.badge || registeredAgent?.badge,
+      logo: activity.logo ?? registeredAgent?.logo,
+      color: activity.color || registeredAgent?.color,
+    });
     rows.push({
       id,
-      name: activity.name || registeredAgent?.name || activity.provider,
-      badge: activity.badge || registeredAgent?.badge || activity.provider.slice(0, 2).toUpperCase(),
-      color: activity.color || registeredAgent?.color || '#8b7865',
+      look,
+      // Several sessions of one host are several rows; the session name is what tells them
+      // apart, so it is the row's name and the host lives in the icon (and the hover).
+      label: activity.label,
+      title: activity.label ? `${look.name} · ${activity.label}` : look.name,
       detail: `${activityStateLabel(activity)} · ${relativeTime(activity.updatedAt)}`,
     });
   }
   for (const agent of registered) {
     if (represented.has(agent.id)) continue;
-    rows.push({
-      id: agent.id,
-      name: agent.name,
-      badge: agent.badge,
-      color: agent.color,
-      detail: `已登记 · 暂无实时任务 · 最近 ${relativeTime(agent.lastSeen)}`,
-    });
+    const look = agentLook(agent);
+    rows.push({ id: agent.id, look, title: look.name, detail: `已登记 · 暂无实时任务 · 最近 ${relativeTime(agent.lastSeen)}` });
   }
   if (!rows.length) {
     const empty = document.createElement('p');
@@ -738,20 +808,17 @@ function renderHomeAgents(data: AgentActivity) {
     container.append(empty);
     return;
   }
-  for (const row of rows.slice(0, 4)) {
+  for (const row of rows.slice(0, 6)) {
     const button = document.createElement('button');
     button.className = 'home-agent-row';
     button.type = 'button';
     button.dataset.agentTarget = agentTarget(row.id) ?? '';
-    button.title = button.dataset.agentTarget ? `打开 ${row.name} 接入详情` : `${row.name}（暂无专属详情页）`;
-    const badge = document.createElement('span');
-    badge.className = 'home-agent-badge';
-    badge.textContent = row.badge;
-    badge.style.backgroundColor = row.color;
+    button.title = button.dataset.agentTarget ? `${row.title} · 打开接入详情` : row.title;
+    const badge = agentChip(row.look, 'home-agent-badge');
     const copy = document.createElement('span');
     copy.className = 'home-agent-copy';
     const name = document.createElement('strong');
-    name.textContent = row.name;
+    name.textContent = row.label ?? row.look.name;
     const detail = document.createElement('span');
     detail.className = 'home-agent-detail';
     detail.textContent = row.detail;
@@ -759,7 +826,7 @@ function renderHomeAgents(data: AgentActivity) {
     const arrow = document.createElement('span');
     arrow.className = 'home-agent-arrow';
     arrow.setAttribute('aria-hidden', 'true');
-    arrow.textContent = button.dataset.agentTarget ? '›' : '';
+    arrow.innerHTML = button.dataset.agentTarget ? uiIcon('chevron-right') : '';
     button.append(badge, copy, arrow);
     container.append(button);
   }
@@ -799,7 +866,13 @@ async function initAgentPermissions(): Promise<void> {
       const tr = document.createElement('tr');
 
       const who = document.createElement('td');
-      who.textContent = `${agent.badge} ${agent.name}`;
+      // Same look as the home rows and the bubble (agentLook) - the tier table must not be the
+      // one place an agent regresses to its raw id or two anonymous letters.
+      const look = agentLook(agent);
+      const whoCopy = document.createElement('span');
+      whoCopy.textContent = look.name;
+      whoCopy.title = agent.id;
+      who.append(agentChip(look, 'agent-mark-inline'), whoCopy);
       if (!agent.seen) {
         const note = document.createElement('span');
         note.className = 'hint';
@@ -865,11 +938,12 @@ async function initAgentPermissions(): Promise<void> {
       logRows.append(tr);
       return;
     }
+    const byId = new Map(data.agents.map((agent) => [agent.id, agent]));
     for (const call of data.log.slice(0, 60)) {
       const tr = document.createElement('tr');
       for (const text of [
         relativeTime(call.at),
-        call.agent,
+        agentLook(byId.get(call.agent) ?? { id: call.agent }).name,
         call.surface,
         call.asked,
         OUTCOME_LABEL[call.outcome] ?? call.outcome,
@@ -913,6 +987,125 @@ async function initAgentPermissions(): Promise<void> {
   // The log is the live half of this page: a user who just granted a tier is watching for the
   // next call to land.
   window.setInterval(() => void refresh(), 4000);
+}
+
+interface Reminder {
+  id: string;
+  text: string;
+  due: number;
+  mood: string;
+  repeat_every_minutes: number;
+  from?: string;
+}
+
+/** "今天 09:30" / "明天 14:50" / "9月30日 10:00" - a reminder list is read by the clock. */
+function reminderWhen(due: number): string {
+  const at = new Date(due);
+  const time = at.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const today = new Date();
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(at) - day(today)) / 86_400_000);
+  if (days === 0) return `今天 ${time}`;
+  if (days === 1) return `明天 ${time}`;
+  return `${at.getMonth() + 1}月${at.getDate()}日 ${time}`;
+}
+
+function reminderRepeat(minutes: number): string | null {
+  if (!minutes) return null;
+  if (minutes === 1440) return '每天';
+  if (minutes === 10080) return '每周';
+  if (minutes % 60 === 0) return `每 ${minutes / 60} 小时`;
+  return `每 ${minutes} 分钟`;
+}
+
+/** 首页 · 提醒与日程: everything the cat has been asked to bring up, cancelable, and a way to add one. */
+async function initHomeReminders(): Promise<void> {
+  const list = document.getElementById('home-reminder-list');
+  const form = document.getElementById('home-reminder-form') as HTMLFormElement | null;
+  const timeInput = document.getElementById('home-reminder-time') as HTMLInputElement | null;
+  const textInput = document.getElementById('home-reminder-text') as HTMLInputElement | null;
+  const daily = document.getElementById('home-reminder-daily') as HTMLInputElement | null;
+  const result = document.getElementById('home-reminder-result');
+  if (!list) return;
+
+  async function refresh() {
+    let reminders: Reminder[];
+    try {
+      reminders = await invoke<Reminder[]>('get_reminders');
+    } catch (error) {
+      console.error('[lingxi-management] get_reminders failed', error);
+      return;
+    }
+    list!.replaceChildren();
+    if (!reminders.length) {
+      const empty = document.createElement('p');
+      empty.className = 'home-empty';
+      empty.textContent = '还没有提醒。在下面加一条，或者跟 Claude 说「每天九点半提醒我站会」。';
+      list!.append(empty);
+      return;
+    }
+    for (const reminder of reminders) {
+      const row = document.createElement('div');
+      row.className = 'home-reminder-row';
+      const when = document.createElement('span');
+      when.className = 'home-reminder-when';
+      when.textContent = reminderWhen(reminder.due);
+      const text = document.createElement('span');
+      text.className = 'home-reminder-text';
+      text.textContent = reminder.text;
+      text.title = reminder.text;
+      row.append(when, text);
+      const repeat = reminderRepeat(reminder.repeat_every_minutes);
+      if (repeat) {
+        const tag = document.createElement('span');
+        tag.className = 'home-reminder-tag';
+        tag.textContent = repeat;
+        row.append(tag);
+      }
+      if (reminder.from) {
+        const from = document.createElement('span');
+        from.className = 'home-reminder-from';
+        from.textContent = reminder.from === '你' ? '你设的' : `${agentLook({ id: reminder.from }).name} 设的`;
+        row.append(from);
+      }
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = '取消';
+      cancel.addEventListener('click', async () => {
+        cancel.disabled = true;
+        await invoke('delete_reminder', { id: reminder.id }).catch(() => {});
+        void refresh();
+      });
+      row.append(cancel);
+      list!.append(row);
+    }
+  }
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!timeInput?.value || !textInput?.value.trim()) return;
+    const [hours, minutes] = timeInput.value.split(':').map(Number);
+    const due = new Date();
+    due.setHours(hours, minutes, 0, 0);
+    // A time already past today means tomorrow, as `lingxi remind 09:30` does.
+    if (due.getTime() <= Date.now()) due.setDate(due.getDate() + 1);
+    try {
+      await invoke('add_reminder', {
+        text: textInput.value.trim(),
+        due: due.getTime(),
+        repeatEveryMinutes: daily?.checked ? 1440 : 0,
+      });
+      if (result) result.textContent = `已设好：${reminderWhen(due.getTime())}${daily?.checked ? '，每天' : ''}`;
+      textInput.value = '';
+      void refresh();
+    } catch (error) {
+      if (result) result.textContent = String(error);
+    }
+  });
+
+  await refresh();
+  // A reminder that fires leaves the list, and an agent can add one at any moment.
+  window.setInterval(() => void refresh(), 10_000);
 }
 
 interface CodexStatus {
@@ -1107,7 +1300,7 @@ async function main() {
   void refreshSkinCatalogue().then(() => renderSkinCards(status.skin));
   renderCameraOptions(status.camera);
   const accEl = document.getElementById('status-accessibility');
-  if (accEl) accEl.textContent = status.accessibilityTrusted ? '已授权（未来功能用得上）' : '未授权（不影响当前功能）';
+  if (accEl) accEl.textContent = status.accessibilityTrusted ? '已授权' : '未授权（不影响使用）';
 
   for (const selector of SIZE_BUTTON_GROUPS) {
     document.querySelectorAll<HTMLButtonElement>(selector).forEach((btn) => {
@@ -1235,10 +1428,12 @@ async function main() {
     setActiveBehaviorPreset(event.payload.preset),
   );
 
+  mountIcons();
   startPerceptionPolling();
   void initClaudeAdapter();
   void initCodexAdapter();
   void initAgentPermissions();
+  void initHomeReminders();
   void renderBridgeInfo();
 }
 

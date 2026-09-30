@@ -17,12 +17,12 @@
             <p class="subtitle" id="sidebar-status">桌面小猫</p>
           </div>
         </div>
-        <button class="nav-item active" data-page="home">首页</button>
-        <button class="nav-item" data-page="agent">Agent 接入</button>
-        <button class="nav-item" data-page="personality">性格行为</button>
-        <button class="nav-item" data-page="play">玩法</button>
-        <button class="nav-item" data-page="appearance">外观</button>
-        <button class="nav-item" data-page="settings">设置</button>
+        <button class="nav-item active" data-page="home" data-icon="house">首页</button>
+        <button class="nav-item" data-page="agent" data-icon="bot">Agent 接入</button>
+        <button class="nav-item" data-page="personality" data-icon="heart">性格行为</button>
+        <button class="nav-item" data-page="play" data-icon="gamepad-2">玩法</button>
+        <button class="nav-item" data-page="appearance" data-icon="palette">外观</button>
+        <button class="nav-item" data-page="settings" data-icon="settings">设置</button>
         <div class="sidebar-footer">
           <span>灵犀 v0.1</span>
         </div>
@@ -62,25 +62,42 @@
                 <p class="home-empty">正在读取接入状态…</p>
               </div>
             </section>
+            <section class="home-reminders" aria-labelledby="home-reminders-heading">
+              <div class="home-section-heading">
+                <h2 id="home-reminders-heading">提醒与日程</h2>
+                <span class="home-live-note">到点猫会叫你；你不在电脑前时，等你回来再说</span>
+              </div>
+              <div id="home-reminder-list" class="home-reminder-list" aria-live="polite">
+                <p class="home-empty">正在读取提醒…</p>
+              </div>
+              <form id="home-reminder-form" class="home-reminder-form">
+                <input id="home-reminder-time" type="time" required aria-label="提醒时间" />
+                <input id="home-reminder-text" type="text" maxlength="140" required placeholder="比如：站会时间到啦" aria-label="提醒内容" />
+                <label class="home-reminder-daily"><input id="home-reminder-daily" type="checkbox" /> 每天</label>
+                <button type="submit">添加</button>
+              </form>
+              <p class="home-reminder-result" id="home-reminder-result" aria-live="polite"></p>
+            </section>
           </div>
           <p class="home-footer">安静地待着，也算一起度过一段时间。</p>
         </section>
 
         <!-- 6.2 Agent 接入：手风琴，Claude Code 首发、真实一键接入 -->
         <section class="page" id="page-agent">
-          <h2>Agent 接入</h2>
+          <h2>已支持的工具</h2>
           <p class="hint">
-            每个平台一个可展开分区。Claude Code 和 Codex 都能一键接入；DeepSeek Harness 的通道已经在
-            <code>docs/09</code> 核实过（<code>dsh-acp</code> 的 <code>dsh/sessions/watch</code>），
-            但还没有做成一键。任何工具都可以不等适配器，直接往
-            <code>POST /task-event</code> 发通用事件——见 <code>docs/19</code>。
+            接上之后，它们在忙什么、要你授权或回答时，猫都会告诉你。Claude Code 和 Codex 可以一键接入；
+            其它工具可以通过本地接口接入（见「设置 → 能力开放」）。
           </p>
 
           <div class="accordion" id="agent-accordion">
             <div class="accordion-item" data-agent-panel="claude">
               <button class="accordion-header">
-                <span class="accordion-title">▸ Claude Code</span>
-                <span class="badge badge-muted" id="claude-status-badge">○ 未接入</span>
+                <span class="accordion-title"><span class="accordion-mark" data-agent-mark="claude" aria-hidden="true"></span>Claude Code</span>
+                <span class="accordion-side">
+                  <span class="badge badge-muted" id="claude-status-badge">○ 未接入</span>
+                  <span class="accordion-chevron" data-icon="chevron-down" aria-hidden="true"></span>
+                </span>
               </button>
               <div class="accordion-body">
                 <p class="cat-card-line" id="claude-status-detail">还没有安装 hooks。</p>
@@ -95,7 +112,7 @@
                   还会教 Claude 报告心情、记事和提醒；在 Claude Code 里用 <code>/lingxi:setup</code>、<code>/lingxi:status</code>。
                 </p>
                 <p class="hint">
-                  「一键接入」只装 hooks：把会话开始、提问、通知、回合结束、出错五个 hooks 合并写入
+                  「一键接入」只装 hooks：把会话开始/结束、提问、授权弹窗、通知、待办完成、回合结束、出错八个 hooks 合并写入
                   <code>~/.claude/settings.json</code>（原文件先备份成 <code>.lingxi-backup</code>，只追加，不覆盖你已有的 hooks）。
                   断开会精确移除这几条。两种方式同时装也不会重复——插件发现这些 hooks 会自动让路。
                 </p>
@@ -108,8 +125,11 @@
 
             <div class="accordion-item" data-agent-panel="codex">
               <button class="accordion-header">
-                <span class="accordion-title">▸ Codex</span>
-                <span class="badge badge-muted" id="codex-status-badge">检查中…</span>
+                <span class="accordion-title"><span class="accordion-mark" data-agent-mark="codex" aria-hidden="true"></span>Codex</span>
+                <span class="accordion-side">
+                  <span class="badge badge-muted" id="codex-status-badge">检查中…</span>
+                  <span class="accordion-chevron" data-icon="chevron-down" aria-hidden="true"></span>
+                </span>
               </button>
               <div class="accordion-body">
                 <p class="cat-card-line" id="codex-status-detail">检查中…</p>
@@ -154,8 +174,11 @@ LINGXI_AGENT_NAME = "Codex"</pre>
 
             <div class="accordion-item" data-agent-panel="dsh">
               <button class="accordion-header">
-                <span class="accordion-title">▸ DeepSeek Harness</span>
-                <span class="badge badge-muted" id="dsh-status-badge">读取中…</span>
+                <span class="accordion-title"><span class="accordion-mark" data-agent-mark="dsh" aria-hidden="true"></span>DeepSeek Harness</span>
+                <span class="accordion-side">
+                  <span class="badge badge-muted" id="dsh-status-badge">读取中…</span>
+                  <span class="accordion-chevron" data-icon="chevron-down" aria-hidden="true"></span>
+                </span>
               </button>
               <div class="accordion-body">
                 <p class="hint" id="dsh-status-detail">通过 DSH 动态插件向本机 <code>POST /task-event</code> 报告任务开始、进度和结束。每次调用都应带稳定的 <code>taskId</code> 与简洁的 <code>summary</code>；结束事件的摘要会显示在灵犀气泡里。</p>
@@ -177,8 +200,9 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             和写入备忘 / 提醒，要 <code>trusted</code>。
           </p>
           <p class="hint">
-            新 agent 默认是 <code>performer</code>——白名单的意思就是没列就不给。
-            这会改变以前的行为：之前任何 agent 都能改设置。被挡下的调用会在响应里说明原因，
+            报上名字的 agent 默认是 <code>trusted</code>，这样它能写备忘和提醒。
+            可以在下面改成 <code>performer</code> 或 <code>observer</code>，已保存的选择优先。
+            没有身份的调用停在 <code>performer</code>。被挡下的调用会在响应里说明原因，
             也会记进下面的日志，不会静默。
           </p>
           <table class="tool-table">
@@ -258,7 +282,7 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             放下玩具后，猫会把它当成当前唯一想做的事——优先级高于游走和避让，只输给你亲手拖它。
             毛线球有真实物理（会滚、减速、撞边反弹），猫够到就拍一爪把它打飞，所以不用你管它也能自己玩下去。
           </p>
-          <div class="camera-options" id="toy-options"></div>
+          <div class="camera-options play-options" id="toy-options"></div>
           <button id="clear-toy" class="wide-button secondary">收起玩具</button>
 
           <h2 class="section-gap">说话</h2>
@@ -268,13 +292,15 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             <input id="say-input" type="text" maxlength="140" placeholder="比如：该休息一下啦" />
           </label>
           <button id="say-button" class="wide-button">说出来</button>
+          <p class="hint" id="say-result" aria-live="polite"></p>
 
           <h2 class="section-gap">特效</h2>
           <p class="hint">
             几秒钟的整屏演出：走位、身体动作、表情、镜头和屏幕特效一起编排。特效层不接收任何鼠标事件，
             演出期间你照常点按钮、切窗口都不受影响。
           </p>
-          <div class="camera-options" id="performance-options"></div>
+          <div class="camera-options play-options" id="performance-options"></div>
+          <p class="hint" id="performance-result" aria-live="polite"></p>
           <button id="stop-performance" class="wide-button secondary">停止当前特效</button>
         </section>
 
@@ -286,13 +312,11 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             <button data-scale="0.5">中<span>0.5x</span></button>
             <button data-scale="1">大<span>1x</span></button>
           </div>
-          <p class="hint">自定义滑杆（0.25–1.0 连续）是文档里的提案，需要先放开 Rust 端的取值白名单，这一版还是三档。</p>
 
           <h2 class="section-gap">视角</h2>
           <div class="camera-options" id="camera-options"></div>
           <p class="hint">
-            视角决定摄像机离地面多高。以前固定在接近俯拍的角度，基本只看得到猫背和头顶；现在默认「游戏视角」
-            （3/4 斜视），并且可以随时换。选「自动」时：站着/被撸/追鼠标 → 平视对上眼，走动 → 切回 3/4，切换是渐变不是硬切。
+            视角决定你从多高的地方看它。选「自动」时：站着、被撸、追鼠标时平视对上眼，走动时切回 3/4 斜视，切换是渐变的。
           </p>
 
           <h2 class="section-gap">自定义资源</h2>
@@ -316,19 +340,17 @@ LINGXI_AGENT_NAME = "Codex"</pre>
         <!-- 6.5 设置（四个分区合并成一页） -->
         <section class="page" id="page-settings">
           <h2>通用</h2>
-          <button id="toggle-visibility" class="wide-button">隐藏</button>
+          <button id="toggle-visibility" class="wide-button">隐藏猫咪</button>
           <button id="reset-position" class="wide-button secondary">重置位置</button>
           <button id="open-debug" class="wide-button secondary">打开调试台</button>
           <p class="hint">
             调试台里能逐个播放全部动作和表情、切换视角/主题，并且列出了 Agent 可以直接调用的本地 HTTP 接口
-            （<code>127.0.0.1:47811</code>）。托盘菜单里也有同一个入口。
+            （<code>127.0.0.1:47811</code>）。
           </p>
           <ul class="status-list" id="status-list">
             <li>辅助功能权限：<span id="status-accessibility">检查中…</span></li>
           </ul>
-          <p class="hint">
-            鼠标跟随和拖拽现在都不需要"辅助功能"权限了。这项权限只影响未来"感知全局点击/按键"功能，不给也不影响当前体验。
-          </p>
+          <p class="hint">不授权也能正常使用：鼠标跟随、拖拽和所有提醒都不依赖这项权限。</p>
 
           <h2 class="section-gap">能力开放（MCP）</h2>
           <div class="card">
@@ -344,19 +366,12 @@ LINGXI_AGENT_NAME = "Codex"</pre>
           </table>
           <p class="hint" id="mcp-agents-line"></p>
 
-          <h2 class="section-gap">大脑（LLM） <span class="badge badge-muted">未实现</span></h2>
+          <h2 class="section-gap">它怎么做反应</h2>
           <div class="card">
             <p class="cat-card-line">反应引擎（本地规则，始终开启）：</p>
             <p class="cat-card-line">· 鼠标是你正在工作的地方，猫会避开它——连落脚点都不选在光标附近。</p>
             <p class="cat-card-line">· 放出玩具它就去玩，收走就散了，不需要切换什么模式。</p>
-            <p class="cat-card-line">· Agent 报上来的任务状态会变成表情 + 动作 + 一句话（见「接 Agent」）。</p>
-          </div>
-          <div class="card card-disabled">
-            <label class="toggle-row">
-              <input type="checkbox" disabled />
-              <span>启用 LLM 增强</span>
-            </label>
-            <p class="hint" style="margin-top: 6px">供应商、API Key、预算/冷却——都还只是设计，控件先摆出来但禁用，不假装能用。</p>
+            <p class="cat-card-line">· Agent 报上来的任务状态会变成表情 + 动作 + 一句话（见「Agent 接入」）。</p>
           </div>
 
           <h2 class="section-gap">数据隐私</h2>
@@ -365,7 +380,7 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             <p class="cat-card-line">记录光标统计：始终开启（只统计"靠近多久"，不留轨迹）</p>
           </div>
           <p class="hint">
-            当前没有单独开关这几类记录的入口——都在同一个进程内存里，随应用重启清空，不落盘、不上传。按类型精细开关是后续工作。
+            这些记录只在内存里，应用重启就清空，不写盘、不上传。Agent 的回复内容只用来生成猫的那句话，用完即丢。
           </p>
           <div class="card">
             <p class="cat-card-line">本地 HTTP 桥只监听 <code id="bridge-address">127.0.0.1:47811</code>，不接受外部网络访问。</p>
