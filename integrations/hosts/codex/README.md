@@ -6,7 +6,7 @@
 |---|---|---|
 | notify fanout 脚本 | `~/.codex/notify-fanout.sh` | 回合结束自动报给猫；**你原有的通知器保留在前** |
 | MCP 服务段 | `~/.codex/config.toml` `[mcp_servers.lingxi]` | 13 个带 schema 的工具；`LINGXI_AGENT=codex` 署名 |
-| skill | `~/.codex/skills/lingxi`（符号链接） | 教模型报 `mood`、克制地用猫 |
+| skill | `~/.codex/skills/{lingxi,lingxi-authoring,lingxi-codex}`（符号链接） | 系统层 `lingxi` 教模型什么时候通知、报什么、报 `mood`；宿主层 `lingxi-codex` 写 Codex 才成立的事（`LINGXI_AGENT=codex`、notify 报了什么、CLI 优先） |
 
 `notify` 只代表 Codex 一轮回复结束，不证明用户任务已经完成；主界面会把这类事件标成“本轮回复结束”。真正的任务完成、失败和具体任务名应由 `lingxi_task` 报告。
 
@@ -44,5 +44,5 @@ lingxi events                                        # 最新一条 provider=cod
 ```bash
 # 1. notify 换回 fanout 脚本里 "# 你原来的通知器" 那行（或安装前备份里的 notify 行）
 # 2. 删掉 config.toml 里 >>> lingxi plugin <<< 标记段
-# 3. rm ~/.codex/skills/lingxi ~/.codex/notify-fanout.sh
+# 3. rm ~/.codex/skills/lingxi ~/.codex/skills/lingxi-authoring ~/.codex/skills/lingxi-codex ~/.codex/notify-fanout.sh
 ```

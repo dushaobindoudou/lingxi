@@ -7,7 +7,8 @@
 
 | 件 | 位置 | 作用 |
 |---|---|---|
-| 技能 `lingxi`（豆包定制版） | 豆包技能根 `.user_skills/` | 模型读到 SKILL.md 才会驱动猫——这是上限，也是下限 |
+| 技能 `lingxi`（系统层，共享 skill 的逐字副本） | 豆包技能根 `.user_skills/` | 灵犀的行为规则：何时通知、报什么、心情、提醒、记忆、预算 |
+| 技能 `lingxi-doubao`（宿主层） | 同上 | 只在豆包成立的事：没有 hook（模型不报猫就不知道）、身份、只用 CLI。两份一起读到才会驱动猫——这是上限，也是下限 |
 | 技能 `lingxi-authoring`（共享版） | 同上 | 创作自定义动作/表情/主题 |
 | CLI 包装器 `bin/lingxi` | `~/.local/bin/lingxi`（豆包 agent shell 的 PATH） | 每次调用**固定以豆包身份说话**，并在桥通时带 logo 补注册，气泡显示豆包官方图标 |
 | 身份注册 `POST /agents` | 内存态 | 徽章/名字/颜色 + `doubao-logo`，包装器每次调用补注册，应用重启也不丢图标 |
@@ -30,7 +31,7 @@
 export LINGXI_AGENT="${LINGXI_DOUBAO_AGENT:-doubao}"
 export LINGXI_AGENT_NAME="${LINGXI_DOUBAO_AGENT_NAME:-豆包}"
 export LINGXI_AGENT_BADGE="${LINGXI_DOUBAO_AGENT_BADGE:-豆}"
-export LINGXI_AGENT_COLOR="${LINGXI_DOUBAO_AGENT_COLOR:-#2F54EB}"
+export LINGXI_AGENT_COLOR="${LINGXI_DOUBAO_AGENT_COLOR:-#E6EEFF}"
 exec …/scripts/lingxi-cli "$@"
 ```
 
@@ -54,7 +55,7 @@ exec …/scripts/lingxi-cli "$@"
 
 ```sh
 lingxi health                       # 桥接在跑、token 在哪
-lingxi agents                       # doubao 应带「豆」与 #2F54EB
+lingxi agents                       # doubao 应带「豆」与 #E6EEFF
 lingxi task completed write proud "豆包接好了"   # 让猫真的反应一次
 lingxi events                       # 应看到 provider=doubao 的事件
 ```
@@ -108,6 +109,6 @@ lingxi events                       # 应看到 provider=doubao 的事件
 - **豆包会话里模型想不起 lingxi**：豆包没有 hooks，「确定性的一半」不存在。skill 装好后
   模型读到才会用；用户主动说「让猫…」是最可靠的触发。
 - **气泡署名不是「豆」**：确认 `command -v lingxi` 指向插件包装器（`readlink ~/.local/bin/lingxi`），
-  以及 `lingxi agents` 里有 `doubao / 豆 / #2F54EB`。
+  以及 `lingxi agents` 里有 `doubao / 豆 / #E6EEFF`。
 - **工具报 bridge unreachable**：确认灵犀桌面端在跑（`lingxi up`）。
 - **豆包技能根变了**：用 `LINGXI_DOUBAO_SKILLS=/新路径 ./install.sh` 重装。

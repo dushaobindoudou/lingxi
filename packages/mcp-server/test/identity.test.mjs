@@ -60,3 +60,31 @@ test('the machine file still dresses its own identity', async () => {
   assert.equal(body.name, 'WorkBuddy');
   assert.equal(body.logo, WORKBUDDY.logo);
 });
+
+test('豆包 is recognised by the node it runs under, since it starts connectors with no environment', async () => {
+  const { hostFromRuntime } = await import(BRIDGE);
+  const doubaoNode = '/Users/u/Library/Application Support/Doubao/sandbox_runtime/bases/abc/bin/node';
+  assert.equal(hostFromRuntime(doubaoNode)?.id, 'doubao');
+  assert.equal(hostFromRuntime('/opt/homebrew/bin/node'), null);
+  assert.equal(hostFromRuntime(undefined), null);
+});
+
+test('豆包 is offered no tools: its runtime never delivers a call, and its model fakes the results', async () => {
+  const INDEX = join(dirname(BRIDGE), 'index.mjs');
+  const list = (env) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [INDEX], {
+      env: { PATH: process.env.PATH, HOME: mkdtempSync(join(tmpdir(), 'lingxi-tools-')), LINGXI_AUTOSTART: '0', LINGXI_MCP_LOG: '0', ...env },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    let out = '';
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+      const line = out.split('\n').find((l) => l.includes('"id":1'));
+      if (line) { child.kill(); resolve(JSON.parse(line).result.tools.length); }
+    });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`);
+  });
+  assert.equal(await list({ LINGXI_AGENT: 'doubao' }), 0);
+  assert.ok(await list({ LINGXI_AGENT: 'doubao', LINGXI_DOUBAO_MCP: '1' }) >= 13, 'the override brings them back');
+  assert.ok(await list({ LINGXI_AGENT: 'codex' }) >= 13, 'every other host keeps them');
+});

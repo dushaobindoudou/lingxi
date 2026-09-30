@@ -43,3 +43,26 @@ test('neither does Claude\'s', async () => {
   const bodies = await emit('claude', { hook_event_name: 'UserPromptSubmit', session_id: 's', prompt: SECRET });
   for (const body of bodies) assert.ok(!body.includes('hunter2'), `prompt text leaked: ${body}`);
 });
+
+test('Codex turn end carries the result without displaying an id or directory', async () => {
+  const bodies = await emit('codex', {
+    type: 'agent-turn-complete', 'thread-id': 'abc123456', cwd: '/work/lingxi',
+    'last-assistant-message': '登录测试修好了。接下来可以继续。',
+  });
+  assert.equal(bodies.length, 1);
+  const event = JSON.parse(bodies[0]);
+  assert.equal(event.summary, 'Codex 回复结束');
+  assert.equal(event.session, 'abc123456');
+  assert.equal(event.label, undefined);
+  assert.match(event.result, /登录测试修好了/);
+});
+
+test('Codex turn end forwards the exact question for the cat to show', async () => {
+  const bodies = await emit('codex', {
+    type: 'agent-turn-complete', 'thread-id': 'thread',
+    'last-assistant-message': '方案已整理。你希望周五上午还是下午提醒？',
+  });
+  const event = JSON.parse(bodies[0]);
+  assert.match(event.result, /你希望周五上午还是下午提醒？/);
+  assert.equal(event.label, undefined);
+});

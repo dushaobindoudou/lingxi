@@ -1,6 +1,6 @@
 <!-- English translation of `integrations/skills/lingxi/SKILL.md`. If this file and the Chinese source diverge, the Chinese source wins. -->
 
-> The copies under `integrations/hosts/claude/skills` and `integrations/hosts/codex/skills` are the same skill. This English file covers all three.
+> This is the **system layer**. Every host plugin ships it unchanged (a symlink, or a byte-for-byte copy held by `integrations/test/skill-layers.test.mjs`) beside its own **host layer**, `integrations/hosts/<host>/skills/lingxi-<host>/SKILL.md` - see `integrations/hosts/PLUGIN-STANDARD.md`, section 六. The host layers are Chinese only.
 
 ---
 name: lingxi
@@ -10,6 +10,33 @@ description: Drive the Lingxi desktop cat - let it react to what you are working
 # Lingxi · a cat that lives on the desktop
 
 A cat lives on the user's desktop. You can see what it is doing, and you can let it react to what you are doing.
+
+## Read two: this is the system layer, and there is a host layer
+
+Lingxi's skill comes in two layers, and every host has both installed:
+
+| Layer | Skill | What it covers |
+|---|---|---|
+| System | `lingxi` (this file) | How Lingxi behaves with people: when to notify, what to report, mood, reminders, memory, budget, what not to do. Identical on every host |
+| Host | `lingxi-<host>`, e.g. `lingxi-claude`, `lingxi-codex` | Only what holds on that host: whose identity you speak as, CLI or MCP, what the host already reports on its own, who installs and starts the app, the host's own traps |
+
+**Identity, entry point, automatic reporting, and install/start follow the host layer; everything else follows this file.** The host layer adds that host's facts; it does not change these rules. Without a host layer, use the generic steps here, and never let the CLI borrow the machine-wide identity in `~/.lingxi/agent.json` (see "How to call it").
+
+## When to let the cat notify
+
+The cat is **a carrier of key messages**, not a log reader:
+
+| Event | When to speak | How to report |
+|---|---|---|
+| The user must decide, approve or add information; a failure or a clear risk | Now | `needs_input` / `needs_approval` / `failed`; the `summary` says what happened and what the user has to do, with the question verbatim |
+| A round of work ends, a usable result, an important milestone | At a natural pause | `completed`: name the task, what this round achieved, and what comes next (including whether the user needs to keep driving you) |
+| Start, routine progress, tool logs | Quiet | The first `running` changes the face; repeated progress says nothing |
+
+**The task report is the main channel.** For every real piece of work: report `running` when it starts and a terminal state when it ends, **always reusing the same internal `taskId`** (with the CLI, pass the same `LINGXI_TASK_ID` on every command - the environment does not carry over between shells; with MCP, pass `taskId` and `summary` to `lingxi_task`). The `summary` is **task + result + next step or the exact question**, one or two sentences, conclusion first, at most 140 characters. The cat shows it in full and holds it longer the longer it is - never truncated - so do not shrink it to "done", and never use a working directory, a session id or an old session title in place of the task. Report a result once.
+
+Report `state`, `kind` and `mood`, and let the app's reaction map choose the face and the action. Effects are only for what the user asked for, or a milestone truly worth celebrating; check the available ids first. Risks, approvals and ordinary reminders never become full-screen effects.
+
+Whether something in the future is worth the cat remembering is your call: when the user states a reminder or a routine with a time, set it with `lingxi remind` and tell them the exact time it will fire; with only "tomorrow" and no hour, ask or say which time you chose; a deadline you merely noticed is proposed, not scheduled.
 
 **Its name is "Lingxi" — 心有灵犀 (a meeting of minds, without a word spoken).** That is not a decorative name. It is an acceptance test: a cat that only
 waves a paw when a task ends is something any status light can do; a cat that knows you are writing to your mother tonight, and knows you have spent three hours on the same bug, is the one that
@@ -193,8 +220,8 @@ into noise. One entry an hour is already a lot.
 
 A good memory is **specific**:
 
-- ✅ "Often stays up very late on Thursday nights" / "Has been set off by flaky tests several times" / "Likes to measure first, then change"
-- ❌ "Is a programmer" / "Is using TypeScript" (you can see that from the code; it is not an observation)
+- Worth remembering: "Often stays up very late on Thursday nights" / "Has been set off by flaky tests several times" / "Likes to measure first, then change"
+- Not worth it: "Is a programmer" / "Is using TypeScript" (you can see that from the code; it is not an observation)
 
 **Do not write** anything they would not want to see land on disk: passwords, keys, private third-party information,
 health and financial details. This is a plaintext JSON file.

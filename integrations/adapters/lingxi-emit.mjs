@@ -191,7 +191,7 @@ function fromClaude(raw) {
     case 'StopFailure':
     case 'SubagentStop':
       return event === 'StopFailure'
-        ? { state: 'failed', kind: 'chat', taskId: session, summary: raw.error_type }
+        ? { state: 'failed', kind: 'chat', taskId: session, summary: `本轮因错误终止（${raw.error_type ?? 'unknown'}）` }
         : null; // a subagent finishing is not a moment the user needs marked
     default:
       return null;
@@ -208,22 +208,22 @@ function fromClaude(raw) {
 function fromCodex(raw) {
   const type = raw.type ?? raw.event ?? raw.kind;
   const session = raw['thread-id'] ?? raw.thread_id ?? raw.session_id ?? 'codex-session';
-  const summary = raw['last-assistant-message'] ?? raw.message ?? undefined;
+  const result = raw['last-assistant-message'] ?? raw.message ?? undefined;
   switch (type) {
     case 'agent-turn-complete':
     case 'turn-ended':
     case 'turn_complete':
-      return { state: 'completed', kind: 'chat', taskId: session, summary };
+      return { state: 'completed', kind: 'chat', taskId: session, session, summary: 'Codex 回复结束', result };
     case 'turn-started':
     case 'turn_started':
-      return { state: 'running', kind: 'chat', taskId: session };
+      return { state: 'running', kind: 'chat', taskId: session, session };
     case 'turn-failed':
     case 'error':
-      return { state: 'failed', kind: 'chat', taskId: session, summary };
+      return { state: 'failed', kind: 'chat', taskId: session, session, summary: '本轮因错误终止', result };
     case 'approval-requested':
-      return { state: 'needs_approval', kind: 'chat', taskId: session, summary };
+      return { state: 'needs_approval', kind: 'chat', taskId: session, session, result };
     case 'input-requested':
-      return { state: 'needs_input', kind: 'chat', taskId: session, summary };
+      return { state: 'needs_input', kind: 'chat', taskId: session, session, result };
     default:
       return null;
   }
@@ -322,6 +322,9 @@ async function main() {
   const provider = configuredAgent() ?? (host === 'generic' ? (raw.provider ?? 'generic') : host);
   const event = clean(mapped, provider);
   if (!event) return; // a lifecycle event with no meaning for a cat
+  // A host's own lifecycle event, not an agent's report: the app never reads its summary aloud
+  // as a task result, and lets it stand down when the agent already reported the turn itself.
+  if (host !== 'generic') event.origin = 'hook';
 
   const auth = token();
   try {

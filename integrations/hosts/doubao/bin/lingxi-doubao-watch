@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""lingxi-doubao-watch - the deterministic half 豆包 does not have.
+
+Claude Code, Codex and WorkBuddy all tell the cat when a turn starts and ends, whether or not the
+model remembers to. 豆包 has no hooks, so the cat only ever heard what the model chose to report -
+and for "你好" it reports nothing. This watcher stands in for the missing hooks.
+
+WHAT IT READS (checked against 豆包 2.31.4 on 2026-09-30)
+
+  ~/Library/Application Support/Doubao/sdk_storage/log/saman_<date>.<n>.log - 豆包's own log. While
+  a task runs, 豆包 keeps the app from quitting under it, and says so:
+
+    [exit_intercept] Register added blocker. scope_id=local-task-conversation, intercept_id=<x>:<conversation>
+    [exit_intercept] Unregister blocker. scope_id=local-task-conversation, intercept_id=<x>:<conversation>
+
+  Those two lines are a turn starting and ending, and they carry nothing but an id. When the
+  model stops to ask the user something, a `"name":"interaction.ask"` tool call is logged.
+
+  For the bubble to name WHICH conversation ended, the user's latest request is read from the
+  session's assignment.md, and the model's closing reply from its trajectory.jsonl when 豆包 has
+  written one. Both are perceived, not collected: they go to the local app as display-only
+  fields (label / result), which the app never writes to disk or sends anywhere, and this
+  process keeps nothing.
+
+It is not a published contract: a 豆包 update can move any of it. Every failure is therefore
+silent - the watcher just stops seeing turns, and the model's own reports still work.
+
+  LINGXI_DOUBAO_WATCH_DEBUG=1   print what it matched (event kinds and ids, never text)
+"""
+import glob
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+
+HOME = os.path.expanduser("~")
+DOUBAO = os.environ.get("LINGXI_DOUBAO_DIR", os.path.join(HOME, "Library/Application Support/Doubao"))
+LOG_GLOB = os.path.join(DOUBAO, "sdk_storage/log/saman_*.log")
+SESSIONS = os.path.join(DOUBAO, "Default/.doubao/agent_mode/workspace/.sessions")
+PORT = int(os.environ.get("LINGXI_PORT", "47811"))
+TOKEN_FILE = os.environ.get(
+    "LINGXI_TOKEN_FILE",
+    os.path.join(HOME, "Library/Application Support/com.dushaobin.lingxi-desktop/bridge-token"),
+)
+STATE_DIR = os.environ.get("LINGXI_DOUBAO_STATE", os.path.join(HOME, ".lingxi/doubao"))
+ACTIVE_FILE = os.path.join(STATE_DIR, "active-conversation")
+PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+LOGO_FILE = os.path.join(PLUGIN_DIR, "doubao-logo")
+DEBUG = os.environ.get("LINGXI_DOUBAO_WATCH_DEBUG") == "1"
+POLL_SECONDS = float(os.environ.get("LINGXI_DOUBAO_WATCH_POLL", "1"))
+LABEL_MAX = 40
+
+TURN = re.compile(
+    r"\[exit_intercept\] (Register added blocker|Unregister blocker)\. "
+    r"scope_id=local-task-conversation, intercept_id=[^:,\s]+:([A-Za-z0-9_]+)"
+)
+ASK = re.compile(r'"event":"toolcall","data":\{[^}]*"name":"interaction\.ask"[^}]*"status":"received"')
+ANSWERED = re.compile(r'"event":"toolcall","data":\{[^}]*"phase":"execution_settled","name":"interaction\.ask"')
+
+# No proxy for loopback, ever: a proxy in the environment answers 127.0.0.1 with a 502.
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def debug(*parts):
+    if DEBUG:
+        print("[lingxi-doubao-watch]", *parts, file=sys.stderr, flush=True)
+
+
+def token():
+    try:
+        with open(TOKEN_FILE) as handle:
+            return handle.read().strip()
+    except OSError:
+        return None
+
+
+def call(method, path, body=None):
+    """One bridge call. Returns the parsed reply, or None when the app is not there."""
+    auth = token()
+    if not auth:
+        return None
+    data = None if body is None else json.dumps(body, ensure_ascii=False).encode()
+    request = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}", data=data, method=method)
+    request.add_header("Authorization", f"Bearer {auth}")
+    if data is not None:
+        request.add_header("Content-Type", "application/json")
+    try:
+        with OPENER.open(request, timeout=2) as response:
+            return json.loads(response.read() or b"{}")
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+class Identity:
+    """豆包's face on the bubble. The app's registry lives in memory, so every new instance of
+    the app has to be told again - keyed on /health's startedAt."""
+
+    def __init__(self):
+        self.registered_for = None
+
+    def ensure(self):
+        health = call("GET", "/health") or {}
+        started = health.get("startedAt")
+        if started is not None and started == self.registered_for:
+            return
+        try:
+            with open(LOGO_FILE) as handle:
+                logo = handle.read().strip()
+        except OSError:
+            logo = None
+        body = {"id": "doubao", "name": "豆包", "badge": "豆", "color": "#E6EEFF"}
+        if logo:
+            body["logo"] = logo
+        if call("POST", "/agents", body) is not None:
+            self.registered_for = started
+
+
+def latest_request(conversation):
+    """The user's latest request in this conversation, first line only, for the bubble's name."""
+    for path in glob.glob(os.path.join(SESSIONS, conversation, "agents/*/system/assignment.md")):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        blocks = re.split(r"^## \[[^\]]*\] 需求\s*$", text, flags=re.M)
+        for line in blocks[-1].splitlines():
+            line = re.sub(r"^@\S+\s*", "", line.strip())
+            if line:
+                return line[:LABEL_MAX]
+    return None
+
+
+def closing_reply(conversation, since):
+    """The model's last words this turn, when 豆包 wrote them down (it does not always)."""
+    for path in glob.glob(os.path.join(SESSIONS, conversation, "agents/*/system/trajectory.jsonl")):
+        try:
+            if os.path.getmtime(path) < since:
+                continue
+            with open(path, encoding="utf-8") as handle:
+                lines = handle.read().splitlines()
+        except OSError:
+            continue
+        for line in reversed(lines):
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if entry.get("role") != "assistant":
+                return None  # the turn's last word was not the model's
+            if entry.get("tool_calls"):
+                return None
+            content = entry.get("content")
+            if isinstance(content, list):
+                content = " ".join(part.get("text", "") for part in content if isinstance(part, dict))
+            return content[:4000] if isinstance(content, str) and content.strip() else None
+    return None
+
+
+def set_active(conversation):
+    """Which conversation is running, for the lingxi wrapper: a report the model makes then is
+    filed on the same 主界面 row as this watcher's events, and the turn end after it stays quiet."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        if conversation:
+            with open(ACTIVE_FILE, "w") as handle:
+                handle.write(conversation)
+        elif os.path.exists(ACTIVE_FILE):
+            os.remove(ACTIVE_FILE)
+    except OSError:
+        pass
+
+
+class Watcher:
+    def __init__(self):
+        self.identity = Identity()
+        self.started = {}  # conversation -> time.time() the turn began
+        self.current = None  # the conversation whose turn began last
+
+    def report(self, state, conversation, summary, result=None):
+        self.identity.ensure()
+        event = {
+            "state": state, "kind": "chat", "provider": "doubao", "agent": "doubao",
+            "taskId": conversation, "session": conversation, "summary": summary, "origin": "hook",
+        }
+        label = latest_request(conversation) if conversation[:1].isdigit() else None
+        if label:
+            event["label"] = label
+        if result:
+            event["result"] = result
+        call("POST", "/task-event", event)
+        debug(state, conversation, "label" if label else "-", "result" if result else "-")
+
+    def line(self, text):
+        turn = TURN.search(text)
+        if turn:
+            kind, conversation = turn.groups()
+            if kind.startswith("Register"):
+                self.started[conversation] = time.time()
+                self.current = conversation
+                set_active(conversation)
+                self.report("running", conversation, "新一轮对话开始")
+            else:
+                began = self.started.pop(conversation, time.time() - 1)
+                if self.current == conversation:
+                    self.current = None
+                    set_active(None)
+                time.sleep(1.5)  # let 豆包 finish writing the trajectory
+                self.report("completed", conversation, "本轮回复结束", closing_reply(conversation, began))
+            return
+        if ASK.search(text) and self.current:
+            self.report("needs_input", self.current, "豆包在等你回答")
+        elif ANSWERED.search(text) and self.current:
+            # Answered: the turn carries on, and the wait must stop counting as one.
+            self.report("running", self.current, "新一轮对话开始")
+
+    def run(self):
+        # Offsets per file, so a log that stops being the newest and becomes it again (豆包 writes
+        # from several processes) is resumed, never replayed. At start-up every existing log is
+        # taken as read: history is not news. A file that appears later is read from its start.
+        offsets = {path: os.path.getsize(path) for path in glob.glob(LOG_GLOB)}
+        pending = {}
+        debug("watching", len(offsets), "log file(s)")
+        while True:
+            for path in sorted(glob.glob(LOG_GLOB), key=os.path.getmtime)[-2:]:
+                try:
+                    size = os.path.getsize(path)
+                    offset = offsets.get(path, 0)
+                    if size < offset:
+                        offset = 0  # truncated or replaced
+                    if size == offset:
+                        continue
+                    with open(path, "rb") as handle:
+                        handle.seek(offset)
+                        chunk = handle.read(size - offset)
+                    offsets[path] = size
+                except OSError:
+                    continue
+                text = pending.get(path, "") + chunk.decode("utf-8", "replace")
+                *complete, pending[path] = text.split("\n")
+                for line in complete:
+                    if "exit_intercept" in line or "interaction.ask" in line:
+                        try:
+                            self.line(line)
+                        except Exception as error:  # never die over one line
+                            debug("skipped a line:", type(error).__name__)
+            # A turn that never ended (豆包 quit mid-task) stops counting after two hours.
+            for conversation, began in list(self.started.items()):
+                if time.time() - began > 7200:
+                    self.started.pop(conversation, None)
+            time.sleep(POLL_SECONDS)
+
+
+if __name__ == "__main__":
+    try:
+        Watcher().run()
+    except KeyboardInterrupt:
+        pass

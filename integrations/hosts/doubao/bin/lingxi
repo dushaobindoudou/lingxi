@@ -21,17 +21,47 @@ done
 PLUGIN_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
 CLI="${PLUGIN_DIR}/scripts/lingxi-cli"
 
+# ~/.local/bin is on EVERY shell's PATH, not only Doubao's: Claude Code and Codex run this wrapper
+# too when they call `lingxi`. So it claims Doubao's identity only when nothing else has - an
+# explicit LINGXI_AGENT (a host layer tells its model to set one), or a host that marks its own
+# shells (CLAUDECODE=1, CODEX_THREAD_ID), passes straight through to the plain client, which knows
+# those marks. Before this, `LINGXI_AGENT=codex lingxi task ...` came out as 豆包.
+if [ -z "${LINGXI_DOUBAO_AGENT:-}" ] \
+   && { [ -n "${LINGXI_AGENT:-}" ] || [ "${CLAUDECODE:-}" = 1 ] || [ -n "${CODEX_THREAD_ID:-}" ]; }; then
+  exec "${CLI}" "$@"
+fi
+
 export LINGXI_AGENT="${LINGXI_DOUBAO_AGENT:-doubao}"
 export LINGXI_AGENT_NAME="${LINGXI_DOUBAO_AGENT_NAME:-豆包}"
 export LINGXI_AGENT_BADGE="${LINGXI_DOUBAO_AGENT_BADGE:-豆}"
-export LINGXI_AGENT_COLOR="${LINGXI_DOUBAO_AGENT_COLOR:-#2F54EB}"
+export LINGXI_AGENT_COLOR="${LINGXI_DOUBAO_AGENT_COLOR:-#E6EEFF}"
+
+STATE_DIR="${LINGXI_DOUBAO_STATE:-${HOME}/.lingxi/doubao}"
+
+# The conversation 豆包 is running right now, as the watcher (bin/lingxi-doubao-watch) saw it
+# start. A report made under it lands on the same 主界面 row as the watcher's turn events, and
+# the turn end right after it stays quiet instead of repeating it. Stale after two hours.
+if [ -z "${LINGXI_SESSION:-}" ] && [ -f "${STATE_DIR}/active-conversation" ] \
+   && [ -z "$(find "${STATE_DIR}/active-conversation" -mmin +120 2>/dev/null)" ]; then
+  LINGXI_SESSION="$(head -c 64 "${STATE_DIR}/active-conversation" | tr -cd 'A-Za-z0-9_')"
+  export LINGXI_SESSION
+fi
 
 # The app's agent registry is in-memory: after a restart the app auto-registers doubao on the
 # next call, but WITHOUT the logo - the bubble would show the bare「豆」letter instead of the
-# mark. So whenever the bridge is already up, re-register the logo too (health never starts the
-# app; if the app is down we skip and let the real command auto-start it).
-if "${CLI}" health >/dev/null 2>&1; then
-  "${CLI}" register "${LINGXI_AGENT}" --logo "${PLUGIN_DIR}/doubao-logo" \
-    --name "${LINGXI_AGENT_NAME}" --badge "${LINGXI_AGENT_BADGE}" --color "${LINGXI_AGENT_COLOR}" >/dev/null 2>&1 || true
+# mark. So register the logo once per app instance, keyed on /health's startedAt. Doing it on
+# every call cost two extra round trips each time. (health never starts the app; if the app is
+# down we skip and let the real command auto-start it. An app too old to report startedAt gets
+# the logo on every call, as before.)
+HEALTH="$(curl -s -m 1 --noproxy '*' "http://127.0.0.1:${LINGXI_PORT:-47811}/health" 2>/dev/null || true)"
+if [ -n "${HEALTH}" ]; then
+  STARTED="$(printf '%s' "${HEALTH}" | sed -n 's/.*"startedAt": *\([0-9][0-9]*\).*/\1/p')"
+  if [ -z "${STARTED}" ] || [ "$(cat "${STATE_DIR}/registered-for" 2>/dev/null)" != "${STARTED}" ]; then
+    if "${CLI}" register "${LINGXI_AGENT}" --logo "${PLUGIN_DIR}/doubao-logo" \
+         --name "${LINGXI_AGENT_NAME}" --badge "${LINGXI_AGENT_BADGE}" --color "${LINGXI_AGENT_COLOR}" >/dev/null 2>&1 \
+       && [ -n "${STARTED}" ]; then
+      mkdir -p "${STATE_DIR}" && printf '%s' "${STARTED}" > "${STATE_DIR}/registered-for"
+    fi
+  fi
 fi
 exec "${CLI}" "$@"

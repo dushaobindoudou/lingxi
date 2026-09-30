@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Install the 灵犀 skills wherever the agents on this machine will look for them.
 #
-# Claude Code and Codex both read `<dir>/<skill-name>/SKILL.md`, so ONE skill serves both - the
-# only difference is where the directory lives. Everything is symlinked rather than copied, so
-# `git pull` updates every agent at once and there is no "which copy is current" question.
+# Claude Code and Codex both read `<dir>/<skill-name>/SKILL.md`, so the shared system layer
+# (integrations/skills/*) serves every host - the only difference is where the directory lives.
+# Beside it goes the host's own layer, lingxi-<host> (integrations/hosts/PLUGIN-STANDARD.md, 六):
+# identity, what the host already reports, who starts the app. Everything is symlinked rather than
+# copied, so `git pull` updates every agent at once and there is no "which copy is current" question.
 #
 #   ./integrations/install-skills.sh            # install for whatever is present
 #   ./integrations/install-skills.sh --copy     # copy instead of symlink
@@ -23,10 +25,12 @@ for arg in "$@"; do
 done
 
 install_into() {
-  local dest="$1" label="$2"
+  local dest="$1" label="$2" host="${3:-}"
   [ -d "$(dirname "$dest")" ] || { echo "  - $label: not present, skipped"; return; }
   mkdir -p "$dest"
-  for skill in "$SRC"/*/; do
+  local skills=("$SRC"/*/)
+  [ -n "$host" ] && skills+=("$REPO/integrations/hosts/$host/skills/lingxi-$host/")
+  for skill in "${skills[@]}"; do
     local name; name="$(basename "$skill")"
     rm -rf "${dest:?}/$name"
     if [ "$MODE" = "copy" ]; then cp -R "$skill" "$dest/$name"; else ln -s "$skill" "$dest/$name"; fi
@@ -35,12 +39,12 @@ install_into() {
 }
 
 echo "Installing 灵犀 skills ($MODE):"
-install_into "$HOME/.claude/skills"  "Claude Code (user)"
-install_into "$HOME/.codex/skills"   "Codex (user)"
+install_into "$HOME/.claude/skills"  "Claude Code (user)" claude
+install_into "$HOME/.codex/skills"   "Codex (user)" codex
 # WorkBuddy reads the same `<dir>/<skill-name>/SKILL.md` layout. Its MCP half is a separate step
 # (the host gates it behind a config-hash approval) - see integrations/hosts/workbuddy/install.sh.
-install_into "$HOME/.workbuddy/skills" "WorkBuddy (user)"
-install_into "$HOME/.cursor/skills" "Cursor (user)"
+install_into "$HOME/.workbuddy/skills" "WorkBuddy (user)" workbuddy
+install_into "$HOME/.cursor/skills" "Cursor (user)" cursor
 [ "$PROJECT" = 1 ] && install_into "$REPO/.claude/skills" "this repo"
 
 # The CLI has to be on PATH for the skills to be usable as written.

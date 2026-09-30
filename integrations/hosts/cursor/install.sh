@@ -20,6 +20,14 @@ HOOK_LINK="${HOOKS_DIR}/lingxi-cursor.sh"
 HOOK_SRC="${REPO}/integrations/hosts/cursor/lingxi-cursor.sh"
 SERVER="${REPO}/packages/mcp-server/src/index.mjs"
 SKILL_SRC="${REPO}/integrations/skills"
+HOST_SKILL_SRC="${REPO}/integrations/hosts/cursor/skills"
+SKILL_NAMES="lingxi lingxi-authoring lingxi-cursor"
+skill_src() {
+  case "$1" in
+    lingxi-cursor) printf '%s' "${HOST_SKILL_SRC}/$1" ;;
+    *) printf '%s' "${SKILL_SRC}/$1" ;;
+  esac
+}
 MARK="${REPO}/integrations/hosts/cursor/cursor-mark.svg"
 APP_BIN_DIR="${HOME}/Library/Application Support/com.dushaobin.lingxi-desktop"
 AGENT_ID="cursor"
@@ -64,7 +72,7 @@ if [ "${UNINSTALL}" = 1 ]; then
   if [ "${DRY_RUN}" = 1 ]; then
     note "会从 ${MCP_JSON} 删掉 mcpServers.lingxi（仅当 args 指向本仓库）"
     note "会从 ${HOOKS_JSON} 删掉命令里含 lingxi-cursor.sh 的条目"
-    note "会删除软链 ${HOOK_LINK} 与 ${SKILLS_DIR}/{lingxi,lingxi-authoring}"
+    note "会删除软链 ${HOOK_LINK} 与 ${SKILLS_DIR}/{lingxi,lingxi-authoring,lingxi-cursor}"
   else
     python3 - "${MCP_JSON}" "${SERVER}" "${HOOKS_JSON}" <<'PY'
 import json, os, sys
@@ -119,7 +127,7 @@ if isinstance(hooks, dict) and isinstance(hooks.get('hooks'), dict):
         print(f'  · {hooks_path}: 没有 lingxi hook')
 PY
     if [ -L "${HOOK_LINK}" ]; then rm -f "${HOOK_LINK}"; log "已删除软链 ${HOOK_LINK}"; fi
-    for s in lingxi lingxi-authoring; do
+    for s in ${SKILL_NAMES}; do
       if [ -L "${SKILLS_DIR}/${s}" ]; then rm -f "${SKILLS_DIR}/${s}"; log "已删除软链 ${SKILLS_DIR}/${s}"; fi
     done
   fi
@@ -200,18 +208,21 @@ PY
 fi
 
 echo "3. skill（${SKILLS_DIR}/）"
-for s in lingxi lingxi-authoring; do
+# 两层都装（integrations/hosts/PLUGIN-STANDARD.md 六）：系统层 lingxi、lingxi-authoring 来自共享目录，
+# 宿主层 lingxi-cursor 只写 Cursor 才成立的事（身份、hooks 报了什么、MCP 信任）。
+for s in ${SKILL_NAMES}; do
   dest="${SKILLS_DIR}/${s}"
+  src="$(skill_src "${s}")"
   if [ -e "${dest}" ] && [ ! -L "${dest}" ]; then
     echo "✗ ${dest} 是普通目录，安装器不覆盖它" >&2
     exit 1
   fi
   if [ "${DRY_RUN}" = 1 ]; then
-    note "会软链 ${dest} → ${SKILL_SRC}/${s}"
+    note "会软链 ${dest} → ${src}"
   else
     mkdir -p "${SKILLS_DIR}"
-    ln -sfn "${SKILL_SRC}/${s}" "${dest}"
-    log "${dest} → ${SKILL_SRC}/${s}"
+    ln -sfn "${src}" "${dest}"
+    log "${dest} → ${src}"
   fi
 done
 

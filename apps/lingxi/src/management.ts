@@ -1109,10 +1109,11 @@ async function initHomeReminders(): Promise<void> {
 }
 
 interface CodexStatus {
-  state: 'installed' | 'not_installed' | 'conflict' | 'unparsable' | 'unavailable';
+  state: 'installed' | 'installed_fanout' | 'not_installed' | 'conflict' | 'unparsable' | 'unavailable';
   configPath?: string;
   configExists?: boolean;
   mcpInstalled?: boolean;
+  skillInstalled?: boolean;
   existingNotify?: string;
   reason?: string;
 }
@@ -1130,7 +1131,10 @@ interface CodexStatus {
 async function initCodexAdapter(): Promise<void> {
   const badge = document.getElementById('codex-status-badge');
   const detail = document.getElementById('codex-status-detail');
+  const nextStep = document.getElementById('codex-next-step');
+  const parts = document.getElementById('codex-parts');
   const connect = document.getElementById('codex-connect') as HTMLButtonElement | null;
+  const skillConnect = document.getElementById('codex-skill-connect') as HTMLButtonElement | null;
   const disconnect = document.getElementById('codex-disconnect') as HTMLButtonElement | null;
   const result = document.getElementById('codex-connect-result');
   const conflict = document.getElementById('codex-conflict');
@@ -1139,10 +1143,25 @@ async function initCodexAdapter(): Promise<void> {
   const mcpSnippet = document.getElementById('codex-mcp-snippet');
 
   function render(status: CodexStatus) {
-    const installed = status.state === 'installed';
+    const installed = status.state === 'installed' || status.state === 'installed_fanout';
+    const skillReady = Boolean(status.skillInstalled);
+    const mcpReady = Boolean(status.mcpInstalled);
+    if (parts) parts.textContent = `skill ${skillReady ? '✓ 已装' : '○ 未装'}  ·  回合通知 ${installed ? '✓ 已接' : '○ 未接'}  ·  MCP ${mcpReady ? '✓ 已配置' : '○ 可选'}`;
+    if (nextStep) {
+      nextStep.textContent = status.state === 'conflict'
+        ? skillReady ? '下一步：用仓库安装器合并回合通知，并保留现有通知器。' : '下一步：先接入 skill；再用仓库安装器合并回合通知。'
+        : !skillReady && !installed
+          ? '下一步：点击「接入 skill 与通知」，然后重启 Codex。'
+          : !skillReady
+            ? '下一步：点击「接入 skill」，然后重启 Codex。'
+            : !installed
+              ? '下一步：接入回合通知，让猫自动知道 Codex 何时结束回复。'
+              : '已可使用：skill 负责理解任务，通知负责自动报回合结束；MCP 按需添加。';
+    }
     if (badge) {
       badge.textContent = {
-        installed: '● 已接入',
+        installed: skillReady ? '● 已接入' : '◐ 部分接入',
+        installed_fanout: skillReady ? '● 已接入' : '◐ 部分接入',
         not_installed: '○ 未接入',
         conflict: '⚠ 有冲突',
         unparsable: '⚠ 配置读不了',
@@ -1152,7 +1171,8 @@ async function initCodexAdapter(): Promise<void> {
     }
     if (detail) {
       detail.textContent = {
-        installed: `已写入 ${status.configPath}。重启 Codex 后，每个回合结束猫都会有反应。`,
+        installed: `通知已接入；skill ${status.skillInstalled ? '已接入' : '待接入'}。重启 Codex 后生效。`,
+        installed_fanout: `通知包装器已连接灵犀；skill ${status.skillInstalled ? '已接入' : '待接入'}。`,
         not_installed: status.configExists
           ? `${status.configPath} 里还没有 notify。`
           : `还没有 ${status.configPath}——接入时会建一个。`,
@@ -1163,7 +1183,8 @@ async function initCodexAdapter(): Promise<void> {
     }
     // Installing is offered only when it is actually safe to write.
     if (connect) connect.hidden = status.state !== 'not_installed';
-    if (disconnect) disconnect.hidden = !installed;
+    if (skillConnect) skillConnect.hidden = Boolean(status.skillInstalled);
+    if (disconnect) disconnect.hidden = status.state !== 'installed';
     if (conflict) conflict.hidden = status.state !== 'conflict';
     if (conflictExisting) conflictExisting.textContent = status.existingNotify ?? '';
     // The MCP half is only worth showing once the deterministic half is in place - before that
@@ -1182,7 +1203,7 @@ async function initCodexAdapter(): Promise<void> {
     }
   }
 
-  async function act(command: 'install_codex_notify' | 'uninstall_codex_notify') {
+  async function act(command: 'install_codex_notify' | 'install_codex_skill' | 'uninstall_codex_notify') {
     try {
       const message = await invoke<string>(command);
       if (result) {
@@ -1201,6 +1222,7 @@ async function initCodexAdapter(): Promise<void> {
   }
 
   connect?.addEventListener('click', () => void act('install_codex_notify'));
+  skillConnect?.addEventListener('click', () => void act('install_codex_skill'));
   disconnect?.addEventListener('click', () => void act('uninstall_codex_notify'));
   await refresh();
 }

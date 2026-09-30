@@ -1,13 +1,47 @@
 ---
 name: lingxi
-description: Drive the 灵犀 desktop cat from 豆包 (Doubao) - report the emotional shape of the work so the cat responds to how it feels, not just that it happened; make it speak, emote, remember, and remind. Use whenever 灵犀 is running and the work has an emotional shape worth showing. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
+description: Drive the 灵犀 desktop cat - let it react to what you are working on with expressions, actions and short lines, remember things about the user, and nudge them later. Use whenever 灵犀 is running and the work has an emotional shape worth showing. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
 ---
 
-# 灵犀 · 豆包专用
+# 灵犀 · 一只住在桌面上的猫
 
-用户的桌面上住着一只猫。这个插件已经把灵犀接入豆包：技能装在豆包的技能目录里，`lingxi` 命令
-**固定以豆包的身份说话**——气泡上会带豆包的标记。你可以看到它在做什么，也可以让它对你正在做的
-事作出反应。
+用户的桌面上住着一只猫。你可以看到它在做什么，也可以让它对你正在做的事作出反应。
+
+## 先读两份：这份是系统层，另有一份宿主层
+
+灵犀的 skill 分两层，每个宿主都同时装着两份：
+
+| 层 | skill | 管什么 |
+|---|---|---|
+| 系统层 | `lingxi`（本文） | 灵犀怎么和人相处：什么时候通知、报什么、心情、提醒、记忆、预算、别做的事。所有宿主一字不差 |
+| 宿主层 | `lingxi-<宿主>`，如 `lingxi-claude`、`lingxi-codex` | 只在这个宿主上成立的事：以谁的身份说话、用 CLI 还是 MCP、宿主已经自动报了什么、应用由谁安装启动、这里特有的坑 |
+
+**身份、调用入口、自动上报、安装启动——这四件事以宿主层为准，其余以本文为准。** 宿主层只补
+这个宿主的事实，不改本文的规则。找不到宿主层时按本文的通用做法，并且别让 CLI 拿
+`~/.lingxi/agent.json` 里的机器级身份冒充你（见「怎么调用」）。
+
+## 什么时候让猫通知
+
+猫是**关键消息的传达者**，不是日志播报员：
+
+| 事件 | 什么时候说 | 怎么报 |
+|---|---|---|
+| 需要用户决定、授权或补充信息；失败或有明确风险 | 立刻 | `needs_input` / `needs_approval` / `failed`，`summary` 写清发生了什么、现在要用户做什么；要回答的问题原样写进去 |
+| 一轮工作结束、有可用结果、重要里程碑 | 自然停顿处 | `completed`，点名任务、这轮做成了什么、下一步（包括是否还要用户继续驱动你） |
+| 开始、常规进度、工具日志 | 安静 | 第一次 `running` 换个表情就够，重复进度不说话 |
+
+**任务报告是主通道。** 每件真实的事：开始报 `running`，结束报终态（`completed` / `failed` /
+`cancelled` / `needs_input` …），**始终复用同一个内部 `taskId`**（CLI 每条命令都带同一个
+`LINGXI_TASK_ID`，shell 之间环境变量不会自动保留；MCP 的 `lingxi_task` 显式传 `taskId` 和 `summary`）。
+`summary` 写**任务名 + 结果 + 下一步或原样的问题**，一两句、结论在前、最多 140 字。猫会完整显示、
+按长度延长停留，不截断——所以别自己缩成「完成了」「搞定」，也别拿工作目录、会话 ID、旧会话标题
+代替任务名。同一结果只报一次。
+
+报 `state`、`kind`、`mood`，让应用的反应映射挑表情和动作。特效只给用户明确要的、或真值得庆祝的
+里程碑，先查可用 id；风险、授权、普通提醒不做成全屏特效。
+
+未来的事由你判断值不值得让猫记住：用户明确说了带时间的提醒或例行日程，主动 `lingxi remind`，并告诉
+他实际触发时间；只有「明天」没有几点时，先问或说明你采用的时间；偶然看到的截止日期先提议，不擅自建。
 
 **它的名字是"灵犀"——心有灵犀。** 这不是装饰性的命名，是验收标准：一只只会在任务结束时挥个爪
 的猫，任何状态灯都能做到；一只知道你今晚在给妈妈写信、知道你和同一个 bug 耗了三小时的猫，才配
@@ -15,8 +49,7 @@ description: Drive the 灵犀 desktop cat from 豆包 (Doubao) - report the emot
 
 ## 怎么调用
 
-**一条 shell 命令搞定全部能力,不需要 MCP。** `lingxi` 在 PATH 上（插件安装的包装器），
-每次调用都以豆包的身份发出：
+**一条 shell 命令搞定全部能力,不需要 MCP。**
 
 ```bash
 lingxi help          # 全部子命令
@@ -24,7 +57,13 @@ lingxi state         # 猫在干什么
 lingxi integration   # 运行中的应用吐出的完整契约，以它为准
 ```
 
+**身份要固定。** 宿主层写着你的身份怎么来：插件自带的 `lingxi` 包装器、`LINGXI_AGENT=<宿主 id>`、
+或 MCP 配置里的 env。没有宿主层时，每条命令都带上 `LINGXI_AGENT=<你的宿主 id>`——不带时 CLI 退回
+`~/.lingxi/agent.json`，那是机器级文件，常常写着别的宿主，猫就会顶着别人的头像替你说话。
+
 ### 第一步：确认猫在跑，没跑就拉起来
+
+宿主层说应用的安装和启动归插件管时，照宿主层做，跳过这一步。
 
 ```bash
 L="$(command -v lingxi || echo "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi")"
@@ -59,7 +98,7 @@ shell 只有一次。而且 CLI 的能力是 MCP 的**超集**:MCP 那 13 个工
 `raw`(任何没包装的接口)。
 
 MCP 仍然有用——宿主想要带类型的 schema、想逐工具控制权限时更合适。
-**两条路同一个桥、同一个 token、同一份契约,任选。**
+**两条路同一个桥、同一个 token、同一份契约。** 在你的宿主上优先用哪条，宿主层说了算。
 
 ---
 
@@ -129,9 +168,9 @@ lingxi task <state> <kind> <mood> "一句话"
 长任务会报很多次进度。**猫对每一次都反应，就变成了桌宠本该替代的那种通知轰炸。**
 
 ```bash
-lingxi task running build focused "编译中"          # 第一次：设置表情
+LINGXI_TASK_ID=build-check lingxi task running build focused "正在编译项目并检查构建结果"  # 第一次：设置表情
 lingxi raw POST /task-event '{"state":"running","progress":0.6,...}'   # 过半：再看一眼
-lingxi task completed build proud "过了"            # 终态：一定会表现
+LINGXI_TASK_ID=build-check lingxi task completed build proud "项目编译通过，可以继续验证功能"  # 终态：一定会表现
 ```
 
 系统帮你兜底：`running` 的更新**只有第一次和跨过 50% 那次**会产生反应，其余吞掉。
@@ -183,7 +222,7 @@ lingxi remind 1440 "明天记得回复那封邮件" --mood anxious
 
 **什么时候主动设提醒**（不用等用户开口）：
 
-- 用户说"等下要…"、"晚点记得…"、"明天…" → 直接设上，然后告诉他你设了（说清楚是几点）
+- 用户说"等下要…"、"晚点记得…"、"明天…"且时间明确 → 直接设上，然后告诉他你设了（说清楚是几点）；时间不明确时先确认或说明采用的时间
 - 用户提到日程或例行的事（"每天十点站会"、"周报周五交"、"三点开会"）→ 设成对应时间点的提醒，
   例行的加 `--every`；会议提前 10 分钟提醒比准点更有用
 - 你看到一个有时限的东西（证书过期、会议、deadline）→ 提议设一个
@@ -206,8 +245,8 @@ lingxi recall
 
 好的记忆是**具体的**：
 
-- ✅「周四晚上常常熬到很晚」「被 flaky test 惹毛过好几次」「喜欢先量再改」
-- ❌「是个程序员」「在用 TypeScript」（看代码就知道了，不算观察）
+- 值得记：「周四晚上常常熬到很晚」「被 flaky test 惹毛过好几次」「喜欢先量再改」
+- 不值得记：「是个程序员」「在用 TypeScript」（看代码就知道了，不算观察）
 
 **不要写**任何他不愿意看到被落在磁盘上的东西：密码、密钥、私人的第三方信息、
 健康和财务细节。这是一个明文 JSON 文件。
@@ -220,7 +259,7 @@ lingxi recall
 
 | 通道 | 预算 | 为什么 |
 |---|---|---|
-| 说话气泡 | ≤ 3 次/小时，绝不重复同一句 | 每句话都在抢注意力，重复是应用被卸载的原因 |
+| 说话气泡 | 每个真实任务终态和待回答问题都要传达；纯陪伴闲聊 ≤ 3 次/小时 | 关键消息不能漏，闲聊不能抢注意力 |
 | 表情 | 不限，但同一个 60 秒内别重设，2 秒内别切两次 | 改起来免费，但闪烁就读不出来了 |
 | 动作 | ≤ 6 次/小时，只在自然停顿处 | 一个动作占 3–6 秒，看得出来"被占用了" |
 | 全屏特效 | ≤ 1 次/天，只给里程碑 | 占屏好几秒，用错一次就永久退休了 |
@@ -268,20 +307,22 @@ lingxi agents    # 谁在驱动
 
 会话名是打开时起的。后面换了话题，拿它当结束提示就是在说一件已经过去的事。hook 也不会再用它。
 
-回复结束前报**这一轮刚发生的事**。气泡大约停 5 秒，超过 24 个字就看不完，所以一句，12–24 字，结论在前。
+回复结束前报**这一轮刚发生的事**。摘要写完整、具体，最多 140 字；猫会按长度延长气泡显示时间。结论在前，问题要原样给出。
 
 带一点情绪。猫不是状态灯，可以贱兮兮，不要阴阳，也不要冷冰冰地报流程。
 
 ```bash
-lingxi task running write focused "哼，登录提示又写崩了"
-lingxi task completed write proud "登录提示改好啦，测试也乖了"
+LINGXI_TASK_ID=login-message lingxi task running write focused "正在修复登录提示并检查相关测试"
+LINGXI_TASK_ID=login-message lingxi task completed write proud "登录提示已修复，相关测试通过，可以继续发布"
 ```
 
 - 写结果，或卡在哪。带具体名词，像跟旁边的人说话。
 - 同一会话换了话题，就写新的这句，不要沿用第一轮，也不要写会话标题。
 - 不要写「结束了」「本轮回复结束」「任务已完成」。也不要堆数字和步骤。
 
-豆包没有会话生命周期 hook——**猫只看到你报的这件事**。你没报，猫就不知道。
+有的宿主装了 hook，回合结束时会自动告诉猫（有没有，宿主层写着）。你报过这一轮的结果，应用就不让
+hook 再念一遍；你没报，hook 才从最终回复里截一句兜底——那一句远没有你写的好。所以回复的第一句也
+点名任务和结论；需要用户回答时，把问题放在最后一行、用问句结尾。
 
 ## 别做的事
 

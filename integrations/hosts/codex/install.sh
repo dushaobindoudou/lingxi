@@ -7,7 +7,8 @@
 #   1. 备份 ~/.codex/config.toml（带时间戳，从不覆盖旧备份）
 #   2. notify 合并为 fanout：保留你现有的通知程序，灵犀排在它后面并行触发
 #   3. 追加/更新 [mcp_servers.lingxi]（LINGXI_AGENT=codex 身份）
-#   4. 安装 skill 到 ~/.codex/skills/lingxi（符号链接，git pull 即更新）
+#   4. 安装两层 skill 到 ~/.codex/skills/：系统层 lingxi、lingxi-authoring，宿主层 lingxi-codex
+#      （符号链接，git pull 即更新；分层见 integrations/hosts/PLUGIN-STANDARD.md 六）
 #
 #   ./install.sh            # 正常安装
 #   ./install.sh --dry-run  # 只打印将要做的变更
@@ -46,6 +47,16 @@ fi
 # Codex 的 notify 只接受一个程序。覆盖式安装会静默杀掉用户已有的通知器——这是不可接受的，
 # 所以把 notify 指向生成的 fanout 脚本：原程序拿完整载荷照跑，灵犀并行排在后面。
 CURRENT_NOTIFY_LINE="$(grep -E '^[[:space:]]*notify[[:space:]]*=' "$CONFIG" | tail -1 || true)"
+
+# Other Codex integrations may wrap the existing notify and keep it in a
+# --previous-notify argument. Preserve that wrapper when it already reaches
+# our fanout; replacing it would disable the newer integration.
+WRAPPED_FANOUT=0
+if printf '%s' "$CURRENT_NOTIFY_LINE" | grep -q 'notify-fanout.sh'; then
+  if ! printf '%s' "$CURRENT_NOTIFY_LINE" | grep -Eq '^[[:space:]]*notify[[:space:]]*=[[:space:]]*\["[^"[:space:]]*notify-fanout.sh"\]'; then
+    WRAPPED_FANOUT=1
+  fi
+fi
 
 existing_notify_cmd() {
   # Keep argv boundaries, including spaces and quotes inside an argument. `sed` cannot parse
@@ -125,16 +136,44 @@ previous_from_backup() {
   return 0
 }
 
-PREV_CMD="$(existing_notify_cmd)"
-if [ -z "$PREV_CMD" ]; then
+# The wrapping program's own path (argv[0] of the current notify), unquoted.
+wrapper_program() {
+  python3 - "$1" <<'PYEOF'
+import ast, sys
+try:
+    value = ast.literal_eval(sys.argv[1].split('=', 1)[1].strip())
+    print(value[0])
+except Exception:
+    pass
+PYEOF
+}
+
+if [ "$WRAPPED_FANOUT" = 1 ]; then
+  # The wrapper runs itself on every turn and THEN hands the payload to --previous-notify (our
+  # fanout). A fanout that also calls the wrapper runs it twice per turn - which is what a fanout
+  # generated before the wrapper arrived does, since back then the wrapper WAS the previous
+  # notifier. Keep only notifiers other than the wrapper; the backup is no help here, it predates
+  # the wrapper too.
   PREV_CMD="$(previous_from_fanout || true)"
-fi
-if [ -z "$PREV_CMD" ]; then
-  PREV_CMD="$(previous_from_backup || true)"
+  WRAPPER="$(wrapper_program "$CURRENT_NOTIFY_LINE")"
+  if [ -n "$WRAPPER" ] && [ -f "$FANOUT" ] && grep -qF "$WRAPPER" "$FANOUT"; then
+    PREV_CMD=""
+    FANOUT_NEEDED=1
+    log "fanout: 去掉重复调用的 notify 包装器（${WRAPPER##*/}）——它自己已经在跑"
+  fi
+else
+  PREV_CMD="$(existing_notify_cmd)"
+  if [ -z "$PREV_CMD" ]; then
+    PREV_CMD="$(previous_from_fanout || true)"
+  fi
+  if [ -z "$PREV_CMD" ]; then
+    PREV_CMD="$(previous_from_backup || true)"
+  fi
 fi
 # 最后一道保险：notify 指向一个已消失的 fanout，且三处都找不回原通知器——宁可拒绝安装，
 # 也不能默默按"此前无通知器"写盘，把用户的通知程序埋掉。
-if [ "$FANOUT_NEEDED" = 1 ] && [ -z "$PREV_CMD" ] \
+# （包装模式不在此列：包装器自己就是原通知器，fanout 不需要再带它。）
+if [ "$FANOUT_NEEDED" = 1 ] && [ -z "$PREV_CMD" ] && [ "$WRAPPED_FANOUT" = 0 ] \
    && printf '%s' "$CURRENT_NOTIFY_LINE" | grep -q 'notify-fanout'; then
   echo "✗ config.toml 的 notify 指向一个已不存在的 fanout 脚本，且备份里找不到原通知器。" >&2
   echo "  为避免悄悄丢掉你的通知程序，拒绝继续。请手工确认原 notify 后重跑。" >&2
@@ -147,6 +186,8 @@ if [ "$FANOUT_NEEDED" = 1 ]; then
   fi
   if [ -n "$PREV_CMD" ]; then
     log "notify → fanout（保留既有通知器：${PREV_CMD}）"
+  elif [ "$WRAPPED_FANOUT" = 1 ]; then
+    log "notify → fanout（原通知器由外层包装器自己运行）"
   else
     log "notify → fanout（此前无通知器）"
   fi
@@ -174,7 +215,15 @@ text = open(path).read()
 marker, end = "# >>> lingxi plugin >>>", "# <<< lingxi plugin <<<"
 pattern = re.compile(re.escape(marker) + r".*?" + re.escape(end), re.S)
 if pattern.search(text):
-    updated = pattern.sub(lambda _: block, text, count=1)
+    match = pattern.search(text)
+    inside = match.group()
+    foreign = re.search(r'(?m)^\[(?!mcp_servers\.lingxi(?:\.|\]))[^\n]+\]\s*$', inside)
+    if foreign:
+        # A previous installer put the closing marker after unrelated MCP
+        # tables. Keep those tables byte-for-byte instead of deleting them.
+        updated = text[:match.start()] + block + "\n\n" + inside[foreign.start():].replace(end, "", 1).rstrip() + text[match.end():]
+    else:
+        updated = text[:match.start()] + block + text[match.end():]
 else:
     # Older/manual installs have the same TOML tables but no marker. Replace those tables
     # in place; appending another [mcp_servers.lingxi] makes the whole config invalid.
@@ -192,7 +241,9 @@ PYEOF
 }
 
 if [ "$DRY_RUN" = 0 ]; then
-  if grep -qE '^[[:space:]]*notify[[:space:]]*=' "$CONFIG"; then
+  if [ "$WRAPPED_FANOUT" = 1 ]; then
+    log "config.toml: 保留现有 notify 包装器（已转发到灵犀 fanout）"
+  elif grep -qE '^[[:space:]]*notify[[:space:]]*=' "$CONFIG"; then
     if ! grep -qF "$NEW_NOTIFY_LINE" "$CONFIG"; then
       REPLACEMENT="$(printf '%s' "$NEW_NOTIFY_LINE" | sed 's/[&|]/\\&/g')"
       sed -i '' -E "s|^([[:space:]]*notify[[:space:]]*=[[:space:]]*).*$|$REPLACEMENT|" "$CONFIG"
@@ -210,20 +261,33 @@ if [ "$DRY_RUN" = 0 ]; then
     log "config.toml: 追加 [mcp_servers.lingxi] 段"
   fi
 else
-  log "config.toml: notify → $NEW_NOTIFY_LINE"
+  if [ "$WRAPPED_FANOUT" = 1 ]; then
+    log "config.toml: 保留现有 notify 包装器（已转发到灵犀 fanout）"
+  else
+    log "config.toml: notify → $NEW_NOTIFY_LINE"
+  fi
   log "config.toml: 写入 [mcp_servers.lingxi]（LINGXI_AGENT=codex）"
 fi
 
-# ---------- 4. skill ----------
-if [ "$DRY_RUN" = 0 ]; then
-  mkdir -p "$CODEX_DIR/skills"
-  if [ -e "$CODEX_DIR/skills/lingxi" ] && [ ! -L "$CODEX_DIR/skills/lingxi" ]; then
-    echo "✗ $CODEX_DIR/skills/lingxi 是普通目录；请先手动确认，安装器不会覆盖它。" >&2
-    exit 1
+# ---------- 4. skill：系统层 + 宿主层 ----------
+link_skill() {
+  local name="$1" src="$2" dest="$CODEX_DIR/skills/$1"
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    # 应用「一键接入」写的是副本（旁边有 .lingxi-installed）；换成跟随仓库的软链不丢任何东西。
+    if [ -f "$dest/.lingxi-installed" ] && cmp -s "$dest/SKILL.md" "$dest/.lingxi-installed"; then
+      [ "$DRY_RUN" = 1 ] || rm -rf "$dest"
+    else
+      echo "✗ $dest 是普通目录且内容被改过；请先手动确认，安装器不会覆盖它。" >&2
+      exit 1
+    fi
   fi
-  ln -sfn "$REPO/integrations/hosts/codex/skills/lingxi" "$CODEX_DIR/skills/lingxi"
-fi
-log "skill → ~/.codex/skills/lingxi（符号链接）"
+  [ "$DRY_RUN" = 1 ] || ln -sfn "$src" "$dest"
+  log "skill $name → $src"
+}
+[ "$DRY_RUN" = 1 ] || mkdir -p "$CODEX_DIR/skills"
+link_skill lingxi "$REPO/integrations/skills/lingxi"
+link_skill lingxi-authoring "$REPO/integrations/skills/lingxi-authoring"
+link_skill lingxi-codex "$REPO/integrations/hosts/codex/skills/lingxi-codex"
 
 echo
 echo "完成。验收："

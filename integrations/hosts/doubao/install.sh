@@ -11,6 +11,12 @@
 #
 #   3. POST /agents  用 doubao-logo 注册身份，徽章才是「豆」而不是默认字母
 #
+# 以及替豆包补上「确定性的一半」：
+#
+#   4. 回合监听：bin/lingxi-doubao-watch 由 LaunchAgent 常驻，读豆包自己的日志里「任务开始 /
+#      结束 / 等你回答」三种行（只含会话 id，不含对话内容），像别的宿主的 hook 一样报给猫。
+#      LINGXI_DOUBAO_WATCH=0 不装这一项。
+#
 #   ./install.sh                  # 正常安装，幂等
 #   ./install.sh --dry-run        # 只打印将要做的变更
 #   ./install.sh --uninstall      # 把上面的都撤掉
@@ -34,7 +40,12 @@ MARK="${PLUGIN}/doubao-logo"
 AGENT_ID="doubao"
 AGENT_NAME="豆包"
 AGENT_BADGE="豆"
-AGENT_COLOR="#2F54EB"
+AGENT_COLOR="#E6EEFF"
+WATCH="${PLUGIN}/bin/lingxi-doubao-watch"
+WATCH_LABEL="com.dushaobin.lingxi.doubao-watch"
+WATCH_PLIST="${HOME}/Library/LaunchAgents/${WATCH_LABEL}.plist"
+WATCH_LOG_DIR="${HOME}/.lingxi/doubao"
+LAUNCHCTL="${LINGXI_LAUNCHCTL:-launchctl}"   # 测试里换成假的，免得真往 launchd 里装东西
 
 DRY_RUN=0
 UNINSTALL=0
@@ -74,7 +85,7 @@ backup_once() {
 # ---------------------------------------------------------------- 卸载
 if [ "${UNINSTALL}" = 1 ]; then
   echo "撤销豆包接入："
-  for s in lingxi lingxi-authoring; do
+  for s in lingxi lingxi-doubao lingxi-authoring; do
     dest="${DOUBAO_SKILLS}/${s}"
     if [ -L "${dest}" ]; then
       target="$(readlink "${dest}")"
@@ -112,6 +123,17 @@ if [ "${UNINSTALL}" = 1 ]; then
       log "${CLI_LINK}: 已恢复原 CLI"
     fi
   fi
+  if [ -f "${WATCH_PLIST}" ]; then
+    if [ "${DRY_RUN}" = 1 ]; then
+      note "会停止并删除回合监听 ${WATCH_PLIST}"
+    else
+      "${LAUNCHCTL}" bootout "gui/$(id -u)/${WATCH_LABEL}" >/dev/null 2>&1 || true
+      rm -f "${WATCH_PLIST}"
+      log "回合监听已停止并删除"
+    fi
+  else
+    note "没有装回合监听，不碰"
+  fi
   echo
   echo "注意：身份注册（POST /agents）是内存态的，应用重启即消失，无需清理。"
   exit 0
@@ -119,8 +141,9 @@ fi
 
 # ---------------------------------------------------------------- 1. 技能
 echo "1. 技能（${DOUBAO_SKILLS}）"
-# 软链而不是拷贝：git pull 一次豆包跟着更新。lingxi 用豆包定制版（钉身份），
-# lingxi-authoring 用共享版（与身份无关）。
+# 软链而不是拷贝：git pull 一次豆包跟着更新。两层都装（integrations/hosts/PLUGIN-STANDARD.md 六）：
+# 系统层 lingxi（插件内的逐字副本，上传技能时整个文件夹带走）和 lingxi-authoring（共享版），
+# 宿主层 lingxi-doubao（豆包才成立的事：没有 hook、身份、只用 CLI）。
 install_skill() {
   local name="$1" src="$2"
   local dest="${DOUBAO_SKILLS}/${name}"
@@ -141,6 +164,7 @@ install_skill() {
   log "${dest} → ${src}"
 }
 install_skill "lingxi"          "${DOUBAO_SKILL_SRC}/lingxi"
+install_skill "lingxi-doubao"   "${DOUBAO_SKILL_SRC}/lingxi-doubao"
 install_skill "lingxi-authoring" "${SHARED_SKILLS}/lingxi-authoring"
 
 # ---------------------------------------------------------------- 2. CLI 包装器
@@ -183,8 +207,45 @@ else
   log "已注册 ${AGENT_BADGE} ${AGENT_NAME}（${AGENT_ID} ${AGENT_COLOR}）"
 fi
 
+# ---------------------------------------------------------------- 4. 回合监听
+echo "4. 回合监听（${WATCH_LABEL}）"
+# 用 python3 的真实路径，不走 /usr/bin/python3 这个 xcrun 转发壳：launchd 给的环境里没有它的缓存，
+# 每次启动要多花好几秒，而且转发壳的路径在系统更新后也可能变。
+PYTHON="$(python3 -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+if [ "${LINGXI_DOUBAO_WATCH:-1}" = 0 ]; then
+  note "LINGXI_DOUBAO_WATCH=0，跳过"
+elif [ -z "${PYTHON}" ]; then
+  note "没有可用的 python3，跳过——豆包的回合结束要靠模型自己报"
+elif [ "${DRY_RUN}" = 1 ]; then
+  note "会安装 ${WATCH_PLIST}（${PYTHON} ${WATCH}），登录后常驻"
+else
+  mkdir -p "$(dirname "${WATCH_PLIST}")" "${WATCH_LOG_DIR}"
+  cat > "${WATCH_PLIST}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${WATCH_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array><string>${PYTHON}</string><string>${WATCH}</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardErrorPath</key><string>${WATCH_LOG_DIR}/watch.err</string>
+</dict>
+</plist>
+PLIST
+  # 重装时先卸下旧的，才会用上新的脚本路径和 python。
+  "${LAUNCHCTL}" bootout "gui/$(id -u)/${WATCH_LABEL}" >/dev/null 2>&1 || true
+  if "${LAUNCHCTL}" bootstrap "gui/$(id -u)" "${WATCH_PLIST}" >/dev/null 2>&1; then
+    log "回合监听已启动：豆包每轮开始、结束、等你回答都会报给猫"
+  else
+    note "LaunchAgent 已写好但没能启动；注销重新登录后会自动运行"
+  fi
+fi
+
 echo
 echo "完成。验收："
-echo "  lingxi agents                                        # doubao 应带「豆」与 #2F54EB"
+echo "  lingxi agents                                        # doubao 应带「豆」与 #E6EEFF"
 echo "  lingxi task completed write proud \"豆包接好了\"       # 让猫真的反应一次"
 echo "  lingxi events                                       # 应看到 provider=doubao 的事件"

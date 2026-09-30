@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { toolsByName, tools } from './tools.mjs';
-import { BridgeError, warmUp } from './bridge.mjs';
+import { BridgeError, bridge, warmUp } from './bridge.mjs';
 
 // Minimal access log to a FILE (never stdout - that would corrupt the stdio framing).
 // Lets a host integration be verified: whether the runtime actually spawns this server and
@@ -23,6 +23,16 @@ function accessLog(entry) {
 }
 
 const PROTOCOL_VERSION = '2024-11-05';
+
+/**
+ * 豆包 lists these tools but has never delivered a single tools/call to this server - its model
+ * then "calls" them anyway and reports a result it made up. With no tools on offer it uses the
+ * skill's shell commands, which do reach the cat. LINGXI_DOUBAO_MCP=1 offers them again, for
+ * when 豆包 fixes this.
+ */
+function offersTools() {
+  return bridge.agentId() !== 'doubao' || process.env.LINGXI_DOUBAO_MCP === '1';
+}
 
 function send(frame) {
   process.stdout.write(`${JSON.stringify(frame)}\n`);
@@ -43,6 +53,8 @@ async function handle(request) {
 
   switch (method) {
     case 'initialize':
+      // Who connected, so an integration can be told apart in the log: names only, no content.
+      accessLog(`client=${String(params?.clientInfo?.name ?? '-').slice(0, 60)} agent=${bridge.agentId() ?? '-'}`);
       // The host is starting a session: check the app is up and start it if not, without
       // holding the handshake for it. See warmUp() in bridge.mjs.
       warmUp().catch(() => {});
@@ -68,7 +80,7 @@ async function handle(request) {
 
     case 'tools/list':
       return reply(id, {
-        tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+        tools: offersTools() ? tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) : [],
       });
 
     case 'tools/call': {

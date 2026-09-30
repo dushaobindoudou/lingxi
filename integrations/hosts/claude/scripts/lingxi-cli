@@ -106,6 +106,8 @@ agent_id() {
   # "workbuddy" and every line Claude had the cat say went out under WorkBuddy's penguin. The
   # hooks speak as "claude"; so does this.
   if [ "${CLAUDECODE:-}" = 1 ]; then printf 'claude'; return; fi
+  # Codex marks the shells it runs the same way, with the thread they belong to.
+  if [ -n "${CODEX_THREAD_ID:-}" ]; then printf 'codex'; return; fi
   [ -r "$AGENT_FILE" ] || return 0
   # jq first, but NOT only jq: it is not preinstalled on macOS, and silently reporting no
   # identity on a machine without it is how the file and the tool disagree. python3 is
@@ -126,6 +128,18 @@ if isinstance(data, dict):
         print(value)
 ' "$AGENT_FILE" 2>/dev/null || true
   fi
+}
+
+# The host session this shell belongs to, sent with task reports so a task the model reports lands
+# on the same 主界面 row as that session's hook events - and so the app can tell that the hook's
+# turn-end which follows only repeats it. Claude Code and Codex put their session id in the
+# environment of every shell they run; LINGXI_SESSION overrides for anything else.
+agent_session() {
+  if [ -n "${LINGXI_SESSION:-}" ]; then printf '%s' "$LINGXI_SESSION"; return; fi
+  case "$(agent_id)" in
+    claude) printf '%s' "${CLAUDE_CODE_SESSION_ID:-}" ;;
+    codex)  printf '%s' "${CODEX_THREAD_ID:-}" ;;
+  esac
 }
 
 # --- is the app there, and can we start it? -------------------------------------------------
@@ -433,9 +447,14 @@ if isinstance(rows, list):
     else note "桥接不通，跳过档位检查"; fi
 
     printf '\n技能与宿主\n'
-    for entry in "Claude Code:$HOME/.claude/skills/lingxi" "Codex:$HOME/.codex/skills/lingxi" "WorkBuddy:$HOME/.workbuddy/skills/lingxi"; do
-      host="${entry%%:*}"; dir="${entry#*:}"
-      if [ -e "$dir" ]; then ok "$host  skill 已装"
+    # Two layers per host (integrations/hosts/PLUGIN-STANDARD.md, 六): the shared lingxi skill and
+    # the host's own lingxi-<id>. The system layer alone leaves the model guessing its identity.
+    for entry in "Claude Code|$HOME/.claude/skills|claude" "Codex|$HOME/.codex/skills|codex" \
+                 "WorkBuddy|$HOME/.workbuddy/skills|workbuddy" "Cursor|$HOME/.cursor/skills|cursor"; do
+      host="${entry%%|*}"; rest="${entry#*|}"; dir="${rest%%|*}"; id="${rest#*|}"
+      if [ -e "$dir/lingxi" ] && [ -e "$dir/lingxi-$id" ]; then ok "${host}  skill 已装（lingxi + lingxi-${id}）"
+      elif [ -e "$dir/lingxi" ]; then note "${host}  只有系统层 lingxi，缺宿主层 lingxi-${id}"
+                                      hint "重跑这个宿主的安装器，或 integrations/install-skills.sh"
       else printf '  \033[90m·\033[0m %s  skill 未装（integrations/install-skills.sh）\n' "$host"; fi
     done
     if grep -q '"lingxi@' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null; then
@@ -503,7 +522,7 @@ if isinstance(rows, list):
     task_provider="$(agent_id)"; [ -n "$task_provider" ] || task_provider="cli"
     request POST /task-event \
       "$(json state="$1" kind="${2:-other}" mood="${3:-focused}" summary="${4:-}" \
-              provider="$task_provider" taskId="${LINGXI_TASK_ID:-cli-$$}")" ;;
+              provider="$task_provider" taskId="${LINGXI_TASK_ID:-cli-$$}" session="$(agent_session)")" ;;
 
   say)     [ $# -ge 1 ] || die "usage: lingxi say <text>"; request POST /control "$(json say="$*")" ;;
   do)      [ $# -ge 1 ] || die "usage: lingxi do <action>"; request POST /control "$(json action="$1" priority="${LINGXI_PRIORITY:-status}")" ;;

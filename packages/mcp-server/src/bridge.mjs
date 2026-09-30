@@ -117,7 +117,23 @@ function pick(envValue, fileValue) {
 
 const fileAgent = readAgentFile();
 
-const AGENT_ID = pick(process.env.LINGXI_AGENT, fileAgent.id);
+/**
+ * A host that starts this server without naming itself still leaves a fingerprint: the node it
+ * runs under. 豆包 starts connectors with its own bundled node and no environment at all, so
+ * without this the server spoke as whatever ~/.lingxi/agent.json names - WorkBuddy, on a machine
+ * that has both. The environment still wins; this only replaces the machine file.
+ */
+const HOST_RUNTIMES = [
+  { pattern: /\/Application Support\/Doubao\//, host: { id: 'doubao', name: '豆包', badge: '豆' } },
+];
+
+export function hostFromRuntime(execPath) {
+  return HOST_RUNTIMES.find(({ pattern }) => pattern.test(execPath ?? ''))?.host ?? null;
+}
+
+const runtimeHost = hostFromRuntime(process.execPath);
+
+const AGENT_ID = pick(process.env.LINGXI_AGENT, runtimeHost?.id ?? fileAgent.id);
 
 // The file's look belongs to the file's id. A host that names itself in the environment
 // (LINGXI_AGENT=claude-code) while the machine file says "workbuddy" used to register as
@@ -125,9 +141,11 @@ const AGENT_ID = pick(process.env.LINGXI_AGENT, fileAgent.id);
 // face. Only a file describing this same identity may dress it.
 const fileLook = !fileAgent.id || fileAgent.id === AGENT_ID ? fileAgent : {};
 
+const runtimeLook = runtimeHost && runtimeHost.id === AGENT_ID ? runtimeHost : {};
+
 const AGENT_PROFILE = {
-  name: pick(process.env.LINGXI_AGENT_NAME, fileLook.name) || undefined,
-  badge: pick(process.env.LINGXI_AGENT_BADGE, fileLook.badge) || undefined,
+  name: pick(process.env.LINGXI_AGENT_NAME, fileLook.name ?? runtimeLook.name) || undefined,
+  badge: pick(process.env.LINGXI_AGENT_BADGE, fileLook.badge ?? runtimeLook.badge) || undefined,
   color: pick(process.env.LINGXI_AGENT_COLOR, fileLook.color) || undefined,
   logo: pick(process.env.LINGXI_AGENT_LOGO, fileLook.logo) || undefined,
 };

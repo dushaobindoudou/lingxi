@@ -132,14 +132,17 @@
                 </span>
               </button>
               <div class="accordion-body">
+                <p class="cat-card-line"><strong id="codex-next-step">正在检查接入状态…</strong></p>
+                <p class="hint" id="codex-parts">skill · 通知 · MCP</p>
                 <p class="cat-card-line" id="codex-status-detail">检查中…</p>
                 <div class="accordion-actions">
-                  <button id="codex-connect" class="wide-button">一键接入</button>
+                  <button id="codex-connect" class="wide-button">接入 skill 与通知</button>
+                  <button id="codex-skill-connect" class="wide-button secondary" hidden>接入 skill</button>
                   <button id="codex-disconnect" class="wide-button secondary" hidden>断开（移除 notify）</button>
                 </div>
                 <p class="hint" id="codex-connect-result" hidden></p>
                 <p class="hint">
-                  接入方式：往 <code>~/.codex/config.toml</code> 写一条 <code>notify</code>（原文件先备份成
+                  接入时先安装 skill，再往 <code>~/.codex/config.toml</code> 写一条 <code>notify</code>（原文件先备份成
                   <code>.lingxi-backup</code>；你的注释、模型设置和其他 MCP server 都原样保留）。
                   <code>notify</code> 由 Codex 自己在回合结束时调用，不经过模型判断——所以它是下限，不会漏。
                 </p>
@@ -159,8 +162,7 @@
                   </p>
                 </div>
                 <p class="hint" id="codex-mcp-hint">
-                  上面那条只带得到“这一回合结束了”。想让猫知道这件事<strong>是关于什么的</strong>，
-                  还要把 MCP server 也加上——它跑在仓库里，所以这一半得你自己粘贴（<code>&lt;repo&gt;</code> 换成你的路径）：
+                  skill 可通过灵犀 CLI 告诉猫这件事是关于什么的。MCP 提供额外的带类型工具；它依赖仓库，按需粘贴以下配置（<code>&lt;repo&gt;</code> 换成你的路径）：
                 </p>
                 <pre class="hint" id="codex-mcp-snippet">[mcp_servers.lingxi]
 command = "node"

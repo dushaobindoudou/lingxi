@@ -6,7 +6,7 @@ Cursor 的接入是三件套：用户级 hooks（确定性）、skill（心情�
 |---|---|---|
 | hooks | `~/.cursor/hooks.json` + `~/.cursor/hooks/lingxi-cursor.sh` | 会话开始、提交、回合结束必报给猫 |
 | MCP | `~/.cursor/mcp.json` 的 `mcpServers.lingxi` | 13 个工具；`LINGXI_AGENT=cursor`。气泡角标是 `cursor-mark.svg`（Cursor 方块标志），文字徽章只在图标画不出来时兜底 |
-| skill | `~/.cursor/skills/lingxi`（符号链接） | 教模型报 `mood` |
+| skill | `~/.cursor/skills/{lingxi,lingxi-authoring,lingxi-cursor}`（符号链接） | 系统层 `lingxi` 教模型什么时候通知、报什么、报 `mood`；宿主层 `lingxi-cursor` 写 Cursor 才成立的事（身份、hooks 报了什么、MCP 信任） |
 
 `stop` 只代表这一轮 Agent 回复结束，不证明用户的任务已经完成。会话名是打开聊天时起的，后面的话题会离开它，所以 hook **不用会话名当摘要**。
 

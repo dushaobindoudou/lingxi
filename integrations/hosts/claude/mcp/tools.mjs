@@ -318,11 +318,11 @@ export const tools = [
   {
     name: 'lingxi_task',
     description:
-      'Report what your work is DOING and let the cat decide how to show it. Preferred over '
-      + 'picking expressions yourself: the user can retune the state-to-reaction mapping once '
-      + 'and have it apply to every agent, and you do not need to know the clip library. Send '
-      + 'one whenever a task changes state. Sending `mood` alongside is what separates a status '
-      + 'light from a pet - it is the one thing only you can supply.',
+      'Report a real user task, as DSH does: send running when it starts and a terminal state '
+      + 'when it ends, reusing the same taskId. summary is required and must name the task, '
+      + 'specific result, and next action or exact question when one exists; never say only '
+      + '"done" or "turn ended". The cat chooses expression and action from state/kind/mood. '
+      + 'Host lifecycle hooks are a fallback for an unreported turn, not a substitute for this report.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -347,11 +347,11 @@ export const tools = [
             'frustrated is met with comfort, weary with an invitation to stop, anxious with ' +
             'steadiness. Only the good moods are joined.',
         },
-        taskId: { type: 'string', description: 'Stable id for this piece of work.' },
-        summary: { type: 'string', maxLength: 240, description: "One line, in the user's language." },
+        taskId: { type: 'string', minLength: 1, description: 'Stable internal id; reuse it from running through terminal state. Never show it to the user.' },
+        summary: { type: 'string', maxLength: 140, description: 'Concrete task and result or exact question, in the user\'s language. Up to 140 characters; do not pre-truncate to a slogan.' },
         agent: { type: 'string', description: 'Override who this is reported as. Defaults to the id this server is configured with - only set it to speak as someone else.' },
       },
-      required: ['state'],
+      required: ['state', 'taskId', 'summary'],
     },
     async run({ state, kind, mood, taskId, summary, agent }) {
       const who = agent ?? bridge.agentId();

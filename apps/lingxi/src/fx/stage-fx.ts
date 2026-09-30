@@ -236,8 +236,11 @@ const CSS = `
   white-space: pre-wrap;
   word-break: normal;
   overflow-wrap: anywhere;
+  /* A long line scrolls inside the body, not the bubble: the tail below is the bubble's own
+     ::after and sits half outside it, so a bubble that clips its overflow cuts the tail off. */
   max-height: calc(100% - 24px);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
   box-shadow: var(--bubble-shadow);
   animation: lingxi-bubble-in 260ms cubic-bezier(.22,1,.36,1) forwards;
   transform-origin: 50% 100%;
@@ -326,6 +329,11 @@ const CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lingxi-bubble-source { flex: none; }
+.lingxi-bubble-body {
+  min-height: 0;
+  overflow: auto;
 }
 .lingxi-bubble-body.short { text-align: center; }
 .lingxi-bubble-mark {

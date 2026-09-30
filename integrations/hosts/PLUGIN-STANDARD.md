@@ -52,6 +52,34 @@
 | E3 | bash 3.2 的坑：变量后面紧跟中文要写 `${VAR}`（UTF-8 下 `"$VAR」"` 会被读成一个未定义的变量名）；`set -u` 下不要展开空数组；`set -o pipefail` 下不要 `cmd \| grep -q` / `\| head` |
 | E4 | 行为测试：用假的 `curl` / `open` 在临时 HOME 里真跑脚本，覆盖"没装 / 装了没开 / 在跑 / 开关关闭 / 重复接入"，并在 UTF-8 locale 下跑 |
 
+## 六、Skill 分层：系统层 + 宿主层
+
+每个插件带给模型的 skill 分两层，**两层都装**：
+
+| 层 | 源头 | 写什么 | 不写什么 |
+|---|---|---|---|
+| 系统层 | `integrations/skills/lingxi/SKILL.md`（`lingxi`）；可选 `integrations/skills/lingxi-authoring/`（自定义内容） | 灵犀的行为契约：什么时候通知、任务报告（`taskId`/`summary`/`mood`）、提醒、记忆、预算、别做的事 | 任何宿主的名字、hook、安装路径、身份怎么来 |
+| 宿主层 | `integrations/hosts/<宿主>/skills/lingxi-<宿主>/SKILL.md` | 只在这个宿主成立的四件事：① 身份和调用入口（CLI 还是 MCP）② 宿主已经自动报了什么、因此模型还要报什么 ③ 应用由谁安装启动 ④ 这里特有的坑 | 系统层已有的规则——宿主层只补事实，不改规则 |
+
+| # | 要求 | 为什么 |
+|---|---|---|
+| S1 | 插件同时装系统层和宿主层；系统层是**源头的软链或逐字副本**（副本由测试守住），绝不 fork | 之前 Claude、Codex、豆包各带一份改过的系统层，三份各自漂移，改一条规则要改四处，还总有一处漏掉 |
+| S2 | 系统层不出现宿主名、hook 名、宿主环境变量；要用到宿主事实的地方写「见宿主层」 | 系统层一旦写进某个宿主的事实，在别的宿主上就是错的（例如在没有 hook 的豆包上说"hook 会兜底"） |
+| S3 | 宿主层命名 `lingxi-<宿主>`，description 写明 "Read alongside the lingxi skill"，正文开头指回 `lingxi` | 模型要知道这两份是一起读的 |
+| S4 | 身份、入口、自动上报、安装启动四件事以宿主层为准，其余以系统层为准 | 冲突时有明确的裁决，不靠模型猜 |
+| S5 | 宿主不支持加载 skill 时，系统层要点写进工具描述，并在 README 里写明这是例外 | DSH 的动态插件只能注册工具，规则只能放在 `lingxi_task` 等工具的描述里 |
+
+现状（`integrations/test/skill-layers.test.mjs` 守着）：
+
+| 宿主 | 系统层 | 宿主层 |
+|---|---|---|
+| Claude Code | 插件内逐字副本 `skills/lingxi` | `skills/lingxi-claude` |
+| Codex | 安装器软链到共享源；应用「一键接入」写入副本（`.lingxi-installed` 记录写入内容，用户改过就不覆盖） | `skills/lingxi-codex` |
+| Cursor | 安装器软链到共享源 | `skills/lingxi-cursor` |
+| 豆包 | 插件内逐字副本（整个文件夹上传给豆包） | `skills/lingxi-doubao` |
+| WorkBuddy | 插件内逐字副本 + 安装器软链 | `skills/lingxi-workbuddy` |
+| DSH | 例外（S5）：规则在工具描述里 | 同左 |
+
 ---
 
 ## 审查结果 · 2026-09-24

@@ -38,7 +38,7 @@ MCP 服务器；仅支持在本地电脑使用）：
 
 ## 三、官方技能上传——另一种正规化
 
-技能页「+ 添加 → 上传技能」→ 上传 `integrations/hosts/doubao/skills/lingxi/` 文件夹
+技能页「+ 添加 → 上传技能」→ 依次上传 `integrations/hosts/doubao/skills/lingxi/`（系统层）和 `skills/lingxi-doubao/`（豆包宿主层）两个文件夹
 （内含 `SKILL.md`，YAML 头含 name/description）。豆包会校验格式；也可以让豆包工作帮忙检查补充。
 
 ## 四、关于"发布到平台"

@@ -115,7 +115,8 @@ scripts/lingxi-cli           integrations/cli/lingxi 的逐字副本（测试守
 bin/lingxi                   Claude 用的 CLI，固定以 claude 身份说话
 bin/lingxi-claude            /lingxi:setup 和 /lingxi:status 的实现
 commands/                    /lingxi:setup、/lingxi:status
-skills/lingxi/SKILL.md       教 Claude 报心情、克制地让猫说话
+skills/lingxi/SKILL.md       系统层：共享 skill 的逐字副本（何时通知、报什么、心情、提醒、预算）
+skills/lingxi-claude/SKILL.md 宿主层：hooks 已报了什么、lingxi 固定以 Claude 说话、安装启动不归模型管
 .mcp.json + mcp/             可选的 MCP server（packages/mcp-server 的副本）
 ```
 

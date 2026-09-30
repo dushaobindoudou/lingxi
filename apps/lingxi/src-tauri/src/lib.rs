@@ -308,6 +308,10 @@ struct TrayState {
     size_medium: CheckMenuItem<tauri::Wry>,
     size_large: CheckMenuItem<tauri::Wry>,
     toggle_visibility: MenuItem<tauri::Wry>,
+    /// The first tray row, "<猫名> · <在做什么>" - see tray_status_text.
+    status_summary: MenuItem<tauri::Wry>,
+    /// What `status_summary` currently says, so the menu is only touched when that changes.
+    status_text: Mutex<String>,
     attention_summary: MenuItem<tauri::Wry>,
     visible: AtomicBool,
     current_scale: Mutex<f64>,
@@ -345,6 +349,20 @@ impl TrayState {
         let _ = self.toggle_visibility.set_text(if next_visible { "隐藏猫咪" } else { "显示猫咪" });
         let _ = app.emit("companion-visibility", next_visible);
         self.persist();
+        self.refresh_status(app);
+    }
+
+    /// Re-derive the first tray row. Cheap, and it only touches the native menu when the text
+    /// changed - it runs on every perception report (every couple of seconds) so a session that
+    /// died mid-turn stops counting as "working" without an event to say so.
+    fn refresh_status(&self, app: &tauri::AppHandle) {
+        let name = self.cat_name.lock().unwrap().clone();
+        let text = tray_status_text(&name, self.visible.load(Ordering::SeqCst), &working_agent_names(app));
+        let mut last = self.status_text.lock().unwrap();
+        if *last != text {
+            let _ = self.status_summary.set_text(&text);
+            *last = text;
+        }
     }
 
     /// "首页" page: the cat's own name/personality. Purely descriptive today - not yet
@@ -358,6 +376,7 @@ impl TrayState {
         *self.cat_personality.lock().unwrap() = personality.clone();
         let _ = app.emit("set-cat-identity", serde_json::json!({ "name": name, "personality": personality }));
         self.persist();
+        self.refresh_status(app);
     }
 
     /// "Agent 接入" page: which AI coding agent is treated as "connected" today. This is
@@ -576,8 +595,77 @@ struct PerceptionState {
 }
 
 #[tauri::command]
-fn report_perception(state: State<PerceptionState>, snapshot: serde_json::Value) {
+fn report_perception(app: tauri::AppHandle, state: State<PerceptionState>, snapshot: serde_json::Value) {
     *state.latest_snapshot.lock().unwrap() = snapshot;
+    if let Some(tray) = app.try_state::<TrayState>() {
+        tray.refresh_status(&app);
+    }
+}
+
+/// The tray's first row: the cat's name and what it is doing right now.
+///
+/// It used to be a fixed "灵犀 · 陪你工作中" - a disabled row that reads as status, and still said
+/// so while the cat was hidden, after the user renamed it, and when no agent had called all day.
+/// Waits and failures are the second row's job (update_tray_attention), so this one names only
+/// who is actually working.
+fn tray_status_text(name: &str, visible: bool, working: &[String]) -> String {
+    if !visible {
+        return format!("{name} · 藏起来了");
+    }
+    match working {
+        [] => format!("{name} · 在桌面陪着你"),
+        [one] => format!("{name} · 陪 {one} 工作中"),
+        [a, b] => format!("{name} · 陪 {a}、{b} 工作中"),
+        [a, b, ..] => format!("{name} · 陪 {a}、{b} 等 {} 个伙伴工作中", working.len()),
+    }
+}
+
+/// A row that last said "running" this long ago is not working any more: a session killed
+/// mid-turn never sends the event that would say so.
+const TRAY_WORKING_FRESH_MS: u64 = 30 * 60 * 1000;
+
+/// Who is working right now, newest first, one name per tool however many sessions it has.
+fn working_agent_names(app: &tauri::AppHandle) -> Vec<String> {
+    let Some(activity) = app.try_state::<ActivityState>() else { return Vec::new() };
+    let now = now_millis();
+    let mut rows: Vec<(u64, String)> = activity
+        .by_provider
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|row| matches!(row.state.as_str(), "running" | "blocked"))
+        .filter(|row| now.saturating_sub(row.updated_at) <= TRAY_WORKING_FRESH_MS)
+        .map(|row| (row.updated_at, row.agent.clone().unwrap_or_else(|| row.provider.clone())))
+        .collect();
+    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    let registry = app.try_state::<AgentRegistry>();
+    let registered = registry.as_ref().map(|r| r.agents.lock().unwrap());
+    let mut names: Vec<String> = Vec::new();
+    for (_, id) in rows {
+        let name = registered
+            .as_ref()
+            .and_then(|agents| agents.get(&id))
+            .map(|agent| agent.name.clone())
+            .filter(|name| !name.is_empty() && *name != id)
+            .unwrap_or_else(|| host_display_name(&id).to_string());
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// The names hosts go by when they have not registered one.
+fn host_display_name(id: &str) -> &str {
+    match id {
+        "claude" => "Claude Code",
+        "codex" => "Codex",
+        "cursor" => "Cursor",
+        "workbuddy" => "WorkBuddy",
+        "doubao" => "豆包",
+        "dsh" => "DSH",
+        other => other,
+    }
 }
 
 /// What the companion window's renderer can be asked to do - the clip library, the expression
@@ -691,6 +779,18 @@ struct TaskEvent {
     /// nothing (see react_to_task_event).
     #[serde(skip)]
     echo: bool,
+    /// A host lifecycle hook produced this (Claude Code's hooks, Codex's notify, the lingxi-emit
+    /// adapter), rather than an agent reporting a task on purpose. The two are told apart by
+    /// where the event came from, not by what its summary says: a hook's summary is the host's
+    /// wording ("Claude is waiting for your input", a bare error code), and only an agent's
+    /// summary is written to be said to the user.
+    #[serde(skip)]
+    from_hook: bool,
+    /// The hook event that closes a conversational turn - Claude's Stop, Codex's turn-complete -
+    /// including one turned into needs_input because the reply ended on a question. When the
+    /// agent already reported this turn's result itself, this one stays quiet.
+    #[serde(skip)]
+    turn_end: bool,
 }
 
 /// docs/09's verified Claude Code hooks path, fed by POST /task-event (see
@@ -796,6 +896,9 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
     let result_text = raw.get("result").and_then(|v| v.as_str());
     // A chat turn whose own words end on a question is waiting on the user, whoever reports it.
     let question = (state == "completed" && kind == "chat").then(|| result_text.and_then(closing_question)).flatten();
+    // Set by the hook adapter (integrations/adapters/lingxi-emit.mjs), never by an agent's report.
+    let from_hook = raw.get("origin").and_then(|v| v.as_str()) == Some("hook");
+    let turn_end = from_hook && state == "completed" && kind == "chat";
     let state = if question.is_some() { "needs_input" } else { state };
     Some(TaskEvent {
         schema_version: 1,
@@ -819,6 +922,8 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
         result: question.or_else(|| result_text.and_then(turn_line)),
         echo: false,
         label_is_folder: false,
+        from_hook,
+        turn_end,
     })
 }
 
@@ -877,6 +982,9 @@ fn normalize_codex_notify_event(raw: &serde_json::Value, sequence: u64) -> Optio
         .or_else(|| raw.get("message"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let question = (state == "completed").then(|| closing_question(summary)).flatten();
+    let turn_end = state == "completed";
+    let state = if question.is_some() { "needs_input" } else { state };
     let observed_at = now_millis();
     Some(TaskEvent {
         schema_version: 1,
@@ -887,21 +995,23 @@ fn normalize_codex_notify_event(raw: &serde_json::Value, sequence: u64) -> Optio
         state: state.to_string(),
         sequence,
         observed_at,
-        summary: if summary.is_empty() {
-            format!("chat: {state}")
-        } else {
-            summary.chars().take(240).collect()
+        summary: match state {
+            "completed" => "Codex 回复结束".to_string(),
+            "failed" => "本轮因错误终止".to_string(),
+            _ => format!("chat: {state}"),
         },
         // Everything through `notify` is a conversational turn: the payload carries no
         // indication of what sort of work it was, and guessing would be worse than "chat".
         kind: "chat".to_string(),
         mood: "focused".to_string(),
         progress: None,
-        session: None,
+        session: Some(task_id.to_string()),
         label: None,
-        result: None,
+        result: question.or_else(|| turn_line(summary)),
         echo: false,
         label_is_folder: false,
+        from_hook: true,
+        turn_end,
     })
 }
 
@@ -1286,6 +1396,8 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         result,
         echo,
         label_is_folder,
+        from_hook: true,
+        turn_end: hook_event_name == "Stop",
     }
 }
 
@@ -1744,6 +1856,61 @@ fn codex_config_path() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex").join("config.toml"))
 }
 
+/// The two skills every host plugin carries (integrations/hosts/PLUGIN-STANDARD.md, 六): the
+/// shared `lingxi` skill - how any agent drives the cat - and the host's own layer, which says
+/// only what holds on Codex: its identity, its notify channel, where the CLI lives. Installing
+/// just the shared one left Codex speaking as whatever ~/.lingxi/agent.json names.
+const CODEX_SKILLS: [(&str, &str); 2] = [
+    ("lingxi", include_str!("../../../../integrations/skills/lingxi/SKILL.md")),
+    ("lingxi-codex", include_str!("../../../../integrations/hosts/codex/skills/lingxi-codex/SKILL.md")),
+];
+
+/// Kept beside each SKILL.md this app writes: exactly what it wrote. A SKILL.md that still
+/// matches it is ours to upgrade when a new version of the app ships a new skill; one that does
+/// not has been edited by the user, and is left alone.
+const SKILL_STAMP: &str = ".lingxi-installed";
+
+fn install_skill_dir(dir: &std::path::Path, content: &str) -> Result<(), String> {
+    if dir.is_symlink() {
+        // A repository installation owns a live link and updates it with git pull.
+        if dir.join("SKILL.md").is_file() {
+            return Ok(());
+        }
+        // A dead one points into a checkout whose layout moved on (the single-skill layout's
+        // hosts/codex/skills/lingxi). Nothing of the user's is behind it.
+        std::fs::remove_file(dir).map_err(|e| format!("无法移除失效链接 {}：{e}", dir.display()))?;
+    }
+    std::fs::create_dir_all(dir).map_err(|e| format!("无法创建 {}：{e}", dir.display()))?;
+    let target = dir.join("SKILL.md");
+    let stamp = dir.join(SKILL_STAMP);
+    if target.exists() {
+        let current = std::fs::read_to_string(&target)
+            .map_err(|e| format!("无法读取 {}：{e}", target.display()))?;
+        let ours = current == content
+            || std::fs::read_to_string(&stamp).is_ok_and(|written| written == current);
+        if !ours {
+            return Err(format!("{} 有你改过的内容；为避免覆盖，未改动它", target.display()));
+        }
+    }
+    std::fs::write(&target, content).map_err(|e| format!("无法写入 {}：{e}", target.display()))?;
+    std::fs::write(&stamp, content).map_err(|e| format!("无法写入 {}：{e}", stamp.display()))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn install_codex_skill() -> Result<String, String> {
+    let config = codex_config_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
+    let root = config.parent().unwrap().join("skills");
+    for (name, content) in CODEX_SKILLS {
+        install_skill_dir(&root.join(name), content)?;
+    }
+    Ok("skill 已接入（lingxi + lingxi-codex）".to_string())
+}
+
+fn codex_skills_installed(codex_dir: &std::path::Path) -> bool {
+    CODEX_SKILLS.iter().all(|(name, _)| codex_dir.join("skills").join(name).join("SKILL.md").is_file())
+}
+
 /// Our notify entry, as Codex wants it: an argv array.
 fn codex_notify_value() -> toml_edit::Value {
     let mut array = toml_edit::Array::new();
@@ -1924,18 +2091,27 @@ fn codex_integration_status() -> serde_json::Value {
         .and_then(|t| t.as_table_like())
         .map(|t| t.contains_key("lingxi"))
         .unwrap_or(false);
+    let skill_installed = path.parent().is_some_and(codex_skills_installed);
     match doc.get("notify") {
         None => serde_json::json!({
-            "state": "not_installed", "configPath": display, "configExists": true, "mcpInstalled": mcp_installed,
+            "state": "not_installed", "configPath": display, "configExists": true, "mcpInstalled": mcp_installed, "skillInstalled": skill_installed,
         }),
         Some(existing) if codex_notify_is_ours(existing) => serde_json::json!({
-            "state": "installed", "configPath": display, "configExists": true, "mcpInstalled": mcp_installed,
+            "state": "installed", "configPath": display, "configExists": true, "mcpInstalled": mcp_installed, "skillInstalled": skill_installed,
+        }),
+        Some(existing) if existing.to_string().contains("notify-fanout.sh")
+            && path.parent().is_some_and(|dir| {
+                std::fs::read_to_string(dir.join("notify-fanout.sh"))
+                    .is_ok_and(|script| script.contains("lingxi-emit.mjs"))
+            }) => serde_json::json!({
+            "state": "installed_fanout", "configPath": display,
+            "configExists": true, "mcpInstalled": mcp_installed, "skillInstalled": skill_installed,
         }),
         Some(existing) => serde_json::json!({
             "state": "conflict",
             "configPath": display,
             "configExists": true,
-            "mcpInstalled": mcp_installed,
+            "mcpInstalled": mcp_installed, "skillInstalled": skill_installed,
             // Shown verbatim so the user can see whose it is and decide, rather than being
             // told "something is in the way".
             "existingNotify": existing.to_string().trim().to_string(),
@@ -1950,6 +2126,9 @@ fn codex_integration_status() -> serde_json::Value {
 /// run it is the user's call, not this button's.
 #[tauri::command]
 fn install_codex_notify() -> Result<String, String> {
+    // The skill is the richer half, but the notify line must not depend on it: a SKILL.md the
+    // user edited keeps the skill as it is and still gets the turn-end channel.
+    let skill_result = install_codex_skill().unwrap_or_else(|reason| format!("skill 未更新：{reason}"));
     let path = codex_config_path().ok_or_else(|| "找不到 HOME 目录".to_string())?;
     let text = if path.exists() {
         std::fs::read_to_string(&path).map_err(|e| format!("读不出 {}：{e}", path.display()))?
@@ -1980,7 +2159,7 @@ fn install_codex_notify() -> Result<String, String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("建不了 {}：{e}", parent.display()))?;
     }
     std::fs::write(&path, updated).map_err(|e| format!("写不进 {}：{e}", path.display()))?;
-    Ok(format!("已写入 {}，重启 Codex 后生效。", path.display()))
+    Ok(format!("{skill_result}；已写入 {}。重启 Codex 后生效。", path.display()))
 }
 
 /// Remove only what we put there.
@@ -3837,6 +4016,9 @@ fn spawn_perception_server(app: tauri::AppHandle) {
             .path
             .clone()
             .map(|p| p.display().to_string());
+        // When this app instance came up. A wrapper that dresses its host (the 豆包 logo) keys
+        // "already registered" on it: the registry is in memory, so a new instance needs it again.
+        let started_at = now_millis();
         for mut request in server.incoming_requests() {
             let method = request.method().clone();
             // The token may arrive as a query parameter, so route on the path alone.
@@ -3851,6 +4033,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                     serde_json::json!({
                         "ok": true,
                         "app": "lingxi",
+                        "startedAt": started_at,
                         "authRequired": true,
                         "tokenFile": token_path,
                         // Where the bundled shell client lives. A skill that says "run lingxi"
@@ -5025,13 +5208,28 @@ fn bubble_line(text: &str) -> String {
 /// does not sit there, and a 24-character line still finishes being read.
 fn bubble_hold_ms(text: &str) -> u64 {
     let chars = text.chars().count() as u64;
-    (1800 + chars * 130).clamp(3200, 6400)
+    (1800 + chars * 130).clamp(3200, 20_000)
+}
+
+/// The line an AGENT wrote to report where its task landed, said in full.
+///
+/// Only an agent's own report qualifies. A hook's summary is the host's wording - "Claude is
+/// waiting for your input", a bare `rate_limit` - and the placeholder `"<kind>: <state>"` stands
+/// in for a summary nobody wrote; saying either would read the plumbing aloud.
+fn agent_task_report_line(event: &TaskEvent) -> Option<&str> {
+    let placeholder = format!("{}: {}", event.kind, event.state);
+    (!event.from_hook
+        && event.result.is_none()
+        && matches!(event.state.as_str(), "completed" | "failed" | "cancelled" | "needs_input" | "needs_approval" | "blocked"))
+        .then(|| event.summary.trim())
+        .filter(|summary| !summary.is_empty() && *summary != placeholder && !is_lifecycle_summary(summary))
 }
 
 fn is_lifecycle_summary(summary: &str) -> bool {
     let summary = summary.trim();
     summary.is_empty()
         || summary == "本轮回复结束"
+        || summary == "Codex 回复结束"
         || summary == "会话开始"
         || summary == "新一轮对话开始"
         || summary.starts_with("本轮回复完成")
@@ -5142,7 +5340,52 @@ fn activity_key(event: &TaskEvent) -> String {
     }
 }
 
-fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
+/// How long an agent's own report can stand in for the turn-end hook that follows it. On the
+/// session's own row the pairing is certain, so the window only has to outlast a long final
+/// reply; on the tool's session-less row another session could have made the report, so it is
+/// trusted only while it is plainly this turn's.
+const SESSION_REPORT_WINDOW_MS: u64 = 15 * 60 * 1000;
+const SESSIONLESS_REPORT_WINDOW_MS: u64 = 3 * 60 * 1000;
+
+/// Whether the agent already reported this turn's result itself, making the host's turn-end
+/// hook a repeat. `Some(true)` when the report is on the session's own row, `Some(false)` when
+/// it is on the tool's session-less row, `None` when the hook has something to say.
+///
+/// The report is consumed: one report covers one turn end, so the next turn - which the agent
+/// may not report - still gets the hook's line. This replaces comparing the report's text with
+/// the reply's first sentence, which two separately written sentences almost never passed; the
+/// hook's bubble then replaced the full report a few seconds after it appeared.
+fn take_pending_report(app: &tauri::AppHandle, event: &TaskEvent) -> Option<bool> {
+    if !(event.from_hook && event.turn_end) {
+        return None;
+    }
+    let activity = app.state::<ActivityState>();
+    let mut rows = activity.by_provider.lock().unwrap();
+    let own = activity_key(event);
+    let identity = if event.source_id.is_empty() { event.provider.clone() } else { event.source_id.clone() };
+    for (key, window, same_row) in [(own.clone(), SESSION_REPORT_WINDOW_MS, true), (identity, SESSIONLESS_REPORT_WINDOW_MS, false)] {
+        if !same_row && key == own {
+            continue;
+        }
+        let Some(row) = rows.get_mut(&key) else { continue };
+        if row.report.as_ref().is_some_and(|report| report_covers_turn_end(report, event, window)) {
+            row.report = None;
+            return Some(same_row);
+        }
+    }
+    None
+}
+
+/// Whether an agent's report already says what this turn-end hook would.
+fn report_covers_turn_end(report: &PendingReport, event: &TaskEvent, window_ms: u64) -> bool {
+    let fresh = event.observed_at.saturating_sub(report.at) <= window_ms;
+    // A reply that ends on a question the agent did not report is news, not a repeat.
+    let covers = event.state != "needs_input"
+        || matches!(report.state.as_str(), "needs_input" | "needs_approval" | "blocked");
+    fresh && covers
+}
+
+fn record_activity(app: &tauri::AppHandle, event: &TaskEvent, report_on_row: bool) {
     let state = app.state::<ActivityState>();
     let mut map = state.by_provider.lock().unwrap();
     // Keyed by the registered AGENT where there is one, falling back to the provider.
@@ -5152,6 +5395,19 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
     // two rows with two states. The identity is what "who is doing what" is actually about; the
     // provider is just which transport it came in on.
     let key = activity_key(event);
+    // The turn-end hook after the agent's own report adds nothing to the row: the report is the
+    // better account of the turn, and a wait it announced must not be closed by the host saying
+    // the reply ended. Only a title the row still lacks is taken.
+    if report_on_row {
+        if let Some(row) = map.get_mut(&key) {
+            if row.label.is_none() && event.provider != "codex" {
+                row.label = event.label.clone();
+            }
+            drop(map);
+            update_tray_attention(app);
+            return;
+        }
+    }
     // Keys arrive from outside the process; without a cap, every distinct source_id any caller
     // ever sends is a row forever. Past the cap, the stalest row gives way - the picture is
     // "who is doing what NOW", and a source that has gone quiet longest is the least of that.
@@ -5175,10 +5431,19 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
     };
     // A title, once known, outlives an event that could not read one (an unreadable transcript).
     let previous_label = map.get(&key).and_then(|row| row.label.clone());
-    let label = if event.label_is_folder {
+    let label = if event.provider == "codex" {
+        None
+    } else if event.label_is_folder {
         previous_label.or_else(|| event.label.clone())
     } else {
         event.label.clone().or(previous_label)
+    };
+    let report = if agent_task_report_line(event).is_some() {
+        Some(PendingReport { at: event.observed_at, state: event.state.clone() })
+    } else if event.turn_end {
+        None // the turn is over either way
+    } else {
+        map.get(&key).and_then(|row| row.report.clone())
     };
     map.insert(
         key,
@@ -5194,6 +5459,7 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent) {
             label,
             updated_at: event.observed_at,
             busy: state_is_busy(&event.state),
+            report,
         },
     );
     drop(map);
@@ -5213,6 +5479,7 @@ fn update_tray_attention(app: &tauri::AppHandle) {
         format!("有 {attention_count} 个任务需要留意")
     };
     let _ = tray.attention_summary.set_text(&text);
+    tray.refresh_status(app);
     // The count next to the menu-bar icon: visible without opening anything, and it stays until
     // the wait is answered - the one place a missed bubble is still findable.
     if let Some(icon) = app.tray_by_id("main-tray") {
@@ -5284,6 +5551,16 @@ struct AgentActivity {
     /// True while the work is still going. Derived here so a caller does not have to know which
     /// states are terminal.
     busy: bool,
+    /// The agent's own report of how its work landed, until the host's turn-end hook that
+    /// follows it arrives - see take_pending_report. Never serialized.
+    #[serde(skip)]
+    report: Option<PendingReport>,
+}
+
+#[derive(Clone)]
+struct PendingReport {
+    at: u64,
+    state: String,
 }
 
 #[derive(Default)]
@@ -5311,10 +5588,13 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: same wait already shown" }));
         return;
     }
+    // The agent already told the user how this turn landed; the host's turn-end hook right after
+    // it would replace that full report with the reply's first sentence.
+    let already_reported = take_pending_report(app, event);
     // Recorded BEFORE the reaction is decided, and regardless of whether one is shown at all.
     // Progress updates are deliberately swallowed for the cat's sake (see should_react), but they
     // are exactly what "what is it doing right now" wants, so the two must not share a gate.
-    record_activity(app, event);
+    record_activity(app, event, already_reported == Some(true));
     // The name the session's row settled on - its real title even when this event only knew
     // the folder (see TaskEvent::label_is_folder).
     let label = app
@@ -5335,6 +5615,10 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         serde_json::json!({ "busy": busy }),
     );
     forward_to_sinks(app, event);
+    if already_reported.is_some() {
+        log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: task result already reported" }));
+        return;
+    }
     if !should_react(app, event) {
         log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: repeat progress" }));
         return;
@@ -5376,8 +5660,10 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
     // it must not leave an attribution waiting for some unrelated future bubble.
     // The host's own words about this turn beat every template: they are about the task.
     let from_result = event.result.is_some()
-        && matches!(event.state.as_str(), "completed" | "needs_approval" | "needs_input");
-    let report_line = if from_result {
+        && matches!(event.state.as_str(), "completed" | "failed" | "needs_approval" | "needs_input");
+    let report_line = if let Some(summary) = agent_task_report_line(event) {
+        Some(summary.to_string())
+    } else if from_result {
         event.result.clone()
     } else if event.state == "completed" {
         let summary = event.summary.trim();
@@ -5385,7 +5671,10 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         // user's underlying task succeeded, so never announce this kind as “搞定啦”.
         // A real one-line result — what this turn just did — is the line itself. A lifecycle
         // placeholder stays “本轮回复结束”, and is skipped when that result is already on file.
-        let lead = if event.kind == "chat" { "本轮回复结束" } else { line.unwrap_or("已完成") };
+        // Name the host: "本轮回复结束" left the user guessing which of several agents had just
+        // stopped, and it is the one line they asked never to see again.
+        let chat_lead = format!("{} 回复结束，请查看结果", host_display_name(&event.provider));
+        let lead = if event.kind == "chat" { chat_lead.as_str() } else { line.unwrap_or("已完成") };
         let default_summary = format!("{}: completed", event.kind);
         if event.kind == "chat" && is_lifecycle_summary(summary) {
             let activity = app.state::<ActivityState>();
@@ -5569,7 +5858,8 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
 
     // These disabled rows make the tray a glanceable status surface without pretending a task
     // can be approved or controlled from a native menu.
-    let status_summary = MenuItem::with_id(app, "status-summary", "灵犀 · 陪你工作中", false, None::<&str>)?;
+    let initial_status = tray_status_text(DEFAULT_CAT_NAME, true, &[]);
+    let status_summary = MenuItem::with_id(app, "status-summary", &initial_status, false, None::<&str>)?;
     // Clickable: "有 2 个任务需要留意" is only useful if it takes you to them.
     let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有需要留意的任务", true, None::<&str>)?;
     // Every toy and every effect, by name - the tray used to offer one fixed toy ("逗一逗") and
@@ -5661,6 +5951,8 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         size_medium,
         size_large,
         toggle_visibility,
+        status_summary,
+        status_text: Mutex::new(initial_status),
         attention_summary,
         visible: AtomicBool::new(true),
         current_scale: Mutex::new(SCALE_LARGE),
@@ -6014,6 +6306,7 @@ pub fn run() {
             get_agent_activity,
             set_agent_permission,
             codex_integration_status,
+            install_codex_skill,
             install_codex_notify,
             uninstall_codex_notify,
             get_bridge_info,
@@ -6211,6 +6504,118 @@ mod tests {
         assert_eq!(bubble_line("哼，好了"), "哼，好了");
         assert!(bubble_hold_ms("哼，好了") >= 3200);
         assert!(bubble_hold_ms(&"啊".repeat(24)) <= 6400);
+        assert!(bubble_hold_ms(&"啊".repeat(100)) > 10_000, "long task summaries need time to read");
+    }
+
+    #[test]
+    fn all_agents_keep_the_full_task_summary_for_terminal_notifications() {
+        let summary = "登录测试已修复；18 项用例通过，下一步可以继续发布";
+        for provider in ["codex", "workbuddy", "doubao", "claude", "dsh"] {
+            let raw = serde_json::json!({
+                "provider": provider, "agent": provider, "state": "completed",
+                "kind": "test", "taskId": "fix-login", "summary": summary,
+            });
+            let event = normalize_generic_task_event(&raw, 1).unwrap();
+            assert_eq!(agent_task_report_line(&event), Some(summary), "{provider}");
+        }
+        let waiting = normalize_generic_task_event(&serde_json::json!({
+            "provider": "workbuddy", "state": "needs_input", "kind": "review",
+            "taskId": "choose-design", "summary": "你希望采用方案 A 还是方案 B？",
+        }), 1).unwrap();
+        assert_eq!(agent_task_report_line(&waiting), Some("你希望采用方案 A 还是方案 B？"));
+    }
+
+    #[test]
+    fn only_an_agents_own_summary_is_read_aloud_never_the_plumbing() {
+        // Claude's idle Notification: its summary is Claude's English message. The built-in
+        // "在等你哦" line says it; the raw message must not.
+        let idle = claude("Notification", serde_json::json!({
+            "notification_type": "idle_prompt", "message": "Claude is waiting for your input",
+        }));
+        assert_eq!(idle.state, "needs_input");
+        assert_eq!(agent_task_report_line(&idle), None);
+        // A hook adapter's failure carries a bare error code.
+        let failed = normalize_generic_task_event(&serde_json::json!({
+            "provider": "workbuddy", "state": "failed", "kind": "chat", "taskId": "s",
+            "summary": "rate_limit", "origin": "hook",
+        }), 1).unwrap();
+        assert!(failed.from_hook);
+        assert_eq!(agent_task_report_line(&failed), None);
+        // A report nobody wrote a summary for gets the "<kind>: <state>" placeholder.
+        let bare = normalize_generic_task_event(&serde_json::json!({
+            "provider": "cli", "state": "completed", "kind": "test", "taskId": "t",
+        }), 1).unwrap();
+        assert_eq!(bare.summary, "test: completed");
+        assert_eq!(agent_task_report_line(&bare), None);
+    }
+
+    #[test]
+    fn a_turn_end_after_the_agents_own_report_is_a_repeat_once() {
+        let stop = |reply: &str, at: u64| {
+            let mut event = normalize_generic_task_event(&serde_json::json!({
+                "provider": "claude", "state": "completed", "kind": "chat", "taskId": "s",
+                "session": "s", "result": reply, "origin": "hook",
+            }), 1).unwrap();
+            event.observed_at = at;
+            event
+        };
+        let done = PendingReport { at: 1_000, state: "completed".into() };
+        let turn = stop("登录测试修好了，18 项都过了。", 5_000);
+        assert!(turn.turn_end && turn.from_hook);
+        assert!(report_covers_turn_end(&done, &turn, SESSION_REPORT_WINDOW_MS));
+        // Too late for a report on the tool's session-less row, where another session may have made it.
+        let late = stop("登录测试修好了。", 1_000 + SESSIONLESS_REPORT_WINDOW_MS + 1);
+        assert!(!report_covers_turn_end(&done, &late, SESSIONLESS_REPORT_WINDOW_MS));
+        // The reply ends on a question the report did not ask: that is news.
+        let asks = stop("修好了。要现在发布吗？", 5_000);
+        assert_eq!(asks.state, "needs_input");
+        assert!(!report_covers_turn_end(&done, &asks, SESSION_REPORT_WINDOW_MS));
+        let asked = PendingReport { at: 1_000, state: "needs_input".into() };
+        assert!(report_covers_turn_end(&asked, &asks, SESSION_REPORT_WINDOW_MS));
+        // Only the hook's turn end is ever a repeat: an agent's report carries neither flag.
+        let report = normalize_generic_task_event(&serde_json::json!({
+            "provider": "claude", "state": "completed", "kind": "chat", "taskId": "fix",
+            "summary": "登录测试已修复",
+        }), 1).unwrap();
+        assert!(!report.from_hook && !report.turn_end);
+    }
+
+    #[test]
+    fn the_tray_status_row_says_what_is_true_now() {
+        assert_eq!(tray_status_text("小灵", true, &[]), "小灵 · 在桌面陪着你");
+        assert_eq!(tray_status_text("小灵", false, &["Codex".into()]), "小灵 · 藏起来了");
+        assert_eq!(tray_status_text("灵犀", true, &["Claude Code".into()]), "灵犀 · 陪 Claude Code 工作中");
+        assert_eq!(
+            tray_status_text("灵犀", true, &["Claude Code".into(), "Codex".into(), "豆包".into()]),
+            "灵犀 · 陪 Claude Code、Codex 等 3 个伙伴工作中",
+        );
+    }
+
+    #[test]
+    fn codex_skills_install_upgrade_and_never_overwrite_an_edit() {
+        let root = std::env::temp_dir().join(format!("lingxi-skill-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("lingxi");
+        install_skill_dir(&dir, "v1").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap(), "v1");
+        // Untouched since we wrote it: a new app version upgrades it.
+        install_skill_dir(&dir, "v2").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap(), "v2");
+        // Edited by the user: left alone, and said so.
+        std::fs::write(dir.join("SKILL.md"), "mine").unwrap();
+        assert!(install_skill_dir(&dir, "v3").is_err());
+        assert_eq!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap(), "mine");
+        // A dead link from the old single-skill layout is replaced, not reported as a failure.
+        let dead = root.join("lingxi-codex");
+        std::os::unix::fs::symlink(root.join("nowhere"), &dead).unwrap();
+        install_skill_dir(&dead, "host").unwrap();
+        assert_eq!(std::fs::read_to_string(dead.join("SKILL.md")).unwrap(), "host");
+        let _ = std::fs::remove_dir_all(&root);
+        // What the app ships: the shared skill and Codex's own layer, which pins the identity.
+        assert_eq!(CODEX_SKILLS[0].0, "lingxi");
+        assert!(CODEX_SKILLS[0].1.contains("name: lingxi\n"));
+        assert!(CODEX_SKILLS[1].1.contains("name: lingxi-codex\n"));
+        assert!(CODEX_SKILLS[1].1.contains("LINGXI_AGENT=codex"));
     }
 
     #[test]
@@ -6273,6 +6678,7 @@ mod tests {
                 sequence: 1, observed_at: 0, summary: String::new(),
                 kind: "other".into(), mood: "focused".into(), progress: Some(0.1),
                 session: None, label: None, result: None, echo: false, label_is_folder: false,
+                from_hook: false, turn_end: false,
             };
             // should_react needs app state, so assert the rule it encodes directly: only
             // "running" is ever a candidate for suppression.
@@ -6508,7 +6914,7 @@ mod tests {
         let row = |state: &str, updated_at: u64| AgentActivity {
             provider: "claude".into(), agent: Some("claude".into()), task_id: "s".into(),
             state: state.into(), kind: "chat".into(), mood: "focused".into(), progress: None,
-            summary: String::new(), label: None, updated_at, busy: true,
+            summary: String::new(), label: None, updated_at, busy: true, report: None,
         };
         let mut echo = claude("Notification", serde_json::json!({
             "notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash",
@@ -6700,7 +7106,21 @@ mod tests {
         let aliased = serde_json::json!({ "event": "turn-ended", "session_id": "s9", "message": "done" });
         let event = normalize_codex_notify_event(&aliased, 2).unwrap();
         assert_eq!(event.task_id, "s9");
-        assert_eq!(event.summary, "done");
+        assert_eq!(event.summary, "Codex 回复结束");
+        assert_eq!(event.result.as_deref(), Some("done"));
+        assert_eq!(event.session.as_deref(), Some("s9"));
+        assert_eq!(event.label, None);
+
+        let named = serde_json::json!({ "type": "agent-turn-complete", "thread-id": "abc123456", "cwd": "/work/lingxi", "last-assistant-message": "登录测试修好了。接下来可以继续。" });
+        let event = normalize_codex_notify_event(&named, 3).unwrap();
+        assert_eq!(event.label, None);
+        assert_eq!(event.result.as_deref(), Some("登录测试修好了"));
+        assert!(!event.summary.contains("登录测试"), "reply must stay out of the event log");
+
+        let question = serde_json::json!({ "type": "agent-turn-complete", "thread-id": "abc123456", "last-assistant-message": "需要你确认部署窗口吗？" });
+        let event = normalize_codex_notify_event(&question, 4).unwrap();
+        assert_eq!(event.state, "needs_input");
+        assert_eq!(event.result.as_deref(), Some("需要你确认部署窗口吗？"));
 
         // And the whole point of returning Option: anything else must fall through to the next
         // mapper rather than being invented into a state.

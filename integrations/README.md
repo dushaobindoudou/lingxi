@@ -96,8 +96,10 @@ lingxi health
 **所以只用 skill 就能驱动全部能力。** MCP 仍然有用(带类型的 schema、逐工具权限),
 但不是必需的。
 
-装好之后 **Claude Code 和 Codex 都能用**——两者都读 `<目录>/<技能名>/SKILL.md`，
-所以是同一份 skill，只是目录不同：
+装好之后 **Claude Code 和 Codex 都能用**——两者都读 `<目录>/<技能名>/SKILL.md`。每个宿主装两层：
+同一份系统层 `lingxi`（灵犀的行为规则，所有宿主一字不差），加上这个宿主自己的宿主层 `lingxi-<宿主>`
+（身份、宿主已自动报了什么、应用由谁启动）。分层规则见 [`hosts/PLUGIN-STANDARD.md`](hosts/PLUGIN-STANDARD.md) 六。
+目录各不相同：
 
 | Agent | 位置 |
 |---|---|
