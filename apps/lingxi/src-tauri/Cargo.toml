@@ -1,6 +1,6 @@
 [package]
 name = "lingxi"
-version = "0.2.0"
+version = "0.3.0"
 description = "灵犀桌面伴侣"
 authors = ["you"]
 edition = "2021"

@@ -1,6 +1,6 @@
 {
   "name": "lingxi",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "灵犀 — a lifelike, quiet desktop cat companion with extensible agent task observation",
