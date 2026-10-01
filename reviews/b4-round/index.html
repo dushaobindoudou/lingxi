@@ -76,10 +76,10 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 <div class="wrap" data-page-node-id="VZDIJoSniGwlXYMMfCvpFC">
 <header data-page-node-id="p2ahRbDIxVAniCBfvgcnXB">
   <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第二轮 · 已含修复）</h1>
-  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · 三处点名问题用几何实测定位 · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">15 个动作全部重渲并逐项量化</b> · <b>动作与爪子的问题已修完并复测</b>（round-b4b，standard 质量重渲）</div>
-  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">以你的判断为准：这一轮只深挖了爪 / 耳 / 嘴三处，<b>修复只做了你点名的「动作」和「爪子」</b>。嘴（第 3 项）和耳（第 4 项）没有动。上一轮提过的侧面腰线、毛方向、尾巴、白 blaze 也没有列入。</div>
+  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-h（第三批修复）已上线</b>：爪 G2/G3（趾加高 + 底绒毛）· 嘴（犬齿收回 + 唇线 .98）· <b>闭眼重写为逐顶点球面旋转（shape key）</b> · 15 动作 + 7 视图 standard 重渲</div>
+  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">上一批（动作陷地 + root 抬升）的数字见下方对照；本批新增：爪趾更高更绒、嘴不再露犬齿、闭眼从「眼罩」变成一条拱形睑缝。耳（第 4 项）与唇线再降 .970 排下一轮。</div>
   <nav data-page-node-id="6yOdvUJf7XMuiBYyAdVMfn">
-    <a href="#hurt" data-page-node-id="LCOcDA1AbQND6TVLFSYtpm">三处硬伤</a><a href="#clips" data-page-node-id="zafd9vPJsOBtTAgTGKYBVq">15 个动作</a><a href="#fixed" data-page-node-id="navfix001">修复后（前后对照）</a><a href="#table" data-page-node-id="EUlrsqL1IzySP9Z1rBIxUa">动作数据表</a><a href="#views" data-page-node-id="GmTv2PJMv6GaH9jbLsgv8n">四视图与面部</a><a href="#actions" data-page-node-id="OCSFpYm6BBQ3e5VVpbplFG">下一步</a>
+    <a href="#hurt">三处硬伤</a><a href="#clips">15 个动作</a><a href="#fixed">修复后（前后对照）</a><a href="#lids">闭眼修复</a><a href="#table">动作数据表</a><a href="#views">四视图与面部</a><a href="#actions">下一步</a>
   </nav>
 </header>
 
@@ -192,13 +192,24 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
   <div class="card" data-page-node-id="m9MdMIzFGcH78Z3h3RSpTd"><div class="imgbox" data-page-node-id="7PLnkTG7GrWcWQcBJRd1wm"><span class="badge" data-page-node-id="3k76pa5EAckWFWmGWHPSrz">B4 · threequarter</span><img src="threequarter.png" alt="B4四分之三" data-page-node-id="xKRPkJlrWqIzDP7UDB4wsL"></div><div class="cap" data-page-node-id="iKlZMR3Lzm2QfWkikp7JEw"><b data-page-node-id="2MzQrEjv1qb3tbz6NLrkqw">B4 四分之三</b>：胸口白毛过渡自然</div></div>
 </div>
 
+<h2 id="lids" data-page-node-id="lidfix001">闭眼修复（round-h）：从「眼罩」到一条拱形睑缝</h2>
+<p class="note" data-page-node-id="lidfix002">旧做法靠 LidUpper/LidLower 骨骼旋转整片睑：上睑顶部那条 8mm 的带被拉成 38mm（4.5×）、上下睑在眼角交叉穿插 17mm、眼窝毛窗不跟随——闭眼看像戴了眼罩。新做法把闭合写进 Blink/Squint shape key：<b>逐顶点绕睑球心做球面旋转</b>，内缘转满、外缘与眼角权重 0、中间按弧长分配；下睑毛 24000×20mm、睑皮提到 .85×毛色。左列＝修复前（round-b4c），右列＝修复后（round-h），640px 近景 48spp。</p>
+<div class="clips" style="grid-template-columns:repeat(2,1fr)" data-page-node-id="lidfix003">
+  <div class="c"><div class="pair"><div class="ph"><img src="lid-before-blink.png" alt="眨眼前"><b>前</b></div><div class="ph after"><img src="lid-after-blink.png" alt="眨眼后"><b>后</b></div></div><div class="nm">Idle · 眨眼（f47）<span>近景 640px</span></div><div class="st ok">眼角位移 0.0mm · 交叉 0.0mm · 露眼球 0%</div></div>
+  <div class="c"><div class="pair"><div class="ph"><img src="lid-before-happy.png" alt="Happy前"><b>前</b></div><div class="ph after"><img src="lid-after-happy.png" alt="Happy后"><b>后</b></div></div><div class="nm">Happy · 眯眼笑<span>近景 640px</span></div><div class="st ok">闭合线 +3.9mm 拱形（profile 0→3.9→0）· 睑缘带拉伸 1.00</div></div>
+</div>
+<div class="grid2" style="margin-top:12px" data-page-node-id="lidfix004">
+  <div class="card"><div class="imgbox"><span class="badge">修后 · 睁眼（无回归）</span><img src="lid-after-idle.png" alt="睁眼" loading="lazy" data-page-node-id="lidfix005"></div><div class="cap">睁眼（squint .14 常驻）与修复前几乎一致</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">说明</span><div class="ph" style="padding:18px;font-size:14px;line-height:1.8">物理极限（如实报告）：外缘钉死在眶缘时，整条睑带的<b>平均</b>拉伸 = (带长+行程)/带长，上睑 2.68、下睑 3.43，任何分配方式都绕不开。但<b>看得见的闭合线</b>宽度拉伸 = 1.00；被拉开的那段用加密的睑毛盖住。审计已常驻 <code>v6_part_audit.py</code>（眼角位移 / 拉伸比 / 交叉量 / 露眼比例 / 拱形判定）。</div></div><div class="cap">验收口径与遗留</div></div>
+</div>
+
 <h2 id="actions" data-page-node-id="7OZA9yl1Gz8w5Vl1PpsXbP">收敛情况（按性价比排）</h2>
-<p class="note"><b>1 / 2 / 5 / 6 / 7 / 8 已完成</b>（爪子、五个动作陷地、Stretch、Walk 后腿、Bite/Yawn、Jump）。<b>3（嘴）和 4（耳）本轮没动</b>——你点名的是动作和爪子，这两项留给下一轮。</p>
+<p class="note"><b>1 / 2 / 5 / 6 / 7 / 8 已完成</b>（爪子、五个动作陷地、Stretch、Walk 后腿、Bite/Yawn、Jump）。<b>本批新完成：闭眼重写（见上节）+ 嘴的第一步（犬齿收回、唇线 .98）</b>。剩余：<b>3 的第二步（唇线再降 .970，需配 MUZZLE_GROW≈.010）</b>和 <b>4（耳）</b>留给下一轮。</p>
 <table data-page-node-id="mE6s7r7Tj16F0ScAsblAnn">
 <tr data-page-node-id="FL8ue8xSsRmGZm37BAYv2l"><th data-page-node-id="NSB8czmsqFsTHkIAOF5jyk">#</th><th data-page-node-id="BIHYIkV1wbFv5h2J5AFO7Y">做什么</th><th data-page-node-id="HKjz2MldBMQJZpQPto9Xz6">怎么做</th><th data-page-node-id="ckdEFXBaaUJDhJ8DIr1weo">优先级</th><th data-page-node-id="ReQpmyBEdUP1I4Pdg7tFUA">验收指标</th></tr>
-<tr data-page-node-id="3rMVbZ9CVGOFV2pmk2ATnz"><td data-page-node-id="sMwsF6USjUpfFU1348DQTa">1</td><td data-page-node-id="UsJTAFhaxkyeJo5QueXqDV">爪子：让脚趾探出来</td><td data-page-node-id="OQSCrSZOzKtaGSQLqXwRNW">已由几何重建解决（<code>toe_xy()</code> / <code>PAW</code> / <code>TOE_DX</code> / <code>TOE_R</code>）。实测：前趾最深点 −10.2/−20.0 mm → <b>+15.4 mm、54% 顶点外露</b>；肉垫 −9.5…−18.3 → <b>100% 外露</b>；爪 −11.5…−21.7 → +7.6…+9.6 mm</td><td class="done">已完成</td><td class="done">外露 &gt; 60% ✅ 肉垫 100%；最深点 ≥ +8 mm ✅ +15.4 mm</td></tr>
-<tr data-page-node-id="yIoFXc8an6LL6Tg3O4DUxA"><td data-page-node-id="XXewEvZ1YBsO4ejuNM6wAl">2</td><td data-page-node-id="TrtWgRbE6zQ1uvTfIG7bTi">五个动作陷进地面</td><td data-page-node-id="TcyCyV6KTrjqmGgokYFRtc">Sleep −151 → <b>−2.4</b>；SideLie −166 → <b>−2.4</b>；Lick −86 → <b>−15.0</b>（几何极限）；Stretch −72 → <b>−7.3</b>；LieDown −63 → <b>−8.0</b> mm</td><td class="done">已完成</td><td class="done">目标 [−5, +5] ✅ 三个落在 −2.4；Lick −15 与前腿打直冲突，见上文</td></tr>
-<tr data-page-node-id="yx844qbijOAxMZ4umxhyJG"><td data-page-node-id="L7AiwOoFDW60CSNbtcWTff">3</td><td data-page-node-id="QoC2Umr7ObvB8vvO8Ame23">嘴：收窄 + 下移</td><td data-page-node-id="na4prsPsho6hNjGEaezEVD"><code data-page-node-id="kYsrZcvkfbJALlGca22sCI">V6_MOUTH_W</code> 0.69、<code data-page-node-id="3nPB7EJyBHtoU9HxBsnCU0">GAPE_W</code> .036→.025、<code data-page-node-id="mMRpGp73lJlL3c9KpyhpYn">V6_LIP</code> 0.985、<code data-page-node-id="dCG0VdtJjFzFn1aA7byWEH">V6_NOSE_W</code> 1.19</td><td class="tag-bad" data-page-node-id="5sO0LpMEK23lJKykQbCIMY">高</td><td data-page-node-id="y6ysJtRuZQvD3zjHev3g2K">嘴宽 0.29E、唇线在鼻下 0.31E</td></tr>
+<tr data-page-node-id="3rMVbZ9CVGOFV2pmk2ATnz"><td data-page-node-id="sMwsF6USjUpfFU1348DQTa">1</td><td data-page-node-id="UsJTAFhaxkyeJo5QueXqDV">爪子：让脚趾探出来</td><td data-page-node-id="OQSCrSZOzKtaGSQLqXwRNW">几何重建（<code>toe_xy()</code> / <code>PAW</code>）+ G2/G3：趾加高 42mm、外侧趾只后收 60%、趾毛改底绒 3.3mm×1400、剃毛区收窄。round-h 实测：前趾探出 <b>+16.3…+20.0 mm、52–63% 顶点外露</b>，四趾都有缝，秃带消失</td><td class="done">已完成</td><td class="done">外露 &gt; 60% ✅；最深点 ≥ +8 mm ✅ +20.0 mm</td></tr>
+<tr data-page-node-id="yIoFXc8an6LL6Tg3O4DUxA"><td data-page-node-id="XXewEvZ1YBsO4ejuNM6wAl">2</td><td data-page-node-id="TrtWgRbE6zQ1uvTfIG7bTi">五个动作陷进地面</td><td data-page-node-id="TcyCyV6KTrjqmGgokYFRtc">Sleep −151 → <b>−4.9</b>；SideLie −166 → <b>−4.5</b>；Lick −86 → <b>−15.0</b>（几何极限）；Stretch −72 → <b>−7.3</b>；LieDown −63 → <b>−8.0</b> mm（round-h 复测，含 G3 趾/嘴改动后的全身）</td><td class="done">已完成</td><td class="done">目标 [−5, +5] ✅；Lick −15 与前腿打直冲突，见上文</td></tr>
+<tr data-page-node-id="yx844qbijOAxMZ4umxhyJG"><td data-page-node-id="L7AiwOoFDW60CSNbtcWTff">3</td><td data-page-node-id="QoC2Umr7ObvB8vvO8Ame23">嘴：收窄 + 下移</td><td data-page-node-id="na4prsPsho6hNjGEaezEVD"><b>第一步已做</b>（round-h）：<code>V6_MOUTH_W</code> .69、<code>V6_LIP</code> .98、<code>V6_MUZZLE_GROW</code> .006（G2 的露犬齿由口鼻部随唇线生长 + 犬齿后收 4mm 解决）。<b>剩第二步</b>：唇线 .970（现 lip_below_nose 24.2mm，参考 0.31E≈35mm），需配 MG≈.010 + 犬齿前皮肤厚度审计</td><td class="tag-warn">中（剩第二步）</td><td>嘴宽 0.29E（现 .272E ✅）、唇线在鼻下 0.31E（现 0.21E）</td></tr>
 <tr data-page-node-id="pbtMnUW8wOWGLefKrGtgY6"><td data-page-node-id="qES973FI08A4T4d4FaoRsi">4</td><td data-page-node-id="0jpfbPqNDI9WRdgWcdRwMY">耳：改比例和顶端</td><td data-page-node-id="wmJrXOxPKb2oucTyyBFSvT"><code data-page-node-id="RgAG5kq3r4kywh9Hv0iRyR">ear_wid()</code> .058→.044、flare 1.30→1.20、t&gt;0.88 半圆封顶</td><td class="tag-bad" data-page-node-id="GCZlXjdDUAZTdvbI2AvNf8">高</td><td data-page-node-id="bF4qr9oBiMmt11gVraIZi0">宽 112 mm、w/h .83、顶端宽 ~30 mm</td></tr>
 <tr data-page-node-id="Li1OGvhIBsDJ2acxSEqNDi"><td data-page-node-id="C3adNHiBDAGHlmpvWDgrow">5</td><td data-page-node-id="mmVxBbBQeX3M0Jz3kO8rv8">Stretch 要真的"伸"</td><td data-page-node-id="MWCCscn4WKJv0Z2Jp33VrD">现在和 LieDown 是同一个姿态（root −110、身长变化 3.9 mm）。改成前爪大幅前伸 + 脊柱拉开 + 屁股翘起。<b>已做</b>：从 LieDown 组拆出独立成姿（root −.055、脊柱 .16、头 −.22、前爪前伸 −.11s、尾 −.35）</td><td class="done">已完成</td><td class="done">不再是 LieDown 的第二张卡 ✅ 离 Idle 149° → 170°，最低点 −72 → −7.3 mm</td></tr>
 <tr data-page-node-id="TfEcTsPXTakQJD3TSpZsLR"><td data-page-node-id="8vpH3coTiJJtUzLoIkqGGj">6</td><td data-page-node-id="ZOdbNqom57QnzDoAwB92ze">Walk 后腿摆幅</td><td data-page-node-id="BmLeGiroCqQJRcSDLBCgwZ">后爪行程 6.7 mm → 15–20 mm（<code data-page-node-id="LMCavauJjPjg7p8OoMc10l">place_legs</code> 的 gait 幅度）。<b>已做</b>：后腿 <code>dy*=1.30; dz*=1.25</code>（先试的 1.80 冲到 63.7 mm，过头了）</td><td class="done">已完成</td><td class="done">后/前行程比 ≥ 0.8 ✅ 实测 45.0 / 36.3 = 1.24</td></tr>
@@ -208,7 +219,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 </table>
 
 <footer data-page-node-id="hLvdem1xKqtp1SeVlTDGA9">
-  2026-09-30 · 分支 <code data-page-node-id="1rtwB3nFJOPZQ5MTC0dhP5">lookdev/b4-review</code> · 修复前图：<code data-page-node-id="VK6j5mQLr5jIdTuiFd0TFY">assets/characters/lingxi/v6/round-b4/poses/</code> · 修复后图：<code>assets/characters/lingxi/v6/round-b4b/poses/</code> · 数据：<code data-page-node-id="qBpK5dZX2uI6cGocRzrGGf">clips-before.json</code> / <code>clips-fix.json</code> / <code data-page-node-id="KuDhOfDyhpJvYglxYu4mT4">audit.json</code>（同目录）· 工具：<code data-page-node-id="kc1TsYXp1o50B2l8q5EQPN">scripts/lookdev-v6/v6_part_audit.py</code>、<code data-page-node-id="CPw6rhpZewoX5asfSrXrxm">v6_clip_review.py</code>、<code>v6_ground_calib.py</code>
+  2026-10-01 · 分支 <code data-page-node-id="1rtwB3nFJOPZQ5MTC0dhP5">lookdev/b4-review</code> · 修复前图：<code data-page-node-id="VK6j5mQLr5jIdTuiFd0TFY">assets/characters/lingxi/v6/round-b4/poses/</code> · 修复后图（本页「后」列与四视图）：<code>assets/characters/lingxi/v6/round-h/</code>（G3 + 闭眼重写，旋钮见其 <code>knobs.txt</code>）· 眼睑近景：<code>round-h-test/b4c-faces</code>（前）/ <code>h4/faces</code>（后）· 数据：<code data-page-node-id="qBpK5dZX2uI6cGocRzrGGf">clips-before.json</code> / <code>round-h/review-clips.json</code> / <code>round-h/review-parts.json</code> · 工具：<code data-page-node-id="kc1TsYXp1o50B2l8q5EQPN">scripts/lookdev-v6/v6_part_audit.py</code>、<code data-page-node-id="CPw6rhpZewoX5asfSrXrxm">v6_clip_review.py</code>、<code>v6_ground_calib.py</code>
 </footer>
 </div>
 
@@ -234,23 +245,23 @@ const LABEL = {ok:'符合预期', warn:'部分欠缺', bad:'不符合预期'};
 document.getElementById('clipGrid').innerHTML = CLIPS.map(([n,st,txt])=>
  `<div class="c"><img src="poses-b4/${n}.png" alt="${n}"><div class="nm">${n}<span>${LABEL[st]}</span></div><div class="st ${st}">${txt}</div></div>`).join('');
 
-// 修复后：左＝round-b4（修复前），右＝round-b4b（修复后）
+// 修复后：左＝round-b4（最初），右＝round-h（G3 爪/嘴 + 闭眼重写，standard 重渲）
 const FIXED = [
- ['Idle','ok','+1.5','基准，未动'],
- ['Walk','ok','+1.5','后爪行程 6.7 → 45.0 mm，后/前比 1.24'],
- ['Run','ok','+9.6','腾空帧，四爪行程 51 / 63 mm'],
- ['Jump','ok','+277.4','补上尾 60.1° + 耳 20.0° 的平衡信号'],
+ ['Idle','ok','+1.0','基准'],
+ ['Walk','ok','+1.0','后爪行程 45.0 mm，后/前比 1.24'],
+ ['Run','ok','+9.1','腾空帧，四爪行程 51 / 63 mm'],
+ ['Jump','ok','+275.1','尾 60.1° + 耳 20.0° 的平衡信号'],
  ['LieDown','ok','−8.0','脚掌收到体侧：−62.6 → −8.0 mm'],
- ['SideLie','ok','−2.4','root 抬 139 mm：−165.5 → −2.4 mm'],
- ['Sleep','ok','−2.4','root 抬 127 mm：−151.4 → −2.4 mm'],
- ['Curious','warn','+1.5','只有头 + 耳在动，这轮没改'],
- ['Happy','ok','+1.5','尾 96.3° + 身长变化 150 mm'],
- ['Yawn','ok','+1.5','补弓背 + 前爪前伸：离 Idle 81° → 157°'],
+ ['SideLie','ok','−4.5','root 抬 139 mm：−165.5 → −4.5 mm'],
+ ['Sleep','ok','−4.9','root 抬 127 mm：−151.4 → −4.9 mm'],
+ ['Curious','warn','+1.0','只有头 + 耳在动，这轮没改'],
+ ['Happy','ok','+1.0','尾 96.3° + 身长变化 150 mm；闭眼已重写（见上）'],
+ ['Yawn','ok','+0.8','弓背 + 前爪前伸：离 Idle 81° → 157°'],
  ['Lick','ok','−15.0','坐姿重解 + 尾巴卷起：−85.7 → −15.0，尾尖 −77 → +0.2'],
- ['Bite','ok','+1.5','前爪抬起 83.7 mm + 头前冲：离 Idle 123° → 220°'],
- ['Knead','ok','+1.1','交替踩 26 mm + 眯眼 + 伸爪'],
+ ['Bite','ok','+1.0','前爪抬起 83.7 mm + 头前冲：离 Idle 123° → 220°'],
+ ['Knead','ok','+0.6','交替踩 26 mm + 眯眼 + 伸爪'],
  ['Stretch','ok','−7.3','从 LieDown 拆出独立成姿：离 Idle 149° → 170°'],
- ['PawPlay','ok','−2.8','伏低 + 挥爪 131.7 mm + 甩尾 57.7°'],
+ ['PawPlay','ok','−3.5','伏低 + 挥爪 131.7 mm + 甩尾 57.7°'],
 ];
 document.getElementById('fixGrid').innerHTML = FIXED.map(([n,st,low,txt])=>
  `<div class="c"><div class="pair"><div class="ph"><img src="poses-b4/${n}.png" alt="${n} 修复前"><b>前</b></div>`

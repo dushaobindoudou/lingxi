@@ -22,7 +22,9 @@ OUT = os.path.join(HERE, 'lingxi-review-offline.html')
 
 # 只压 index.html 真正引用的图（face34 / contact-sheet 页面里没用到，不压）
 VIEWS = ['turnaround-v1', 'front', 'side', 'face',
-         'threequarter', 'lingxi-ref-face-closeup']
+         'threequarter', 'lingxi-ref-face-closeup',
+         'lid-before-blink', 'lid-after-blink', 'lid-before-happy',
+         'lid-after-happy', 'lid-after-idle']
 CLIPS = ['Bite', 'Curious', 'Happy', 'Idle', 'Jump', 'Knead', 'Lick', 'LieDown',
          'PawPlay', 'Run', 'SideLie', 'Sleep', 'Stretch', 'Walk', 'Yawn']
 
