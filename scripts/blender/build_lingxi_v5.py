@@ -187,7 +187,15 @@ PAW={'Front':((.108,-.215,.040),(.054,.064,.038)),'Rear':((.12,.245,.040),(.053,
 # Round G2: G's toes read as four small pom-poms along the bottom edge (36mm tall on a 78mm paw);
 # the reference's toes ARE the front half of the paw - taller now (42mm). And the outer toes follow
 # the round front only 60% of the way: at 16mm back, WorkBuddy measured no cleft on the outer pairs.
-TOE_DX=.024;TOE_R=(.016,.021,.021);TOE_Z=.022;TOE_IN=.008*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.60)
+# Round I (user: "the paws are wrong" - four white balls): G2's toes stood 16-20 mm proud, and the
+# outer pair, pulled back 9 mm along the arc, only STEPPED back from the inner toes: measured, those
+# two clefts were -3.8 mm (no groove; v6_part_audit cleft_depth_sym). In the reference the four toes
+# ARE the front of a mitten - each lobe ~60% of the paw's height, pressed together along dark creases.
+# (Small flat toes at the bottom were tried first - round-i-test s1: a bald ball on four beads.)
+# Now the lobes keep G2's height, sit 4 mm deeper and lean on a gentler arc (outer toes ~2 mm back):
+# every cleft is a groove behind both of its crowns. 22 mm apart on 32 mm toes (10 mm overlap): pressed
+# together, the clefts are lines, not the gaps between four eggs (24 mm, round-i-test s2).
+TOE_DX=.022;TOE_R=(.016,.020,.022);TOE_Z=.023;TOE_IN=.012*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.15)
 def toe_xy(pre,s,i):
  (cx,cy,cz),(rx,ry,rz)=PAW[pre];dx=(i-1.5)*TOE_DX;h=((TOE_Z-cz)/rz)**2
  yc=cy-ry*math.sqrt(max(1-h,.05));yi=cy-ry*math.sqrt(max(1-(dx/rx)**2-h,.05))
@@ -973,7 +981,7 @@ RADII={'guard':[.00078,.00056,.00030,.00006],'under':[.00045,.00032,.00018,.0000
 # a strand arc and its tip gather into a clump, which is most of what "fluffy" looks like.
 NP=6
 _CK=_v6('V6_CLUMP',1.0);CLUMP={'Head':.0095*_CK,'body':.011*_CK,'tail':.013*_CK}
-def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=None):
+def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=None,shade=None):
  me=o.data;me.calc_loop_triangles();v=np.array([v.co[:] for v in me.vertices]);norm=np.array([v.normal[:] for v in me.vertices]);tri=np.array([t.vertices[:] for t in me.loop_triangles]);corn=v[tri];area=np.linalg.norm(np.cross(corn[:,1]-corn[:,0],corn[:,2]-corn[:,0]),axis=1);ids=rng.choice(len(tri),n,p=area/area.sum());b=rng.random((n,2));b[b.sum(1)>1]=1-b[b.sum(1)>1];b=np.column_stack((1-b.sum(1),b));root=(corn[ids]*b[:,:,None]).sum(1);normal=(norm[tri[ids]]*b[:,:,None]).sum(1);normal/=np.maximum(np.linalg.norm(normal,axis=1)[:,None],1e-8)
  if reg=='Head' and not o.name.startswith('LX_Lid'):
   keep=np.ones(n,dtype=bool)
@@ -992,7 +1000,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   keep=np.ones(n,dtype=bool)
   for s in (-1,1):
    for pre,px in (('Front',s*.108),('Rear',s*.12)):
-    keep&=~((np.abs(root[:,0]-px)<.050)&(root[:,2]<.034)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN))   # round G3: .046 -> .034, the taller toes cover the rest; above them the bare band showed   # the toe row's back edge moves in with TOE_IN (round G)
+    keep&=~((np.abs(root[:,0]-px)<.050)&(root[:,2]<TOE_Z+TOE_R[2]-.008)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN))   # round I: up to 8 mm under the toes' tops (G3: z<.034); the paw's coat above combs down over them   # round G3: .046 -> .034, the taller toes cover the rest; above them the bare band showed   # the toe row's back edge moves in with TOE_IN (round G)
   root=root[keep];normal=normal[keep];n=len(root)
  if root_filter is not None:
   m=root_filter(root);root=root[m];normal=normal[m];n=len(root)
@@ -1040,19 +1048,29 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # as a pom-pom with no toes (round C, 2026-09-30); ~1cm lets the foot and its toes show.
   # Round D: the pom-pom was the LEG coat hanging over the paw (8.5cm strands rooted at mid-leg),
   # not the paw's own - so the whole lower leg is short now, full length only from ~32cm up.
-  legs=np.clip(.10+.90*(root[:,2]-.06)/.26,.10,1)
+  # Round I: the lower leg read as a thin stick between the long body coat and a snowball paw -
+  # measured (round h, front leg, median strand) paw 8.9 mm, leg 12.4 / 21.7 / 50.0 mm at z
+  # .075-.14 / .14-.21 / .21-.28, torso 51: short for half the leg, then a jump. The paw keeps its
+  # length; above it the coat grows smoothly from the wrist to the body's.
+  legs=np.interp(root[:,2],[.070,.100,.150,.220,.300],[.10,.24,.48,.80,1.0])
   ln*=(bib*legs)[:,None,None]
  # Fluff physics: the strand hugs the skin at the root, lifts away through the middle,
  # and the tip drifts along the coat direction - then two wave frequencies (a slow
  # bend plus a faster kink) give the micro-curl a long-haired kitten actually has.
- stand={'tail':1.7,'body':1.15,'Head':1.12}.get(reg,1.0)*_v6('V6_STAND',1.0)
+ stand={'tail':1.7,'body':1.15,'Head':1.12,'paw':.45}.get(reg,1.0)*_v6('V6_STAND',1.0)   # round I: the toes' velvet lies down (1.0 stood it off as a halo)
  if o.name.startswith('LX_Lid'):stand=.28     # lid coat lies flat: a furry lid, not a brush of lashes
  lift=(.78*t-.34*t*t)*stand*_v6('V6_LIFT',1.0);drift=(.50*t*t)/stand
  if reg=='body':
   # Lower legs: the coat lies along the leg instead of standing off it, so it cannot balloon
   # out over the paw and bury the toes (round D).
-  lift=lift*np.clip((root[:,2]-.05)/.16,.30,1)[:,None,None]
+  lift=lift*np.clip((root[:,2]-.04)/.12,.35,1)[:,None,None]   # round I: (z-.05)/.16 kept the whole lower leg combed flat - the stick
  wave=normal[:,None,:]*(.0024*_v6('V6_WAVE',1.0)*rng.uniform(.5,1.5,(n,1,1))*(np.sin(t*4.2+rng.random((n,1,1))*6.28)+.55*np.sin(t*9.0+rng.random((n,1,1))*6.28)))
+ # The wave is absolute (2-5 mm), so on a 3 mm toe strand it WAS the strand: the toe coat measured
+ # 8.2 mm of polyline (round h) and stood off every toe as a fuzzy halo - four pom-poms. The toes'
+ # velvet waves in proportion to its length; the paw's short coat keeps half its wave (all of it
+ # removed, round-i-test s1, the paw went bald and smooth).
+ if reg=='paw':wave=wave*np.clip(ln/.025,.25,1)
+ elif reg=='body':wave=wave*np.clip(ln/.020,.55,1)
  pts=root[:,None,:]+ln*(normal[:,None,:]*lift+tangent[:,None,:]*drift)+wave
  # Clumping: strands rooted in the same small patch pull their tips toward the patch's mean
  # tip. Evenly spaced independent hairs read as velvet; real long fur parts into tufts.
@@ -1078,6 +1096,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
  ob.hide_render=True
  del pts,edges
  colors=np.repeat(srgb_lin(fur_color(root if color_at is None else color_at(root),reg)),NP,axis=0)   # color_at: where the strand is SEEN, if not at its root (the lower lid's coat, shut)
+ if shade is not None:colors=colors*np.repeat(shade(root),NP)[:,None]   # per-strand darkening, linear (the toe clefts)
  # per-strand variation, plus a few pale hairs; a single flat colour reads as plastic fur.
  # jit must stay (n,1): repeating it must yield one scalar per POINT, because a
  # second trailing axis broadcasts (4n,3) against (4n,1,1) into a 4n x 4n x 3 monster
@@ -1124,8 +1143,15 @@ if QUALITY in ('standard','hero'):
 for o,r in ear_outers:groom(o,max(1,int(6000*SCALE)),.022,r,'guard')
 # Toes: a short white coat of their own, bound to each toe bone - with the paw coat shortened
 # they would otherwise show as bare cream spheres.
+# Round I: the reference draws each cleft as a grey crease. A white coat over a 5 mm groove barely
+# shades in a soft studio light (s1: .62 showed nothing), so the strands rooted in a cleft are
+# darkened (linear .45 at the crease plane, gone 3 mm out) - only on a side that HAS a neighbour.
+def toe_crease(pre,s,i):
+ cx=toe_xy(pre,s,i)[0];planes=[cx+d*TOE_DX/2 for d in (-1,1) if 0<=i+d<=3]
+ return lambda r:1-.55*np.max([np.exp(-((r[:,0]-pl)/.003)**2) for pl in planes],axis=0)
 for o in [o for o in list(bpy.data.objects) if o.name.startswith(('LX_FrontToe','LX_RearToe'))]:
- groom(o,max(1,int(1400*SCALE)),.0060,'paw','under',bind_as=o.vertex_groups[0].name)   # round G3: the UNDERCOAT's thin strands, 3.3mm x 1400 - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
+ tp='Front' if 'Front' in o.name else 'Rear';ti=int(o.name.split('Toe')[1][0]);ts=-1 if o.name.endswith('.L') else 1
+ groom(o,max(1,int(1400*SCALE)),.0040,'paw','under',bind_as=o.vertex_groups[0].name,shade=toe_crease(tp,ts,ti))   # round I: 2.2 mm (was 3.3), under the paw's own coat; G3: the UNDERCOAT's thin strands - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
 # Short coat ON the lids. Without it a squint slid a bare skin-coloured plate over the eye.
 # Each strand gets its lid's Blink/Squint keys, turned rigidly with the skin at its root
 # (lid_turn), so the fur closes with the eye.
@@ -1150,6 +1176,11 @@ for lid in [o for o in eyelids if o.name.startswith('LX_Lid')]:
  for kn,f in (('Blink',1.0),('Squint',.55)):
   fo.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s_,ul,f,roots=np.repeat(P[::NP],NP,axis=0)).astype('f').ravel())
  eyelids.append(fo)
+# Round I: a denser coat on the legs, so the leg reads as a furry limb continuing the body's fluff
+# rather than a stick (the user: "thin sticks on snowballs"). Grown LAST so every other strand keeps
+# the random draws it had - the rest of the coat is unchanged strand for strand.
+groom(body,max(1,int(30000*SCALE*DENSITY)),.085,'body','guard',root_filter=lambda r:(r[:,2]<.22)&(np.abs(r[:,0])>.065))
+furs[-1].name='LX_Fur_guard_LX_Legs'
 scene['fur_quality']=QUALITY
 # Belly breathing applies identically to body surface and ALL its bound hairs. With only the
 # guard layer keyed, the expanding flank swallowed the 7mm undercoat on every inhale.

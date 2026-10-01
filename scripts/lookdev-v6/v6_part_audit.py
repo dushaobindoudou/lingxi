@@ -16,6 +16,7 @@ import bpy
 import json
 import math
 import os
+import numpy as np
 from mathutils import Vector, bvhtree
 from pathlib import Path
 
@@ -115,6 +116,106 @@ for pre in ('Front', 'Rear'):
                        'toe_row_mm': round(1000 * (max(centres) - min(centres)), 2)}
 bb = world_bbox([f'LX_FrontToe{i}.L' for i in range(4)])
 paw_row = {'front_toe_row_bbox_mm': [round(1000 * v, 1) for v in (bb[1] - bb[0])]} if bb else {}
+
+
+def real_points(name):
+    """Evaluated vertices of one object in world space, (n, 3) - real geometry, not bound_box."""
+    o = bpy.data.objects.get(name)
+    if o is None:
+        return np.zeros((0, 3))
+    e = o.evaluated_get(deps)
+    me = e.to_mesh()
+    co = np.empty(len(me.vertices) * 3, dtype='f')
+    me.vertices.foreach_get('co', co)
+    e.to_mesh_clear()
+    m = np.array(e.matrix_world)
+    return co.reshape(-1, 3) @ m[:3, :3].T + m[:3, 3]
+
+
+# Toe clefts (round i, the user's "four white balls"). The front of the toe row, sampled across x:
+# the most forward point (-y) of the four toes' union in a 2.5 mm band at each toe's centre (the
+# crown) and half-way between neighbours (the cleft) - v6_g_review.py's ruler, on every paw.
+#   cleft_depth_mm      v6_g_review's number: cleft minus the crown on its -x side only. One-sided,
+#                       so the outer pair on the +x side scores the INNER toe's crown and reads
+#                       as a groove whatever the outer toe does (round h: [-3.8, +5.3, +5.3])
+#   cleft_depth_sym_mm  cleft minus the LESS proud of its two crowns: + = a groove both
+#                       neighbours stand in front of, - = no groove (the union only steps back)
+def toe_clefts(pre, suf):
+    pts = [real_points(f'LX_{pre}Toe{i}.{suf}') for i in range(4)]
+    if any(not len(p) for p in pts):
+        return None
+    xs = [float(p[:, 0].mean()) for p in pts]
+    allp = np.concatenate(pts)
+
+    def front(x, w=.0025):
+        band = allp[np.abs(allp[:, 0] - x) < w, 1]
+        return float(band.min()) if len(band) else None
+    crown = [front(x) for x in xs]
+    cleft = [front(.5 * (xs[i] + xs[i + 1])) for i in range(3)]
+    return {
+        'toe_crown_front_mm': [round(1000 * c, 1) for c in crown],
+        'cleft_front_mm': [round(1000 * c, 1) for c in cleft],
+        'cleft_depth_mm': [round(1000 * (cleft[i] - crown[i]), 1) for i in range(3)],
+        'cleft_depth_sym_mm': [round(1000 * (cleft[i] - max(crown[i], crown[i + 1])), 1) for i in range(3)],
+        'toe_size_mm': [round(1000 * float(v), 1) for v in (pts[1].max(0) - pts[1].min(0))],
+    }
+
+
+clefts = {f'{pre}.{suf}': toe_clefts(pre, suf) for pre in ('Front', 'Rear') for suf in ('L', 'R')}
+_sym = [d for c in clefts.values() if c for d in c['cleft_depth_sym_mm']]
+clefts['all_grooves'] = bool(_sym) and min(_sym) > 0
+clefts['min_sym_mm'] = min(_sym) if _sym else None
+clefts['target'] = 'cleft_depth_sym_mm 全部 > 0（每条趾缝都是两侧趾冠之后的沟，没有单调台阶 / 反向鼓包）'
+
+
+# The coat on the foot and leg, as strand lengths (median, mm) per zone, and how wide the leg's
+# coat envelope is - "a thin stick on a snowball": short leg coat under a long body coat.
+def strands(name):
+    p = real_points(name)
+    o = bpy.data.objects.get(name)
+    n_pts = int(o.get('strand_points', 6)) if o else 6
+    if not len(p):
+        return np.zeros((0, n_pts, 3))
+    return p.reshape(-1, n_pts, 3)
+
+
+def coat_audit():
+    rig_ = next((o for o in s.objects if o.type == 'ARMATURE'), None)
+    if rig_ is None:
+        return None
+    out = {}
+    body = np.concatenate([strands('LX_Fur_guard_LX_Body'), strands('LX_Fur_under_LX_Body'),
+                           strands('LX_Fur_guard_LX_Legs')])   # the legs' extra layer (round i on)
+    if not len(body):
+        return None
+    root = body[:, 0]
+    blen = np.linalg.norm(np.diff(body, axis=1), axis=2).sum(1)
+    med = lambda v: round(1000 * float(np.median(v)), 1) if len(v) else None
+    for pre in ('Front', 'Rear'):
+        pw = rig_.pose.bones[pre + 'Paw.L']
+        a, b = rig_.matrix_world @ pw.head, rig_.matrix_world @ pw.tail
+        px, py = .5 * (a.x + b.x), .5 * (a.y + b.y)       # the paw ball under the wrist/hock
+        col = (np.abs(root[:, 0] - px) < .065) & (np.abs(root[:, 1] - py) < .075)
+        toe = np.concatenate([strands(f'LX_Fur_under_LX_{pre}Toe{i}.L') for i in range(4)])
+        tlen = np.linalg.norm(np.diff(toe, axis=1), axis=2).sum(1) if len(toe) else []
+        zone = lambda z0, z1: med(blen[col & (root[:, 2] >= z0) & (root[:, 2] < z1)])
+        d = {'toe_coat_mm': med(tlen), 'paw_back_coat_mm': zone(0, .075),
+             'leg_low_coat_mm': zone(.075, .14), 'leg_mid_coat_mm': zone(.14, .21),
+             'leg_top_coat_mm': zone(.21, .28)}
+        # envelope: every coat point of strands rooted on this leg, in a 10 mm slab
+        legp = body[col & (root[:, 2] < .24)].reshape(-1, 3)
+        for h in (.10, .15):
+            sl = legp[np.abs(legp[:, 2] - h) < .005]
+            if len(sl) > 20:
+                lo, hi = np.percentile(sl[:, :2], 2, axis=0), np.percentile(sl[:, :2], 98, axis=0)
+                d[f'leg_width_z{int(h * 1000)}_mm'] = [round(1000 * float(v), 1) for v in hi - lo]   # [x (front view), y (side view)]
+        out[pre + '.L'] = d
+    out['torso_coat_mm'] = med(blen[root[:, 2] > .33])
+    out['target'] = '趾毛 ≤ 爪背毛；腿毛从爪背向上逐段加长、接近躯干（torso_coat_mm）'
+    return out
+
+
+coat = coat_audit()
 
 # --- Ears -----------------------------------------------------------------------------------
 # Target quoted from build_lingxi_v5.py's own comment: "A cat ear is a TALL narrow
@@ -320,7 +421,7 @@ def lid_audit():
 
 lids = lid_audit()
 
-result = {'paws': paws, 'toe_spread': spread, 'paw_bbox': paw_row,
+result = {'paws': paws, 'toe_spread': spread, 'paw_bbox': paw_row, 'toe_clefts': clefts, 'paw_coat': coat,
           'ears': ears, 'head_width_mm': head_w, 'mouth': mouth, 'lids': lids,
           'targets': {'ear': 'comment in build_lingxi_v5.py: 135 mm tall, 112 mm across, w/h .83',
                       'mouth': 'v6_face_shape.py REFERENCE: nose w 0.311E, mouth w 0.288E, '
