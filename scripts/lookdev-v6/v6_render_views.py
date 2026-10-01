@@ -34,6 +34,11 @@ BG = float(os.environ.get('V6_BG', '0.548'))             # linear grey == sRGB 1
 # bald frame and a furry frame share one composition and can be overlaid directly.
 BALD = os.environ.get('V6_BALD', '0') not in ('0', 'false', 'no')
 HIDE = [p for p in os.environ.get('V6_HIDE', '').split(',') if p]
+# V6_FRAME picks the timeline frame (a clip's closed-eye frame, say - animations.json has the
+# ranges); V6_FACE_FOLLOW=1 turns the two face views with the head, so a clip that tips the head
+# back (Yawn) is still shot face-on instead of from under the chin.
+FRAME = int(os.environ.get('V6_FRAME', '1'))
+FACE_FOLLOW = os.environ.get('V6_FACE_FOLLOW', '0') not in ('0', 'false', 'no')
 
 s = bpy.context.scene
 s.render.resolution_x = s.render.resolution_y = RES
@@ -88,7 +93,7 @@ cam.data.type = 'PERSP'
 cam.data.angle = 2 * math.atan(SENSOR / 2 / FOCAL)
 cam.data.dof.use_dof = False          # a comparison sheet has to be sharp
 
-s.frame_set(1)
+s.frame_set(FRAME)
 bpy.context.view_layer.update()
 
 lo, hi = subject_bounds()
@@ -142,6 +147,13 @@ if aim_eyes:
     VIEW_SPEC['face34'] = (eye_c, want / MARGIN, (-0.55, -0.85, 0.10))
     print(f'v6: face frame covers {want:.4f} m ({want * 1000 / RES:.3f} mm/px)')
 
+if FACE_FOLLOW and rig is not None and 'Head' in rig.pose.bones:
+    hb = rig.pose.bones['Head']
+    turn = (rig.matrix_world @ hb.matrix).to_3x3() @ (rig.matrix_world @ hb.bone.matrix_local).to_3x3().inverted()
+    for name in ('face', 'face34'):
+        c, cover, d = VIEW_SPEC[name]
+        VIEW_SPEC[name] = (c, cover, tuple(turn @ Vector(d)))
+
 # Paw close-up: both forepaws, from the front and a little above, like the turnaround sheet's
 # front view - the body views frame the whole cat and leave the toes a few pixels wide.
 if rig is not None and all(b in rig.pose.bones for b in ('FrontPaw.L', 'FrontPaw.R')):
@@ -162,7 +174,8 @@ for name in VIEWS:
     done.append({'view': name, 'cam': [round(v, 4) for v in cam.location],
                  'cover_m': round(cover, 4)})
 
-print('V6_VIEWS ' + json.dumps({'res': RES, 'samples': SAMPLES, 'focal': FOCAL,
+print('V6_VIEWS ' + json.dumps({'res': RES, 'samples': SAMPLES, 'focal': FOCAL, 'frame': FRAME,
+                                'face_follow': FACE_FOLLOW,
                                 'bounds_body': [[round(v, 4) for v in lo], [round(v, 4) for v in hi]],
                                 'bounds_head': [[round(v, 4) for v in hlo], [round(v, 4) for v in hhi]],
                                 'rendered': done}, ensure_ascii=False))

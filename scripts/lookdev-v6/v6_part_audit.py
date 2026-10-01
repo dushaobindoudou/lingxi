@@ -185,8 +185,143 @@ if E:
         mouth['lip_below_nose_mm'] = round(d, 1)
         mouth['lip_below_nose_over_E'] = round(d / (1000 * E), 3)
 
+# --- Closed eyes ----------------------------------------------------------------------------
+# The user read round b4b's closed eye as an eye mask with the two lids crossing. Measured on
+# the lid meshes themselves, open (Idle's first frame, the resting squint) against shut (the
+# middle of Happy, Blink 1), in the eye's own frame - it turns with the head:
+#   corner_shift_mm   how far the inner-rim corners move (a real lid hinges at the canthi)
+#   margin_stretch    the dark margin's edge (rows 0-1) shut / open: > 1 widens the closed line
+#   band_stretch      the whole band, inner rim to outer edge, along the centre column
+#   crossing_mm       rays from straight ahead: how far the LOWER lid comes out in front of the
+#                     upper where both are hit (the upper is meant to lie over it)
+#   closure_*         the upper rim, shut, as height over the eye's centre: the closure line
+#   eye_visible_pct   rays inside the eye disc that reach the eye/cornea first, shut
+LID_HOW = ('Idle 第 1 帧（睁眼，常驻 squint .14）对 Happy 中帧（Blink 1）；眼的局部坐标（随头转），'
+           '拉伸比在关掉 Solidify 的睑面上量，交叉量和露眼比例用带 Solidify 的睑从正前方打射线。')
+
+
+def clip_frames():
+    anim = Path(bpy.data.filepath).with_name('animations.json')
+    try:
+        clips = {c['name']: c for c in json.loads(anim.read_text())}
+        return clips['Idle']['start'], (clips['Happy']['start'] + clips['Happy']['end']) // 2
+    except (OSError, KeyError, ValueError):
+        return 1, 441
+
+
+def eye_frame_at(suf):
+    """(centre, R) where R maps the rest frame's axes onto the posed head's."""
+    hb = rig.pose.bones['Head']
+    turn = (rig.matrix_world @ hb.matrix).to_3x3() @ (rig.matrix_world @ hb.bone.matrix_local).to_3x3().inverted()
+    return rig.matrix_world @ rig.pose.bones['Eye.' + suf].head, turn
+
+
+def local_verts(name, c, turn, n=None):
+    o = bpy.data.objects[name]
+    e = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    inv = turn.inverted()
+    vs = [inv @ (e.matrix_world @ v.co - c) for v in e.data.vertices]
+    return vs[:n] if n else vs
+
+
+def lid_audit():
+    if rig is None or 'Eye.L' not in rig.pose.bones or not bpy.data.objects.get('LX_LidUpper.L'):
+        return None
+    f_open, f_shut = clip_frames()
+    f0 = s.frame_current
+    shells = [m for n in ('LidUpper', 'LidLower') for suf in 'LR'
+              for m in bpy.data.objects['LX_%s.%s' % (n, suf)].modifiers if m.type == 'SOLIDIFY']
+    out = {'frames': {'open': f_open, 'shut': f_shut}, 'how': LID_HOW}
+    per = {}
+    for suf in 'LR':
+        cols = 41
+        geo = {}
+        for tag, f in (('open', f_open), ('shut', f_shut)):
+            for m in shells:
+                m.show_viewport = False
+            s.frame_set(f)
+            bpy.context.view_layer.update()
+            c, turn = eye_frame_at(suf)
+            geo[tag] = {k: local_verts('LX_Lid%s.%s' % (k, suf), c, turn, cols * 9) for k in ('Upper', 'Lower')}
+            if tag == 'open':
+                r = max(math.hypot(v.x, v.z) for v in local_verts('LX_Eye.' + suf, c, turn))
+        d = {}
+        d['corner_shift_mm'] = round(1000 * max((geo['shut'][k][i] - geo['open'][k][i]).length
+                                                for k in ('Upper', 'Lower') for i in (0, cols - 1)), 2)
+
+        def edge(vs, i, j):
+            return (vs[(j + 1) * cols + i] - vs[j * cols + i]).length
+        margin, band = [], []
+        for k in ('Upper', 'Lower'):
+            o_, s_ = geo['open'][k], geo['shut'][k]
+            margin.append(max(edge(s_, i, 0) / edge(o_, i, 0) for i in range(cols)))
+            band.append(sum(edge(s_, cols // 2, j) for j in range(8)) / sum(edge(o_, cols // 2, j) for j in range(8)))
+        d['margin_stretch'] = round(max(margin), 2)
+        d['band_stretch'] = round(max(band), 2)
+        d['band_stretch_upper_lower'] = [round(b, 2) for b in band]
+        rim = [1000 * v.z for v in geo['shut']['Upper'][:cols]]
+        mid = cols // 2
+        d['closure_centre_mm'] = round(rim[mid], 2)
+        d['closure_corners_mm'] = round(.5 * (rim[0] + rim[-1]), 2)
+        d['closure_is_arch'] = all(rim[i + 1] >= rim[i] - .05 for i in range(mid)) and \
+            all(rim[i + 1] <= rim[i] + .05 for i in range(mid, cols - 1))
+        d['closure_profile_mm'] = [round(rim[i], 1) for i in range(0, cols, 5)]
+        d['lower_rim_centre_mm'] = round(1000 * geo['shut']['Lower'][mid].z, 2)
+        d['rim_overlap_mm'] = round(d['lower_rim_centre_mm'] - d['closure_centre_mm'], 2)   # + = lower rim tucked behind the upper
+        # rays, shells on, eyes shut
+        for m in shells:
+            m.show_viewport = True
+        s.frame_set(f_shut)
+        bpy.context.view_layer.update()
+        deps_ = bpy.context.evaluated_depsgraph_get()
+        c, turn = eye_frame_at(suf)
+        trees = {k: bvhtree.BVHTree.FromObject(bpy.data.objects[n], deps_)
+                 for k, n in (('U', 'LX_LidUpper.' + suf), ('L', 'LX_LidLower.' + suf),
+                              ('E', 'LX_Eye.' + suf), ('C', 'LX_Cornea.' + suf))}
+        into = turn @ Vector((0, 1, 0))
+        cross, n_cross, n_disc, n_seen = 0.0, 0, 0, 0
+        steps = 54
+        for a in range(steps + 1):
+            for b in range(steps + 1):
+                x = (-1.35 + 2.7 * a / steps) * r
+                z = (-1.35 + 2.7 * b / steps) * r
+                o = c + turn @ Vector((x, -.06, z))
+                hit = {k: t.ray_cast(o, into, .2) for k, t in trees.items()}
+                # only a FACE of a lid counts, not the 2mm rim of its shell grazed edge-on
+                du = hit['U'][3] if hit['U'][0] is not None and abs(hit['U'][1].dot(into)) > .3 else None
+                dl = hit['L'][3] if hit['L'][0] is not None and abs(hit['L'][1].dot(into)) > .3 else None
+                if du is not None and dl is not None and dl < du:
+                    cross = max(cross, du - dl)
+                    n_cross += (du - dl) > .0001
+                if math.hypot(x, z) < .95 * r:
+                    n_disc += 1
+                    eye = [hit[k][3] for k in 'EC' if hit[k][0] is not None]
+                    lid = [v for v in (du, dl) if v is not None]
+                    if eye and (not lid or min(lid) > min(eye)):
+                        n_seen += 1
+        d['crossing_mm'] = round(1000 * cross, 2)
+        d['crossing_rays'] = n_cross
+        d['eye_visible_pct'] = round(100.0 * n_seen / max(n_disc, 1), 2)
+        d['eye_r_mm'] = round(1000 * r, 1)
+        per[suf] = d
+    s.frame_set(f0)
+    bpy.context.view_layer.update()
+    for k in ('corner_shift_mm', 'margin_stretch', 'band_stretch', 'crossing_mm', 'eye_visible_pct'):
+        out[k] = max(per[suf][k] for suf in per)
+    out['closure_centre_mm'] = min(per[suf]['closure_centre_mm'] for suf in per)
+    out['closure_corners_mm'] = max(per[suf]['closure_corners_mm'] for suf in per)
+    out['closure_is_arch'] = all(per[suf]['closure_is_arch'] for suf in per)
+    out['per_eye'] = per
+    out.update({'target_corner': '≈ 0', 'target_margin': '≤ 1.5', 'target_crossing': '0（≤ 1 mm）',
+                'target_band': '≤ 1.5（外缘钉死时做不到，见 HANDOFF）', 'target_closure': '0–6 mm，拱形',
+                'target_visible': '0'})
+    return out
+
+
+lids = lid_audit()
+
 result = {'paws': paws, 'toe_spread': spread, 'paw_bbox': paw_row,
-          'ears': ears, 'head_width_mm': head_w, 'mouth': mouth,
+          'ears': ears, 'head_width_mm': head_w, 'mouth': mouth, 'lids': lids,
           'targets': {'ear': 'comment in build_lingxi_v5.py: 135 mm tall, 112 mm across, w/h .83',
                       'mouth': 'v6_face_shape.py REFERENCE: nose w 0.311E, mouth w 0.288E, '
                                'nose dy +0.320E, mouth dy +0.630E (so lip 0.310E below the nose)'}}

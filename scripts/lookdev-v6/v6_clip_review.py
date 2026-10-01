@@ -113,8 +113,13 @@ def measure():
         if not keys:
             continue
         for b in keys.key_blocks[1:]:
-            if b.name in ('Blink', 'Breath', 'Out', 'Extend'):
+            # Squint too: since 2026-10-01 the lids close by their Blink/Squint keys and the lid
+            # bones stay at rest, so lid_deg above reads 0 - lid_shut below is the lid signal.
+            if b.name in ('Blink', 'Squint', 'Breath', 'Out', 'Extend'):
                 d.setdefault('shape_' + b.name, round(max(d.get('shape_' + b.name, 0), b.value), 2))
+    # how shut the lids are, as a fraction of the full Blink turn (a full Squint key is 55% of it)
+    if 'shape_Blink' in d or 'shape_Squint' in d:
+        d['lid_shut'] = round(min(1.0, d.get('shape_Blink', 0) + .55 * d.get('shape_Squint', 0)), 2)
     return d
 
 
