@@ -89,12 +89,12 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 img{height:auto}
 </style>
 </head>
-<body data-page-node-id="g8jkU4HPM5sfJhKTHcVCtH"><div style="position:fixed;right:10px;bottom:10px;z-index:9;background:rgba(16,16,20,.85);color:#9a97a0;font-size:11px;padding:2px 8px;border-radius:8px">img v=round-h-1001</div>
+<body data-page-node-id="g8jkU4HPM5sfJhKTHcVCtH"><div style="position:fixed;right:10px;bottom:10px;z-index:9;background:rgba(16,16,20,.85);color:#9a97a0;font-size:11px;padding:2px 8px;border-radius:8px">img v=round-i-1001</div>
 <div class="wrap" data-page-node-id="VZDIJoSniGwlXYMMfCvpFC">
 <header data-page-node-id="p2ahRbDIxVAniCBfvgcnXB">
-  <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第二轮 · 已含修复）</h1>
-  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-h（第三批修复）已上线</b>：爪 G2/G3（趾加高 + 底绒毛）· 嘴（犬齿收回 + 唇线 .98）· <b>闭眼重写为逐顶点球面旋转（shape key）</b> · 15 动作 + 7 视图 standard 重渲</div>
-  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">上一批（动作陷地 + root 抬升）的数字见下方对照；本批新增：爪趾更高更绒、嘴不再露犬齿、闭眼从「眼罩」变成一条拱形睑缝。耳（第 4 项）与唇线再降 .970 排下一轮。</div>
+  <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第四批 · round-i 已上线）</h1>
+  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-i（第四批：爪子重做）已上线</b>：四个高趾瓣挤成爪前缘、<b>12 条趾缝全部成沟</b>、趾毛贴伏、腿毛从腕部顺到躯干（消「细棍」）、nape 压 30%（消驼峰） · 15 动作 + 7 视图 standard 重渲</div>
+  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">本批实测：趾缝 cleft_depth_sym 外侧 −3.8/−4.1 → <b>+1.5/+1.4</b>（中间 +3.3），<code>all_grooves=True</code>；沉地 SideLie −4.5→<b>−2.3</b>、Sleep −4.9→<b>−3.1</b>。注意：<b>步态行程本批未变</b>（Walk 36.3 / Run 51.0 mm），嘴部与步态的问题已单独立项审计，见「嘴部与步态审计」页。</div>
   <nav data-page-node-id="6yOdvUJf7XMuiBYyAdVMfn">
     <a href="#hurt">三处硬伤</a><a href="#clips">15 个动作</a><a href="#fixed">修复后（前后对照）</a><a href="#lids">闭眼修复</a><a href="#table">动作数据表</a><a href="#views">四视图与面部</a><a href="#actions">下一步</a><a href="compare/">嘴部与步态审计</a>
   </nav>
@@ -197,26 +197,26 @@ img{height:auto}
 <h2 id="views" data-page-node-id="iEJCxjTbTk3FaAzBxASDQS">四视图与面部</h2>
 <p class="note" data-page-node-id="bNwIbUdGn2IlzE3WqBFVlq">第一轮的四视图与面部对照，保留作参照。第二轮的判断改由上面的几何实测支撑。</p>
 <div class="grid2" data-page-node-id="pUA3phNmwGKe618CZXCUyo">
-  <div class="card" data-page-node-id="WzkCMfWtAkRMwwMcnAmEUe"><div class="imgbox" data-page-node-id="zAxl19MiTql5jmNUsmyrYo"><span class="badge" data-page-node-id="Z86vUJJVDyoEJdzWjUAnMD">参考 turnaround-v1</span><img loading="lazy" decoding="async" src="img-round-h-1001/turnaround-v1.jpg" alt="参考" data-page-node-id="sW8ypYxjVY6gk3QxmfLFmx"></div><div class="cap" data-page-node-id="3PNzRdbIcaDJIIVKRBCAU2"><b data-page-node-id="imVtUW2255hJGjGFf5nAkc">参考</b>：半写实四视图</div></div>
-  <div class="card" data-page-node-id="OtMdT6wy9VCg8FaW024CNH"><div class="imgbox" data-page-node-id="B14OBvSx6wfEgC3AjIMqeH"><span class="badge" data-page-node-id="IcvOjFygy36JL4kA2L1s1b">B4 · front</span><img loading="lazy" decoding="async" src="img-round-h-1001/front.jpg" alt="B4正面" data-page-node-id="5IWpM0PZcydCWiZwHXvkex"></div><div class="cap" data-page-node-id="kSGjCJrDb3eLKbgCLO54Uw"><b data-page-node-id="fCA2Xq8nidzYzfMUl6bQhe">B4 正面</b>：轮廓饱满、配色接近</div></div>
+  <div class="card" data-page-node-id="WzkCMfWtAkRMwwMcnAmEUe"><div class="imgbox" data-page-node-id="zAxl19MiTql5jmNUsmyrYo"><span class="badge" data-page-node-id="Z86vUJJVDyoEJdzWjUAnMD">参考 turnaround-v1</span><img loading="lazy" decoding="async" src="img-round-i-1001/turnaround-v1.jpg" alt="参考" data-page-node-id="sW8ypYxjVY6gk3QxmfLFmx"></div><div class="cap" data-page-node-id="3PNzRdbIcaDJIIVKRBCAU2"><b data-page-node-id="imVtUW2255hJGjGFf5nAkc">参考</b>：半写实四视图</div></div>
+  <div class="card" data-page-node-id="OtMdT6wy9VCg8FaW024CNH"><div class="imgbox" data-page-node-id="B14OBvSx6wfEgC3AjIMqeH"><span class="badge" data-page-node-id="IcvOjFygy36JL4kA2L1s1b">B4 · front</span><img loading="lazy" decoding="async" src="img-round-i-1001/front.jpg" alt="B4正面" data-page-node-id="5IWpM0PZcydCWiZwHXvkex"></div><div class="cap" data-page-node-id="kSGjCJrDb3eLKbgCLO54Uw"><b data-page-node-id="fCA2Xq8nidzYzfMUl6bQhe">B4 正面</b>：轮廓饱满、配色接近</div></div>
 </div>
 <div class="grid2" style="margin-top:18px" data-page-node-id="rFAJUxnJ1VxQX57cAI6jcz">
-  <div class="card" data-page-node-id="v2V9NloyDt4E1sdoANCkvV"><div class="imgbox" data-page-node-id="ogD1F2zn46pGn8eNHL2brL"><span class="badge" data-page-node-id="tCY2bLHKvJhBVUICHLsXtf">B4 · side</span><img loading="lazy" decoding="async" src="img-round-h-1001/side.jpg" alt="B4侧面" data-page-node-id="7JvRTLykPaKbD5pxpkdHVF"></div><div class="cap" data-page-node-id="aMZfdtUzqzkZKzO6QrLuAu"><b data-page-node-id="TwTU85Shg3Ce6PKJRvGy1P">B4 侧面</b>：没有腰线，后腿膝关节折角被毛埋掉</div></div>
-  <div class="card" data-page-node-id="4gBmf6RcZTq4r0UR0v7uN4"><div class="imgbox" data-page-node-id="EG5W0nWpU0b9E3mlZBV4t4"><span class="badge" data-page-node-id="4wAppVfSCJ8Ui9jSLB45Bg">参考 · face closeup</span><img loading="lazy" decoding="async" src="img-round-h-1001/lingxi-ref-face-closeup.jpg" alt="参考面部" data-page-node-id="x6zoFkaAKBQexalsQIIY6l"></div><div class="cap" data-page-node-id="OBhO3s0V6uoKJs6mfMEkpl"><b data-page-node-id="cjeyxjhaWQAzsMu1tfRhLt">参考面部</b>：瞳径 0.40E、鼻宽 0.311E、嘴宽 0.288E</div></div>
+  <div class="card" data-page-node-id="v2V9NloyDt4E1sdoANCkvV"><div class="imgbox" data-page-node-id="ogD1F2zn46pGn8eNHL2brL"><span class="badge" data-page-node-id="tCY2bLHKvJhBVUICHLsXtf">B4 · side</span><img loading="lazy" decoding="async" src="img-round-i-1001/side.jpg" alt="B4侧面" data-page-node-id="7JvRTLykPaKbD5pxpkdHVF"></div><div class="cap" data-page-node-id="aMZfdtUzqzkZKzO6QrLuAu"><b data-page-node-id="TwTU85Shg3Ce6PKJRvGy1P">B4 侧面</b>：没有腰线，后腿膝关节折角被毛埋掉</div></div>
+  <div class="card" data-page-node-id="4gBmf6RcZTq4r0UR0v7uN4"><div class="imgbox" data-page-node-id="EG5W0nWpU0b9E3mlZBV4t4"><span class="badge" data-page-node-id="4wAppVfSCJ8Ui9jSLB45Bg">参考 · face closeup</span><img loading="lazy" decoding="async" src="img-round-i-1001/lingxi-ref-face-closeup.jpg" alt="参考面部" data-page-node-id="x6zoFkaAKBQexalsQIIY6l"></div><div class="cap" data-page-node-id="OBhO3s0V6uoKJs6mfMEkpl"><b data-page-node-id="cjeyxjhaWQAzsMu1tfRhLt">参考面部</b>：瞳径 0.40E、鼻宽 0.311E、嘴宽 0.288E</div></div>
 </div>
 <div class="grid2" style="margin-top:18px" data-page-node-id="gzLvuIhVQe91c0mJwuTPwT">
-  <div class="card" data-page-node-id="g6wKXizm72ClVojjNU0vdI"><div class="imgbox" data-page-node-id="Z1JJcpiXEwHyKJw02zMDN7"><span class="badge" data-page-node-id="xXHuAp8ywDvi6f316YBHRO">B4 · face</span><img loading="lazy" decoding="async" src="img-round-h-1001/face.jpg" alt="B4面部" data-page-node-id="W2ePf2nL0LpR2kLxZb1146"></div><div class="cap" data-page-node-id="Bqj8XoTw6kbsukWuDvy2uF"><b data-page-node-id="0TtVxFllcodbGcF8xgBGHD">B4 面部</b>：眼径 0.44E（+10%），鼻镜粉已对上，嘴偏宽偏高</div></div>
-  <div class="card" data-page-node-id="m9MdMIzFGcH78Z3h3RSpTd"><div class="imgbox" data-page-node-id="7PLnkTG7GrWcWQcBJRd1wm"><span class="badge" data-page-node-id="3k76pa5EAckWFWmGWHPSrz">B4 · threequarter</span><img loading="lazy" decoding="async" src="img-round-h-1001/threequarter.jpg" alt="B4四分之三" data-page-node-id="xKRPkJlrWqIzDP7UDB4wsL"></div><div class="cap" data-page-node-id="iKlZMR3Lzm2QfWkikp7JEw"><b data-page-node-id="2MzQrEjv1qb3tbz6NLrkqw">B4 四分之三</b>：胸口白毛过渡自然</div></div>
+  <div class="card" data-page-node-id="g6wKXizm72ClVojjNU0vdI"><div class="imgbox" data-page-node-id="Z1JJcpiXEwHyKJw02zMDN7"><span class="badge" data-page-node-id="xXHuAp8ywDvi6f316YBHRO">B4 · face</span><img loading="lazy" decoding="async" src="img-round-i-1001/face.jpg" alt="B4面部" data-page-node-id="W2ePf2nL0LpR2kLxZb1146"></div><div class="cap" data-page-node-id="Bqj8XoTw6kbsukWuDvy2uF"><b data-page-node-id="0TtVxFllcodbGcF8xgBGHD">B4 面部</b>：眼径 0.44E（+10%），鼻镜粉已对上，嘴偏宽偏高</div></div>
+  <div class="card" data-page-node-id="m9MdMIzFGcH78Z3h3RSpTd"><div class="imgbox" data-page-node-id="7PLnkTG7GrWcWQcBJRd1wm"><span class="badge" data-page-node-id="3k76pa5EAckWFWmGWHPSrz">B4 · threequarter</span><img loading="lazy" decoding="async" src="img-round-i-1001/threequarter.jpg" alt="B4四分之三" data-page-node-id="xKRPkJlrWqIzDP7UDB4wsL"></div><div class="cap" data-page-node-id="iKlZMR3Lzm2QfWkikp7JEw"><b data-page-node-id="2MzQrEjv1qb3tbz6NLrkqw">B4 四分之三</b>：胸口白毛过渡自然</div></div>
 </div>
 
 <h2 id="lids" data-page-node-id="lidfix001">闭眼修复（round-h）：从「眼罩」到一条拱形睑缝</h2>
 <p class="note" data-page-node-id="lidfix002">旧做法靠 LidUpper/LidLower 骨骼旋转整片睑：上睑顶部那条 8mm 的带被拉成 38mm（4.5×）、上下睑在眼角交叉穿插 17mm、眼窝毛窗不跟随——闭眼看像戴了眼罩。新做法把闭合写进 Blink/Squint shape key：<b>逐顶点绕睑球心做球面旋转</b>，内缘转满、外缘与眼角权重 0、中间按弧长分配；下睑毛 24000×20mm、睑皮提到 .85×毛色。每张卡<b>上图＝修复后（round-h，当前状态）</b>，下图＝修复前的旧版对照（round-b4c，白眼睑就是当时的问题，不是现在的样子），640px 近景 48spp。</p>
 <div class="clips" style="grid-template-columns:repeat(2,1fr)" data-page-node-id="lidfix003">
-  <div class="c"><div class="pair"><div class="ph after"><img loading="lazy" decoding="async" src="img-round-h-1001/lid-after-blink.jpg" alt="眨眼后（当前状态）"><b>修复后 · 当前</b></div><div class="ph"><img loading="lazy" decoding="async" src="img-round-h-1001/lid-before-blink.jpg" alt="眨眼前（旧版对照）"><b>修复前 · 旧版</b></div></div><div class="nm">Idle · 眨眼（f47）<span>近景 640px</span></div><div class="st ok">眼角位移 0.0mm · 交叉 0.0mm · 露眼球 0%</div></div>
-  <div class="c"><div class="pair"><div class="ph after"><img loading="lazy" decoding="async" src="img-round-h-1001/lid-after-happy.jpg" alt="Happy后（当前状态）"><b>修复后 · 当前</b></div><div class="ph"><img loading="lazy" decoding="async" src="img-round-h-1001/lid-before-happy.jpg" alt="Happy前（旧版对照）"><b>修复前 · 旧版</b></div></div><div class="nm">Happy · 眯眼笑<span>近景 640px</span></div><div class="st ok">闭合线 +3.9mm 拱形（profile 0→3.9→0）· 睑缘带拉伸 1.00</div></div>
+  <div class="c"><div class="pair"><div class="ph after"><img loading="lazy" decoding="async" src="img-round-i-1001/lid-after-blink.jpg" alt="眨眼后（当前状态）"><b>修复后 · 当前</b></div><div class="ph"><img loading="lazy" decoding="async" src="img-round-i-1001/lid-before-blink.jpg" alt="眨眼前（旧版对照）"><b>修复前 · 旧版</b></div></div><div class="nm">Idle · 眨眼（f47）<span>近景 640px</span></div><div class="st ok">眼角位移 0.0mm · 交叉 0.0mm · 露眼球 0%</div></div>
+  <div class="c"><div class="pair"><div class="ph after"><img loading="lazy" decoding="async" src="img-round-i-1001/lid-after-happy.jpg" alt="Happy后（当前状态）"><b>修复后 · 当前</b></div><div class="ph"><img loading="lazy" decoding="async" src="img-round-i-1001/lid-before-happy.jpg" alt="Happy前（旧版对照）"><b>修复前 · 旧版</b></div></div><div class="nm">Happy · 眯眼笑<span>近景 640px</span></div><div class="st ok">闭合线 +3.9mm 拱形（profile 0→3.9→0）· 睑缘带拉伸 1.00</div></div>
 </div>
 <div class="grid2" style="margin-top:12px" data-page-node-id="lidfix004">
-  <div class="card"><div class="imgbox"><span class="badge">修后 · 睁眼（无回归）</span><img loading="lazy" decoding="async" src="img-round-h-1001/lid-after-idle.jpg" alt="睁眼" loading="lazy" data-page-node-id="lidfix005"></div><div class="cap">睁眼（squint .14 常驻）与修复前几乎一致</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">修后 · 睁眼（无回归）</span><img loading="lazy" decoding="async" src="img-round-i-1001/lid-after-idle.jpg" alt="睁眼" loading="lazy" data-page-node-id="lidfix005"></div><div class="cap">睁眼（squint .14 常驻）与修复前几乎一致</div></div>
   <div class="card"><div class="imgbox"><span class="badge">说明</span><div class="ph" style="padding:18px;font-size:14px;line-height:1.8">物理极限（如实报告）：外缘钉死在眶缘时，整条睑带的<b>平均</b>拉伸 = (带长+行程)/带长，上睑 2.68、下睑 3.43，任何分配方式都绕不开。但<b>看得见的闭合线</b>宽度拉伸 = 1.00；被拉开的那段用加密的睑毛盖住。审计已常驻 <code>v6_part_audit.py</code>（眼角位移 / 拉伸比 / 交叉量 / 露眼比例 / 拱形判定）。</div></div><div class="cap">验收口径与遗留</div></div>
 </div>
 
@@ -260,29 +260,29 @@ const CLIPS = [
 ];
 const LABEL = {ok:'符合预期', warn:'部分欠缺', bad:'不符合预期'};
 document.getElementById('clipGrid').innerHTML = CLIPS.map(([n,st,txt])=>
- `<div class="c"><img loading="lazy" decoding="async" src="img-round-h-1001/poses-b4-${n}.jpg" alt="${n}"><div class="nm">${n}<span>${LABEL[st]}</span></div><div class="st ${st}">${txt}</div></div>`).join('');
+ `<div class="c"><img loading="lazy" decoding="async" src="img-round-i-1001/poses-b4-${n}.jpg" alt="${n}"><div class="nm">${n}<span>${LABEL[st]}</span></div><div class="st ${st}">${txt}</div></div>`).join('');
 
 // 修复后：左＝round-b4（最初），右＝round-h（G3 爪/嘴 + 闭眼重写，standard 重渲）
 const FIXED = [
  ['Idle','ok','+1.0','基准'],
  ['Walk','ok','+1.0','后爪行程 45.0 mm，后/前比 1.24'],
  ['Run','ok','+9.1','腾空帧，四爪行程 51 / 63 mm'],
- ['Jump','ok','+275.1','尾 60.1° + 耳 20.0° 的平衡信号'],
+ ['Jump','ok','+277.3','尾 60.1° + 耳 20.0° 的平衡信号'],
  ['LieDown','ok','−8.0','脚掌收到体侧：−62.6 → −8.0 mm'],
- ['SideLie','ok','−4.5','root 抬 139 mm：−165.5 → −4.5 mm'],
- ['Sleep','ok','−4.9','root 抬 127 mm：−151.4 → −4.9 mm'],
+ ['SideLie','ok','−2.3','root 抬 139 mm：−165.5 → −2.3 mm（round-i 再收 2.2）'],
+ ['Sleep','ok','−3.1','root 抬 127 mm：−151.4 → −3.1 mm（round-i 再收 1.8）'],
  ['Curious','warn','+1.0','只有头 + 耳在动，这轮没改'],
  ['Happy','ok','+1.0','尾 96.3° + 身长变化 150 mm；闭眼已重写（见上）'],
- ['Yawn','ok','+0.8','弓背 + 前爪前伸：离 Idle 81° → 157°'],
+ ['Yawn','ok','+1.0','弓背 + 前爪前伸：离 Idle 81° → 157°'],
  ['Lick','ok','−15.0','坐姿重解 + 尾巴卷起：−85.7 → −15.0，尾尖 −77 → +0.2'],
  ['Bite','ok','+1.0','前爪抬起 83.7 mm + 头前冲：离 Idle 123° → 220°'],
- ['Knead','ok','+0.6','交替踩 26 mm + 眯眼 + 伸爪'],
+ ['Knead','ok','+0.7','交替踩 26 mm + 眯眼 + 伸爪'],
  ['Stretch','ok','−7.3','从 LieDown 拆出独立成姿：离 Idle 149° → 170°'],
- ['PawPlay','ok','−3.5','伏低 + 挥爪 131.7 mm + 甩尾 57.7°'],
+ ['PawPlay','ok','−3.4','伏低 + 挥爪 131.7 mm + 甩尾 57.7°'],
 ];
 document.getElementById('fixGrid').innerHTML = FIXED.map(([n,st,low,txt])=>
- `<div class="c"><div class="pair"><div class="ph"><img loading="lazy" decoding="async" src="img-round-h-1001/poses-b4-${n}.jpg" alt="${n} 修复前"><b>前</b></div>`
- + `<div class="ph after"><img loading="lazy" decoding="async" src="img-round-h-1001/poses-fix-${n}.jpg" alt="${n} 修复后"><b>后</b></div></div>`
+ `<div class="c"><div class="pair"><div class="ph"><img loading="lazy" decoding="async" src="img-round-i-1001/poses-b4-${n}.jpg" alt="${n} 修复前"><b>前</b></div>`
+ + `<div class="ph after"><img loading="lazy" decoding="async" src="img-round-i-1001/poses-fix-${n}.jpg" alt="${n} 修复后"><b>后</b></div></div>`
  + `<div class="nm">${n}<span>最低 ${low} mm</span></div><div class="st ${st}">${txt}</div></div>`).join('');
 </script>
 </body>

@@ -75,9 +75,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 <body data-page-node-id="g8jkU4HPM5sfJhKTHcVCtH">
 <div class="wrap" data-page-node-id="VZDIJoSniGwlXYMMfCvpFC">
 <header data-page-node-id="p2ahRbDIxVAniCBfvgcnXB">
-  <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第二轮 · 已含修复）</h1>
-  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-h（第三批修复）已上线</b>：爪 G2/G3（趾加高 + 底绒毛）· 嘴（犬齿收回 + 唇线 .98）· <b>闭眼重写为逐顶点球面旋转（shape key）</b> · 15 动作 + 7 视图 standard 重渲</div>
-  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">上一批（动作陷地 + root 抬升）的数字见下方对照；本批新增：爪趾更高更绒、嘴不再露犬齿、闭眼从「眼罩」变成一条拱形睑缝。耳（第 4 项）与唇线再降 .970 排下一轮。</div>
+  <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第四批 · round-i 已上线）</h1>
+  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-i（第四批：爪子重做）已上线</b>：四个高趾瓣挤成爪前缘、<b>12 条趾缝全部成沟</b>、趾毛贴伏、腿毛从腕部顺到躯干（消「细棍」）、nape 压 30%（消驼峰） · 15 动作 + 7 视图 standard 重渲</div>
+  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">本批实测：趾缝 cleft_depth_sym 外侧 −3.8/−4.1 → <b>+1.5/+1.4</b>（中间 +3.3），<code>all_grooves=True</code>；沉地 SideLie −4.5→<b>−2.3</b>、Sleep −4.9→<b>−3.1</b>。注意：<b>步态行程本批未变</b>（Walk 36.3 / Run 51.0 mm），嘴部与步态的问题已单独立项审计，见「嘴部与步态审计」页。</div>
   <nav data-page-node-id="6yOdvUJf7XMuiBYyAdVMfn">
     <a href="#hurt">三处硬伤</a><a href="#clips">15 个动作</a><a href="#fixed">修复后（前后对照）</a><a href="#lids">闭眼修复</a><a href="#table">动作数据表</a><a href="#views">四视图与面部</a><a href="#actions">下一步</a><a href="compare/">嘴部与步态审计</a>
   </nav>
@@ -250,18 +250,18 @@ const FIXED = [
  ['Idle','ok','+1.0','基准'],
  ['Walk','ok','+1.0','后爪行程 45.0 mm，后/前比 1.24'],
  ['Run','ok','+9.1','腾空帧，四爪行程 51 / 63 mm'],
- ['Jump','ok','+275.1','尾 60.1° + 耳 20.0° 的平衡信号'],
+ ['Jump','ok','+277.3','尾 60.1° + 耳 20.0° 的平衡信号'],
  ['LieDown','ok','−8.0','脚掌收到体侧：−62.6 → −8.0 mm'],
- ['SideLie','ok','−4.5','root 抬 139 mm：−165.5 → −4.5 mm'],
- ['Sleep','ok','−4.9','root 抬 127 mm：−151.4 → −4.9 mm'],
+ ['SideLie','ok','−2.3','root 抬 139 mm：−165.5 → −2.3 mm（round-i 再收 2.2）'],
+ ['Sleep','ok','−3.1','root 抬 127 mm：−151.4 → −3.1 mm（round-i 再收 1.8）'],
  ['Curious','warn','+1.0','只有头 + 耳在动，这轮没改'],
  ['Happy','ok','+1.0','尾 96.3° + 身长变化 150 mm；闭眼已重写（见上）'],
- ['Yawn','ok','+0.8','弓背 + 前爪前伸：离 Idle 81° → 157°'],
+ ['Yawn','ok','+1.0','弓背 + 前爪前伸：离 Idle 81° → 157°'],
  ['Lick','ok','−15.0','坐姿重解 + 尾巴卷起：−85.7 → −15.0，尾尖 −77 → +0.2'],
  ['Bite','ok','+1.0','前爪抬起 83.7 mm + 头前冲：离 Idle 123° → 220°'],
- ['Knead','ok','+0.6','交替踩 26 mm + 眯眼 + 伸爪'],
+ ['Knead','ok','+0.7','交替踩 26 mm + 眯眼 + 伸爪'],
  ['Stretch','ok','−7.3','从 LieDown 拆出独立成姿：离 Idle 149° → 170°'],
- ['PawPlay','ok','−3.5','伏低 + 挥爪 131.7 mm + 甩尾 57.7°'],
+ ['PawPlay','ok','−3.4','伏低 + 挥爪 131.7 mm + 甩尾 57.7°'],
 ];
 document.getElementById('fixGrid').innerHTML = FIXED.map(([n,st,low,txt])=>
  `<div class="c"><div class="pair"><div class="ph"><img src="poses-b4/${n}.png" alt="${n} 修复前"><b>前</b></div>`
