@@ -421,8 +421,319 @@ def lid_audit():
 
 lids = lid_audit()
 
+# --- Open mouth, canines, lick contact (round j) --------------------------------------------
+# Codex's round-h audit (reviews/compare/REPORT.md) measured the yawn on the render - 26 px of red
+# on a ~700 px head (.037) against the reference's .256 - and the canines with a forward ray from
+# each upper tooth's HIGHEST vertex, which is its root inside the gum. The same questions, asked of
+# the geometry in the head's own rest frame (the face camera turns with the head, V6_FACE_FOLLOW):
+#   open_mm_mesh / _fur   how tall the opening is seen from straight in front: rows of a .5 mm ray
+#                         grid in which most rays of the centre band (|x| <= 6 mm) reach the inside
+#                         of the mouth (cavity, floor, tongue, teeth) before anything else. _mesh
+#                         counts skin only; _fur also the coat, drawn as the renderer draws it
+#                         (ribbons of native_fur_lingxi_v5.py's strand radius).
+#   open_head_fur         open_mm_fur over the coat's width across the face (the render's ruler)
+#   shell_rays            rays that reach the INSIDE of the head shell through the mouth - a white
+#                         hole where the mouth bag does not cover the gap
+#   canines               each canine's real tip (lowest vertex of an upper tooth, highest of a lower):
+#     skin_ahead_mm       how far a forward ray from the tip runs before it hits skin (None = none:
+#                         the tip is in the open) - the "skin in front of the tip"
+#     exposed_mm[_fur]    how much of the tooth, from the tip toward the gum, the viewer sees
+#     behind_lip_mm       how far the tip sits behind the front of the upper lip above it (+ = inside
+#                         the mouth; - = it floats out in front of the lip)
+#     root_skin_ahead_mm  REPORT.md's ruler, kept for comparison: the world -Y ray from the highest
+#                         vertex to LX_Head / the upper lips
+#   lick                  at the Lick frame with the tongue furthest out: the signed gap from the tongue
+#                         to the raised paw's pad, beans and toes (- = into them), and the triangle
+#                         pairs the tongue shares with other meshes (LX_Jaw is hide_render - an unseen
+#                         leftover volume, so it is listed apart from what the camera can see)
+MOUTH_HOW = ('头部静止坐标系（随头转，等同 V6_FACE_FOLLOW 的脸部镜头）；求值网格真实顶点；毛按 native_fur 的'
+             '渲染半径做成面向镜头的细带参与遮挡；帧只用 scene.frame_set() 取（Yawn/Bite 取 |Jaw| 最大帧，'
+             'Lick 取舌 Out 最大帧）。')
+SKIN_MESHES = ('LX_Head', 'LX_Nose', 'LX_LipPhiltrum', 'LX_LipUpper.L', 'LX_LipUpper.R', 'LX_LipLower', 'LX_Body')
+INNER_MESHES = ('LX_MouthCavity', 'LX_MouthFloor', 'LX_Tongue')
+FUR_PROFILE = (.00026, .00020, .00012, .000012)   # native_fur_lingxi_v5.py: render radius, root -> tip, per .00078 of fur_radius
+
+
+def mouth_frames():
+    anim = Path(bpy.data.filepath).with_name('animations.json')
+    try:
+        clips = {c['name']: c for c in json.loads(anim.read_text())}
+    except (OSError, ValueError):
+        return {}
+    jaw = rig.pose.bones.get('Jaw')
+    tongue = bpy.data.objects.get('LX_Tongue')
+    out_key = tongue.data.shape_keys.key_blocks.get('Out') if tongue and tongue.data.shape_keys else None
+    frames = {}
+    for name in ('Yawn', 'Bite', 'Lick'):
+        c = clips.get(name)
+        if c is None or jaw is None:
+            continue
+        best = None
+        for f in range(c['start'], c['end'] + 1):
+            s.frame_set(f)
+            v = out_key.value if (name == 'Lick' and out_key) else abs(jaw.rotation_euler.x)
+            if best is None or v > best[1] + 1e-6:
+                best = (f, v)
+        frames[name] = best[0]
+    return frames
+
+
+def head_rest_matrix():
+    """World -> the head's rest frame (cat faces -y, z up), for the current frame."""
+    hb = rig.pose.bones['Head']
+    return np.array((rig.matrix_world @ hb.bone.matrix_local) @ (rig.matrix_world @ hb.matrix).inverted())
+
+
+def xf(P, A):
+    return P @ A[:3, :3].T + A[:3, 3]
+
+
+def eval_tris(name, A=None, polys=False):
+    """(points, triangles) of an object's evaluated mesh - world space, or A's frame. polys=True
+    gives the mesh's own polygons instead (a list): REPORT.md counted intersecting POLYGON pairs."""
+    o = bpy.data.objects.get(name)
+    if o is None:
+        return None
+    e = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    me = e.to_mesh()
+    co = np.empty(len(me.vertices) * 3, dtype='f')
+    me.vertices.foreach_get('co', co)
+    if polys:
+        tri = [tuple(p.vertices) for p in me.polygons]
+    else:
+        me.calc_loop_triangles()
+        tri = np.empty(len(me.loop_triangles) * 3, dtype=np.int32)
+        me.loop_triangles.foreach_get('vertices', tri)
+        tri = tri.reshape(-1, 3)
+    e.to_mesh_clear()
+    P = xf(co.reshape(-1, 3).astype(float), np.array(e.matrix_world))
+    return (xf(P, A) if A is not None else P), tri
+
+
+def tree_of(parts):
+    """One BVH over several (points, tris) parts; also returns each part's first triangle index."""
+    pts, tris, starts, off = [], [], [], 0
+    for P, T in parts:
+        starts.append(sum(len(t) for t in tris))
+        pts.append(P)
+        tris.append(T + off)
+        off += len(P)
+    if not pts:
+        return None, []
+    P = np.concatenate(pts)
+    T = np.concatenate(tris)
+    return bvhtree.BVHTree.FromPolygons(P.tolist(), T.tolist()), starts
+
+
+def fur_ribbons(A, lo, hi, only=''):
+    """The coat inside the box lo..hi (head rest frame) as ribbons facing the camera (+y view)."""
+    quads = []
+    for o in s.objects:
+        if o.type != 'MESH' or not o.name.startswith('LX_Fur_') or 'fur_radius' not in o.data.attributes:
+            continue
+        if only not in o.name:
+            continue
+        # the build's GN modifier turns the strands into curves; the strand POINTS are wanted
+        mods = [m for m in o.modifiers if m.type == 'NODES' and m.show_viewport]
+        for m in mods:
+            m.show_viewport = False
+        bpy.context.view_layer.update()
+        P = real_points(o.name)
+        for m in mods:
+            m.show_viewport = True
+        npts = int(o.get('strand_points', 6))
+        if not len(P):
+            continue
+        S = xf(P, A).reshape(-1, npts, 3)
+        keep = ((S > lo) & (S < hi)).all(2).any(1)
+        if not keep.any():
+            continue
+        S = S[keep]
+        rr = np.empty(len(o.data.vertices), dtype='f')
+        o.data.attributes['fur_radius'].data.foreach_get('value', rr)
+        k = rr.reshape(-1, npts)[keep, 0] / .00078
+        R = np.interp(np.linspace(0, 1, npts), np.linspace(0, 1, 4), FUR_PROFILE)[None, :] * k[:, None]
+        seg = S[:, 1:] - S[:, :-1]
+        side = np.cross(seg, np.array([0., 1., 0.]))
+        n = np.linalg.norm(side, axis=2, keepdims=True)
+        side = np.where(n > 1e-9, side / np.maximum(n, 1e-12), np.array([1., 0., 0.]))
+        r0, r1 = R[:, :-1, None], R[:, 1:, None]
+        a, b = S[:, :-1], S[:, 1:]
+        quads.append(np.stack([a + side * r0, a - side * r0, b - side * r1, b + side * r1], 2).reshape(-1, 3))
+    if not quads:
+        return None
+    V = np.concatenate(quads)
+    return V, np.arange(len(V), dtype=np.int32).reshape(-1, 4)
+
+
+def first_hit(o, d, trees, far=3.0):
+    """(class, distance, part index, face normal) of the nearest hit among {class: (tree, starts)}."""
+    best = None
+    for cls, (t, starts) in trees.items():
+        if t is None:
+            continue
+        loc, nor, idx, dist = t.ray_cast(o, d, far)
+        if loc is not None and (best is None or dist < best[1]):
+            part = max(i for i, st in enumerate(starts) if idx >= st) if starts else 0
+            best = (cls, dist, part, nor)
+    return best
+
+
+def mouth_audit():
+    if rig is None or 'Jaw' not in rig.pose.bones:
+        return None
+    f0 = s.frame_current
+    frames = mouth_frames()
+    out = {'how': MOUTH_HOW, 'frames': frames}
+    view = Vector((0, 1, 0))
+    for clip, f in [('Rest', 1)] + sorted(frames.items(), key=lambda kv: kv[1]):
+        s.frame_set(f)
+        bpy.context.view_layer.update()
+        A = head_rest_matrix()
+        skin = [(n, eval_tris(n, A)) for n in SKIN_MESHES if bpy.data.objects.get(n)]
+        teeth = [(o.name, eval_tris(o.name, A), 'Head' in o.vertex_groups) for o in s.objects
+                 if o.type == 'MESH' and o.name.startswith('LX_Tooth')]
+        inner = [(n, eval_tris(n, A)) for n in INNER_MESHES if bpy.data.objects.get(n)] + [(n, g) for n, g, _ in teeth]
+        nose = next(g for n, g in skin if n == 'LX_Nose')[0]
+        z_top = float(nose[:, 2].min()) + .004
+        head_p = next(g for n, g in skin if n == 'LX_Head')[0]
+        lo, hi = np.array([-.09, -1.0, z_top - .15]), np.array([.09, -.25, z_top + .03])
+        fur = fur_ribbons(A, lo, hi)
+        trees = {'skin': tree_of([g for _, g in skin]), 'inner': tree_of([g for _, g in inner])}
+        names = {'skin': [n for n, _ in skin], 'inner': [n for n, _ in inner]}
+        trees_fur = dict(trees, fur=(tree_of([fur])[0], [0]) if fur else (None, []))
+        # the opening: a .5 mm grid in front of the face, looking back along +y
+        xs = np.arange(-.035, .0351, .0005)
+        zs = np.arange(z_top, z_top - .14, -.0005)
+        band = np.abs(xs) <= .006
+        rows = {'mesh': [], 'fur': []}
+        hits_by = {}
+        shell = 0
+        for z in zs:
+            r_m, r_f = [], []
+            for x in xs:
+                o = Vector((x, -1.0, z))
+                h = first_hit(o, view, trees)
+                hf = first_hit(o, view, trees_fur)
+                if h and h[0] == 'skin' and h[3].dot(view) > 0 and names['skin'][h[2]] == 'LX_Head':
+                    shell += 1
+                r_m.append(bool(h and h[0] == 'inner'))
+                r_f.append(bool(hf and hf[0] == 'inner'))
+                if hf and hf[0] == 'inner':
+                    nm = names['inner'][hf[2]]
+                    hits_by[nm] = hits_by.get(nm, 0) + 1
+            rows['mesh'].append(r_m)
+            rows['fur'].append(r_f)
+        d = {'frame': f, 'jaw_deg': round(math.degrees(rig.pose.bones['Jaw'].rotation_euler.x), 2)}
+        for tag, g in rows.items():
+            g = np.array(g)
+            frac = g[:, band].mean(1)
+            open_rows = frac >= .5
+            d['open_mm_' + tag] = round(.5 * int(open_rows.sum()), 1)
+            d['open_width_mm_' + tag] = round(.5 * int(g.any(0).sum()), 1)
+            if open_rows.any():
+                d['open_z_mm_' + tag] = [round(1000 * float(zs[open_rows].max()), 1), round(1000 * float(zs[open_rows].min()), 1)]
+        d['inner_hits_fur'] = hits_by
+        d['shell_rays'] = shell
+        d['head_mesh_width_mm'] = round(1000 * float(np.ptp(head_p[:, 0])), 1)
+        hf_ = fur_ribbons(A, np.array([-.5, -1.0, z_top - .10]), np.array([.5, 0.0, z_top + .05]), only='_LX_Head')
+        if hf_ is not None:
+            V = hf_[0]
+            w = max((np.percentile(V[sl, 0], 99) - np.percentile(V[sl, 0], 1))
+                    for zc in np.arange(z_top - .08, z_top + .04, .01)
+                    for sl in [np.abs(V[:, 2] - zc) < .005] if sl.sum() > 50)
+            d['head_coat_width_mm'] = round(1000 * float(w), 1)
+            d['open_head_fur'] = round(d['open_mm_fur'] / d['head_coat_width_mm'], 3)
+            d['open_head_mesh'] = round(d['open_mm_mesh'] / d['head_coat_width_mm'], 3)
+        # canines
+        can = {}
+        skin_tree = trees['skin'][0]
+        world_up = [eval_tris(n) for n in ('LX_Head', 'LX_LipUpper.L', 'LX_LipUpper.R') if bpy.data.objects.get(n)]
+        for nm, (P, _), upper in teeth:
+            tip = P[np.argmin(P[:, 2])] if upper else P[np.argmax(P[:, 2])]
+            t = {'upper': upper, 'tip_mm': [round(1000 * float(v), 1) for v in tip]}
+            hit = skin_tree.ray_cast(Vector(tip) + Vector((0, -1e-4, 0)), Vector((0, -1, 0)), .2)
+            t['skin_ahead_mm'] = round(1000 * hit[3], 2) if hit[0] is not None else None
+            h_tooth = float(np.ptp(P[:, 2]))
+            exp_m, exp_f = 0, 0.0
+            for j in range(int(h_tooth / .00025)):
+                zz = tip[2] + (j * .00025 if upper else -j * .00025)
+                h = first_hit(Vector((tip[0], -1.0, zz)), view, trees)
+                exp_m += bool(h and h[0] == 'inner' and names['inner'][h[2]] == nm)
+                seen = 0
+                for dx in (-.0005, 0, .0005):
+                    h = first_hit(Vector((tip[0] + dx, -1.0, zz)), view, trees_fur)
+                    seen += bool(h and h[0] == 'inner' and names['inner'][h[2]] == nm)
+                exp_f += seen / 3
+            t['exposed_mm'] = round(.25 * exp_m, 2)
+            t['exposed_mm_fur'] = round(.25 * exp_f, 2)
+            if upper:
+                lip = head_p[(np.abs(head_p[:, 0] - tip[0]) < .003) & (head_p[:, 2] > tip[2]) & (head_p[:, 2] < tip[2] + .012)]
+                t['behind_lip_mm'] = round(1000 * float(tip[1] - lip[:, 1].min()), 2) if len(lip) else None
+                Pw = eval_tris(nm)[0]
+                top = Pw[np.argmax(Pw[:, 2])]
+                ds = []
+                for Q, T in world_up:
+                    loc = bvhtree.BVHTree.FromPolygons(Q.tolist(), T.tolist()).ray_cast(Vector(top), Vector((0, -1, 0)), .2)
+                    if loc[0] is not None:
+                        ds.append(loc[3])
+                t['root_skin_ahead_mm'] = round(1000 * min(ds), 2) if ds else None
+            can[nm] = t
+        d['canines'] = can
+        if clip == 'Lick':
+            d['lick'] = lick_contact()
+        out[clip] = d
+    s.frame_set(f0)
+    bpy.context.view_layer.update()
+    out['target'] = {'Yawn open_head_fur': '≥ 0.15（参考 0.256；round h 渲染 0.037）',
+                     'canines (open)': 'skin_ahead_mm None 且 exposed_mm_fur > 0，behind_lip_mm > 0',
+                     'canines (Rest)': 'exposed_mm 0（闭嘴不露齿）',
+                     'lick': 'gap_mm ≈ 0（不为负），可见网格相交 0',
+                     'shell_rays': '0'}
+    return out
+
+
+def lick_contact():
+    """Tongue against the raised forepaw at the current frame (world space)."""
+    tg = eval_tris('LX_Tongue', polys=True)
+    if tg is None:
+        return None
+    paw = max(('L', 'R'), key=lambda sf: (rig.matrix_world @ rig.pose.bones['FrontPaw.' + sf].head).z)
+    parts = ['LX_FrontPad.' + paw] + [f'LX_Front{k}{i}.{paw}' for k in ('Bean', 'Toe') for i in range(4)]
+    tv = [Vector(p) for p in tg[0]]
+    ttree = bvhtree.BVHTree.FromPolygons(tg[0].tolist(), tg[1])
+    best = None
+    pairs = {}
+    for n in parts + ['LX_Head', 'LX_Jaw', 'LX_LipUpper.L', 'LX_LipUpper.R', 'LX_LipLower', 'LX_Body'] + \
+            [o.name for o in s.objects if o.name.startswith('LX_Tooth')]:
+        g = eval_tris(n, polys=True)
+        if g is None:
+            continue
+        t = bvhtree.BVHTree.FromPolygons(g[0].tolist(), g[1])
+        pairs[n] = len(ttree.overlap(t))
+        if n in parts:
+            for v in tv:
+                loc, nor, _i, dist = t.find_nearest(v, .5)
+                if loc is None:
+                    continue
+                sd = dist if (v - loc).dot(nor) >= 0 else -dist
+                if best is None or sd < best[0]:
+                    best = (sd, n)
+    A = head_rest_matrix()
+    tr = xf(tg[0], A)
+    lip = eval_tris('LX_LipUpper.L', A)
+    out = {'paw': 'FrontPaw.' + paw, 'gap_mm': round(1000 * best[0], 2) if best else None,
+           'nearest_part': best[1] if best else None,
+           'tongue_out_of_lip_mm': round(1000 * float(lip[0][:, 1].min() - tr[:, 1].min()), 1) if lip else None,
+           'intersect_pairs': pairs,
+           'intersect_visible': sum(v for k, v in pairs.items() if k != 'LX_Jaw')}
+    return out
+
+
+mouth_open = mouth_audit()
+
 result = {'paws': paws, 'toe_spread': spread, 'paw_bbox': paw_row, 'toe_clefts': clefts, 'paw_coat': coat,
-          'ears': ears, 'head_width_mm': head_w, 'mouth': mouth, 'lids': lids,
+          'ears': ears, 'head_width_mm': head_w, 'mouth': mouth, 'lids': lids, 'mouth_open': mouth_open,
           'targets': {'ear': 'comment in build_lingxi_v5.py: 135 mm tall, 112 mm across, w/h .83',
                       'mouth': 'v6_face_shape.py REFERENCE: nose w 0.311E, mouth w 0.288E, '
                                'nose dy +0.320E, mouth dy +0.630E (so lip 0.310E below the nose)'}}
