@@ -109,3 +109,147 @@ SideLie/Sleep −165/−151 → −2.4；LieDown −63 → −8.0；Stretch −7
 - 嘴：闭合，犬齿不再露出；人中线可见；唇线和参考下唇齐平。剩：上唇是浅粉线（参考只是阴影）、线上几个细小暗点。
 - 爪：趾外露 57.5%，探出 16–20 mm，四趾都有缝，细绒趾毛，秃带消失。
 - 请复测：`v6_g_review.py` 的外侧趾缝深度；`v6_face_shape.py` 的嘴宽（渲染）和嘴 dy；以及 G3 所有 15 个动作的最低点（G3 带了你的动作修复，但口鼻部下长和趾加高后可能有新的穿地）。
+
+---
+
+## 2026-10-01 用户看了发布页（round-b4b 渲染）后的反馈 → Claude 的执行记录
+
+用户三点：①闭眼眼睑不对（像戴眼罩、上下睑交叉穿插）；②跟昨天没区别（发布页是 b4b，没渲 G2/G3）；③爪子和动作体态不对。
+WorkBuddy 已核实，并占用 `reviews/b4-round/site/`、`make_site.py`、`verify_mobile.cjs`、`lingxi-review-offline.html`——Claude 不碰。
+
+### 第 1 步 ✅ WIP 提交 G2/G3（`b92a846`）
+`build_lingxi_v5.py`、`native_fur_lingxi_v5.py`、`make_coat_maps.py`、`v6_render_views.py`、`v6_clip_review.py`、
+`v6_eye_size.py`（HANDOFF/docs 都引用它，一并提交）、`docs/22`、本文件。未动 `.workbuddy/memory/` 和
+`assets/characters/lingxi/reference/` 的删除记录（留在工作区）。未 push。
+
+### 第 2 步 ✅ Round B4C：G3 代码的完整渲染（代码 = 页面）
+产物：`assets/characters/lingxi/v6/round-b4c/`——`views/`（front side threequarter back face face34 paws）、`poses/`（15 个）、
+`review.html`（左 b4c、右 b4b 对照 + 下面的数字表；新脚本 `scripts/lookdev-v6/v6_round_page.py` 生成，只用标准库）、
+`review-parts.json`、`review-clips.json`、`run.sh`（整条管线，旋钮只在这里设）、`knobs.txt`、`pipeline.out`。
+
+**全部旋钮**：`LINGXI_QUALITY=standard V6_EAR_TEX=ear_fur_v2.png V6_MOUTH_W=.69 V6_GAPE_W=.69 V6_LIP=.98 V6_NOSE_W=1.12
+V6_NOSE_H=.92 V6_NOSE_DZ=-.004 V6_MUZZLE_GROW=.006`（= G3）；视图 `V6_RES=900 V6_SAMPLES=128 V6_DENOISE=1`（与 b4 视图相同，
+从 b4 PNG 元数据读出），其余视图旋钮默认（FOCAL 85 / MARGIN 1.10 / BG .548）；动作 480px/12spp（脚本默认，与 b4b 同）。
+贴图没重新生成（`v5/textures` 仍是 09-29 19:06 那批，b4/b4b/G 系列都用它）。管线：build 77s → fur 113s → audit → clips → poses 81s → views 744s。
+
+关键数字（b4b → b4c）：
+- **爪外露**（趾顶点在体表外的比例 / 最大探出）：前爪 0% / −10~−20 mm（埋在爪里）→ **52–63% / 16–20 mm**；后爪 0–14% → 52–64%。
+- **耳** w/h 1.001 → 0.788（宽 147 → 116 mm，目标 .83 / 112）；**嘴宽** 0.392E → 0.272E，唇在鼻下 0.18E → 0.21E。
+- **最低点**（mm，负 = 穿地）：LieDown −8.0 → −8.0、SideLie −2.4 → **−4.5**、Sleep −2.4 → **−4.9**、Lick −15.0 → −15.0、
+  Stretch −7.3 → −7.3、PawPlay −2.8 → −3.5；站姿各动作 +0.6~+1.0。SideLie/Sleep/PawPlay 变差 2 mm 是因为趾加高后
+  最低的部件变成了趾（`lowest_parts`: RearToe0 / RearBean0 / FrontToe0）。
+- **行程**（任一爪最大位移 mm）：Walk 45、Run 63、Jump 278、Bite 84、PawPlay 132、Knead 26、Lick 500（b4b 529）；
+  离 Idle 距离与 b4b 相同（动作代码没变）。
+- 看图：爪的正面特写四个趾分得开，但仍偏"四颗白球"；闭眼还是旧骨骼方案（下一步修）。
+
+### 第 3 步｜闭眼修复（进行中）
+
+**病因（在 b4c 的 blend 上实测，`v6_part_audit.py` 新增的 `lids` 一节）**：眼睑靠骨骼转，蒙皮权重把一次刚性转动混成弦，
+部分权重的点陷进球面；眼角只压到 25%，于是闭眼时**上睑缘两端下垂到眼心下方 6.4 mm、眼角移动 8.2 mm**，闭合线不是拱
+（`closure_is_arch: false`）；下睑没有毛、上睑只有内半圈有毛，闭着的眼睛是一块光滑的灰白皮盘——用户说的"眼罩"。
+
+**h1（`round-h-test/h1`，旋钮 = b4c）**：按方案改成 shape key——
+- `lid_turn()`：每个顶点绕睑球心按自己的角度转（精确旋转，始终留在球面上）；内缘转满（上 .81r 下 1.13r），眼角（sin=0）
+  和外缘（t=1）不动，中间按弧长线性分配。**一处细化**：深色睑缘（t<.2，约 2.3 mm）跟内缘整体转，不参与拉伸——
+  按弧长均摊的话睑缘会被拉宽 3.2 倍，变成闭眼上一条 7 mm 的黑带（还是眼罩）。旋钮 `V6_LID_MARGIN`（0 = 纯均摊）。
+- Squint key = 同一转动的 55%（精确转 55% 的角度，不是线性 55% 的位移——半闭时不陷进球面）。
+- `pose()` 不再转睑骨（L1517 删掉，注释说明）；`LID_TH` 照算，注释写明已不驱动。
+- 睑毛：上、下睑都长，整条睑带（深色睑缘以外），每根毛按毛根的角度跟着 Blink/Squint 一起转（毛也有 key）。
+- 结果（Happy 中帧 vs Idle 第 1 帧）：眼角位移 **8.17 → 0.00 mm**；闭合线中点 **+3.9 mm**、两端 **0.0**、拱形 ✅；
+  睑缘带拉伸 1.00；交叉量 1.02 mm / 6 条射线（查明是射线擦过 2 mm 壳的边缘，量法改成只认睑的正面后见 h2）；闭眼露眼球 0%。
+- 看图（`h1/faces/` 对 `b4c-faces/`）：闭眼从"灰白皮盘 + 下垂的弧"变成**毛 + 一条细黑弧**；睁眼几乎不变。
+  新问题：下睑毛在闭眼下方挂成一片浅色竖条"帘子"（毛 30 mm 太长、拉伸 ×5 后太稀、下睑皮 .62×白毛 = 灰缝）。
+
+**整条睑带拉伸比 ≤ 1.5 做不到（如实说明）**：外缘钉死时，内缘走 D、带长 L，任何分配方式的平均拉伸都是 (L+D)/L——
+上睑 (.37+.81)/.37 = **3.2**、下睑 (.33+1.13)/.33 = **4.4**，最大值只会更大。要 ≤1.5 需要带长 ≥ 2D（上 1.62r、下 2.26r），
+而睑球（半径 124 mm）在 1.3r 以外已经比眉骨皮肤高出 8 mm，再往外延会顶出毛面。所以：审计里同时给"睑缘带拉伸"（可见的
+闭合线宽度，目标 ≤1.5，达成 1.00）和"整条睑带拉伸"（3.4，如实报告）；被拉开的那段用加密的睑毛盖住。
+
+**h2**：下睑毛 14000×30 mm → **24000×20 mm**，下睑皮 .62 → **.85** × 毛色；审计的交叉量改成只认睑的正面（射线擦过壳边不算）。
+- 数字：眼角 0.00 mm、睑缘带拉伸 1.00、整条睑带 2.68（上）/ 3.43（下）、**交叉量 0.00 mm / 0 条射线**、闭合线中点 +3.9 mm、
+  两端 0.0、拱形 ✅、下睑内缘在上睑后面 1.3 mm（`rim_overlap_mm`，被上睑盖住，设计如此）、闭眼露眼球 0%。
+- 看图：帘子短了，但下睑毛仍是一块**浅色竖条的面板**。原因：下睑毛的颜色按"睁眼时毛根的位置"取——在眼下 1.2r，
+  落在 `face_white` 的白色眼下区；闭眼时这片白毛被带到眼睛高度，而那里的毛是棕色虎斑。
+
+**h3**：下睑毛的颜色改按**闭眼时它所在的位置**取（`groom(..., color_at=)` 新参数，下睑传 `lid_turn(root,1.0)`）。
+- 看图：闭眼下方的浅色面板消失，虎斑条纹从脸颊一直接到闭合线下，和参考 `lingxi-ref-expressions.png` 左上那只的读法一致；
+  睁眼几乎没变（下睑那段睁眼时大多在脸颊后面）。剩一条贴着闭合线下方的 ~1 mm 浅灰细条 = 下睑皮（还按睁眼位置取色）。
+
+**h4**：下睑皮也按闭眼位置取色。（"眼窝凹陷 / 头毛眼窗跟随闭眼收拢"评估后**没做**：h3 起闭眼一圈都是毛、看不到窗口边缘或凹坑，
+再给几十万根头毛加 Blink key 没有可见收益，只增加构建内存和风险。）
+- h4 结果：闭合线下方那条浅灰细条消失，闭眼 = 连续虎斑毛 + 一条细黑拱线；Yawn（Blink .85）留一条自然的眼缝；睁眼不变。
+  审计同 h2（眼角 0.00、交叉 0.00、拱高 +3.9 mm、露眼 0%）。→ 过关，开全量 round-h。
+
+测试图都在 `assets/characters/lingxi/v6/round-h-test/`：`b4c-faces/`（基线）、`h1/`…`h4/` 各自的 `faces/`
+（640px/48spp，`faces.sh` 渲 Idle f1 / Idle 眨眼 f47 / Happy f441 / Yawn f495，镜头随头转）。
+
+### 第 3 步 ✅ Round H：闭眼修复的完整渲染
+产物：`assets/characters/lingxi/v6/round-h/`——`views/`（7 个）、`poses/`（15 个）、`faces/`（闭眼近景 idle/blink/happy/yawn）、
+`review.html`（左 round-h、右 b4c；闭眼近景、视图、动作逐张对照 + 闭眼/爪/耳/口鼻/动作数字表）、`review-parts.json`、
+`review-clips.json`、`run.sh`、`knobs.txt`、`pipeline.out`。b4c 同设置的闭眼近景在 `round-b4c/faces/`，`round-b4c/review-parts.json` 也补了 `lids`。
+
+**全部旋钮**：构建 = b4c（`LINGXI_QUALITY=standard V6_EAR_TEX=ear_fur_v2.png V6_MOUTH_W=.69 V6_GAPE_W=.69 V6_LIP=.98 V6_NOSE_W=1.12
+V6_NOSE_H=.92 V6_NOSE_DZ=-.004 V6_MUZZLE_GROW=.006`），眼睑新旋钮取默认（`V6_LID_MARGIN=1 V6_LID_FUR=1`）；视图 `V6_RES=900
+V6_SAMPLES=128 V6_DENOISE=1`；闭眼近景 `V6_RES=900 V6_SAMPLES=128 V6_VIEWS=face V6_FACE_FOLLOW=1 V6_FRAME=1/47/441/495`；动作 480px/12spp。
+
+| 闭眼（Happy 中帧 vs Idle f1） | b4c（骨骼） | **round-h（shape key）** | 目标 |
+|---|---|---|---|
+| 眼角位移 | 8.17 mm | **0.00 mm** | ≈0 |
+| 睑缘带拉伸比 | 1.00 | **1.00** | ≤1.5 |
+| 整条睑带拉伸比（上 / 下） | 2.67 / 3.40 | 2.68 / 3.43 | ≤1.5 —— 外缘钉死时几何上做不到（见 h1） |
+| 上下睑交叉量（下睑在上睑前面） | 0.00 mm | **0.00 mm** | 0 |
+| 闭合线：中点 / 两端（高于眼心） | +4.05 / **−6.37** mm，不是拱 | **+3.9 / 0.0 mm，拱形** | 0–6 mm 的拱 |
+| 下睑缘藏在上睑后面 | 0.8 mm | 1.3 mm | （设计如此） |
+| 闭眼露出眼球 | 0% | 0% | 0 |
+
+说明：b4b/b4c 的"交叉"不是深度上的穿插（两版都是 0），而是投影上的——上睑缘两端垂到眼心下方 6.4 mm、斜着划过下睑那块皮盘，
+所以由"眼角位移"和"闭合线形状"两项抓到。
+其他：构建 513k → **568k 根毛**（睑毛 +55k，+11%），峰值内存 1.21 → 1.44 GB，fur 步 113 → 142 s；`verify_rig_deform` 全过
+（0 孤立组 / 0 未加权顶点 / 0 失败骨骼）；15 个动作的最低点、行程与 b4c **完全相同**，离 Idle 距离差几度（睑骨不再转，
+不再计入）；渲染器给 Idle 选的帧从 48（紧挨眨眼）变成 19。
+
+### 第 4 步 ✅ 提交（未 push）
+`b92a846` WIP G2/G3 → `9dd052c` 工具（闭眼审计 / V6_FRAME / V6_FACE_FOLLOW / v6_round_page）→ `c778954` 闭眼 shape key（build + docs/22）
+→ 本文件单独一个提交。`.workbuddy/memory/`、`reference/anatomy-study-*` 的删除、`reviews/b4-round/` 下 WorkBuddy 的改动、
+`reviews/TASK-WB.md` 都没动、没提交。
+
+---
+
+## 给 WorkBuddy 的交接（2026-10-01，Claude）
+
+**最终产物**（都不进 git，见 .gitignore；每个目录里 `run.sh` 是可复现的整条管线，`knobs.txt` 是全部旋钮）：
+- `assets/characters/lingxi/v6/round-h/` ← **最新，请发布这一版**：G3 代码 + 闭眼修复。`review.html`（左 h 右 b4c），
+  `views/`×7（900px/128spp）、`poses/`×15（480px/12spp）、`faces/`×4（闭眼近景，900px/128spp，镜头随头转）、
+  `review-parts.json`（含 `lids`）、`review-clips.json`。
+- `assets/characters/lingxi/v6/round-b4c/`：G3 代码、旧闭眼，用来说明"昨天以来变了什么"（`review.html` 左 b4c 右 b4b），
+  也补了同设置的 `faces/` 和 `lids` 数字。
+- 发布页换图归你；用户的第 ②点（"跟昨天没区别"）就是因为发布页还是 b4b——换成 round-h 后，b4b → h 之间有两轮代码
+  （G2/G3 爪嘴耳 + 闭眼）。闭眼对照建议直接用 `round-h/faces/happy.png` 对 `round-b4c/faces/happy.png`。
+
+**审计数字（round-h）**
+- 闭眼：眼角位移 0.00 mm（b4c 8.17）｜睑缘带拉伸 1.00｜整条睑带 2.68 / 3.43（几何下限，不算缺陷）｜交叉 0.00 mm｜
+  闭合线 +3.9 mm 拱、两端 0.0（b4c 两端 −6.4、不是拱）｜闭眼露眼球 0%。
+- 爪：趾外露前 52–63% / 后 52–64%，最大探出 16–20 mm（b4b 前爪 0%、埋 10–20 mm）。耳 147×116 mm、w/h .788。
+  嘴宽 .272E、唇在鼻下 24.2 mm（.21E）。
+- 动作（与 b4c 完全相同）：最低点 LieDown −8.0、Stretch −7.3、Lick −15.0、SideLie −4.5、Sleep −4.9、PawPlay −3.5 mm，
+  站姿各动作 +0.6~+1.0；爪行程 Walk 45 / Run 63 / Bite 84 / PawPlay 132 / Lick 500 mm。
+- 构建：53 骨、15 动作、568k 根毛、峰值 1.44 GB；`verify_rig_deform` 全过。
+
+**回复 `reviews/TASK-WB.md`**：C7 ✅（三项闭眼指标已常驻 `v6_part_audit.py` 的 `lids`，交叉量已改成只认睑的正面）；C8 ✅（本节）。
+A1–A3 是请你复测的，没动。B 项不在用户这次给我的四步里，**没做**，留到下一轮：
+- B4 唇线 .970 + MUZZLE_GROW ≈ .010：同意先加"犬齿尖前面的皮肤厚度"审计再动。
+- B5 耳：`ear_wid` .058→.044、flare 1.30→1.20 **已在 Round G 做了**（b4c/h 的 116 mm / .788 就是它的结果）；
+  t=1.0 的 0.4 mm 是闭合耳廓顶点必然收到 0，见上文 G2 回复。剩下的差距是 w/h .788 比目标 .83 还窄一点。
+- B6 瞳径 +66%：已在上文 G2 回复里定性为尺子问题（内切圆被参考照片的高光咬小），请用 `v6_eye_size.py` 量。
+
+**遗留风险**
+1. 整条睑带被拉伸 2.7 / 3.4 倍，靠加密的睑毛盖住；极近特写或毛更稀的 preview 质量下，睑皮可能从毛缝里露出来。
+2. 闭合拱只有 +3.9 mm，比参考的"笑眼"弧平。想要更弯就把 `LID_SHUT` 上睑从 .81 降到约 .76（拱高 ~5.5 mm，仍在 0–6 mm），
+   这是外观改动，要用户点头。
+3. 下睑毛和皮按**闭眼**位置取色：睁眼时眼下那一圈理论上偏棕，看图没发现，但请在 face/face34 上留意眼下边缘。
+4. 闭眼从骨骼改成 morph（Blink/Squint），睑毛网格也带 key。应用现在的眨眼是 `director.ts`/`idle.ts` 自己的状态，
+   不读睑骨；将来导入 v5 GLB 时要驱动 Blink morph，而不是 LidUpper/LidLower 骨骼。
+5. 渲染器选帧变了：睑骨不再计入"离静止的距离"，Idle 的代表帧从 48（紧挨眨眼）变成 19；离 Idle 距离差几度。
+6. 用户第 ③点（爪子和动作体态）这次**没有处理**：正面特写四个趾仍偏"四颗白球"；LieDown −8 / Stretch −7.3 / Lick −15 /
+   SideLie −4.5 / Sleep −4.9 mm 仍穿地（SideLie/Sleep 比 b4b 差 2 mm，因为趾加高后最低的部件变成了趾）。
+7. `review.html` 只核对了图片路径（52 / 47 张全在）；无头浏览器在这台机器上 GPU 进程崩溃，没截到页面图。
