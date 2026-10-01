@@ -136,19 +136,22 @@ def lowest_point_mm():
     # Real vertices, not bound boxes: a rolled-over body's AABB corner sits far below its
     # actual surface, which reported SideLie as 218 mm "under the floor" when most of that
     # was box inflation. Fur is excluded too - strand control points hang below the sole.
-    lo = None
+    per_obj = {}
     for o in s.objects:
         if o.type != 'MESH' or not o.name.startswith('LX_') or o.hide_render:
             continue
         if any(k in o.name for k in ('Fur', 'Whisker', 'Brow', 'Furnish', 'Claw')):
             continue
-        me = o.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
-        me.transform(o.matrix_world)
+        ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        me = ev.to_mesh()
+        me.transform(ev.matrix_world)
         if me.vertices:
-            z = min(v.co.z for v in me.vertices)
-            lo = z if lo is None else min(lo, z)
-        o.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear()
-    return round(1000 * lo, 1) if lo is not None else None
+            per_obj[o.name] = round(1000 * min(v.co.z for v in me.vertices), 1)
+        ev.to_mesh_clear()
+    if not per_obj:
+        return None, {}
+    low = sorted(per_obj.items(), key=lambda kv: kv[1])[:3]
+    return low[0][1], dict(low)
 
 
 def scan(clip):
@@ -200,7 +203,7 @@ for clip in manifest:
     s.frame_set(best)
     bpy.context.view_layer.update()
     row = measure()
-    row['lowest_mm'] = lowest_point_mm()
+    row['lowest_mm'], row['lowest_parts'] = lowest_point_mm()
     row.update(travel)
     row.update({'name': clip['name'], 'frame': best, 'length_frames': clip['end'] - clip['start'] + 1,
                 'departure': round(best_score, 1), 'angles': angles()})

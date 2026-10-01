@@ -65,6 +65,8 @@ cam.rotation_euler=(target-cam.location).to_track_quat('-Z','Y').to_euler()
 # no longer clips, so only a nudge is needed. Measured over a plate-differenced mask
 # against the reference turnaround (median 193 / contrast 74 / warmth 23):
 # -0.05 lands median ~190, contrast ~72, warmth ~28 - the closest of the sweeps tried.
+# (2026-09-30: +0.30 doubled the face's measured white toward the photo reference, but the user
+# preferred the -0.05 look side by side - kept here for reference, not in use.)
 s.view_settings.exposure=-0.05
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'lingxi-short-fur-rig-v5.blend'),compress=True)
 clips=json.loads((OUT/'animations.json').read_text());lie=next(c for c in clips if c['name']=='LieDown')

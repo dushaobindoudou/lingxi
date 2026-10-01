@@ -100,10 +100,14 @@ hlo, hhi = subject_bounds(['LX_Head', 'LX_Jaw', 'LX_Ear', 'LX_Nose', 'LX_Eye', '
 head_c = (hlo + hhi) * .5
 head_cover = max(hhi.x - hlo.x, hhi.z - hlo.z)
 
+# Each body view frames what it actually SEES. One cover of max(width, height) ignored the body's
+# length (y, ~0.9 m against ~0.5 m wide), so the side and three-quarter views cut the cat in half.
+dx, dy, dz = hi.x - lo.x, hi.y - lo.y, hi.z - lo.z
 VIEW_SPEC = {
-    'front':        (body_c, body_cover, (0, -1, 0.0)),
-    'side':         (body_c, body_cover, (-1, 0, 0.0)),
-    'threequarter': (body_c, body_cover, (-0.72, -0.72, 0.18)),
+    'front':        (body_c, max(dx, dz), (0, -1, 0.0)),
+    'back':         (body_c, max(dx, dz), (0, 1, 0.0)),
+    'side':         (body_c, max(dy, dz), (-1, 0, 0.0)),
+    'threequarter': (body_c, max(.72 * dx + .72 * dy, dz), (-0.72, -0.72, 0.18)),
     'face':         (head_c, head_cover, (0, -1, 0.0)),
     'face34':       (head_c, head_cover, (-0.55, -0.85, 0.10)),
 }
@@ -137,6 +141,14 @@ if aim_eyes:
     VIEW_SPEC['face'] = (eye_c, want / MARGIN, (0, -1, 0.0))
     VIEW_SPEC['face34'] = (eye_c, want / MARGIN, (-0.55, -0.85, 0.10))
     print(f'v6: face frame covers {want:.4f} m ({want * 1000 / RES:.3f} mm/px)')
+
+# Paw close-up: both forepaws, from the front and a little above, like the turnaround sheet's
+# front view - the body views frame the whole cat and leave the toes a few pixels wide.
+if rig is not None and all(b in rig.pose.bones for b in ('FrontPaw.L', 'FrontPaw.R')):
+    tips = [rig.matrix_world @ rig.pose.bones[b].tail for b in ('FrontPaw.L', 'FrontPaw.R')]
+    paw_c = (tips[0] + tips[1]) * .5
+    paw_c.z = lo.z + .035
+    VIEW_SPEC['paws'] = (paw_c, (tips[0] - tips[1]).length + .16, (0, -1, 0.45))
 
 done = []
 for name in VIEWS:

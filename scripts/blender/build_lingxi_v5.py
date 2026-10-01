@@ -184,11 +184,14 @@ PAW_FRONT_Y={'Front':-.215-.064,'Rear':.245-.062}
 # is (the outer toes follow the round front back ~16mm), TOE_IN inside it, so the front edge
 # stands ~12mm proud; narrower toes at 24mm spacing leave a ~6mm-deep cleft between them.
 PAW={'Front':((.108,-.215,.040),(.054,.064,.038)),'Rear':((.12,.245,.040),(.053,.062,.037))}   # == the FrontPaw/RearPaw spheres above
-TOE_DX=.024;TOE_R=(.015,.020,.018);TOE_Z=.020;TOE_IN=.008*_v6('V6_TOE_IN',1.0)
+# Round G2: G's toes read as four small pom-poms along the bottom edge (36mm tall on a 78mm paw);
+# the reference's toes ARE the front half of the paw - taller now (42mm). And the outer toes follow
+# the round front only 60% of the way: at 16mm back, WorkBuddy measured no cleft on the outer pairs.
+TOE_DX=.024;TOE_R=(.016,.021,.021);TOE_Z=.022;TOE_IN=.008*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.60)
 def toe_xy(pre,s,i):
- (cx,cy,cz),(rx,ry,rz)=PAW[pre];dx=(i-1.5)*TOE_DX
- q=max(1-(dx/rx)**2-((TOE_Z-cz)/rz)**2,.05)
- return s*cx+dx,cy-ry*math.sqrt(q)+TOE_IN
+ (cx,cy,cz),(rx,ry,rz)=PAW[pre];dx=(i-1.5)*TOE_DX;h=((TOE_Z-cz)/rz)**2
+ yc=cy-ry*math.sqrt(max(1-h,.05));yi=cy-ry*math.sqrt(max(1-(dx/rx)**2-h,.05))
+ return s*cx+dx,yc+TOE_ARC*(yi-yc)+TOE_IN
 head=merge([sphere('Cranium',(0,-.285,.518),(.165,.147,.142)),sphere('CheekL',(-.095,-.340,.466),(.070,.082,.064)),sphere('CheekR',(.095,-.340,.466),(.070,.082,.064)),sphere('MuzzleL',(-.031,-.408,.472-MG),(.052,.047,.032+MG)),sphere('MuzzleR',(.031,-.408,.472-MG),(.052,.047,.032+MG))],'LX_Head',.005)
 head.data.materials.clear();head.data.materials.append(headcoat)
 # --- Head sculpt ---------------------------------------------------------------------------------
@@ -306,7 +309,8 @@ teeth=[]
 for s in [-1,1]:
  # The lower canine's tip stays 1mm under the lip line AT ITS x (round G2): once the arcs sagged
  # (round G) the line dropped 3mm there and the tips showed through the closed mouth as two white dots.
- for up,(x,y,z,region) in [(True,(s*.015*MW_K,-.436,.458+LIP_DZ,'HeadRigid')),(False,(s*.012*MW_K,-.434,min(.452+LIP_DZ,float(lip_z(s*.012*MW_K))-.0052),'Jaw'))]:
+ # Round G3: both pairs 4mm further back - at V6_LIP .98 the muzzle's skin had receded behind the fangs.
+ for up,(x,y,z,region) in [(True,(s*.015*MW_K,-.432,.458+LIP_DZ,'HeadRigid')),(False,(s*.012*MW_K,-.430,min(.452+LIP_DZ,float(lip_z(s*.012*MW_K))-.0052),'Jaw'))]:
   tt=sphere('LX_Tooth',(0,0,0),(.0021,.0021,.0055 if up else .0042),toothmat)
   for v in tt.data.vertices:v.co=(v.co.x+x,v.co.y+y,v.co.z+z)
   for v in tt.data.vertices:                                                # taper to a point
@@ -935,7 +939,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
   # Part the coat along the lip line. Strands rooted ON it cross the omega and stitch it into a
   # dotted line - v6 round A: continuous on a bald render, dashes with fur, and shortening the
   # upper-lip coat to .12 did not help. A real cat's coat parts at the lip.
-  keep &= ~((abs(root[:,0])<MOUTH_W*.85)&(abs(root[:,2]-lip_z(root[:,0]))<.0026)&(root[:,1]<-.40))   # 2.6mm (round C; was 4.2 - a bald band); to .85 of the mouth (round E) so the coat covers the corners - at 1.08 the dark cavity showed as a dot
+  keep &= ~((abs(root[:,0])<MOUTH_W*1.0)&(abs(root[:,2]-lip_z(root[:,0]))<.0026)&(root[:,1]<-.40))   # 2.6mm (round C; was 4.2 - a bald band). Round G2: out to the corners again - E's .85 was for a corner dot that turned out to be the open tube end (fill caps fixed it), and at .85 the coat hid the corners: the render read the mouth at 65% of its width (WorkBuddy)
   root=root[keep];normal=normal[keep];n=len(root)
  if reg=='body':
   # No body coat on the front of the paw ball where the toes sit (round E): the toes carry their
@@ -943,7 +947,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
   keep=np.ones(n,dtype=bool)
   for s in (-1,1):
    for pre,px in (('Front',s*.108),('Rear',s*.12)):
-    keep&=~((np.abs(root[:,0]-px)<.050)&(root[:,2]<.046)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN))   # the toe row's back edge moves in with TOE_IN (round G)
+    keep&=~((np.abs(root[:,0]-px)<.050)&(root[:,2]<.034)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN))   # round G3: .046 -> .034, the taller toes cover the rest; above them the bare band showed   # the toe row's back edge moves in with TOE_IN (round G)
   root=root[keep];normal=normal[keep];n=len(root)
  if root_filter is not None:
   m=root_filter(root);root=root[m];normal=normal[m];n=len(root)
@@ -1076,7 +1080,7 @@ for o,r in ear_outers:groom(o,max(1,int(6000*SCALE)),.022,r,'guard')
 # Toes: a short white coat of their own, bound to each toe bone - with the paw coat shortened
 # they would otherwise show as bare cream spheres.
 for o in [o for o in list(bpy.data.objects) if o.name.startswith(('LX_FrontToe','LX_RearToe'))]:
- groom(o,max(1,int(420*SCALE)),.005,'paw','guard',bind_as=o.vertex_groups[0].name)   # round F: shorter and denser - velvet, not a spiky halo
+ groom(o,max(1,int(1400*SCALE)),.0060,'paw','under',bind_as=o.vertex_groups[0].name)   # round G3: the UNDERCOAT's thin strands, 3.3mm x 1400 - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
 # Short coat ON the lids. Without it a squint slid a bare skin-coloured plate over the eye.
 # The strands get the lids' own Blink/Squint keys - each strand moves with the lid vertex
 # nearest its root - so the fur closes with the eye.
