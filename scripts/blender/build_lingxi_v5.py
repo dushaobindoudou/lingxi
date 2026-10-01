@@ -394,9 +394,10 @@ for s in [-1,1]:
  ey=cranium_front(s*EYE_X,EYE_Z);bone('Eye.'+suf,(s*EYE_X,ey+.012,EYE_Z),(s*EYE_X,ey-.020,EYE_Z),'Head')
  # --- Face rig: eyelid bones ---------------------------------------------------------------------
  # A lid is a patch of a sphere concentric with its bone's head, so rotating the bone slides the
- # lid over the eye while it stays on that sphere - always in front of the cornea, never stretched.
- # The shape-key blink it replaces moved every vertex in a straight line: the lid stretched, dipped
- # behind the eyeball and bulged out as a goggle when shut.
+ # lid over the eye while it stays on that sphere. (The first shape-key blink moved every vertex in
+ # a straight line: the lid dipped behind the eyeball and bulged out as a goggle when shut.)
+ # Since 2026-10-01 the lids close by keys again, but each vertex now TURNS about this same centre
+ # (lid_turn) - the bones stay at rest and remain only for posing a lid by hand.
  for nm,Rr in (('LidUpper.'+suf,LID_R+.0008),('LidLower.'+suf,LID_R)):
   bone(nm,eye_frame(s,0,LID_YC,0),eye_frame(s,0,LID_YC-.03,0),'Head')
  bone('Whisker.'+suf,(s*.048,-.43,.477),(s*.21,-.43,.48),'Head')
@@ -627,6 +628,44 @@ lidskin=bpy.data.materials.new('LX_LidSkin');lidskin.use_nodes=True
 lp=lidskin.node_tree.nodes.get('Principled BSDF');la=lidskin.node_tree.nodes.new('ShaderNodeAttribute');la.attribute_name='lid_color'
 lidskin.node_tree.links.new(la.outputs['Color'],lp.inputs['Base Color']);lp.inputs['Roughness'].default_value=.85;lp.inputs['Specular IOR Level'].default_value=.12
 tear=mat('LX_TearDuct',(.55,.32,.30),.45)
+# Closing the lids (2026-10-01): each lid turns shut about its own sphere's centre PER VERTEX, in
+# its Blink key. The inner rim turns all the way (upper .81 eye-radii down, lower 1.13 up - the
+# travel the lid bones had), the corners (sin=0) and the outer edge (t=1) stay put, and the band
+# between shares the turn by arc length. The bones did it with one rigid turn blended by skin
+# weights: a blended turn is a chord, so a partly-weighted lid sank up to 1.2mm inside its sphere,
+# and with the corners only damped to 25% the upper rim fell .2r below them while the lower rose
+# .28r above - the crossed lids and the smooth plate the user read as an eye mask (round b4b).
+LID_SHUT={'U':.81,'L':1.13}                # inner-rim travel when shut, in eye radii
+LID_RING={'U':(.93,.37),'L':(.97,.33)}     # inner-rim radius and band width, in eye radii (the lid mesh below)
+# The dark margin (t<.2, see "lid colour") turns with the rim as one piece: spread by arc length
+# it would stretch with the band (x3.2) into a 7mm dark stripe across the closed eye.
+LID_MARGIN=.20*_v6('V6_LID_MARGIN',1.0)
+def lid_local(P,s):
+ """World points (N,3) to the eye-local frame of eye_frame(): x across, y into the head, z up."""
+ cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
+ x=P[:,0]-cx;y=P[:,1]-ys
+ return np.column_stack((x*c+y*sn,-x*sn+y*c,P[:,2]-EYE_Z))
+def lid_world(L,s):
+ cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
+ return np.column_stack((cx+L[:,0]*c-L[:,1]*sn,ys+L[:,0]*sn+L[:,1]*c,L[:,2]+EYE_Z))
+def lid_turn_angle(L,ul):
+ """Angle (+ = down) about the lid sphere's x axis that shuts each eye-local point (N,3).
+  The rim lands on .12r*sin(a) (upper) / .16r*|sin(a)| (lower): two arches through the corners,
+  the lower one just behind the upper, so the closed eye is the upper rim's arch."""
+ base,span=LID_RING[ul];Rl=LID_R+.0008 if ul=='U' else LID_R;r=EYE_R
+ a=np.arctan2(L[:,2],L[:,0]);rx,rz=np.cos(a)*base*r,np.sin(a)*base*r
+ dy=-np.sqrt(np.maximum(Rl*Rl-rx*rx-rz*rz,1e-12));rho=np.hypot(dy,rz)
+ tz=rz+(-1 if ul=='U' else 1)*LID_SHUT[ul]*r*np.abs(np.sin(a))
+ al=np.arctan2(rz,-dy)-np.arcsin(np.clip(tz/rho,-1,1))
+ # arc length along the band is linear in t to 1% (the sphere is 140mm round, the band 13mm wide)
+ t=np.clip((np.hypot(L[:,0],L[:,2])/r-base)/span,0,1)
+ return al*np.clip(1-(t-LID_MARGIN)/(1-LID_MARGIN),0,1)
+def lid_turn(P,s,ul,frac,roots=None):
+ """World points P turned shut by `frac` of their angle (an exact turn, so a squint stays on the
+  sphere too). Fur strand points pass their ROOTS: a strand turns rigidly with the skin under it."""
+ L=lid_local(P,s);A=lid_turn_angle(lid_local(roots,s) if roots is not None else L,ul)*frac
+ dy=L[:,1]-LID_YC;dz=L[:,2];c,sn=np.cos(A),np.sin(A)
+ return lid_world(np.column_stack((L[:,0],LID_YC+dy*c-dz*sn,dy*sn+dz*c)),s)
 for s in [-1,1]:
  suf='L' if s<0 else 'R';cx=s*EYE_X;cz=EYE_Z;r=EYE_R;ys=cranium_front(cx,cz);cy=ys
  phi=s*math.radians(12)            # turned half-way toward the skull normal (~20 degrees)
@@ -666,9 +705,11 @@ for s in [-1,1]:
   for p in me.polygons:p.use_smooth=True
   lidmod=o.modifiers.new('Lid shell','SOLIDIFY');lidmod.thickness=.0020;lidmod.offset=0
   bind(o,'Lid:%s:%s'%('U' if upper else 'L',suf))
-  # Blink / Squint keys stay (identity) so every consumer can still find them by name; the lid
-  # bones do the closing now.
-  o.shape_key_add(name='Basis');o.shape_key_add(name='Blink');o.shape_key_add(name='Squint')
+  # The keys close the lid (see lid_turn above); the lid bones stay at rest. Squint is the same
+  # turn at 55% - what the pose code used to give the bones for a full squint.
+  o.shape_key_add(name='Basis');P=np.array([v.co[:] for v in me.vertices])
+  for kn,f in (('Blink',1.0),('Squint',.55)):
+   o.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s,'U' if upper else 'L',f).astype('f').ravel())
   eyelids.append(o)
  # Tear duct at the inner corner: the small pink caruncle every cat has. Without it the
  # eye is a perfect circle floating in fur, which is most of the "uncanny" read.
@@ -872,8 +913,12 @@ for o in eyelids:
  # The dark rim runs to ~.1r like the reference's eyeliner (it was .037r - invisible), and the
  # skin beyond sits at .62 of the coat so it recedes into the fur's shadow instead of reading
  # as a smooth pale goggle ring round each eye.
- col=fur_color(co,'Head');rim=np.clip((ring-.09)/.12,0,1)[:,None]   # round A's (.16,.18) read as a bold cartoon ring
- col=np.array([.05,.035,.03])*(1-rim)+col*.62*rim   # skin under the coat is a shade darker than the coat
+ # The lower lid is coloured where it lies SHUT, like its coat (see the lid groom): open, it sits
+ # mostly behind the cheek, and its open-position white showed as a pale strip under the closed eye.
+ col=fur_color(lid_turn(co,-1 if o.name.endswith('.L') else 1,'L',1.0) if 'Lower' in o.name else co,'Head');rim=np.clip((ring-.09)/.12,0,1)[:,None]   # round A's (.16,.18) read as a bold cartoon ring
+ # The LOWER lid's skin at .85 (2026-10-01): shut, its band is stretched x5 and shows between its
+ # strands, and .62 of the white under-eye coat drew those gaps as grey streaks.
+ col=np.array([.05,.035,.03])*(1-rim)+col*(.62 if 'Upper' in o.name else .85)*rim   # skin under the coat is a shade darker than the coat
  at=me.attributes.new('lid_color','FLOAT_COLOR','CORNER');at.data.foreach_set('color',np.column_stack((srgb_lin(col),np.ones(len(col)))).astype('f').ravel())
 furs=[]
 def fur_direction(root,reg):
@@ -928,7 +973,7 @@ RADII={'guard':[.00078,.00056,.00030,.00006],'under':[.00045,.00032,.00018,.0000
 # a strand arc and its tip gather into a clump, which is most of what "fluffy" looks like.
 NP=6
 _CK=_v6('V6_CLUMP',1.0);CLUMP={'Head':.0095*_CK,'body':.011*_CK,'tail':.013*_CK}
-def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
+def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=None):
  me=o.data;me.calc_loop_triangles();v=np.array([v.co[:] for v in me.vertices]);norm=np.array([v.normal[:] for v in me.vertices]);tri=np.array([t.vertices[:] for t in me.loop_triangles]);corn=v[tri];area=np.linalg.norm(np.cross(corn[:,1]-corn[:,0],corn[:,2]-corn[:,0]),axis=1);ids=rng.choice(len(tri),n,p=area/area.sum());b=rng.random((n,2));b[b.sum(1)>1]=1-b[b.sum(1)>1];b=np.column_stack((1-b.sum(1),b));root=(corn[ids]*b[:,:,None]).sum(1);normal=(norm[tri[ids]]*b[:,:,None]).sum(1);normal/=np.maximum(np.linalg.norm(normal,axis=1)[:,None],1e-8)
  if reg=='Head' and not o.name.startswith('LX_Lid'):
   keep=np.ones(n,dtype=bool)
@@ -1032,7 +1077,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None):
  # the striped skin and the coloured curves. Never let it render directly.
  ob.hide_render=True
  del pts,edges
- colors=np.repeat(srgb_lin(fur_color(root,reg)),NP,axis=0)
+ colors=np.repeat(srgb_lin(fur_color(root if color_at is None else color_at(root),reg)),NP,axis=0)   # color_at: where the strand is SEEN, if not at its root (the lower lid's coat, shut)
  # per-strand variation, plus a few pale hairs; a single flat colour reads as plastic fur.
  # jit must stay (n,1): repeating it must yield one scalar per POINT, because a
  # second trailing axis broadcasts (4n,3) against (4n,1,1) into a 4n x 4n x 3 monster
@@ -1082,14 +1127,29 @@ for o,r in ear_outers:groom(o,max(1,int(6000*SCALE)),.022,r,'guard')
 for o in [o for o in list(bpy.data.objects) if o.name.startswith(('LX_FrontToe','LX_RearToe'))]:
  groom(o,max(1,int(1400*SCALE)),.0060,'paw','under',bind_as=o.vertex_groups[0].name)   # round G3: the UNDERCOAT's thin strands, 3.3mm x 1400 - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
 # Short coat ON the lids. Without it a squint slid a bare skin-coloured plate over the eye.
-# The strands get the lids' own Blink/Squint keys - each strand moves with the lid vertex
-# nearest its root - so the fur closes with the eye.
-# Upper lids only: the lower lid sits under the cheek coat, and its own fur - white, from the blaze -
-# stood up as white bars beside the nose when it rose to close the eye.
-for lid in [o for o in eyelids if o.name.startswith('LX_LidUpper')]:
- s_=-1 if lid.name.endswith('.L') else 1
- groom(lid,max(1,int(8000*SCALE)),.030,'Head','guard',root_filter=lambda r,s_=s_:(np.hypot(r[:,0]-s_*EYE_X,r[:,2]-EYE_Z)<EYE_R*1.18)&(np.hypot(r[:,0]-s_*EYE_X,r[:,2]-EYE_Z)>EYE_R*.985),   # all of the lid but its dark rim row
-       bind_as='Lid:%s:%s'%('U' if 'Upper' in lid.name else 'L','L' if s_<0 else 'R'))
+# Each strand gets its lid's Blink/Squint keys, turned rigidly with the skin at its root
+# (lid_turn), so the fur closes with the eye.
+# Both lids, over the whole band past the dark margin (2026-10-01). Shut, the band is stretched
+# ~x3.7 (upper) / ~x5 (lower), so the strands are ~3.5x denser than the old 8000 on the upper lid's
+# inner half - with the old count, and no coat at all on the lower lid, the closed eye was a smooth
+# skin disc. (The lower lid's white fur stood up as bars beside the nose when the BONE lifted it
+# rigidly, corners and all; the keys leave the corners where they are.)
+# The lower lid's coat is denser and shorter: at 14000 x 30mm it hung off the shut lid as a pale
+# fringe over the cheek - a curtain under each closed eye (round-h-test h1).
+LID_FUR={'U':(16000,.030),'L':(24000,.020)}
+for lid in [o for o in eyelids if o.name.startswith('LX_Lid')]:
+ s_=-1 if lid.name.endswith('.L') else 1;ul='U' if 'Upper' in lid.name else 'L';r0=LID_RING[ul][0]+LID_RING[ul][1]*LID_MARGIN
+ groom(lid,max(1,int(LID_FUR[ul][0]*SCALE*_v6('V6_LID_FUR',1.0))),LID_FUR[ul][1],'Head','guard',root_filter=lambda r,s_=s_,r0=r0:np.hypot(r[:,0]-s_*EYE_X,r[:,2]-EYE_Z)>EYE_R*r0,   # all of the lid but its dark margin
+       bind_as='Lid:%s:%s'%(ul,'L' if s_<0 else 'R'),
+       # The lower lid's coat takes the colour of where it lies SHUT: rooted 1.2r under the eye, in
+       # the white under-eye mask, it carried that white up to eye level - a pale panel in the
+       # brown tabby beside each closed eye (round-h-test h2). Open, that band is mostly behind the cheek.
+       color_at=(lambda r,s_=s_:lid_turn(r,s_,'L',1.0)) if ul=='L' else None)
+ fo=furs[-1];P=np.empty(len(fo.data.vertices)*3,dtype='f');fo.data.vertices.foreach_get('co',P);P=P.reshape(-1,3).astype(float)
+ fo.shape_key_add(name='Basis')
+ for kn,f in (('Blink',1.0),('Squint',.55)):
+  fo.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s_,ul,f,roots=np.repeat(P[::NP],NP,axis=0)).astype('f').ravel())
+ eyelids.append(fo)
 scene['fur_quality']=QUALITY
 # Belly breathing applies identically to body surface and ALL its bound hairs. With only the
 # guard layer keyed, the expanding flank swallowed the 7mm undercoat on every inhale.
@@ -1306,6 +1366,9 @@ def solve_lick(sit):
 # Eyelid bone angles. Closed, the upper rim comes down .81 eye-radii and the lower rises 1.13, so
 # they meet just above the eye's centre with the upper lid in front: a closed eye reads as the
 # upper rim's arch (the content kitten in reference/lingxi-ref-expressions.png), not a slit.
+# NO LONGER DRIVES THE LIDS (2026-10-01): the Blink/Squint keys close them (lid_turn, same travel
+# from LID_SHUT) and pose() leaves the lid bones at rest. Kept as the record of the bone angles,
+# and for anyone who wants to pose a lid bone by hand.
 LID_TH={}
 for _s in 'LR':
  for _ul,_dz in (('Upper',-.81),('Lower',1.13)):
@@ -1514,7 +1577,8 @@ def pose(name,u):
  # or the lid overshoots through the eye.
  squint=max(squint,.14)     # the upper lid rests just over the iris rim: soft, not a stare (.16 with smaller eyes read as sad)
  squint=squint*(1-blink)
- for _nm,_th in LID_TH.items():pb[_nm].rotation_euler[0]=_th*min(1.0,blink+.55*squint)   # a full squint closes the lids 55%
+ # The lid bones stay at rest (pose() zeroed them above): the Blink/Squint keys shut the lids,
+ # and their fur with them - a full squint is the Squint key, 55% of the turn.
  for o in eyelids:o.data.shape_keys.key_blocks['Blink'].value=blink
  for o in eye_shapes:o.data.shape_keys.key_blocks['Blink'].value=blink
  for o in eyelids:o.data.shape_keys.key_blocks['Squint'].value=squint
