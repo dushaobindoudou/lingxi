@@ -156,7 +156,7 @@ codex plugin marketplace add dushaobindoudou/lingxi && codex plugin add lingxi@l
 ```
 
 Doubao has no plugin system: run [`integrations/hosts/doubao/install.sh`](integrations/hosts/doubao/README.md).
-Hosts that only take skills: `npx skills add dushaobindoudou/lingxi`.
+Hosts that only take skills: `npx skills add https://github.com/dushaobindoudou/lingxi/tree/main/integrations/skills`.
 
 Thirteen tools: register an identity, report a task, see capabilities, see status, speak, expression/action, full-screen effect, place a toy,
 remember one thing, read memories back, set a reminder, change camera and theme, reload custom assets.

@@ -153,7 +153,7 @@ codex plugin marketplace add dushaobindoudou/lingxi && codex plugin add lingxi@l
 ```
 
 豆包没有插件机制，跑 [`integrations/hosts/doubao/install.sh`](integrations/hosts/doubao/README.md)；
-只要 skill 的宿主可以 `npx skills add dushaobindoudou/lingxi`。
+只要 skill 的宿主可以 `npx skills add https://github.com/dushaobindoudou/lingxi/tree/main/integrations/skills`。
 
 十三个工具：注册身份、报告任务、看能力、看状态、说话、表情/动作、全屏特效、放玩具、
 记住一件事、读回记忆、设提醒、换视角主题、重载自定义资源。

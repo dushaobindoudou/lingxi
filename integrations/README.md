@@ -49,7 +49,7 @@ codex plugin add lingxi@lingxi
 # 任何 MCP 宿主：npm 包 lingxi-mcp（13 个工具 + lingxi CLI，应用没装时同样从 GitHub 装）
 npx -y lingxi-mcp
 # 只认 skill 的宿主
-npx skills add dushaobindoudou/lingxi
+npx skills add https://github.com/dushaobindoudou/lingxi/tree/main/integrations/skills
 ```
 
 **每一条都不用先装应用。** 插件的会话开始检查、MCP server 的连接、`lingxi up`、各宿主的

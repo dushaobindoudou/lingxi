@@ -171,8 +171,11 @@ Apple 签发的证书就作废了**——备份它，或者在导入之后备份
 | Claude Code 插件 | `.claude-plugin/marketplace.json` → `integrations/hosts/claude` | `claude plugin marketplace add dushaobindoudou/lingxi` | 推到 main；改了插件就升 `plugin.json` 的 `version` |
 | Codex 插件 | `.agents/plugins/marketplace.json` → `integrations/hosts/codex/plugin` | `codex plugin marketplace add dushaobindoudou/lingxi` | 同上 |
 | WorkBuddy / CodeBuddy | `.codebuddy-plugin/marketplace.json` → `integrations/hosts/workbuddy/plugin` | `/plugin marketplace add dushaobindoudou/lingxi` | 同上 |
-| skill 目录（skills.sh 等） | 仓库里的 `SKILL.md` | `npx skills add dushaobindoudou/lingxi` | 推到 main |
+| skill 目录（skills.sh 等） | 仓库里的 `SKILL.md` | `npx skills add https://github.com/dushaobindoudou/lingxi/tree/main/integrations/skills` | 推到 main |
 | npm `lingxi-mcp` | `packages/mcp-server/` | `npx -y lingxi-mcp` | 见下 |
+
+skill 那一行必须带 `integrations/skills` 子路径：只写 `owner/repo` 时 skills CLI 会顺着 `.claude-plugin/marketplace.json`
+找到 Claude 插件里的 skill，把 Claude 专用的宿主层 `lingxi-claude` 装给别的宿主，还漏掉 `lingxi-authoring`。
 
 **每个插件在应用没装时都会去下 Releases 里标为 Latest 的那个 release 的
 `Lingxi-*-universal.dmg` 和 `SHA256SUMS.txt`**，所以：模型资产之类的非应用 release 不能标成 Latest；
