@@ -1,6 +1,44 @@
 # lingxi-codex — 灵犀的 Codex 专用插件
 
-这里的“插件”是 Codex 宿主接入：一个幂等安装器 + 它装出来的三样东西：
+Codex 有两条接入路径，**选一条**：
+
+| | 原生插件（推荐） | 安装器 `install.sh` |
+|---|---|---|
+| 怎么装 | `codex plugin marketplace add dushaobindoudou/lingxi && codex plugin add lingxi@lingxi` | `<repo>/integrations/hosts/codex/install.sh` |
+| 确定性的一半 | hooks：会话开始、提交消息、等授权、回合结束 | `notify`：回合结束 |
+| 应用没装 | 会话开始时从 GitHub 下载安装并打开 | 安装器第 0 步从 GitHub 安装 |
+| 要不要仓库 | 不要，插件自包含 | 要，配置指向仓库路径 |
+| 首次使用 | Codex 会提示审核插件 hooks（"hooks need review"），批准一次 | 无 |
+
+两条都装了也不会重复：插件发现 `notify` 已经指向灵犀，就把回合事件让给它，只报 notify 报不了的
+（会话开始、等授权）。
+
+## 原生插件 `plugin/`
+
+仓库根的 [`.agents/plugins/marketplace.json`](../../../.agents/plugins/marketplace.json) 是 Codex 的市场清单。
+**它必须存在**：没有它时 Codex 会退回读 `.claude-plugin/marketplace.json`，把 Claude 插件装给 Codex 用户
+——署名会变成 claude。
+
+| 文件 | 作用 |
+|---|---|
+| `.codex-plugin/plugin.json` | 清单：skills、MCP、四个 hooks、展示信息 |
+| `scripts/session-start.sh` | SessionStart：共享的 `ensure-app.sh`，以 codex 身份装/开灵犀，再报"会话开始" |
+| `scripts/event.sh` | 把 Codex 的 hook 载荷改写成通用任务事件（provider/agent 都是 codex）。原始载荷会被桥接当成 Claude 的，所以不能直发 |
+| `scripts/lingxi-mcp` | 找到这台 Mac 上的 node 再起 MCP server（从程序坞打开的 Codex 拿不到登录 shell 的 PATH） |
+| `mcp/`、`scripts/{lib.sh,install-app.sh,ensure-app.sh,lingxi-cli}`、`skills/` | 逐字副本，测试守着 |
+
+验收（临时环境，不动你的 `~/.codex`）：
+
+```bash
+T=$(mktemp -d); ln -s ~/.codex/auth.json "$T/auth.json"; export CODEX_HOME=$T
+codex plugin marketplace add dushaobindoudou/lingxi && codex plugin add lingxi@lingxi
+codex exec --dangerously-bypass-hook-trust --skip-git-repo-check "Reply with: ok"
+lingxi events        # 应看到 provider=codex 的 queued / running / completed
+```
+
+## 安装器 `install.sh`
+
+一个幂等安装器 + 它装出来的三样东西（第 0 步：灵犀没装就先从 GitHub 装上并打开）：
 
 | 装出的东西 | 位置 | 作用 |
 |---|---|---|

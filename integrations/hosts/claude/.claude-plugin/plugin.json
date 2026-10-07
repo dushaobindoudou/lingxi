@@ -1,13 +1,22 @@
 {
   "name": "lingxi",
   "displayName": "灵犀 Lingxi",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "让灵犀桌面猫陪你用 Claude Code：会话开始时检查并自动安装、打开应用（配置和数据跨重装保留），等你授权时提醒你、回合结束有反应，并教 Claude 在合适的时候报告心情、让猫说话、记住你的事和定提醒。命令：/lingxi:setup、/lingxi:status。",
-  "author": { "name": "dushaobin", "url": "https://github.com/dushaobindoudou" },
+  "author": {
+    "name": "dushaobin",
+    "url": "https://github.com/dushaobindoudou"
+  },
   "homepage": "https://github.com/dushaobindoudou/lingxi/tree/main/integrations/hosts/claude",
   "repository": "https://github.com/dushaobindoudou/lingxi",
   "license": "SEE LICENSE IN LICENSE.md",
-  "keywords": ["desktop-pet", "companion", "notifications", "macos", "lingxi"],
+  "keywords": [
+    "desktop-pet",
+    "companion",
+    "notifications",
+    "macos",
+    "lingxi"
+  ],
   "userConfig": {
     "auto_install": {
       "type": "boolean",
@@ -25,7 +34,11 @@
       "type": "string",
       "title": "猫对会话的反应",
       "description": "all：每条提问、等你授权、回合结束都会反应；important：不发每条提问和每项待办，其余（等你授权、等你回话、回合结束、出错）照常；off：插件不发生命周期事件（Claude 自己报告的心情照常）。",
-      "options": ["all", "important", "off"],
+      "options": [
+        "all",
+        "important",
+        "off"
+      ],
       "default": "all"
     }
   }

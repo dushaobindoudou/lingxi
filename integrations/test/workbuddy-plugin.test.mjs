@@ -25,6 +25,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Every host installer's step 0 starts the real app, or installs it from GitHub. A test run must
+// never do either - the installers report and carry on when both are switched off.
+process.env.LINGXI_AUTOSTART = '0';
+process.env.LINGXI_AUTOINSTALL = '0';
+
 const REPO = fileURLToPath(new URL('../../', import.meta.url));
 const HOST = join(REPO, 'integrations/hosts/workbuddy');
 const PLUGIN = join(HOST, 'plugin');
@@ -75,7 +80,7 @@ test('the hooks cover the lifecycle AND the moments the agent is waiting on the 
   const events = Object.keys(JSON.parse(read(join(PLUGIN, 'hooks/hooks.json'))).hooks);
   // Notification / PermissionRequest are the "WorkBuddy popped a dialog and the cat said
   // nothing" fix: lifecycle hooks alone never fire for a permission prompt or a question.
-  assert.deepEqual(events.sort(), ['Notification', 'PermissionRequest', 'Stop', 'UserPromptSubmit']);
+  assert.deepEqual(events.sort(), ['Notification', 'PermissionRequest', 'SessionStart', 'Stop', 'UserPromptSubmit']);
   // The tool-level events fire on every single tool call - they turn the cat into a firehose.
   assert.ok(!events.includes('PostToolUse'), 'PostToolUse would spam the cat');
   assert.ok(!events.includes('PreToolUse'), 'PreToolUse would spam the cat');
@@ -84,7 +89,11 @@ test('the hooks cover the lifecycle AND the moments the agent is waiting on the 
 test('hook commands resolve node at run time, never a baked version path', () => {
   const files = [join(PLUGIN, 'hooks/hooks.json')];
   for (const f of files) {
-    for (const cmd of (read(f).match(/"command":\s*"[^"]+"/g) || [])) {
+    const commands = Object.values(JSON.parse(read(f)).hooks).flat().flatMap((group) => group.hooks.map((h) => h.command));
+    // SessionStart runs the shared bash check (scripts/session-start.sh) and needs no node.
+    const nodeCommands = commands.filter((cmd) => /\.mjs/.test(cmd));
+    assert.ok(nodeCommands.length >= 4, 'the emitter and the quota guard run under node');
+    for (const cmd of nodeCommands) {
       assert.match(cmd, /command -v node/, `${f}: node must be looked up when the hook runs`);
       assert.doesNotMatch(cmd, /versions\/\d+\.\d+\.\d+-\d+\/bin\/node/,
         `${f}: a baked node version path dies when WorkBuddy ships a different node`);

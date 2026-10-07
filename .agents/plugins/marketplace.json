@@ -1,0 +1,20 @@
+{
+  "name": "lingxi",
+  "interface": {
+    "displayName": "灵犀 Lingxi"
+  },
+  "plugins": [
+    {
+      "name": "lingxi",
+      "source": {
+        "source": "local",
+        "path": "./integrations/hosts/codex/plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -75,3 +75,68 @@ test('a launch that never brings the bridge up gives up and says what to check',
     assert.match(result.reason, /47811|could not start/);
   });
 });
+
+// --- installing a missing app -------------------------------------------------------------------
+// The installer itself (download, checksum, signature, swap) is exercised for real in
+// integrations/test/claude-plugin.test.mjs. Here: that a missing app STARTS it - detached, once,
+// as this host - and that both opt-outs are honoured.
+
+import { mkdtempSync, writeFileSync, chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { installBlockedReason, installerPath } from '../src/launch.mjs';
+
+function fakeInstaller() {
+  const dir = mkdtempSync(join(tmpdir(), 'lingxi-mcp-install-'));
+  const script = join(dir, 'install-app.sh');
+  writeFileSync(script, `#!/bin/bash\nprintf '%s %s\\n' "$LINGXI_HOST" "$*" >> '${dir}/calls'\n`);
+  chmodSync(script, 0o755);
+  return { dir, script, calls: () => (existsSync(join(dir, 'calls')) ? readFileSync(join(dir, 'calls'), 'utf8') : '') };
+}
+const waitFor = async (predicate, ms = 3000) => {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) { if (predicate()) return true; await new Promise((r) => setTimeout(r, 50)); }
+  return predicate();
+};
+
+test('the package ships the installer it would run', () => {
+  assert.ok(installerPath(), 'packages/mcp-server/scripts/install-app.sh is missing - cp integrations/shared/install-app.sh');
+});
+
+test('a missing app is installed from GitHub in the background, as this host', { skip: process.platform !== 'darwin' && 'macOS only' }, async () => {
+  const fake = fakeInstaller();
+  await withEnv({
+    LINGXI_AUTOSTART: '1', LINGXI_AUTOINSTALL: '1', LINGXI_APP_PATH: join(fake.dir, 'missing.app'),
+    LINGXI_INSTALLER: fake.script, LINGXI_INSTALL_LOCK: join(fake.dir, 'install.lock'), LINGXI_HOST: 'codex',
+  }, async () => {
+    assert.equal(installBlockedReason(), null);
+    const result = await ensureRunning(async () => false);
+    assert.equal(result.ok, false);
+    assert.equal(result.installing, true);
+    assert.match(result.reason, /installing it from GitHub/);
+    assert.ok(await waitFor(() => fake.calls().length > 0), 'the installer was never started');
+    assert.equal(fake.calls().trim(), 'codex --open', 'opened afterwards, and on this host\'s page');
+
+    // While another install holds the machine-wide lock, nothing is started a second time.
+    mkdirSync(join(fake.dir, 'install.lock'));
+    const again = await ensureRunning(async () => false);
+    assert.match(again.reason, /being installed from GitHub right now/);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(fake.calls().trim().split('\n').length, 1);
+  });
+});
+
+test('LINGXI_AUTOINSTALL=0 leaves a missing app missing, and says where to get it', { skip: process.platform !== 'darwin' && 'macOS only' }, async () => {
+  const fake = fakeInstaller();
+  await withEnv({
+    LINGXI_AUTOSTART: '1', LINGXI_AUTOINSTALL: '0', LINGXI_APP_PATH: join(fake.dir, 'missing.app'), LINGXI_INSTALLER: fake.script,
+  }, async () => {
+    assert.match(installBlockedReason(), /LINGXI_AUTOINSTALL/);
+    const result = await ensureRunning(async () => false);
+    assert.equal(result.ok, false);
+    assert.ok(!result.installing);
+    assert.match(result.reason, /github\.com\/dushaobindoudou\/lingxi\/releases/);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(fake.calls(), '', 'nothing may be installed after an opt-out');
+  });
+});

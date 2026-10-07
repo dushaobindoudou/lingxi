@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
+// Every host installer's step 0 starts the real app, or installs it from GitHub. A test run must
+// never do either - the installers report and carry on when both are switched off.
+process.env.LINGXI_AUTOSTART = '0';
+process.env.LINGXI_AUTOINSTALL = '0';
+
 test('Codex installer preserves a wrapped notify and unrelated MCP servers', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lingxi-codex-'));
   try {

@@ -1,6 +1,17 @@
 {
-  "description": "灵犀桌面猫的 hooks。UserPromptSubmit→running、Stop→completed 管会话生命周期；Notification 与 PermissionRequest 管「agent 弹出问题在等用户」——权限提示、提问对话框——只装生命周期那两条的话，弹窗完全不在覆盖范围内。第二条 group 是额度守卫（lingxi-quota-guard）：读 WorkBuddy 自己的 ~/.workbuddy/workbuddy.db 的 session_usage 表，在会话上下文跨过 60/70/90% 时让猫说一句；它只提醒上下文占用与本次会话已消耗的 credits，账号剩余额度不在本地、提醒不了，所以也只挂在生命周期两个事件上。载荷与 Claude Code 同形，直接走 lingxi-emit 的 claude 适配臂；适配器不猜 mood，应用按 focused 处理，模型真有话说时由 skill 的 task event 覆盖。每条都是独立进程：emit 那条以 exec 结尾，同一条命令排在它后面的东西永不执行。命令先找 PATH 里的 node，找不到再退回 WorkBuddy 自带的托管 node；猫没开时两个脚本都静默退出，绝不阻塞宿主。刻意不装 PreToolUse / PostToolUse：每次工具调用都触发，会把猫变成通知轰炸。",
+  "description": "灵犀桌面猫的 hooks。SessionStart 是检查模块（scripts/session-start.sh，纯 bash）：灵犀没装就从 GitHub 后台下载、校验、安装并打开，装了没开就后台拉起，毫秒级返回。UserPromptSubmit→running、Stop→completed 管会话生命周期；Notification 与 PermissionRequest 管「agent 弹出问题在等用户」——权限提示、提问对话框——只装生命周期那两条的话，弹窗完全不在覆盖范围内。第二条 group 是额度守卫（lingxi-quota-guard）：读 WorkBuddy 自己的 ~/.workbuddy/workbuddy.db 的 session_usage 表，在会话上下文跨过 60/70/90% 时让猫说一句；它只提醒上下文占用与本次会话已消耗的 credits，账号剩余额度不在本地、提醒不了，所以也只挂在生命周期两个事件上。载荷与 Claude Code 同形，直接走 lingxi-emit 的 claude 适配臂；适配器不猜 mood，应用按 focused 处理，模型真有话说时由 skill 的 task event 覆盖。每条都是独立进程：emit 那条以 exec 结尾，同一条命令排在它后面的东西永不执行。命令先找 PATH 里的 node，找不到再退回 WorkBuddy 自带的托管 node；猫没开时两个脚本都静默退出，绝不阻塞宿主。刻意不装 PreToolUse / PostToolUse：每次工具调用都触发，会把猫变成通知轰炸。",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEBUDDY_PLUGIN_ROOT}/scripts/session-start.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

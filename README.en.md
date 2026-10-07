@@ -135,13 +135,28 @@ You will not get half a face or a joint twisted off.
 
 ## Connecting an agent
 
-A local HTTP bridge (`127.0.0.1:47811`, loopback only), three ways in: MCP server, Claude Code hooks,
-and HTTP directly. The full notes are in [`integrations/README.md`](docs/en/integrations/README.md).
+A local HTTP bridge (`127.0.0.1:47811`, loopback only); pick the path for your host. **None of them
+needs the app installed first**: on a Mac without 灵犀 they download the latest
+[GitHub release](https://github.com/dushaobindoudou/lingxi/releases), verify its SHA256, bundle id and
+signature, install it and open it; an installed app is reused, and its data survives reinstalls.
+The full notes are in [`integrations/README.md`](docs/en/integrations/README.md).
+
+```sh
+# Claude Code
+claude plugin marketplace add dushaobindoudou/lingxi && claude plugin install lingxi@lingxi
+# Codex
+codex plugin marketplace add dushaobindoudou/lingxi && codex plugin add lingxi@lingxi
+# WorkBuddy / CodeBuddy (inside the host)
+/plugin marketplace add dushaobindoudou/lingxi    then    /plugin install lingxi@lingxi
+```
 
 ```jsonc
-// any MCP client
-{ "mcpServers": { "lingxi": { "command": "node", "args": ["<repo>/packages/mcp-server/src/index.mjs"] } } }
+// any MCP client (Cursor, Claude Desktop, …) - the npm package lingxi-mcp
+{ "mcpServers": { "lingxi": { "command": "npx", "args": ["-y", "lingxi-mcp"], "env": { "LINGXI_AGENT": "cursor" } } } }
 ```
+
+Doubao has no plugin system: run [`integrations/hosts/doubao/install.sh`](integrations/hosts/doubao/README.md).
+Hosts that only take skills: `npx skills add dushaobindoudou/lingxi`.
 
 Thirteen tools: register an identity, report a task, see capabilities, see status, speak, expression/action, full-screen effect, place a toy,
 remember one thing, read memories back, set a reminder, change camera and theme, reload custom assets.

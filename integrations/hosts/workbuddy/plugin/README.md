@@ -20,6 +20,8 @@ lingxi events | tail     # 结束一轮对话后应出现 workbuddy 署名的 ru
 
 装完后：
 
+- **应用**：会话开始时（`SessionStart` → `scripts/session-start.sh`）发现没装灵犀，就从 GitHub Releases
+  下载最新版、校验后装好并打开；装了没开就后台拉起。`LINGXI_AUTOINSTALL=0` 关掉
 - **hooks**：`UserPromptSubmit`→running、`Stop`→completed 自动生效，实时加载，无需重启会话
 - **skill**：`lingxi`（任务上报与心情）与 `lingxi-authoring`（自定义动作/表情/皮肤）出现在可用 skill 列表
 - **身份**：机器级 `~/.lingxi/agent.json`（id=workbuddy）——首次反应时若该文件不存在，

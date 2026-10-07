@@ -6,6 +6,26 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **任何一条接入都会自己把应用装上。** 发现 Mac 上没有灵犀时，从 GitHub Releases 下载最新版，校验
+  SHA256、bundle id、代码签名后装进「应用程序」并打开；装了就复用，数据跨重装保留。覆盖：Claude Code /
+  Codex / WorkBuddy 插件的会话开始、MCP server 被宿主连上时、`lingxi up`、各宿主 `install.sh` 的第 0 步。
+  `LINGXI_AUTOINSTALL=0` 关闭。共用的脚本在 `integrations/shared/`（每个插件带逐字副本，测试守着）。
+- **Codex 原生插件**（`integrations/hosts/codex/plugin/`）：`codex plugin marketplace add dushaobindoudou/lingxi`
+  后 `codex plugin add lingxi@lingxi`。hooks 报会话开始、提交消息、等授权、回合结束，署名 codex；带 skill 两层
+  和 MCP。仓库根新增 `.agents/plugins/marketplace.json`——没有它，Codex 会把 Claude 插件装给 Codex 用户。
+- **npm 包 `lingxi-mcp`**：`npx -y lingxi-mcp` 即可给任何 MCP 宿主接上灵犀，不需要克隆仓库；附带 `lingxi` 命令行。
+- WorkBuddy 插件新增 SessionStart：会话开始时自动安装 / 打开灵犀。
+- `lingxi update`：任何宿主都能把已装的应用升级到最新 release（同一个安装器的 `--update`，数据保留）。
+
+### 修复
+
+- 两个宿主同时开第一个会话会各下载一次、互相替换同一个应用：安装锁改为全机唯一（`~/.lingxi/install.lock`）。
+- 安装器在"找不到已装应用"时（Spotlight 还在建索引、路径被覆盖）会下载并覆盖目标位置已有的灵犀：
+  现在只有 `--update` 会替换已装的应用。
+- `lingxi up` 和 MCP server 在应用没装时只会说"去自己编译"：现在给出下载地址，或直接安装。
+
 ## [0.3.0] - 2026-09-30
 
 ### 新增

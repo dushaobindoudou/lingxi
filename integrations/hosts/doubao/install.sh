@@ -139,6 +139,20 @@ if [ "${UNINSTALL}" = 1 ]; then
   exit 0
 fi
 
+# ---------------------------------------------------------------- 0. 应用
+# 接入的是一只猫：应用没装就先从 GitHub 装上最新版（校验 SHA256、bundle id、签名后才装，装好打开），
+# 装了没开就在后台拉起，已经在跑就什么都不做。配置和数据跟着 bundle id 走，重装也沿用。
+# 用的是 CLI 的 `up`，它和每个插件共用 integrations/shared/install-app.sh。失败不拦安装器：接入照装，
+# 之后 `lingxi up` 重试。LINGXI_AUTOINSTALL=0 不装，LINGXI_AUTOSTART=0 不开。
+echo "0. 应用"
+if [ "${DRY_RUN}" = 1 ]; then
+  echo "  [dry] 灵犀没装就从 GitHub 下载安装并打开，没开就后台拉起（LINGXI_AGENT=doubao lingxi up）"
+elif LINGXI_AGENT=doubao bash "${REPO}/integrations/cli/lingxi" up 2>&1 | sed 's/^/  /'; then
+  :
+else
+  echo "  ⚠️  灵犀没能装上或打开；接入照装，之后运行 lingxi up 重试（日志：~/.lingxi/doubao/install.log）"
+fi
+
 # ---------------------------------------------------------------- 1. 技能
 echo "1. 技能（${DOUBAO_SKILLS}）"
 # 软链而不是拷贝：git pull 一次豆包跟着更新。两层都装（integrations/hosts/PLUGIN-STANDARD.md 六）：

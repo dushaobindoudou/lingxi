@@ -14,6 +14,7 @@
 #
 # Usage:
 #   lingxi up                                  # THE CHECK: running? if not, start it and wait
+#   lingxi update                              # replace the installed app with the latest GitHub release
 #   lingxi health                              # is it running, where is the token (never starts it)
 #   lingxi capabilities                        # every action / expression / theme, with source
 #   lingxi state                               # position, state, expression, heading, intent
@@ -162,6 +163,11 @@ bridge_is_up() {
 # index `open -b` consults and it finds the app wherever the user actually put it.
 app_path() {
   local found candidate
+  # Same override as integrations/shared/lib.sh: an exact path, honoured even when it is missing.
+  if [ -n "${LINGXI_APP_PATH:-}" ]; then
+    if [ -d "$LINGXI_APP_PATH" ]; then printf '%s' "$LINGXI_APP_PATH"; fi
+    return 0
+  fi
   for candidate in "/Applications/灵犀.app" "$HOME/Applications/灵犀.app" "/Applications/lingxi.app"; do
     [ -d "$candidate" ] && { printf '%s' "$candidate"; return 0; }
   done
@@ -178,6 +184,48 @@ app_path() {
   return 0
 }
 
+# The installer that ships beside this client, or nothing: integrations/shared/install-app.sh in a
+# checkout, scripts/install-app.sh in a host plugin, ../scripts/ in the npm package. The copy the
+# app writes into its own config directory has none - and needs none, the app is installed.
+installer_path() {
+  local self="${BASH_SOURCE[0]}" link dir candidate
+  while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case "$link" in /*) self="$link" ;; *) self="$(cd "$(dirname "$self")" && pwd)/$link" ;; esac
+  done
+  dir="$(cd "$(dirname "$self")" && pwd)"
+  for candidate in "${LINGXI_INSTALLER:-}" "$dir/install-app.sh" "$dir/../scripts/install-app.sh" "$dir/../shared/install-app.sh"; do
+    [ -n "$candidate" ] && [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  done
+  return 0
+}
+
+# Not installed: fetch the latest release from GitHub, verify it, install it and open it, using
+# the installer every plugin shares. Waits for it - a command that needs the cat is better a
+# little late than refused - and LINGXI_AUTOINSTALL=0 turns it off.
+install_app() {
+  local installer; installer="$(installer_path)"
+  case "${LINGXI_AUTOINSTALL:-1}" in
+    0|false|no|off) installer="" ;;
+  esac
+  if [ -z "$installer" ]; then
+    printf '%s
+' "灵犀 is not installed - nothing to start. Download it from https://github.com/dushaobindoudou/lingxi/releases and drag it into /Applications." >&2
+    return 1
+  fi
+  printf '%s
+' "灵犀 is not installed - installing the latest release from GitHub (about 16 MB)..." >&2
+  LINGXI_HOST="${LINGXI_HOST:-${LINGXI_AGENT:-cli}}" bash "$installer" --open >&2 || return 1
+  local waited=0
+  while [ "$waited" -lt 100 ]; do
+    bridge_is_up && return 0
+    sleep 0.1; waited=$((waited + 1))
+  done
+  printf '%s
+' "灵犀 was installed but has not answered yet - open it from Applications." >&2
+  return 1
+}
+
 # Start the app and wait for the bridge. Returns non-zero with a reason on stderr.
 start_app() {
   case "${LINGXI_AUTOSTART:-1}" in
@@ -190,10 +238,7 @@ start_app() {
     return 1
   }
   local path; path="$(app_path)"
-  [ -n "$path" ] || {
-    printf '%s\n' "灵犀 is not installed - nothing to start. Build it with \`npm run tauri build\` in apps/lingxi." >&2
-    return 1
-  }
+  [ -n "$path" ] || { install_app; return $?; }
   # -g: do not steal focus. The cat becomes visible on the desktop; the user keeps their window.
   # By path first: `open -b` lets Launch Services pick any copy it has registered, build outputs
   # included.
@@ -474,6 +519,14 @@ if isinstance(rows, list):
     if [ "$fail" -gt 0 ]; then printf '%s\n\n' "$fail 项不通过，$warn 项需要注意。"; exit 1
     elif [ "$warn" -gt 0 ]; then printf '%s\n\n' "都能用，$warn 项需要注意。"
     else printf '%s\n\n' "全部通过。"; fi ;;
+
+  update|upgrade)
+    # The same installer every plugin uses, in --update mode: downloads the latest release only if
+    # it is newer, verifies it, quits the running app, swaps it, and brings it back. Settings,
+    # memory and reminders live outside the bundle and stay.
+    installer="$(installer_path)"
+    [ -n "$installer" ] || die "no installer beside this client - download the latest release from https://github.com/dushaobindoudou/lingxi/releases"
+    LINGXI_HOST="${LINGXI_HOST:-${LINGXI_AGENT:-cli}}" bash "$installer" --update ;;
 
   up|start|ensure)
     # The check module as one command, for anything that wants the cat up before it starts -

@@ -133,13 +133,27 @@ assets/
 
 ## 接 Agent
 
-一个本机 HTTP 桥（`127.0.0.1:47811`，只监听回环），三种接法：MCP server、Claude Code hooks、
-直接 HTTP。完整说明见 [`integrations/README.md`](integrations/README.md)。
+一个本机 HTTP 桥（`127.0.0.1:47811`，只监听回环），接法按宿主选一条。**哪一条都不用先装应用**：
+发现 Mac 上没有灵犀，就从 [GitHub Releases](https://github.com/dushaobindoudou/lingxi/releases)
+下载最新版、校验 SHA256 / bundle id / 签名后装好并打开；装了就复用，数据跨重装保留。
+完整说明见 [`integrations/README.md`](integrations/README.md)。
+
+```sh
+# Claude Code
+claude plugin marketplace add dushaobindoudou/lingxi && claude plugin install lingxi@lingxi
+# Codex
+codex plugin marketplace add dushaobindoudou/lingxi && codex plugin add lingxi@lingxi
+# WorkBuddy / CodeBuddy（在宿主里）
+/plugin marketplace add dushaobindoudou/lingxi    然后    /plugin install lingxi@lingxi
+```
 
 ```jsonc
-// 任何 MCP 客户端
-{ "mcpServers": { "lingxi": { "command": "node", "args": ["<repo>/packages/mcp-server/src/index.mjs"] } } }
+// 任何 MCP 客户端（Cursor、Claude Desktop……）—— npm 包 lingxi-mcp
+{ "mcpServers": { "lingxi": { "command": "npx", "args": ["-y", "lingxi-mcp"], "env": { "LINGXI_AGENT": "cursor" } } } }
 ```
+
+豆包没有插件机制，跑 [`integrations/hosts/doubao/install.sh`](integrations/hosts/doubao/README.md)；
+只要 skill 的宿主可以 `npx skills add dushaobindoudou/lingxi`。
 
 十三个工具：注册身份、报告任务、看能力、看状态、说话、表情/动作、全屏特效、放玩具、
 记住一件事、读回记忆、设提醒、换视角主题、重载自定义资源。

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Start the plugin's MCP server (mcp/, a byte-for-byte copy of packages/mcp-server/src) with
+# whatever node this Mac has. Codex starts plugin servers from the desktop app as well as from a
+# terminal, and an app started from the Dock does not get a login shell's PATH - `"command":
+# "node"` would fail there with nothing in the log a user would ever see.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+for candidate in "${LINGXI_NODE:-}" "$(command -v node 2>/dev/null)" "${CODEX_MCP_NODE_PATH:-}" \
+  /opt/homebrew/bin/node /usr/local/bin/node "$HOME"/.nvm/versions/node/*/bin/node \
+  /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node; do
+  [ -n "$candidate" ] && [ -x "$candidate" ] && exec "$candidate" "$DIR/mcp/index.mjs" "$@"
+done
+echo "灵犀 MCP: no node found (looked on PATH, Homebrew, nvm). Install Node.js 22+ or set LINGXI_NODE." >&2
+exit 1

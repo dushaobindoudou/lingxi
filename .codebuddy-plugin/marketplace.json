@@ -1,14 +1,22 @@
 {
   "name": "lingxi",
-  "owner": { "name": "dushaobin" },
+  "owner": {
+    "name": "dushaobin"
+  },
   "description": "灵犀 · 桌面猫的 agent 接入插件与 skill",
   "plugins": [
     {
       "name": "lingxi",
       "source": "./integrations/hosts/workbuddy/plugin",
-      "description": "灵犀桌面猫：桌宠对每轮对话自动反应（hooks），模型可上报任务与心情（skill），可选接 MCP 全量工具。",
-      "version": "0.1.1",
-      "keywords": ["lingxi", "desktop-pet", "cat", "hooks", "skill"],
+      "description": "灵犀桌面猫：没装就自动从 GitHub 安装并打开；桌宠对每轮对话自动反应（hooks），模型可上报任务与心情（skill），可选接 MCP 全量工具。",
+      "version": "0.2.0",
+      "keywords": [
+        "lingxi",
+        "desktop-pet",
+        "cat",
+        "hooks",
+        "skill"
+      ],
       "category": "效率工具",
       "license": "PolyForm-Noncommercial-1.0.0"
     }

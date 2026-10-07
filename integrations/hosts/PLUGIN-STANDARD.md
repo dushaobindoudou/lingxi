@@ -82,6 +82,23 @@
 
 ---
 
+## 审查结果 · 2026-10-07（A1 / E2 补齐之后）
+
+`integrations/shared/` 落地：`lib.sh` / `install-app.sh` / `ensure-app.sh` 按 `LINGXI_HOST` 参数化，
+每个插件带逐字副本（`integrations/test/shared-copies.test.mjs` 守着），安装锁改为全机唯一。
+
+| | A1 装 | E2 自包含 | 说明 |
+|---|---|---|---|
+| **Claude**（`claude/`） | ✓ SessionStart | ✓ | 参照实现；`lib.sh`、`install-app.sh` 改为 shared 的副本 |
+| **Codex 插件**（`codex/plugin/`，新） | ✓ SessionStart + MCP | ✓ | 原生 `.codex-plugin`；`event.sh` 以 codex 署名改写 hook 载荷；行为测试 `codex-native-plugin.test.mjs` |
+| **Codex 安装器**（`codex/install.sh`） | ✓ 第 0 步 | ✗ 指向仓库 | 作为不想用插件时的备选 |
+| **WorkBuddy 插件**（`workbuddy/plugin/`） | ✓ SessionStart | ✓ | 新增 `scripts/session-start.sh` |
+| **WorkBuddy 安装器** | ✓ 第 0 步 + MCP | ✗ 指向仓库 | |
+| **Cursor**（`cursor/install.sh`） | ✓ 第 0 步 + MCP | ✗ 指向仓库 | MCP 可改用 `npx -y lingxi-mcp` |
+| **豆包**（`doubao/install.sh`） | ✓ 第 0 步 | ✗ 指向仓库 | 豆包没有插件机制 |
+| **MCP server / npm `lingxi-mcp`** | ✓ 宿主连上时 | ✓ | 后台起安装器，调用方得到"正在安装" |
+| **DSH**（`dsh/`） | ✗ | ✓ | 单文件 Cordis 插件，仍只会拉起已装的应用 |
+
 ## 审查结果 · 2026-09-24
 
 按上面的标准逐个看了现有插件。✓ 达标，◐ 部分，✗ 没有。

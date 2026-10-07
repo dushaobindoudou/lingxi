@@ -107,10 +107,10 @@ Claude 自己用的是 `lingxi`（插件把它放进了 Bash 的 PATH）：`ling
 ```
 .claude-plugin/plugin.json   清单与三个用户选项
 hooks/hooks.json             SessionStart 同步（毫秒级）；其余四个异步
-scripts/lib.sh               共享：定位应用、检查桥、投递事件、选项、去重
+scripts/lib.sh               共享：定位应用、检查桥、投递事件、选项、去重（integrations/shared/lib.sh 的逐字副本）
 scripts/session-start.sh     检查模块：装 / 开 / 报
 scripts/event.sh             生命周期事件：只投递，不启动
-scripts/install-app.sh       下载、校验、安装、升级；也可 --from 离线安装
+scripts/install-app.sh       下载、校验、安装、升级；也可 --from 离线安装（integrations/shared/ 的逐字副本，各宿主共用）
 scripts/lingxi-cli           integrations/cli/lingxi 的逐字副本（测试守着）
 bin/lingxi                   Claude 用的 CLI，固定以 claude 身份说话
 bin/lingxi-claude            /lingxi:setup 和 /lingxi:status 的实现

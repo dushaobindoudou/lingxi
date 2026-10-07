@@ -162,6 +162,37 @@ Apple 签发的证书就作废了**——备份它，或者在导入之后备份
 发布构建冷启动约 20–30 分钟，也就是 200–300 分钟额度；免费额度每月 2000 分钟。本地发布
 （`release.sh` + `publish-release.sh`）不花额度——这也是本地发布的 tag 会让 CI 跳过的原因之一。
 
+## 5½. 接入渠道：插件市场、npm、skill
+
+应用发到 GitHub Releases 之后，接入渠道不用另外"上架"——除了 npm，它们都直接读这个公开仓库的默认分支：
+
+| 渠道 | 读的是 | 用户命令 | 发布动作 |
+|---|---|---|---|
+| Claude Code 插件 | `.claude-plugin/marketplace.json` → `integrations/hosts/claude` | `claude plugin marketplace add dushaobindoudou/lingxi` | 推到 main；改了插件就升 `plugin.json` 的 `version` |
+| Codex 插件 | `.agents/plugins/marketplace.json` → `integrations/hosts/codex/plugin` | `codex plugin marketplace add dushaobindoudou/lingxi` | 同上 |
+| WorkBuddy / CodeBuddy | `.codebuddy-plugin/marketplace.json` → `integrations/hosts/workbuddy/plugin` | `/plugin marketplace add dushaobindoudou/lingxi` | 同上 |
+| skill 目录（skills.sh 等） | 仓库里的 `SKILL.md` | `npx skills add dushaobindoudou/lingxi` | 推到 main |
+| npm `lingxi-mcp` | `packages/mcp-server/` | `npx -y lingxi-mcp` | 见下 |
+
+**每个插件在应用没装时都会去下 Releases 里标为 Latest 的那个 release 的
+`Lingxi-*-universal.dmg` 和 `SHA256SUMS.txt`**，所以：模型资产之类的非应用 release 不能标成 Latest；
+应用 release 必须是通用二进制（`release.sh` 默认就是）。
+
+### npm：`lingxi-mcp`
+
+版本单独管理（见第 1 节），改了 `packages/mcp-server/` 就升它自己的版本号：
+
+```sh
+cd packages/mcp-server
+npm version patch --no-git-tag-version          # 或手改 package.json
+npm test && npm pack --dry-run                  # 看清楚要发哪些文件
+npm login --registry https://registry.npmjs.org/   # 本机 registry 若是镜像，发布必须显式指定官方源
+npm publish                                       # publishConfig 已指向官方源、access public
+```
+
+包里的 `scripts/`、`bin/lingxi`、`LICENSE.md` 是副本，`npm test`（根目录）的 `shared-copies` 测试守着它们
+和源头一致——测试不过不要发。
+
 ## 6. 排查
 
 | 现象 | 原因 / 办法 |
@@ -182,3 +213,6 @@ Apple 签发的证书就作废了**——备份它，或者在导入之后备份
 - [ ] 在**另一台** Mac（或新用户账户）上从 .dmg 安装、打开一次：猫出现、托盘可用、主界面能开
 - [ ] `./scripts/publish-release.sh`（第一次不放心就加 `--draft`，在网页上看过再发布）
 - [ ] Releases 页面上附件齐全：.dmg、.app.zip、SHA256SUMS.txt
+- [ ] 这个 release 标成了 **Latest**（插件自动安装只认 Latest）
+- [ ] 在一个临时环境里走一遍"没装就装"：`LINGXI_APP_PATH=/nope LINGXI_INSTALL_DIR=$(mktemp -d) integrations/shared/install-app.sh` 能下载、校验、装好
+- [ ] `packages/mcp-server/` 改过的话：升版本、`npm publish`

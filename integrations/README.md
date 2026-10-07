@@ -27,11 +27,17 @@
 claude plugin marketplace add dushaobindoudou/lingxi
 claude plugin install lingxi@lingxi
 
-# Codex：确定性事件由 notify 承担。notify 是 TOML 单键——机器上已有别的 notifier
-# （比如 SkyComputerUseClient）时不要覆盖，安装器会写一个 fanout 脚本两边都发：
+# Codex：原生插件（hooks + skill + MCP），同样会在会话开始时检查、安装、打开灵犀。
+# Codex 第一次启动时会让你审核插件的 hooks（"hooks need review"），批准一次即可
+codex plugin marketplace add dushaobindoudou/lingxi
+codex plugin add lingxi@lingxi
+# 不想用插件、或者想保留已有 notify 的，仍可用安装器（notify fanout，不覆盖原有通知器）：
 <repo>/integrations/hosts/codex/install.sh
 
-# DSH / WorkBuddy 各有自己的形态，见 hosts/dsh/ 与 hosts/workbuddy/
+# WorkBuddy / CodeBuddy：插件市场（hooks + skill，会话开始时自动装/开灵犀）
+/plugin marketplace add dushaobindoudou/lingxi
+/plugin install lingxi@lingxi
+# 要 MCP 和真实图标再跑一次：<repo>/integrations/hosts/workbuddy/install.sh
 
 # Cursor：用户级 hooks + MCP + skill。不改机器级署名：
 <repo>/integrations/hosts/cursor/install.sh
@@ -40,12 +46,16 @@ claude plugin install lingxi@lingxi
 #（身份用包装器钉住 doubao，不改机器级 agent.json）：
 <repo>/integrations/hosts/doubao/install.sh
 
-# 另加 MCP（模型主动通道）：
-# [mcp_servers.lingxi]
-# command = "node"
-# args = ["<repo>/packages/mcp-server/src/index.mjs"]
-# 身份走 ~/.lingxi/agent.json，不要写 env 块（见下文「署名」一节）
+# 任何 MCP 宿主：npm 包 lingxi-mcp（13 个工具 + lingxi CLI，应用没装时同样从 GitHub 装）
+npx -y lingxi-mcp
+# 只认 skill 的宿主
+npx skills add dushaobindoudou/lingxi
 ```
+
+**每一条都不用先装应用。** 插件的会话开始检查、MCP server 的连接、`lingxi up`、各宿主的
+`install.sh` 第 0 步，用的是同一个安装器 [`shared/install-app.sh`](shared/README.md)：发现 Mac 上没有灵犀，
+就从 GitHub Releases 下载最新版，校验 SHA256、bundle id、代码签名后装进「应用程序」并打开；装了就复用。
+`LINGXI_AUTOINSTALL=0` 关掉自动安装，`LINGXI_AUTOSTART=0` 连启动一起关掉。
 
 事件的**契约**是 [`schema/task-event.schema.json`](schema/task-event.schema.json)。
 所有接入——hook、notify、MCP、curl——都只产出这一个对象。
@@ -133,6 +143,9 @@ MCP 的每个工具调用都是一次**授权面**——不少宿主会逐个工
   }
 }
 ```
+
+**不想要仓库的**：同一个 server 发布在 npm 上，`"command": "npx", "args": ["-y", "lingxi-mcp"]`，
+应用没装时它会从 GitHub 装上（见 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md)）。
 
 **Codex**（`~/.codex/config.toml`，注意是 TOML 不是 JSON）：
 

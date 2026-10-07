@@ -55,7 +55,7 @@ APP="$(lx_app_path)"
 
 # --- not installed --------------------------------------------------------------------------------
 if [ -z "$APP" ]; then
-  if [ -d "$LX_STATE_DIR/install.lock" ] && [ -z "$(find "$LX_STATE_DIR/install.lock" -maxdepth 0 -mmin +15 2>/dev/null)" ]; then
+  if [ -d "$LX_INSTALL_LOCK" ] && [ -z "$(find "$LX_INSTALL_LOCK" -maxdepth 0 -mmin +15 2>/dev/null)" ]; then
     CONTEXT="The 灵犀 desktop-cat app is still being installed in the background. Skip lingxi commands this session unless the user asks."
     emit
   fi

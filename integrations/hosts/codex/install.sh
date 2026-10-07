@@ -29,6 +29,20 @@ log() { if [ "$DRY_RUN" = 1 ]; then echo "  [dry] $*"; else echo "  ✓ $*"; fi;
 [ -f "$CONFIG" ] || { echo "✗ $CONFIG 不存在——先跑一次 codex 生成配置"; exit 1; }
 [ -f "$EMIT" ] || { echo "✗ 找不到 $EMIT"; exit 1; }
 
+# ---------------------------------------------------------------- 0. 应用
+# 接入的是一只猫：应用没装就先从 GitHub 装上最新版（校验 SHA256、bundle id、签名后才装，装好打开），
+# 装了没开就在后台拉起，已经在跑就什么都不做。配置和数据跟着 bundle id 走，重装也沿用。
+# 用的是 CLI 的 `up`，它和每个插件共用 integrations/shared/install-app.sh。失败不拦安装器：接入照装，
+# 之后 `lingxi up` 重试。LINGXI_AUTOINSTALL=0 不装，LINGXI_AUTOSTART=0 不开。
+echo "0. 应用"
+if [ "$DRY_RUN" = 1 ]; then
+  echo "  [dry] 灵犀没装就从 GitHub 下载安装并打开，没开就后台拉起（LINGXI_AGENT=codex lingxi up）"
+elif LINGXI_AGENT=codex bash "$REPO/integrations/cli/lingxi" up 2>&1 | sed 's/^/  /'; then
+  :
+else
+  echo "  ⚠️  灵犀没能装上或打开；接入照装，之后运行 lingxi up 重试（日志：~/.lingxi/codex/install.log）"
+fi
+
 BACKUP=""
 if [ "$DRY_RUN" = 0 ]; then
   # 只保留第一份备份：它是 pre-lingxi 的原样快照，后面 fanout 消失时的恢复链全靠它。

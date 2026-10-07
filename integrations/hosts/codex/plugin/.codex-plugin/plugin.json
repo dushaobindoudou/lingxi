@@ -1,0 +1,80 @@
+{
+  "name": "lingxi",
+  "version": "0.3.0",
+  "description": "灵犀桌面猫的 Codex 插件：会话开始时检查并自动从 GitHub 安装、打开应用（配置和数据跨重装保留），等你授权、回合结束时猫有反应，并教 Codex 报告心情、让猫说话、记住你的事和定提醒。",
+  "author": {
+    "name": "dushaobin",
+    "url": "https://github.com/dushaobindoudou"
+  },
+  "homepage": "https://github.com/dushaobindoudou/lingxi/tree/main/integrations/hosts/codex/plugin",
+  "repository": "https://github.com/dushaobindoudou/lingxi",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "keywords": [
+    "desktop-pet",
+    "companion",
+    "notifications",
+    "macos",
+    "lingxi"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": {
+    "hooks": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"${PLUGIN_ROOT}/scripts/session-start.sh\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"${PLUGIN_ROOT}/scripts/event.sh\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "PermissionRequest": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"${PLUGIN_ROOT}/scripts/event.sh\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"${PLUGIN_ROOT}/scripts/event.sh\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "interface": {
+    "displayName": "灵犀 Lingxi",
+    "shortDescription": "桌面上的小猫，陪你用 Codex",
+    "longDescription": "灵犀是一只住在 macOS 桌面上的 3D 小猫。装上这个插件后：会话开始时它会自动安装（从 GitHub Releases 下载并校验）或打开桌面应用；Codex 等你授权、一轮回复结束时猫会有反应；Codex 可以报告任务的心情、让猫说话、记住关于你的事、过一会儿提醒你。只连本机 127.0.0.1，事件不出这台电脑。",
+    "developerName": "dushaobin",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "websiteURL": "https://github.com/dushaobindoudou/lingxi"
+  }
+}

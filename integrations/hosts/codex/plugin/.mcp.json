@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "lingxi": {
+      "command": "./scripts/lingxi-mcp",
+      "cwd": ".",
+      "env": {
+        "LINGXI_AGENT": "codex",
+        "LINGXI_AGENT_NAME": "Codex",
+        "LINGXI_HOST": "codex"
+      },
+      "startup_timeout_sec": 15
+    }
+  }
+}

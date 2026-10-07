@@ -2,12 +2,16 @@
   "mcpServers": {
     "lingxi": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/index.mjs"],
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/index.mjs"
+      ],
       "env": {
         "LINGXI_AGENT": "claude",
         "LINGXI_AGENT_NAME": "Claude",
         "LINGXI_AGENT_COLOR": "#D97757",
-        "LINGXI_AUTOSTART": "${user_config.auto_open}"
+        "LINGXI_AUTOSTART": "${user_config.auto_open}",
+        "LINGXI_AUTOINSTALL": "${user_config.auto_install}",
+        "LINGXI_HOST": "claude"
       }
     }
   }

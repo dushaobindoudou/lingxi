@@ -1,11 +1,52 @@
 {
-  "name": "@lingxi/mcp-server",
-  "version": "0.1.0",
-  "private": true,
+  "name": "lingxi-mcp",
+  "version": "0.2.0",
   "type": "module",
-  "description": "MCP server that lets a coding agent see and drive the 灵犀 desktop cat",
-  "bin": { "lingxi-mcp": "src/index.mjs" },
-  "engines": { "node": ">=22" },
+  "description": "灵犀 Lingxi desktop cat for coding agents: an MCP server and a shell client that let Codex, Cursor, WorkBuddy, Claude or any MCP host drive the cat - and install the macOS app from GitHub when it is missing.",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "desktop-pet",
+    "lingxi",
+    "灵犀",
+    "codex",
+    "cursor",
+    "claude",
+    "agent"
+  ],
+  "homepage": "https://github.com/dushaobindoudou/lingxi#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dushaobindoudou/lingxi.git",
+    "directory": "packages/mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/dushaobindoudou/lingxi/issues"
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "author": "dushaobin (https://github.com/dushaobindoudou)",
+  "bin": {
+    "lingxi-mcp": "src/index.mjs",
+    "lingxi": "bin/lingxi"
+  },
+  "files": [
+    "src/",
+    "scripts/",
+    "bin/",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "start": "node src/index.mjs",
     "test": "node --experimental-strip-types --test test/*.test.mjs"

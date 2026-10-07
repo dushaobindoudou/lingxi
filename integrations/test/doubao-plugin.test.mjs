@@ -19,6 +19,11 @@ import { tmpdir, platform } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Every host installer's step 0 starts the real app, or installs it from GitHub. A test run must
+// never do either - the installers report and carry on when both are switched off.
+process.env.LINGXI_AUTOSTART = '0';
+process.env.LINGXI_AUTOINSTALL = '0';
+
 const REPO = fileURLToPath(new URL('../../', import.meta.url));
 const PLUGIN = join(REPO, 'integrations/hosts/doubao');
 const SHARED_SKILL = join(REPO, 'integrations/skills/lingxi/SKILL.md');

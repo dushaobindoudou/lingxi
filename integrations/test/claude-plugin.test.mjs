@@ -102,7 +102,7 @@ test('every place that names the app agrees on its bundle identifier', () => {
   // The identifier IS the data directory: ~/Library/Application Support/<identifier>. Change it in
   // one place and a reinstall starts from an empty cat - settings, memory and reminders gone.
   assert.equal(json(join(REPO, 'apps/lingxi/src-tauri/tauri.conf.json')).identifier, BUNDLE_ID);
-  for (const file of ['integrations/hosts/claude/scripts/lib.sh', 'integrations/cli/lingxi',
+  for (const file of ['integrations/shared/lib.sh', 'integrations/cli/lingxi',
     'packages/mcp-server/src/launch.mjs', 'apps/lingxi/src-tauri/src/lib.rs']) {
     assert.ok(read(join(REPO, file)).includes(BUNDLE_ID), `${file} does not name ${BUNDLE_ID}`);
   }
@@ -372,8 +372,24 @@ test('a copy already running keeps the stage: no second cat is opened', { skip: 
 
 test('two sessions starting together do not install twice', { skip: !onMac && 'macOS only' }, () => {
   const box = machine({ installed: false });
-  mkdirSync(join(box.state, 'install.lock'), { recursive: true });
+  // The lock is machine-wide (~/.lingxi/install.lock), not per host: Codex starting its first
+  // session beside Claude's must not download a second copy either.
+  mkdirSync(join(box.home, '.lingxi', 'install.lock'), { recursive: true });
   const blocked = install(box, ['--from', fakeRelease(box.root, { version: '9.9.4' }), '--dest', join(box.root, 'Applications')]);
   assert.equal(blocked.status, 3);
   assert.match(blocked.stdout, /另一个安装正在进行/);
+});
+
+test('an install never overwrites the app already at the target, even when the lookup missed it', { skip: !onMac && 'macOS only' }, () => {
+  // LINGXI_APP_PATH pointing somewhere else (or Spotlight still indexing) once made the lookup come
+  // back empty, and the installer downloaded the release and swapped it in over the running app.
+  const box = machine({ installed: false });
+  const dest = join(box.root, 'Applications');
+  assert.equal(install(box, ['--from', fakeRelease(box.root, { version: '9.9.6' }), '--dest', dest]).status, 0);
+  const missed = spawnSync('bash', [join(PLUGIN, 'scripts/install-app.sh'), '--from', fakeRelease(box.root, { version: '9.9.7' }), '--dest', dest], {
+    env: { ...box.env, LINGXI_APP_PATH: join(box.root, 'elsewhere', '灵犀.app') }, encoding: 'utf8', timeout: 120000,
+  });
+  assert.equal(missed.status, 0, missed.stdout + missed.stderr);
+  assert.match(missed.stdout, /已安装/);
+  assert.equal(version(box.app), '9.9.6', 'only --update may replace an installed app');
 });
