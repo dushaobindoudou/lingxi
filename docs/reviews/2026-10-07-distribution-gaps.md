@@ -36,8 +36,8 @@ PLUGIN-STANDARD 2026-09-24 的审查早就把 A1（没装就装）和 E2（自�
 3. **WorkBuddy 插件** 加 SessionStart 检查。
 4. **MCP server**：宿主连上时发现没装，后台起安装器，调用方得到"正在从 GitHub 安装"。
 5. **`lingxi up`** 与 **四个宿主的 `install.sh` 第 0 步**：没装就装、没开就开；新增 `lingxi update` 升级到最新 release。
-6. **npm 包 `lingxi-mcp`**（`packages/mcp-server`）：`npx -y lingxi-mcp`，带 `lingxi` 命令；打包后在临时前缀里
-   装上验证过握手、13 个工具、CLI。
+6. **npm 包 `lingxi-mcp`**（`packages/mcp-server`）：`npx -y lingxi-mcp`，带 `lingxi` 命令。已发布 0.2.0，并从公网
+   `npx` 验证过握手、13 个工具、CLI、没装时调起安装器。
 7. **从 GitHub 真实安装**验证：模拟"没装"、装到临时目录，12 秒完成下载 v0.3.0 通用包 → 校验 → 安装，
    并且没有在已有一只猫在跑时再开第二只。
 
@@ -46,7 +46,7 @@ PLUGIN-STANDARD 2026-09-24 的审查早就把 A1（没装就装）和 E2（自�
 | # | 差什么 | 影响 | 谁能做 |
 |---|---|---|---|
 | G1 | **Apple Developer ID + 公证** | 从网页下载 .dmg 的人第一次打开会被 Gatekeeper 拦，要去「隐私与安全性」放行。插件 / MCP / CLI 的自动安装走 curl 下载、没有隔离属性，不受影响 | 需要项目所有者开通 Apple Developer Program（99 美元/年），之后 `scripts/apple-signing.sh` + `release.sh` 全自动 |
-| G2 | **npm 账号发布 `lingxi-mcp`** | 包已就绪、测试通过；本机 npm 未登录，且默认 registry 是 npmmirror 镜像（不能发布） | 所有者 `npm login --registry https://registry.npmjs.org/` 后 `npm publish` |
+| G2 | ~~npm 账号发布 `lingxi-mcp`~~ | ✅ 2026-10-07 已发布 `lingxi-mcp@0.2.0`（账号 tudamu，`latest`）。npm 的暂存发布机制给新包自动留了一个占位版本 `0.0.0-stage`，不影响安装；以后发版要注意本机默认源是 npmmirror，发布要显式用官方源，账号开了两步验证 | — |
 | G3 | **官方目录收录** | 现在用户要知道仓库名才能 `marketplace add`。Claude 官方插件目录、Codex 推荐插件、CodeBuddy 市场、skills.sh 榜单都需要提交/审核 | 所有者提交；材料（README、图标、描述）已齐 |
 | G4 | **已装用户的升级** | 自动安装只管"没装"。本轮加了 `lingxi update`（任何宿主都能用），Claude 另有 `/lingxi:setup update`；但没人会主动去跑——应用自己不提示有新版本 | 应用启动时查一次 Latest，有新版在托盘/主界面提示 |
 | G5 | **宿主信任闸门** | Codex 插件 hooks 首次要审核；WorkBuddy 换了 MCP 路径要重新点「信任」。是宿主的安全设计，绕不过，只能写清楚 | 文档已写；无需代码 |
