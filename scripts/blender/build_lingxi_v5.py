@@ -498,6 +498,14 @@ def weights(points,region):
   suf='L' if s<0 else 'R'
   for pre,cy in [('Front',-.17),('Rear',.26)]:
    mask=np.clip((.31-z)/.12,0,1)*np.clip((s*x-.035)/.045,0,1)*np.exp(-((y-cy)/.13)**6)
+   # Round L: skin wrapped round the forearm / shank and the paw belongs to that leg outright. The x ramp
+   # above left the inner side of the forearm 25-30% on the spine, so a paw raised to the mouth (Lick) drew
+   # it out into a thin white fin hanging under the paw, edges stretched x6. The ramp stays for the
+   # shoulder and the hip, where leg and trunk really do share the skin.
+   core=_v6('V6_LEG_CORE',.075)   # 75 mm from the forearm / shank and paw bones: the skin over them, not the chest between the legs (round-l-test w.050-.075)
+   if core>0:
+    near=np.max([np.exp(-(_segd(points,*_bseg(pre+nm+'.'+suf))/core)**8) for nm in ('Lower','Paw')],axis=0)
+    mask=np.maximum(mask,near*np.exp(-((y-cy)/.13)**6)*np.clip((s*x)/.02,0,1))
    for k in list(w):w[k]*=(1-mask)
    # Inside the leg, each point follows the bones it is nearest to (by distance to the bone
    # SEGMENT, softly blended) - a height band cannot follow a knee that points forward.
@@ -1653,6 +1661,8 @@ def _gait(g,u,k):
  # moved 4-6 mm a frame as it touched down.)
  s_=(ph-g['duty'])/(1-g['duty']);e=s_*s_*(3-2*s_);D=ROOT_TRAVEL(g)
  return g['stride']*.5-D*e+D*(1-g['duty'])*s_,g['lift']*math.sin(math.pi*s_),math.sin(math.pi*s_)
+SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,lift=.20,spine=.10,neck=0,neck_side=0,head=0,head_side=0,tail=0,ear_x=0,ear_z=0,
+ f_dy=.08,f_dz=.04,f_pa=.3,h_dy=.06,h_dz=.05,h_pa=.3,add_FL=0,add_FR=0,add_HL=0,add_HR=0).items()}
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
  names=['Root','Pelvis','Spine','Neck','Head','Scap.L','Scap.R']
@@ -1678,7 +1688,9 @@ def place_legs(name,u,pb,hold=0.0):
    tg=foot+(Vector((0,-.09*lift,.30*lift)) if k[0]=='F' else Vector((0,.11*lift,.27*lift)));pa+=lift*(.9 if k[0]=='F' else 1.2)
   elif name in ('LieDown','SideLie','Sleep'):
    fr=1.0 if name=='Sleep' else min(1,u*3);lt,la=lie[k]
-   if name in ('SideLie','Sleep'):
+   if name=='SideLie':
+    S=SIDELIE;lt=foot+(Vector((0,-S['f_dy'],S['f_dz'])) if k[0]=='F' else Vector((0,S['h_dy'],S['h_dz'])));la=pa+(S['f_pa'] if k[0]=='F' else S['h_pa'])
+   elif name=='Sleep':
     # On its side a cat's legs lie out loose and a little bent, one pair drawn up - not folded
     # under it as in the sphinx, which rolled over became four paws in the air.
     lt=foot+(Vector((0,-.035,.06)) if k[0]=='F' else Vector((0,-.05,.07)));la=pa+.5
@@ -1712,6 +1724,7 @@ def place_legs(name,u,pb,hold=0.0):
     pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
   lr,_,_=leg_ik(rots,locs,k,tg,pa)
   for n,rv in lr.items():pb[n].rotation_euler=rv
+  if name=='SideLie':pb[LEGS[k][1]].rotation_euler[2]=SIDELIE['add_'+k]*min(1,u*3)   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
  for p in rig.pose.bones:p.location=(0,0,0);p.rotation_euler=(0,0,0);p.scale=(1,1,1)
  for o in shapeobs:
@@ -1756,7 +1769,13 @@ def pose(name,u):
   # Rolled onto its flank the body's width becomes its height, and the lowest thing is a hind
   # toe 193 mm under the floor (v6_ground_calib.py). Lifting the root that much puts the
   # pelvis at 270 mm against ~370 mm standing - which is where a cat on its side belongs.
-  if name=='SideLie':pb['Root'].rotation_euler[2]=1.25*f;pb['Root'].location.y=.139*f
+  if name=='SideLie':
+   S=SIDELIE;pb['Root'].rotation_euler[2]=S['roll']*f;pb['Root'].location.y=S['lift']*f
+   pb['Spine'].rotation_euler[0]=S['spine']*f
+   pb['Neck'].rotation_euler[0]=S['neck']*f;pb['Neck'].rotation_euler[2]=S['neck_side']*f
+   pb['Head'].rotation_euler[0]=S['head']*f;pb['Head'].rotation_euler[2]=S['head_side']*f
+   pb['Tail1'].rotation_euler[0]=S['tail']*f;pb['Tail2'].rotation_euler[0]=S['tail']*f
+   pb['Ear.L'].rotation_euler[0]=S['ear_x']*f;pb['Ear.L'].rotation_euler[2]=S['ear_z']*f
   if name=='Sleep':
    # A real sleep pose lies on the flank, with a relaxed head and closed lids.
    pb['Root'].rotation_euler[2]=1.15;pb['Root'].location.y=.127   # +152 mm: lands the lowest hind toe at -2 mm
