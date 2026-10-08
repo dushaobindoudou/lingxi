@@ -888,11 +888,19 @@ for s in [-1,1]:
   bpy.ops.object.select_all(action='DESELECT');o.select_set(True);bpy.context.view_layer.objects.active=o
   bpy.ops.object.convert(target='MESH');bind(o,'Head')
 # Paws: four toes, retractable claws, pink pads; miniature teeth have separate geometry.
+# Round L: the MAIN pad takes the shape of codex's pad_main_mask.png (a kitten's rounded three-lobed pad, lobes to
+# the heel, round edge to the toes) as alpha on its oval - outside the shape the paw's furry skin shows through. The beans keep the oval.
+PAD_S=_v6('V6_PAD_S',1.2)   # round L: the main pad x1.2 across - the reference's pad fills the middle of the sole
+padmat=pink
+if (TEXDIR/'pad_main_mask.png').exists() and _v6('V6_PAD_SHAPE',1)>0:
+ padmat=pink.copy();padmat.name='LX_PadMain';_pn=padmat.node_tree;_pp=_pn.nodes.get('Principled BSDF')
+ _mk=_pn.nodes.new('ShaderNodeTexImage');_mk.image=bpy.data.images.load(str(TEXDIR/'pad_main_mask.png'),check_existing=True);_mk.image.colorspace_settings.name='Non-Color';_mk.extension='EXTEND'
+ _pn.links.new(_pn.nodes.new('ShaderNodeUVMap').outputs['UV'],_mk.inputs['Vector']);_pn.links.new(_mk.outputs['Color'],_pp.inputs['Alpha'])
 claws=[]
 for s in [-1,1]:
  suf='L' if s<0 else 'R'
  for pre,y,x in [('Front',-.17,s*.108),('Rear',.26,s*.12)]:
-  pad=sphere('LX_'+pre+'Pad.'+suf,(x,y-.026,.010),(.022,.026,.007),pink);planar_uv(pad,0,1);bind(pad,pre+'Paw.'+suf)   # a kitten-sized main pad
+  pad=sphere('LX_'+pre+'Pad.'+suf,(x,y-.026,.010),(.022*PAD_S,.026*PAD_S,.007),padmat);planar_uv(pad,0,1);bind(pad,pre+'Paw.'+suf)   # a kitten-sized main pad
   for i in range(4):
    tx,ty=toe_xy(pre,s,i)
    toe=sphere('LX_'+pre+f'Toe{i}.'+suf,(tx,ty,TOE_Z),TOE_R,toemat);bind(toe,pre+f'Toe{i}.'+suf)
@@ -1339,7 +1347,7 @@ if _v6('V6_SOLE_FUR',1)>0:
  _sm=bpy.data.meshes.new('LX_SoleSrc');_sb.to_mesh(_sm);_sb.free();_so=bpy.data.objects.new('LX_SoleSrc',_sm);scene.collection.objects.link(_so)
  def _off_pad(r):
   ok=np.ones(len(r),dtype=bool)
-  for (pre,s),(cx,cy) in PAD_C.items():ok&=~((((r[:,0]-cx)/.026)**2+((r[:,1]-cy)/.030)**2<1))
+  for (pre,s),(cx,cy) in PAD_C.items():ok&=~((((r[:,0]-cx)/(.026*_v6('V6_PAD_S',1.2)))**2+((r[:,1]-cy)/(.030*_v6('V6_PAD_S',1.2)))**2<1))
   return ok
  groom(_so,max(1,int(_v6('V6_SOLE_FUR_N',9000)*SCALE)),_v6('V6_SOLE_LEN',.011),'sole','under',root_filter=_off_pad,bind_as='body')
  bpy.data.objects.remove(_so,do_unlink=True)   # round I: 2.2 mm (was 3.3), under the paw's own coat; G3: the UNDERCOAT's thin strands - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet

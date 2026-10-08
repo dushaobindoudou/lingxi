@@ -45,6 +45,7 @@ AI_MAPS = {
     'tongue_v2': (1024, 1024),
     'pad_skin_v2': (1024, 1024),
     'paw_fur_tile': (1024, 1024),
+    'pad_main_mask': (1024, 1024),   # the main pad's three-lobed shape, alpha on its oval
 }
 
 
