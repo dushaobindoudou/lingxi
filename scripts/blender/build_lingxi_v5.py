@@ -232,7 +232,8 @@ sculpt(head)
 # Eyelids are spherical shells around a centre far behind the eye, rotated shut by their own bones
 # (see "Face rig" below). LID_APEX is how far the lid stands in front of the cornea's plane.
 LID_APEX=.0048   # .0040 left the lower lid's corner (with its 2mm shell) coincident with the cornea
-EYE_X=.064*_v6('V6_EYE_X',1.0);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',.95)   # .95 (2026-09-29, v6_eye_size.py): at 1.0 the outer iris measured .48E bald-rimmed and .55E once the eyeliner rim widened, against the reference's .50E; .95 splits it. The earlier .66 was a MEASUREMENT error - v6_face_shape.py sized pupils by their largest inscribed circle, which the reference's big catchlights bite into (.194E where the hole-filled pupil is .34E); at .66 the eyes were a third too small, beads instead of the reference's big round eyes
+EYE_X=.064*_v6('V6_EYE_X',1.20);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',1.06)   # round L (user approved): x1.20 apart, .95 -> 1.06 across - the reference's eyes sit .38 of the furred head apart and are .17 of it across; ours were .30 / .15, a crowded little face (round-l-test f1-f3).
+#   # .95 (2026-09-29, v6_eye_size.py): at 1.0 the outer iris measured .48E bald-rimmed and .55E once the eyeliner rim widened, against the reference's .50E; .95 splits it. The earlier .66 was a MEASUREMENT error - v6_face_shape.py sized pupils by their largest inscribed circle, which the reference's big catchlights bite into (.194E where the hole-filled pupil is .34E); at .66 the eyes were a third too small, beads instead of the reference's big round eyes
 EAR_S=_v6('V6_EAR',1.0)   # ear shell scaled about its base; the Ear bones scale with it (.82 = v6's smaller ear, tried 2026-09-30; the user preferred 1.0)
 LID_YC=(EYE_R**2-LID_APEX**2)/(2*LID_APEX);LID_R=LID_YC+LID_APEX   # sphere through the eye's rim, LID_APEX proud at its centre
 LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather (24mm read as a long, sad philtrum)
@@ -641,6 +642,21 @@ def iris_material():
  """Matte iris under the cornea. The pupil and the dark limbal ring are painted here so the
   pupil is always round and centred whatever the texture's own pupil size is."""
  m=iris.copy();m.name='LX_IrisLayer';nt=m.node_tree;p=nt.nodes.get('Principled BSDF')
+ # Round L (user approved the eye look change, 2026-10-08): rendered, the painted iris came out a dark
+ # gold-brown ring with hard black fibres around a glossy black pupil - next to the reference's soft, light
+ # olive iris that is brightest at the bottom, it read as a glass bead. Same texture, now: a third of it a
+ # flat olive (the fibres soften), x1.45, the lower half lifted, and the occlusion map at half strength.
+ _tex=next((n for n in nt.nodes if n.type=='TEX_IMAGE' and n.image and 'iris_albedo' in n.image.name),None)
+ _occ=next((n for n in nt.nodes if n.type=='MIX_RGB' and n.blend_type=='MULTIPLY'),None)
+ if _tex and _occ:
+  fl=nt.nodes.new('ShaderNodeMixRGB');fl.inputs['Fac'].default_value=_v6('V6_IRIS_FLAT',.35);fl.inputs[2].default_value=(.40,.35,.17,1)
+  gn=nt.nodes.new('ShaderNodeMixRGB');gn.blend_type='MULTIPLY';gn.inputs['Fac'].default_value=1;_g=_v6('V6_IRIS_GAIN',1.45);gn.inputs[2].default_value=(_g,_g,_g,1)
+  nt.links.new(_tex.outputs['Color'],fl.inputs[1]);nt.links.new(fl.outputs['Color'],gn.inputs[1])
+  uv0=nt.nodes.new('ShaderNodeUVMap');sp=nt.nodes.new('ShaderNodeSeparateXYZ');nt.links.new(uv0.outputs['UV'],sp.inputs[0])
+  lo=nt.nodes.new('ShaderNodeMapRange');lo.inputs['From Min'].default_value=.5;lo.inputs['From Max'].default_value=.15;nt.links.new(sp.outputs['Y'],lo.inputs['Value'])   # 0 at the centre, 1 low in the iris
+  lf=nt.nodes.new('ShaderNodeMath');lf.operation='MULTIPLY';lf.inputs[1].default_value=_v6('V6_IRIS_LIFT',.45);nt.links.new(lo.outputs['Result'],lf.inputs[0])
+  sc=nt.nodes.new('ShaderNodeMixRGB');sc.blend_type='SCREEN';sc.inputs[2].default_value=(.35,.30,.12,1);nt.links.new(lf.outputs['Value'],sc.inputs['Fac'])
+  nt.links.new(gn.outputs['Color'],sc.inputs[1]);nt.links.new(sc.outputs['Color'],_occ.inputs['Color1']);_occ.inputs['Fac'].default_value=.5
  link=p.inputs['Base Color'].links
  if link:src=link[0].from_socket
  else:
@@ -671,8 +687,21 @@ co_out=cn.new('ShaderNodeOutputMaterial');co_mix=cn.new('ShaderNodeMixShader');c
 co_tr=cn.new('ShaderNodeBsdfTransparent');co_gl=cn.new('ShaderNodeBsdfGlossy');co_gl.inputs['Roughness'].default_value=.02
 # Half-strength mirror: the lamps are far brighter than the grey studio, so their glints survive
 # while the grey veil the studio cast over the pupil halves.
-co_gl.inputs['Color'].default_value=(.16,.16,.16,1)   # .34 greyed the pupil; .22 still mirrored the whole softbox as a crescent across it
-cl.new(co_fr.outputs[0],co_mix.inputs[0]);cl.new(co_tr.outputs[0],co_mix.inputs[1]);cl.new(co_gl.outputs[0],co_mix.inputs[2]);cl.new(co_mix.outputs[0],co_out.inputs['Surface'])
+co_gl.inputs['Color'].default_value=(.10,.10,.10,1)   # .34 greyed the pupil; .22 still mirrored the whole softbox as a crescent across it; .16 a grey moon over half the pupil (round L)
+cl.new(co_fr.outputs[0],co_mix.inputs[0]);cl.new(co_tr.outputs[0],co_mix.inputs[1]);cl.new(co_gl.outputs[0],co_mix.inputs[2])
+# Round L: the catchlights are painted on the cornea, in its own UV (u = the viewer's right, v = up). The
+# softbox lamp could not do it: the cornea is a shallow lens (~100 mm radius of curvature) and each eye turns
+# 12 deg outward, so any lamp that lit one pupil put its glint on the other eye's rim - in round J it was a
+# wedge cut off by the upper lid. A shading-only "rounder cornea" mirrored the whole studio into the pupil.
+# Like the reference: one soft round light on the pupil's upper-right edge and a small one nearer the centre.
+_acc=co_mix.outputs[0];_uvc=cn.new('ShaderNodeUVMap')
+for _hu,_hv,_hr in ((.80,.63,.085),(.62,.51,.028)):
+ _d=cn.new('ShaderNodeVectorMath');_d.operation='DISTANCE';cl.new(_uvc.outputs['UV'],_d.inputs[0]);_d.inputs[1].default_value=(_hu,_hv,0)
+ _mr=cn.new('ShaderNodeMapRange');_mr.interpolation_type='SMOOTHERSTEP';_mr.inputs['From Min'].default_value=_hr;_mr.inputs['From Max'].default_value=_hr*.45;cl.new(_d.outputs['Value'],_mr.inputs['Value'])
+ _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=_v6('V6_CATCH',3.5);cl.new(_mr.outputs['Result'],_ms.inputs[0])
+ _em=cn.new('ShaderNodeEmission');_em.inputs['Color'].default_value=(1,.99,.97,1);cl.new(_ms.outputs[0],_em.inputs['Strength'])
+ _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_em.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
+cl.new(_acc,co_out.inputs['Surface'])
 # Eyelid skin: coloured per vertex after the coat is known (see "lid colour" below) - a thin
 # dark rim against the eye, the surrounding coat beyond it. As a flat beige it was the pale
 # goggle ring around each eye, and a beige plate sliding down whenever the cat squinted.
@@ -1877,20 +1906,7 @@ def aim(o,target):o.rotation_euler=(Vector(target)-o.location).to_track_quat('-Z
 # Fill/Bounce were 40/22W: they lifted the dark tabby bands until the coat measured a
 # contrast of 56/255 against the reference turnaround's 74 - the pattern was there but
 # read as flat cream. 30/15 keeps the soft wrap and puts contrast back at ~72.
-# Catchlight: a soft window-shaped lamp that only reflections see. The logo's eyes are mostly
-# two big soft highlights; the studio's own lamps sit too high and wide to put one on the eyes.
-cl=bpy.data.lights.new('Catchlight','AREA');cl.energy=160;cl.shape='RECTANGLE';cl.size=1.0;cl.size_y=.75   # the big soft highlight of the reference eyes;cl.color=(1,.98,.94)
-clo=bpy.data.objects.new('Catchlight',cl);scene.collection.objects.link(clo);clo.location=(.12,-2.1,1.05)   # centred above the lens axis: a highlight in BOTH eyes
-clo.rotation_euler=(Vector((0,-.45,.55))-clo.location).to_track_quat('-Z','Y').to_euler()
-for vis in ('visible_camera','visible_diffuse','visible_transmission','visible_volume_scatter'):
- if hasattr(clo,vis):setattr(clo,vis,False)
-# ...and it reaches only the corneas: on the lids its reflection turned a closed eye into a
-# shiny grey slit.
-_rc=bpy.data.collections.new('CatchlightReceivers')
-for o in scene.objects:
- if o.name.startswith('LX_Cornea.'):_rc.objects.link(o)
-try:clo.light_linking.receiver_collection=_rc
-except AttributeError:pass
+# (Round L: the Catchlight lamp and its cornea-only light link are gone - the catchlights are painted on the cornea.)
 for n,loc,power,size,col in [('Key',(-1,-1.2,1.7),72,1.6,(1.0,.93,.83)),('Fill',(1.2,-.6,1.0),30,1.4,(.90,.94,1.0)),('Rim',(0,1.3,1.4),58,1.2,(1.0,.86,.76)),('Bounce',(0,-1.6,.35),15,1.8,(1.0,.95,.88))]:
  d=bpy.data.lights.new(n,'AREA');d.energy=power;d.shape='DISK';d.size=size;d.color=col;o=bpy.data.objects.new(n,d);scene.collection.objects.link(o);o.location=loc;aim(o,(0,0,.35))
 target=(0,-.03,.42)
