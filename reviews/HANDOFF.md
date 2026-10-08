@@ -395,3 +395,36 @@ Jump 后爪接地帧位移 0.91 → 2.74 mm（gait.json），动作域没碰 Jum
    Lick 着地的左前爪离地 +4.9 mm（root +3 mm 的代价）。
 4. 过渡帧：SideLie 在前 1/3 线性翻滚 + 抬 root，u≈.1 时后趾 −2.9 mm；LieDown 下降过程中前趾 1–3 mm 离地。
 5. 侧躺 / 睡觉绕地面的体轴翻滚，身体整体往 −x 偏 ~0.3 m（round-k 的 1.25 rad 时就这样）；应用里原地播放要知道这一点。
+
+---
+
+## Round L 舌头与爪子（Claude 主会话，2026-10-08 晚）——codex 重做素材
+
+用户：「舌头不对」「爪子不对，重新生成素材」，以及「优先使用 codex 生成好资源，防止 codex 没有额度了」。
+**提交**：d215f60 舌头 / 爪底 / 趾毛 / 豆豆 · 8b0f9c2 矮趾头（⚠️ 这个提交的注释吞掉了 TOE_IN / TOE_ARC，构建会失败）·
+c67bc98 修复 · e7a4a73 三瓣大肉垫 · bb07cde 四张参考图。**渲染**：`assets/characters/lingxi/v6/round-l-paw/`（HEAD c67bc98 之后；
+views paws/front，faces f537 f495，poses×15）。审阅页已更新：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW
+⚠️ round-m（WorkBuddy，19:46 构建）早于 8b0f9c2，不含矮趾头和三瓣肉垫。
+⚠️ Blender 遇到 Python 报错仍以 0 退出：round-l-paw/run.sh 的 step() 现在会把日志里的 Traceback 判为失败（rc 99），建议各 run.sh 照抄。
+
+**codex 素材**（`v5-imagegen-sources/`，该目录被 .gitignore 忽略；记录在 TONGUE-PAW-PROMPTS.md、REF-BATCH2-PROMPTS.md）：
+tongue_v2、pad_skin_v2（幼猫粉）、paw_fur_tile（无缝短绒毛高度图）、pad_main_mask（三瓣大肉垫形状，已上下翻转为三瓣朝脚跟）；
+参考图（已提交在 `reference/`）：lingxi-ref-profile（侧脸造型用）、-paw-sole、-sidelie、-sleep-curl（躺姿用）。
+`stage_imagegen_textures.py --out assets/characters/lingxi/v5/textures --skip-procedural --only <名字>` 只重放指定贴图并派生凹凸图。
+
+| 项 | 改前 | 改后 | 旋钮 |
+|---|---|---|---|
+| 舌面 | 暗红、倒刺 | 幼猫浅粉、光滑湿润；宽 ×1.2、伸出时微张 | V6_SKIN_V1（退回旧图）、V6_TONGUE_W、V6_TONGUE_SPREAD |
+| 肉垫 / 豆豆皮 | 红褐粗颗粒 | 婴儿粉 | 同上 |
+| 豆豆 | 藏在趾球里只露月牙 | 画在趾底皮肤上的完整粉椭圆，该处不长趾毛 | V6_BEAN_PAINT |
+| 大肉垫 | 椭圆 | 三瓣心形（遮罩作透明度），×1.2 | V6_PAD_SHAPE、V6_PAD_S |
+| 爪底 | ~100 根毛（秃） | 单独一圈 ~6 mm 短毛，从肉垫往外梳 | V6_SOLE_FUR / _N / _LEN |
+| 趾头 | 44 mm 高、像手指；趾毛 2.5 mm | 36 mm（底面不动）、趾毛 ~5 mm、绒面材质 | V6_TOE_H .82、V6_TOE_FUR .009 |
+| 爪部毛长 | 腿部渐变起点 .10 | .14 | V6_PAW_COAT |
+| 白毛下的皮肤 | 纯白（渲成光滑一片） | 身体材质加绒毛凹凸；爪和小腿皮肤按绒毛图加明暗 | V6_FUR_TILE_BUMP 1.0、V6_PAW_SKIN_SHADE .5 |
+
+复核（round-l-paw 带毛）：舔爪舌尖离趾 1.06 mm、零穿插；Yawn .179 / Bite .131 / Rest 0；走 / 跑滑移 ≤ 0.5 mm、无腾空；
+趾缝 1.4 / 3.4 / 3.4 mm（正沟）；各动作最低点不变。
+
+**待用户看图决定**：站立时小腿和爪背比之前略灰（V6_PAW_SKIN_SHADE 可调到 .3）；哈欠里的舌头仍比参考小。
+**下一轮**：侧脸造型（对照 lingxi-ref-profile）。口腔袋前后位置 V6_CAV_Y 由 WorkBuddy 在扫（ISSUES F3/F4），结论出来再并入。
