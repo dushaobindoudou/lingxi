@@ -317,7 +317,7 @@ jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True 
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
 mouthpink=mat('LX_MouthPink',(.30,.07,.08),.5)   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
-cavity=sphere('LX_MouthCavity',(0,-.392,CAV_Z),(.034,.032,.016),mouthpink)
+cavity=sphere('LX_MouthCavity',(0,-.392,CAV_Z),(.042,.040,.020),mouthpink)   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
 floor=sphere('LX_MouthFloor',(0,-.394,.4485+LIP_DZ),(.026,.028,.006),mouthpink)          # floor, on the jaw (round J: 1.5 mm up, its underside sat on the chin skin)
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
