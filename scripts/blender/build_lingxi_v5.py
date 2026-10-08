@@ -1398,7 +1398,7 @@ mouth_l=ad.bones['Head'].matrix_local.inverted()@Vector(head_xf((0,-.4515,LIP0))
 # Jaw NEGATIVE, which swings this bone UP into the skull: Yawn's -77 deg folded the chin skin inside the
 # head and left a 13.5 mm slit (REPORT A1: 26 px on a 700 px head, .037). Measured in v6_part_audit.py
 # (mouth_open): Yawn .62 -> see HANDOFF round J for the opening it gives.
-JAW_OPEN={'Yawn':_v6('V6_JAW_YAWN',.62),'Bite':_v6('V6_JAW_BITE',.40),'Lick':_v6('V6_JAW_LICK',.22)}
+JAW_OPEN={'Yawn':_v6('V6_JAW_YAWN',.62),'Bite':_v6('V6_JAW_BITE',.50),'Lick':_v6('V6_JAW_LICK',.22)}
 # ...and the upper lip lifts off the teeth with it (LipUpper bone, lip_share): metres in the head's rest
 # frame, (0, back, up).
 LIP_LIFT={'Yawn':(0,.002,.007*_v6('V6_LIP_LIFT',1.0)),'Bite':(0,.0015,.005*_v6('V6_LIP_LIFT',1.0)),'Lick':(0,.0005,.002)}
