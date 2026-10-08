@@ -272,7 +272,8 @@ PAD_C={(pre,s):(s*x,y-.026) for pre,y,x in (('Front',-.17,.108),('Rear',.26,.12)
 # Now the lobes keep G2's height, sit 4 mm deeper and lean on a gentler arc (outer toes ~2 mm back):
 # every cleft is a groove behind both of its crowns. 22 mm apart on 32 mm toes (10 mm overlap): pressed
 # together, the clefts are lines, not the gaps between four eggs (24 mm, round-i-test s2).
-TOE_DX=.022;TOE_R=(.016,.020,.022*_v6('V6_TOE_H',1.0));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.15)
+TOE_DX=.022;TOE_R=(.016,.020,.022*_v6('V6_TOE_H',.82));TOE_Z=.001+TOE_R[2];   # round L: .82 high (44 -> 36 mm), bottoms where they were - taller than wide they read as four fingers; the reference's toes are low round bumps (round-l-test t3/t4)
+#TOE_IN=.012*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.15)
 def toe_xy(pre,s,i):
  (cx,cy,cz),(rx,ry,rz)=PAW[pre];dx=(i-1.5)*TOE_DX;h=((TOE_Z-cz)/rz)**2
  yc=cy-ry*math.sqrt(max(1-h,.05));yi=cy-ry*math.sqrt(max(1-(dx/rx)**2-h,.05))
@@ -1322,7 +1323,7 @@ for o in [o for o in list(bpy.data.objects) if o.name.startswith(('LX_FrontToe',
  tp='Front' if 'Front' in o.name else 'Rear';ti=int(o.name.split('Toe')[1][0]);ts=-1 if o.name.endswith('.L') else 1
  _btx,_bty=toe_xy(tp,ts,ti)
  _bean=lambda r,bx=_btx,by=_bty:~((((r[:,0]-bx)/.0095)**2+((r[:,1]-by-.002)/.0115)**2<1)&(r[:,2]<.012))   # round L: the bean is bare skin (painted on the toe, see toemat)
- groom(o,max(1,int(_v6('V6_TOE_FUR_N',2200)*SCALE)),_v6('V6_TOE_FUR',.0075),'paw','under',root_filter=_bean,bind_as=o.vertex_groups[0].name,shade=toe_crease(tp,ts,ti))   # round L: 2.5 -> ~4 mm, 1400 -> 2200 - velvet you can see, not a bald ball; round I: 2.2 mm (was 3.3), under the paw's own coat; G3: the UNDERCOAT's thin strands - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
+ groom(o,max(1,int(_v6('V6_TOE_FUR_N',2200)*SCALE)),_v6('V6_TOE_FUR',.009),'paw','under',root_filter=_bean,bind_as=o.vertex_groups[0].name,shade=toe_crease(tp,ts,ti))   # round L: 2.5 -> ~4 mm, 1400 -> 2200 - velvet you can see, not a bald ball; round I: 2.2 mm (was 3.3), under the paw's own coat; G3: the UNDERCOAT's thin strands - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
 # Round L (user: 「爪子不对」): the paw's sole had ~100 strands - a raised paw (Lick) showed a smooth white glove
 # round its pink pad. The reference's sole is white fur with the bare pink pad and beans set in it. The sole's
 # faces are copied out of the body (sampling the whole body would put 0.04% of the roots there), groomed with
