@@ -51,7 +51,7 @@ toml_edit = { version = "0.25", default-features = false, features = ["parse", "
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
-macos-accessibility-client = "0.0.1"
+macos-accessibility-client = "0.0.2"
 # Power: the observer blocks for the display-sleep / lock / screen-saver notifications, and the
 # CoreGraphics reads that double-check them (see watch_system_presence / revalidate_presence).
 # Both already ship inside the app through tao/wry; listed here only so lib.rs can name them.
