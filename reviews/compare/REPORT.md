@@ -1,6 +1,6 @@
 # Round H 嘴部与步态审计（round-i-check）
 
-**审计基线**：`assets/characters/lingxi/v6/round-h/lingxi-short-fur-rig-v5.blend`，未重新 build；五张嘴部图均以 `V6_RES=900 V6_SAMPLES=128 V6_VIEWS=face V6_FACE_FOLLOW=1` 直接渲染。旋钮逐字复制 round-h 的 `knobs.txt` 至 `round-i-check/knobs.txt`；其中 `LINGXI_OUT=round-h` 是原始 build 记录，本次不 build，渲染实际输出由逐条命令中的 `V6_OUT=round-i-check/faces/...` 控制。只用 `scene.frame_set()` 读取烘焙 NLA；没有给 rig 直接赋 action，也没有用 `bound_box` 量几何。详细命令及耗时在 `round-i-check/pipeline.out`。参考仅为用户给的四张照片。`jaw_scan.py` 全 clip 扫描绝对 jaw 角：Yawn/Lick/Bite 峰值恰在代表帧 495/537/585；Happy 代表帧 454 与全段最大绝对角所在的首帧 417 均为 −2.29°；Curious 全段 0°（代表帧 390 足够），所以每 clip 一张代表近景覆盖最大张口状态。
+**审计基线**：`assets/characters/lingxi/v6/round-h/lingxi-short-fur-rig-v5.blend`，未重新 build；五张嘴部图均以 `V6_RES=900 V6_SAMPLES=128 V6_VIEWS=face V6_FACE_FOLLOW=1` 直接渲染。旋钮逐字复制 round-h 的 `knobs.txt` 至 `round-i-check/knobs.txt`；其中 `LINGXI_OUT=round-h` 是原始 build 记录，本次不 build，渲染实际输出由逐条命令中的 `V6_OUT=round-i-check/faces/...` 控制。只用 `scene.frame_set()` 读取烘焙 NLA；没有给 rig 直接赋 action，也没有用 `bound_box` 量几何。详细命令及耗时在 `round-i-check/pipeline.out`。参考仅为用户给的四张照片。首张新渲染 `views/front.png` 与 round-h 同名 900px 图逐像素完全相同；新渲染 `faces/yawn/face.png` 与 round-h 的 `faces/yawn.png` 也逐像素相同，证明基线/参数对齐。`jaw_scan.py` 全 clip 扫描绝对 jaw 角：Yawn/Lick/Bite 峰值恰在代表帧 495/537/585；Happy 代表帧 454 与全段最大绝对角所在的首帧 417 均为 −2.29°；Curious 全段 0°（代表帧 390 足够），所以每 clip 一张代表近景覆盖最大张口状态。
 
 ## 口径与可复现性
 
@@ -9,7 +9,7 @@
 - `round-i-check/tongue_contact.py` 输出 `tongue-contact.json`：f537 求值网格 BVH 三角面相交对数，以及舌顶点到 `LX_FrontPad.R` 表面的最小距离。
 - `round-i-check/tooth_skin.py` 输出 `tooth-skin.json`：在上犬齿最高真实顶点沿前方 −Y 对 `LX_Head`、左右上唇求值三角面射线，精确量犬齿尖前方皮肤厚度。
 - `round-i-check/proportions.py` 输出 `proportions.json`：frame 1 的 `LX_Body/LX_Head/LX_Tail/LX_FrontToe0.L` 求值顶点。肩部截面为 `−0.19<Y<−0.12 m, |X|<0.06 m`；胸底为该截面 `Z>0.15 m` 的最低点。前腿可见长度定义为胸底到趾尖最低点。
-- `reviews/compare/pixel_measure.py` 输出 `pixel-measure.json`：人工在两张侧面 PNG 放置鼻、后脑、臀、尾尖、肩顶、胸底、前爪地线标点，再由脚本计算比值。点位可在文件中复核，轮廓误差约 ±10 px。B2 对比图将 rig 侧面图水平镜像，仅为与参考同向并排；全部像素数字仍取未镜像的原图。仓库现有 `scripts/blender/metrics_render.py` **只算颜色亮度/对比度/暖度，不含长度指标**，因此未把它的颜色输出冒充比例测量。像素口径受毛发、姿态、相机影响；与顶点冲突时以顶点为准。
+- `reviews/compare/pixel_measure.py` 输出 `pixel-measure.json`：人工在两张侧面 PNG 放置鼻、后脑、臀、尾尖、肩顶、胸底、前爪地线标点，再由脚本计算比值。点位可在文件中复核，轮廓误差约 ±10 px。B1/B2 对比图将 rig 侧面图水平镜像，仅为与参考同向并排；全部像素数字仍取未镜像的原图。仓库现有 `scripts/blender/metrics_render.py` **只算颜色亮度/对比度/暖度，不含长度指标**，因此未把它的颜色输出冒充比例测量。像素口径受毛发、姿态、相机影响；与顶点冲突时以顶点为准。
 - `reviews/compare/mouth_pixels.py` 用固定 ROI 的红色像素阈值重测 Yawn，输出 `mouth-pixels.json`。红色包围框包含深口腔/舌面，头宽仍为人工轮廓估计。
 - 参考是静态照片，无法由它给出真实 jaw 关节角、步态相位或毫米。照片中的开口/身体比值是二维估算，不能伪称为 3D 真值。
 

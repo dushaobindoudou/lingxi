@@ -75,9 +75,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 <body data-page-node-id="g8jkU4HPM5sfJhKTHcVCtH">
 <div class="wrap" data-page-node-id="VZDIJoSniGwlXYMMfCvpFC">
 <header data-page-node-id="p2ahRbDIxVAniCBfvgcnXB">
-  <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第五批 · round-j 嘴部已上线）</h1>
-  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-j（第五批：嘴部重写）已上线</b>：四个高趾瓣挤成爪前缘、<b>12 条趾缝全部成沟</b>、趾毛贴伏、腿毛从腕部顺到躯干（消「细棍」）、nape 压 30%（消驼峰） · 15 动作 + 7 视图 standard 重渲</div>
-  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">round-j 嘴部实测（照 round-i 那把尺子量）：<b>找到病因</b>——`Jaw` 的转向是反的（−77° 其实把下巴往上转，下犬齿尖跑到头顶上方），改成正向后 Yawn 可见开口 0.037 → <b>0.179</b>（参考 0.256）；<b>舔爪穿模修好</b>：舌到前爪 −56.1 mm → <b>+1.13 mm 正好接触</b>，与 Jaw 相交 93 → <b>0</b> 对、与 Head 179 → 5 对；犬齿露出 1.5 → <b>8.5 mm</b>。仍欠：Yawn 张口时能看见头壳内壁（`shell_rays` 176）、Bite 开口 0.128（差 0.15）、<b>步态四项本批未动</b>（Walk 滑 5.4–7.1 mm/帧、Run 前脚全程不落地、头颈不动）。</div>
+  <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第六批 · round-k 步态与比例已上线）</h1>
+  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-k（第六批：步态重写 + 躯干下缘）已上线</b>：Walk 同侧脚重叠 8/9 帧 → <b>0</b>、滑移 5.4–7.1 → <b>0.0–0.04 mm/帧</b>；Run 前脚全程不落地 → <b>接地</b>、后脚滑 22 → <b>0 mm</b>、四脚腾空 9 帧 → <b>0</b>；头颈从全程僵直 → Walk ±1.5° / Run ±2.4° / Jump −4.4~+5.7°；前腿可见/身 0.216 → <b>0.176</b>（参考 0.174）· 15 动作 + 7 视图 standard 重渲</div>
+  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">round-j 嘴部重写保持生效：Yawn 可见开口 0.037 → <b>0.183</b>（参考 0.256）、舔爪 −56.1 mm → <b>+1.44 mm 接触</b>、犬齿露出 1.5 → <b>8.5 mm</b>、头壳内壁射线 176 → <b>20</b>。仍欠：<code>shell_rays</code> 剩 20、Bite 开口 0.128（差 0.15）、犬齿仍埋 13–16 mm；比例复量确认<b>肩高/身 0.67 vs 参考 0.59</b> 是唯一遗留的骨架级问题（尾巴与胸的"异常值"已确认是尺子口径错配，无需改）。</div>
   <nav data-page-node-id="6yOdvUJf7XMuiBYyAdVMfn">
     <a href="#hurt">三处硬伤</a><a href="#clips">15 个动作</a><a href="#fixed">修复后（前后对照）</a><a href="#lids">闭眼修复</a><a href="#table">动作数据表</a><a href="#views">四视图与面部</a><a href="#actions">下一步</a><a href="compare/">嘴部与步态审计</a>
   </nav>
@@ -131,7 +131,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 <div class="clips" id="clipGrid" data-page-node-id="uq6kyILXVB5BJd1rcv3BP1"></div>
 
 <h2 id="fixed">修复后：15 个动作重跑（前后对照）</h2>
-<p class="note">改的是 <code>scripts/blender/build_lingxi_v5.py</code> 里 <code>pose()</code> / <code>place_legs()</code> / <code>solve_sit()</code> 的具体数值，每一处都由 <code>v6_clip_review.py</code> 先量后改、改完再量。每张卡左＝修复前（round-b4），右＝修复后（round-b4b，standard 质量重渲）。最低点是真实网格顶点离地面的高度，站立时是 +1.5 mm，负值＝陷进地面。</p>
+<p class="note">改的是 <code>scripts/blender/build_lingxi_v5.py</code> 里 <code>pose()</code> / <code>place_legs()</code> / <code>solve_sit()</code> 的具体数值，每一处都由 <code>v6_clip_review.py</code> 先量后改、改完再量。每张卡左＝修复前（round-b4），右＝修复后（<b>round-k</b>：G3 爪/嘴 + 闭眼重写 + round-j 嘴部重写 + round-k 步态重写，standard 质量重渲）。最低点是真实网格顶点离地面的高度，站立时是 +1.5 mm，负值＝陷进地面。</p>
 <div class="clips" id="fixGrid"></div>
 
 <h3 style="font-size:16px;margin:26px 0 4px">陷地与行程：修前 / 修后</h3>
@@ -178,18 +178,18 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 </table>
 
 <h2 id="views" data-page-node-id="iEJCxjTbTk3FaAzBxASDQS">四视图与面部</h2>
-<p class="note" data-page-node-id="bNwIbUdGn2IlzE3WqBFVlq">第一轮的四视图与面部对照，保留作参照。第二轮的判断改由上面的几何实测支撑。</p>
+<p class="note" data-page-node-id="bNwIbUdGn2IlzE3WqBFVlq">四视图与面部为 round-k 当前状态（standard 重渲）。定量判断以上面的几何实测与 <code>reviews/ISSUES-2026-10-08.md</code> 为准。</p>
 <div class="grid2" data-page-node-id="pUA3phNmwGKe618CZXCUyo">
   <div class="card" data-page-node-id="WzkCMfWtAkRMwwMcnAmEUe"><div class="imgbox" data-page-node-id="zAxl19MiTql5jmNUsmyrYo"><span class="badge" data-page-node-id="Z86vUJJVDyoEJdzWjUAnMD">参考 turnaround-v1</span><img src="turnaround-v1.png" alt="参考" data-page-node-id="sW8ypYxjVY6gk3QxmfLFmx"></div><div class="cap" data-page-node-id="3PNzRdbIcaDJIIVKRBCAU2"><b data-page-node-id="imVtUW2255hJGjGFf5nAkc">参考</b>：半写实四视图</div></div>
-  <div class="card" data-page-node-id="OtMdT6wy9VCg8FaW024CNH"><div class="imgbox" data-page-node-id="B14OBvSx6wfEgC3AjIMqeH"><span class="badge" data-page-node-id="IcvOjFygy36JL4kA2L1s1b">B4 · front</span><img src="front.png" alt="B4正面" data-page-node-id="5IWpM0PZcydCWiZwHXvkex"></div><div class="cap" data-page-node-id="kSGjCJrDb3eLKbgCLO54Uw"><b data-page-node-id="fCA2Xq8nidzYzfMUl6bQhe">B4 正面</b>：轮廓饱满、配色接近</div></div>
+  <div class="card" data-page-node-id="OtMdT6wy9VCg8FaW024CNH"><div class="imgbox" data-page-node-id="B14OBvSx6wfEgC3AjIMqeH"><span class="badge" data-page-node-id="IcvOjFygy36JL4kA2L1s1b">当前 · front</span><img src="front.png" alt="B4正面" data-page-node-id="5IWpM0PZcydCWiZwHXvkex"></div><div class="cap" data-page-node-id="kSGjCJrDb3eLKbgCLO54Uw"><b data-page-node-id="fCA2Xq8nidzYzfMUl6bQhe">正面（round-k）</b>：轮廓饱满、配色接近</div></div>
 </div>
 <div class="grid2" style="margin-top:18px" data-page-node-id="rFAJUxnJ1VxQX57cAI6jcz">
-  <div class="card" data-page-node-id="v2V9NloyDt4E1sdoANCkvV"><div class="imgbox" data-page-node-id="ogD1F2zn46pGn8eNHL2brL"><span class="badge" data-page-node-id="tCY2bLHKvJhBVUICHLsXtf">B4 · side</span><img src="side.png" alt="B4侧面" data-page-node-id="7JvRTLykPaKbD5pxpkdHVF"></div><div class="cap" data-page-node-id="aMZfdtUzqzkZKzO6QrLuAu"><b data-page-node-id="TwTU85Shg3Ce6PKJRvGy1P">B4 侧面</b>：没有腰线，后腿膝关节折角被毛埋掉</div></div>
+  <div class="card" data-page-node-id="v2V9NloyDt4E1sdoANCkvV"><div class="imgbox" data-page-node-id="ogD1F2zn46pGn8eNHL2brL"><span class="badge" data-page-node-id="tCY2bLHKvJhBVUICHLsXtf">当前 · side</span><img src="side.png" alt="B4侧面" data-page-node-id="7JvRTLykPaKbD5pxpkdHVF"></div><div class="cap" data-page-node-id="aMZfdtUzqzkZKzO6QrLuAu"><b data-page-node-id="TwTU85Shg3Ce6PKJRvGy1P">侧面（round-k）</b>：步态重写后站姿；肩高/身 0.67 仍高于参考 0.59</div></div>
   <div class="card" data-page-node-id="4gBmf6RcZTq4r0UR0v7uN4"><div class="imgbox" data-page-node-id="EG5W0nWpU0b9E3mlZBV4t4"><span class="badge" data-page-node-id="4wAppVfSCJ8Ui9jSLB45Bg">参考 · face closeup</span><img src="lingxi-ref-face-closeup.png" alt="参考面部" data-page-node-id="x6zoFkaAKBQexalsQIIY6l"></div><div class="cap" data-page-node-id="OBhO3s0V6uoKJs6mfMEkpl"><b data-page-node-id="cjeyxjhaWQAzsMu1tfRhLt">参考面部</b>：瞳径 0.40E、鼻宽 0.311E、嘴宽 0.288E</div></div>
 </div>
 <div class="grid2" style="margin-top:18px" data-page-node-id="gzLvuIhVQe91c0mJwuTPwT">
-  <div class="card" data-page-node-id="g6wKXizm72ClVojjNU0vdI"><div class="imgbox" data-page-node-id="Z1JJcpiXEwHyKJw02zMDN7"><span class="badge" data-page-node-id="xXHuAp8ywDvi6f316YBHRO">B4 · face</span><img src="face.png" alt="B4面部" data-page-node-id="W2ePf2nL0LpR2kLxZb1146"></div><div class="cap" data-page-node-id="Bqj8XoTw6kbsukWuDvy2uF"><b data-page-node-id="0TtVxFllcodbGcF8xgBGHD">B4 面部</b>：眼径 0.44E（+10%），鼻镜粉已对上，嘴偏宽偏高</div></div>
-  <div class="card" data-page-node-id="m9MdMIzFGcH78Z3h3RSpTd"><div class="imgbox" data-page-node-id="7PLnkTG7GrWcWQcBJRd1wm"><span class="badge" data-page-node-id="3k76pa5EAckWFWmGWHPSrz">B4 · threequarter</span><img src="threequarter.png" alt="B4四分之三" data-page-node-id="xKRPkJlrWqIzDP7UDB4wsL"></div><div class="cap" data-page-node-id="iKlZMR3Lzm2QfWkikp7JEw"><b data-page-node-id="2MzQrEjv1qb3tbz6NLrkqw">B4 四分之三</b>：胸口白毛过渡自然</div></div>
+  <div class="card" data-page-node-id="g6wKXizm72ClVojjNU0vdI"><div class="imgbox" data-page-node-id="Z1JJcpiXEwHyKJw02zMDN7"><span class="badge" data-page-node-id="xXHuAp8ywDvi6f316YBHRO">当前 · face</span><img src="face.png" alt="B4面部" data-page-node-id="W2ePf2nL0LpR2kLxZb1146"></div><div class="cap" data-page-node-id="Bqj8XoTw6kbsukWuDvy2uF"><b data-page-node-id="0TtVxFllcodbGcF8xgBGHD">面部（round-k）</b>：round-j 嘴部重写后；眼径 0.44E（+10%），鼻镜粉已对上</div></div>
+  <div class="card" data-page-node-id="m9MdMIzFGcH78Z3h3RSpTd"><div class="imgbox" data-page-node-id="7PLnkTG7GrWcWQcBJRd1wm"><span class="badge" data-page-node-id="3k76pa5EAckWFWmGWHPSrz">当前 · threequarter</span><img src="threequarter.png" alt="B4四分之三" data-page-node-id="xKRPkJlrWqIzDP7UDB4wsL"></div><div class="cap" data-page-node-id="iKlZMR3Lzm2QfWkikp7JEw"><b data-page-node-id="2MzQrEjv1qb3tbz6NLrkqw">四分之三（round-k）</b>：胸口白毛过渡自然</div></div>
 </div>
 
 <h2 id="lids" data-page-node-id="lidfix001">闭眼修复（round-h）：从「眼罩」到一条拱形睑缝</h2>
@@ -204,7 +204,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 </div>
 
 <h2 id="actions" data-page-node-id="7OZA9yl1Gz8w5Vl1PpsXbP">收敛情况（按性价比排）</h2>
-<p class="note"><b>1 / 2 / 5 / 6 / 7 / 8 已完成</b>（爪子、五个动作陷地、Stretch、Walk 后腿、Bite/Yawn、Jump）。<b>本批新完成：闭眼重写（见上节）+ 嘴的第一步（犬齿收回、唇线 .98）</b>。剩余：<b>3 的第二步（唇线再降 .970，需配 MUZZLE_GROW≈.010）</b>和 <b>4（耳）</b>留给下一轮。</p>
+<p class="note"><b>1 / 2 / 5 / 6 / 7 / 8 已完成</b>（爪子、五个动作陷地、Stretch、Walk 后腿、Bite/Yawn、Jump）。<b>round-h 批完成</b>：闭眼重写 + 嘴第一步；<b>round-j 批完成</b>：嘴部重写（Jaw 转向纠正，Yawn 0.037→0.183、舔爪接触、犬齿 8.5mm）；<b>round-k 批完成</b>：步态重写（Walk 同侧重叠 0、滑移 0.04mm/帧、Run 接地、头颈相位）+ 躯干下缘（前腿可见/身 0.176，参考 0.174）。剩余：<b>3 的第二步（唇线 .970）</b>、<b>4（耳）</b>、<code>shell_rays</code> 20→0、Bite 开口 0.128→0.15，以及新确认的骨架级遗留 <b>肩高/身 0.67 vs 参考 0.59</b>（见 <code>reviews/ISSUES-2026-10-08.md</code> E 节）。</p>
 <table data-page-node-id="mE6s7r7Tj16F0ScAsblAnn">
 <tr data-page-node-id="FL8ue8xSsRmGZm37BAYv2l"><th data-page-node-id="NSB8czmsqFsTHkIAOF5jyk">#</th><th data-page-node-id="BIHYIkV1wbFv5h2J5AFO7Y">做什么</th><th data-page-node-id="HKjz2MldBMQJZpQPto9Xz6">怎么做</th><th data-page-node-id="ckdEFXBaaUJDhJ8DIr1weo">优先级</th><th data-page-node-id="ReQpmyBEdUP1I4Pdg7tFUA">验收指标</th></tr>
 <tr data-page-node-id="3rMVbZ9CVGOFV2pmk2ATnz"><td data-page-node-id="sMwsF6USjUpfFU1348DQTa">1</td><td data-page-node-id="UsJTAFhaxkyeJo5QueXqDV">爪子：让脚趾探出来</td><td data-page-node-id="OQSCrSZOzKtaGSQLqXwRNW">几何重建（<code>toe_xy()</code> / <code>PAW</code>）+ G2/G3：趾加高 42mm、外侧趾只后收 60%、趾毛改底绒 3.3mm×1400、剃毛区收窄。round-h 实测：前趾探出 <b>+16.3…+20.0 mm、52–63% 顶点外露</b>，四趾都有缝，秃带消失</td><td class="done">已完成</td><td class="done">外露 &gt; 60% ✅；最深点 ≥ +8 mm ✅ +20.0 mm</td></tr>
@@ -219,7 +219,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:v
 </table>
 
 <footer data-page-node-id="hLvdem1xKqtp1SeVlTDGA9">
-  2026-10-01 · 分支 <code data-page-node-id="1rtwB3nFJOPZQ5MTC0dhP5">lookdev/b4-review</code> · 修复前图：<code data-page-node-id="VK6j5mQLr5jIdTuiFd0TFY">assets/characters/lingxi/v6/round-b4/poses/</code> · 修复后图（本页「后」列与四视图）：<code>assets/characters/lingxi/v6/round-h/</code>（G3 + 闭眼重写，旋钮见其 <code>knobs.txt</code>）· 眼睑近景：<code>round-h-test/b4c-faces</code>（前）/ <code>h4/faces</code>（后）· 数据：<code data-page-node-id="qBpK5dZX2uI6cGocRzrGGf">clips-before.json</code> / <code>round-h/review-clips.json</code> / <code>round-h/review-parts.json</code> · 工具：<code data-page-node-id="kc1TsYXp1o50B2l8q5EQPN">scripts/lookdev-v6/v6_part_audit.py</code>、<code data-page-node-id="CPw6rhpZewoX5asfSrXrxm">v6_clip_review.py</code>、<code>v6_ground_calib.py</code>
+  2026-10-01 · 分支 <code data-page-node-id="1rtwB3nFJOPZQ5MTC0dhP5">lookdev/b4-review</code> · 修复前图：<code data-page-node-id="VK6j5mQLr5jIdTuiFd0TFY">assets/characters/lingxi/v6/round-b4/poses/</code> · 修复后图（本页「后」列与四视图）：<code>assets/characters/lingxi/v6/round-k/</code>（round-j 嘴部重写 + round-k 步态重写，旋钮见其 <code>knobs.txt</code>）· 眼睑近景：<code>round-h-test/b4c-faces</code>（前）/ <code>h4/faces</code>（后）· 数据：<code data-page-node-id="qBpK5dZX2uI6cGocRzrGGf">clips-before.json</code> / <code>round-k/review-clips.json</code> / <code>round-k/review-parts.json</code> · 工具：<code data-page-node-id="kc1TsYXp1o50B2l8q5EQPN">scripts/lookdev-v6/v6_part_audit.py</code>、<code data-page-node-id="CPw6rhpZewoX5asfSrXrxm">v6_clip_review.py</code>、<code>v6_ground_calib.py</code>
 </footer>
 </div>
 

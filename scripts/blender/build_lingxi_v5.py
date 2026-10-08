@@ -317,8 +317,14 @@ jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True 
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
 mouthpink=mat('LX_MouthPink',(.30,.07,.08),.5)   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
-cavity=sphere('LX_MouthCavity',(0,-.392,CAV_Z),(.042,.040,.020),mouthpink)   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
-floor=sphere('LX_MouthFloor',(0,-.394,.4485+LIP_DZ),(.026,.028,.006),mouthpink)          # floor, on the jaw (round J: 1.5 mm up, its underside sat on the chin skin)
+cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.392),CAV_Z),(.042,_v6('V6_CAV_RY',.040),_v6('V6_CAV_RZ',.020)),mouthpink)
+# Round J: the bag is a CUP, open at the front. Closed, it held the tongue, the floor and the lower canines
+# inside it, so a yawn showed the bag's own front wall - red, with the tongue's tip poking out under it.
+_cut=_v6('V6_CAV_CUT',-9.0)
+if _cut>-9:
+ _bm=bmesh.new();_bm.from_mesh(cavity.data);_cy=_v6('V6_CAV_Y',-.392);_ry=_v6('V6_CAV_RY',.040)
+ bmesh.ops.delete(_bm,geom=[f for f in _bm.faces if f.calc_center_median().y<-_cut*_ry],context='FACES')   # object-local: sphere() keeps the centre as the origin;_bm.to_mesh(cavity.data);_bm.free()   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
+floor=sphere('LX_MouthFloor',(0,-.394,_v6('V6_FLOOR_Z',.4485)+LIP_DZ),(.026,.028,_v6('V6_FLOOR_RZ',.006)),mouthpink)          # floor, on the jaw (round J: 1.5 mm up, its underside sat on the chin skin)
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
 # actually laps and how it scoops a paw.
@@ -1741,6 +1747,11 @@ def pose(name,u):
   fac=math.sin(math.pi*u)**2 if name=='Yawn' else (.5-.5*math.cos(phase*2))
   pb['Jaw'].rotation_euler[0]=JAW_OPEN[name]*fac;pb['LipUpper'].location=LIP_AX@(Vector(LIP_LIFT[name])*fac)
   if name=='Yawn':
+   # Round J: the tongue lies 9 mm under the lip line, and with the jaw dropped the floor's red was all the
+   # yawn showed. The reference's yawn is a pink tongue filling the lower half of the open mouth: it comes up
+   # over the lower teeth and a little forward.
+   _yt=_v6('V6_YAWN_TONGUE',1.0);kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(1,_v6('V6_YT_UP',.8)*_yt)*fac;kb['Out'].value=_v6('V6_YT_OUT',.18)*_yt*fac
+   pb['Tongue'].rotation_euler[0]=_v6('V6_YT_PITCH',0)*_yt*fac   # + tips it up, against the jaw's drop
    blink=.85*fac;pb['Head'].rotation_euler[0]+=-.48*fac   # a cat tips its head back to yawn
    pb['Spine'].rotation_euler[0]+=.14*fac;pb['Root'].location.y+=-.030*fac   # and drops its chest as the jaw opens
    pb['Tail1'].rotation_euler[0]+=-.30*fac;pb['Tail2'].rotation_euler[0]+=.22*fac

@@ -1,0 +1,53 @@
+你是这只猫的绑定美术/绑定工程师。仓库 /Users/liepin/workspace/lingxi-v5fix，分支 lookdev/b4-review，工作区干净（round-i 的代码已全部 commit，round-i 的全量渲染我已经自己跑完了）。
+
+本轮是 **round-j：嘴部 + 步态 + 身体比例**。
+
+必读（先读完再动手）：
+- 规格书 reviews/TASK-CLAUDE-round-j.md
+- 审计基线 reviews/compare/REPORT.md（round-h 的真实数字，别重做审计，按它的数字修）
+- 可复现审计脚本 assets/characters/lingxi/v6/round-i-check/{audit.py,summarize.py,tongue_contact.py,tooth_skin.py,proportions.py,jaw_scan.py}
+- 主构建 scripts/blender/build_lingxi_v5.py（1696 行，缩进一格）
+
+## 本轮要改的 7 项（目标数字照任务书）
+
+A 嘴部
+1. Yawn（f495）：可见开口从 0.037 头宽提到 **≥0.15**（参考 0.256）；上唇要随 gape 退让，现在上唇跟头不动 → 掉下巴。查 Jaw 枢轴/旋转轴与符号、V6_GAPE_W、V6_LIP、V6_LIP_SAG，让下颌转到颏部前方而不是转进毛里。
+2. Bite（f585）：现在 −18.31° 读不出咬合。目标：咬合帧能看到清晰的咬口轮廓。
+3. 犬齿：上犬齿尖埋在皮肤后 19.4–22.6mm。目标：张口时犬齿尖**可见但不浮出唇外**。旋钮 LX_Tooth* 的 Y、V6_LIP_SAG、V6_MUZZLE_GROW。**先把「犬齿尖前皮肤厚度」和「可见开口」两项审计加进 v6_part_audit.py 再动代码**（round-i-check/tooth_skin.py 有现成射线法可抄）。门齿补不补你判断，参考照片数不清就别硬猜。
+4. Lick（f537）：舌尖到爪垫 77.7mm，且舌与 Jaw 网格相交 93 对三角面。目标：舔到（间隙≈0）**且不穿模**。查 Tongue 姿态、Out 行程、舔爪 IK 与头部时序。
+5. 口腔粉色边界（f495 红色独立横条）：改完开口后复核 LX_MouthFloor / LX_Tongue / V6_GAPE_W 的材质边界。
+（Happy/Curious 本轮不动。）
+
+B 步态
+6. Walk：改**对角步态**（LF→RH→RF→LH，同侧不重叠，现在重叠 8–9 帧）；支撑相滑移从 5.5–7.1mm/帧 降到 **≤3mm/帧**，落地 0–3mm。查 WALK.off、_gait()、脚 IK 接地锁定、root 行进、脚掌世界空间锁定。
+7. Run：前脚 32 帧全悬空 → **必须接地**；后脚 22mm 滑移消除；不留无意义的四脚同时腾空（现在 9 帧）。查 RUN.off/duty/stride/lift、root 上下、IK。
+
+C 身体
+8. 头/颈加**俯仰相位**（现在 pitch 恒 0°，颈头距恒 155.57mm，读成整团上下抖）。给 Head/Neck/Spine 加与触地节奏相称的相位，幅度克制，别做成点头娃娃。Jump 也要有收放。
+9. 前腿比例：真实顶点口径前腿/身长 0.219，参考 0.174；肩高/身长 0.647 vs 参考 0.591；胸深/肩高 0.598 vs 0.706。把前腿可见长度与肩高压向参考（腿短一点、胸更饱满）。查 BODY_K、前肢长度/胸腹轮廓、V6_LEN_BODY。头/身 0.431、尾/身 0.309 差小，**本轮不要动头和尾**。
+
+## 硬约束（老规矩，逐条照做）
+
+- build_lingxi_v5.py **缩进一个空格**（不是 2、不是 4、不是 tab）。
+- 毛发系统用 **LX_Fur + hide_render**（别改渲染可见性那条老路）。
+- 颜色空间 **srgb_lin**。
+- 量几何一律**真实顶点**（求值网格 / depsgraph），**绝不用 bound_box**。
+- 量 clip **只用 scene.frame_set()**，**绝不直接给 rig 赋 action**。
+- 改前先 `python3 -m py_compile`；能跑低采样 preview 就先 preview。
+- 每个旋钮的新取值记进 knobs（commit message 或 round-j/knobs.txt 之外的说明里写明，我在 round-j/knobs.txt 里会照抄）。
+
+## 渲染分工（重要，违反会让整轮白跑）
+
+- **禁止**跑 `LINGXI_QUALITY=standard` 的全量渲染（poses 15 张 / views / faces）。
+- **禁止**跑 build + native_fur 的完整链。
+- **禁止**把任何渲染丢后台（`&` / nohup）——后台子进程会随你的进程一起死，之前已经白跑过两次。
+- **允许且鼓励**：`v6_part_audit.py`、`v6_clip_review.py`、`v6_g_review.py` 随便跑（几秒到两分钟）；也允许低采样/低分辨率 preview 渲染（比如 V6_RES=480 V6_SAMPLES=32 的单帧或少量帧）来自查嘴部观感，但必须**前台阻塞跑完**。
+- 全量渲染由我（WorkBuddy）在你提交后自己前台跑 round-j 管线。
+
+## 交付
+
+- 代码改动**分主题 commit**（嘴部 / 步态 / 头颈相位 / 比例 各自一条，审计脚本增强单独一条），不要一个巨型 commit。
+- 每改完一项就用审计脚本量出数字，把「round-h 数字 → round-j 数字 → 达标与否」写进 reviews/HANDOFF.md（追加新的一节，别覆盖别人的内容）。
+- **不要碰** reviews/b4-round/（发布页是我的）和 assets/characters/lingxi/v6/round-j/（渲染产物目录，我会建）。
+- 没达标的项目如实写「为什么达不到」，不要为过线牺牲别的指标。
+- 完成后最后一行输出 `ROUND-J CODE DONE` 并列出各 commit hash。
