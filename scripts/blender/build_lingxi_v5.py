@@ -1572,12 +1572,26 @@ if os.environ.get('V6_LICK_FROM'):   # scratch iterations on the face only: reus
 else:
  LICK_UPPER,LICK_WRIST=solve_lick(SIT)   # LICK_WRIST: the wrist's offset from the tongue tip (y, z) and the paw's turn
 (OUT/'lick-solve.json').write_text(json.dumps({'upper':{k:list(v) for k,v in LICK_UPPER.items()},'wrist':list(LICK_WRIST)}))
-WALK=dict(duty=.62,stride=.12,lift=.035,off={'HL':0,'FL':.25,'HR':.5,'FR':.75})
-RUN=dict(duty=.40,stride=.20,lift=.060,off={'FL':0,'HR':0,'FR':.5,'HL':.5})
+# Round J gaits (REPORT B1-B3). Walk: a cat's lateral-sequence walk, LF -> RH -> RF -> LH, each foot a
+# quarter cycle after the last. It used to run RH -> LF -> LH -> RF at duty .62: every swing overlapped
+# the next one's, and the next one was on the same side - 8-9 frames with a whole side off the ground.
+# At duty .76 a swing (24% of the cycle) ends before the next begins: three paws always down.
+# Both gaits now travel. In place, a planted paw had to slide back under the body (5.5-7.1 mm a frame,
+# and the hind 30% faster than the fore because of a stride multiplier); now every leg has the same
+# stride and the root moves forward stride/duty per cycle (ROOT_TRAVEL), so a planted paw stays put
+# on the ground. Run: a trot (diagonal pairs) at duty .55 - each pair lands before the other lifts, so
+# no frame has all four paws up (it had 9, and the forepaws never reached the floor).
+WALK=dict(duty=.76,stride=.12,lift=.035,off={'FL':0,'HR':.75,'FR':.5,'HL':.25},bob=.008,dip=.30,nod=.045)   # dips just after each hind paw lands (u .25 / .75)
+RUN=dict(duty=.55,stride=.19,lift=.055,off={'FL':0,'HR':0,'FR':.5,'HL':.5},bob=.012,dip=.275,nod=.07)     # dips mid-stance of each diagonal pair
+def ROOT_TRAVEL(g):return g['stride']/g['duty']   # metres per cycle
 def _gait(g,u,k):
  ph=(u+g['off'][k])%1
  if ph<g['duty']:s_=ph/g['duty'];return g['stride']*(s_-.5),0.0,0.0
- s_=(ph-g['duty'])/(1-g['duty']);e=s_*s_*(3-2*s_);return g['stride']*(.5-e),g['lift']*math.sin(math.pi*s_),math.sin(math.pi*s_)
+ # The swing eases in the WORLD: the paw leaves and lands at the ground's speed (zero), so the body-relative
+ # curve keeps the stance's backward drift at both ends. (Eased relative to the body, a run's paw still
+ # moved 4-6 mm a frame as it touched down.)
+ s_=(ph-g['duty'])/(1-g['duty']);e=s_*s_*(3-2*s_);D=ROOT_TRAVEL(g)
+ return g['stride']*.5-D*e+D*(1-g['duty'])*s_,g['lift']*math.sin(math.pi*s_),math.sin(math.pi*s_)
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
  names=['Root','Pelvis','Spine','Neck','Head','Scap.L','Scap.R']
@@ -1595,9 +1609,9 @@ def place_legs(name,u,pb,hold=0.0):
  for k in LEGS:
   foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot
   if name in ('Walk','Run'):
-   dy,dz,flex=_gait(WALK if name=='Walk' else RUN,u,k)
-   if name=='Walk' and k[0]=='H':dy*=1.30;dz*=1.25   # 1.80 overshot: hind travel 63 mm against the front's 36
-   tg=foot+Vector((0,dy,dz))
+   g=WALK if name=='Walk' else RUN;dy,dz,flex=_gait(g,u,k)
+   if k[0]=='H':dz*=1.25   # the hind paw clears its longer swing a little higher (round J: no stride multiplier - the planted paws must all move at the body's speed)
+   tg=foot+Vector((0,dy-ROOT_TRAVEL(g)*u,dz))   # the ground under a travelling body: a planted paw's target stays fixed in the world
   elif name=='Jump':
    lift=math.sin(math.pi*u)**2
    tg=foot+(Vector((0,-.09*lift,.30*lift)) if k[0]=='F' else Vector((0,.11*lift,.27*lift)));pa+=lift*(.9 if k[0]=='F' else 1.2)
@@ -1648,7 +1662,17 @@ def pose(name,u):
  if name in ['Walk','Run']:
   # legs: foot-planted gait, solved in place_legs()
   # PoseBone.location is in the root bone's local basis. Its local Y axis is world Z here.
-  pb['Root'].location.y=.015*abs(math.sin(phase))*(2 if name=='Run' else 1)
+  g=WALK if name=='Walk' else RUN
+  pb['Root'].location.z=ROOT_TRAVEL(g)*u      # forward (Root's local z is the world's -y)
+  # The body dips as each foot takes the weight (twice a cycle), instead of rising: the forelegs stand
+  # nearly straight at rest, so Run's 30 mm rise lifted the forepaws clear of the floor for good.
+  pb['Root'].location.y=-g['bob']*(.5+.5*math.cos(2*(phase-math.tau*g['dip'])))   # lowest at g['dip'] and half a cycle on
+  # Round J (REPORT B5): the head and neck rode the body as one block - head pitch 24.4 deg on every
+  # frame - so the whole cat bobbed like a toy. A walking cat steadies its head: the neck lifts as the
+  # body sinks onto a paw and the head tips back down a little, a beat behind (small - not a nodding doll).
+  w=math.cos(2*(phase-math.tau*(g['dip']+.04)))
+  pb['Neck'].rotation_euler[0]=-g['nod']*w;pb['Head'].rotation_euler[0]=.6*g['nod']*w
+  pb['Spine'].rotation_euler[0]=.25*g['nod']*math.cos(2*(phase-math.tau*g['dip']))   # the back flexes with the dip
  if name=='Jump':
   lift=math.sin(math.pi*u)**2;pb['Root'].location.y=.32*lift;pb['Spine'].rotation_euler[0]=-.12*math.sin(phase)
   # A cat in the air flies its tail for balance and lays its ears back. The clip measured
@@ -1656,6 +1680,11 @@ def pose(name,u):
   pb['Tail1'].rotation_euler[0]=-.45*lift;pb['Tail2'].rotation_euler[0]=.30*lift;pb['Tail3'].rotation_euler[0]=-.30*lift
   for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=.35*lift
   pb['Spine'].rotation_euler[0]+=.10*lift
+  # Round J (REPORT B4): the head and neck flew as one rigid block (neck fold 155.6 mm throughout). Now
+  # the neck gathers before take-off (head down, eyes on the spot), reaches up and forward in the air, and
+  # gives on landing; the head counters half of it so the eyes stay on the target. (+ = down in this rig.)
+  gather=math.exp(-((u-.05)/.06)**2)+.8*math.exp(-((u-.95)/.06)**2)
+  pb['Neck'].rotation_euler[0]=.16*gather-.20*lift;pb['Head'].rotation_euler[0]=-.5*(.16*gather-.20*lift)
  if name in ['LieDown','SideLie','Sleep']:
   # The body has to come DOWN with the legs. Folding them 117 degrees while dropping the root
   # 11cm left the silhouette 0.721 tall against Idle's 0.755 - a 4cm difference on a 75cm cat,
@@ -1780,7 +1809,9 @@ for name,duration in clips:
  rig.animation_data_clear()
  for o in shapeobs:
   if o.data.shape_keys:o.data.shape_keys.animation_data_clear()
- for f in range(1,duration+1,2):
+ # Every 2nd frame, Bezier between - except the gaits: there a planted paw is held by three joint angles
+ # whose in-betweens do not hold it (round J: 3-4 mm wobble on the unkeyed frames of a planted run paw).
+ for f in range(1,duration+1,1 if name in ('Walk','Run','Jump') else 2):
   pose(name,(f-1)/(duration-1))
   for p in rig.pose.bones:
    p.keyframe_insert('location',frame=f);p.keyframe_insert('rotation_euler',frame=f)

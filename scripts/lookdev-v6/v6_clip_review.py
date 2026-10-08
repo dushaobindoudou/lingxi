@@ -50,7 +50,8 @@ def departure():
     total = 0.0
     for bone in rig.pose.bones:
         total += sum(abs(math.degrees(a)) for a in bone.rotation_euler)
-        total += bone.location.length * 400
+        loc = bone.location if bone.name != 'Root' else bone.location.xy.to_3d()   # Walk/Run travel forward on Root's z: ground covered is not a pose
+        total += loc.length * 400
     for obj in s.objects:
         keys = getattr(obj.data, 'shape_keys', None)
         if not keys:

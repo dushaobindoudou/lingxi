@@ -42,7 +42,8 @@ def departure_from_rest():
     total = 0.0
     for bone in rig.pose.bones:
         total += sum(abs(math.degrees(a)) for a in bone.rotation_euler)
-        total += bone.location.length * 400  # metres are small; weight them into the same units
+        loc = bone.location if bone.name != 'Root' else bone.location.xy.to_3d()   # Walk/Run travel forward on Root's z: ground covered is not a pose
+        total += loc.length * 400  # metres are small; weight them into the same units
     for obj in scene.objects:
         keys = getattr(obj.data, 'shape_keys', None)
         if not keys:
