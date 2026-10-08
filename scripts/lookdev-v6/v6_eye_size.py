@@ -68,7 +68,45 @@ def measure(path, eyes=None):
         edge = np.argmax(np.gradient(prof)[int(pupils[-1] / 2):]) + int(pupils[-1] / 2)
         irises.append(2 * rs[edge])
     p, i = float(np.mean(pupils)), float(np.mean(irises))
-    return {'E_px': round(E), 'pupil_d': round(p / E, 3), 'iris_d': round(i / E, 3), 'pupil_to_iris': round(p / i, 2)}
+    out = {'E_px': round(E), 'pupil_d': round(p / E, 3), 'iris_d': round(i / E, 3), 'pupil_to_iris': round(p / i, 2)}
+    out.update(radial(im, eyes, E))
+    return out
+
+
+def radial(im, eyes, E):
+    """Pupil and iris edges from the median radial profile around each eye centre (round i).
+
+    The two rulers above disagree with the eye (round h: "the pupil fills 70%+ of the iris, the
+    reference's 40%"), and both have a reason to: v6_face_shape.py's dark threshold (luma < 76)
+    takes in the render's olive iris (luma 63-85) and the reference's catchlight bites its pupil;
+    the hole-filled "darkest third" here takes in the reference's dark olive iris (luma ~50).
+    Colour separates them where brightness does not: a pupil is a NEUTRAL dark (chroma ~2), the
+    iris is coloured (chroma 40-60) - so the pupil ends where chroma first passes 15, and the iris
+    ends where brightness passes half-way from the iris to the coat outside it. A median over 72
+    angles ignores a catchlight covering less than half the circle.
+    """
+    lum, chroma = im.mean(axis=2), im.max(axis=2) - im.min(axis=2)
+    win = int(E * 0.35)
+    rs = np.arange(0, win)
+    ang = np.linspace(0, 2 * np.pi, 72, endpoint=False)
+    pr, ir = [], []
+    for xc, yc in eyes:
+        xs = np.clip((xc + rs[:, None] * np.cos(ang)).astype(int), 0, im.shape[1] - 1)
+        ys = np.clip((yc + rs[:, None] * np.sin(ang)).astype(int), 0, im.shape[0] - 1)
+        L, C = np.median(lum[ys, xs], axis=1), np.median(chroma[ys, xs], axis=1)
+        pe = int(np.argmax(C > 15))
+        if pe == 0:
+            return {}
+        iris_l = float(np.median(L[pe:pe + max(3, pe // 4)]))
+        fur_l = float(np.median(L[-8:]))
+        past = np.nonzero(L[pe:] > .5 * (iris_l + fur_l))[0]
+        if not len(past):
+            return {}
+        pr.append(2 * pe)
+        ir.append(2 * (pe + int(past[0])))
+    p, i = float(np.mean(pr)), float(np.mean(ir))
+    return {'radial_pupil_d': round(p / E, 3), 'radial_iris_d': round(i / E, 3),
+            'radial_pupil_to_iris': round(p / i, 2)}
 
 
 if __name__ == '__main__':

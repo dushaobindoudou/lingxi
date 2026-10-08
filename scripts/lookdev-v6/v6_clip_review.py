@@ -22,6 +22,7 @@ import bpy
 import json
 import math
 import os
+import numpy as np
 from mathutils import Vector
 from pathlib import Path
 
@@ -159,6 +160,102 @@ def lowest_point_mm():
     return low[0][1], dict(low)
 
 
+def bone_pitch_deg(pb):
+    """World pitch of a bone, + = its tail is higher than its head (the cat faces -y)."""
+    a, b = world(pb), world(pb, tip=True)
+    return round(math.degrees(math.atan2(b.z - a.z, max(1e-9, math.hypot(b.x - a.x, b.y - a.y)))), 1)
+
+
+def points(name):
+    """Real evaluated vertex positions of one object, world space, as an (n, 3) array."""
+    o = bpy.data.objects.get(name)
+    if o is None:
+        return np.zeros((0, 3))
+    ev = o.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    me = ev.to_mesh()
+    co = np.empty(len(me.vertices) * 3, dtype='f')
+    me.vertices.foreach_get('co', co)
+    ev.to_mesh_clear()
+    m = np.array(ev.matrix_world)
+    return co.reshape(-1, 3) @ m[:3, :3].T + m[:3, 3]
+
+
+# The pose renders' camera (render_lingxi_v5_poses.py): ortho, from the front-right, 15 deg up.
+# Its screen "up" is world z tilted toward the far side, so a long back reads higher at the rump
+# than it is - the review is of THAT picture, so the head/back clearance is measured in it too.
+CAM_DIR = np.array(Vector((.9, -1.8, .54)).normalized())
+CAM_UP = np.array([0., 0., 1.]) - CAM_DIR * CAM_DIR[2]
+CAM_UP /= np.linalg.norm(CAM_UP)
+CAM_RIGHT = np.cross(CAM_DIR, CAM_UP)
+
+
+def top_line(p, along, up, pct):
+    """Silhouette top of a point cloud: per 10 mm bin along `along`, the pct-th percentile of the
+    height along `up` (a strand coat has strays; the read edge is the dense one). -> (bins, tops)."""
+    h, v = p @ along, p @ up
+    k = np.round(h / .010).astype(int)
+    bins, tops = [], []
+    for b in np.unique(k):
+        vv = v[k == b]
+        if len(vv) >= (5 if pct < 100 else 1):
+            bins.append(b * .010)
+            tops.append(np.percentile(vv, pct) if pct < 100 else vv.max())
+    return np.array(bins), np.array(tops)
+
+
+def posture():
+    """Back line and head carriage at this frame, from real vertices (mesh, then guard coat).
+
+    hump_mm            the back's midline top between withers and hip, above the straight line
+                       joining those two (+ = an arch, - = a sway)
+    head_clear_mm      crown (head mesh, no ears) minus the body's highest midline point: how far
+                       the head stands out of the body - negative = sunk into the shoulders
+    *_coat_mm          the same on the guard coat's strand points, each 10 mm bin's 97th
+                       percentile (strays excluded - the edge the render shows)
+    head_clear_cam_mm  the coat's version as the pose camera sees it (its screen up, whole silhouette)
+    """
+    d = {}
+    for nm in ('Root', 'Pelvis', 'Spine', 'Neck', 'Head'):
+        pb = rig.pose.bones.get(nm)
+        if pb is None:
+            continue
+        if nm == 'Root':
+            # the pose's turn of the root about x, not the bone's rest orientation (it points up)
+            d['root_pitch_deg'] = round(math.degrees((pb.matrix @ pb.bone.matrix_local.inverted()).to_euler().x), 1)
+        else:
+            d[nm.lower() + '_pitch_deg'] = bone_pitch_deg(pb)
+    sc = rig.pose.bones.get('Scap.L')
+    pv = rig.pose.bones.get('Pelvis')
+    if sc is None or pv is None:
+        return d
+    y_w, y_h = world(sc).y, world(pv).y          # withers (shoulder blade top) and hip, along the body
+    Y, Z = np.array([0., 1., 0.]), np.array([0., 0., 1.])
+    for tag, body_objs, head_objs, pct in (('', ['LX_Body'], ['LX_Head'], 100),
+                                           ('_coat', ['LX_Body', 'LX_Fur_guard_LX_Body'],
+                                            ['LX_Head', 'LX_Fur_guard_LX_Head'], 97)):
+        body = np.concatenate([points(n) for n in body_objs])
+        head = np.concatenate([points(n) for n in head_objs])
+        if not len(body) or not len(head):
+            continue
+        yb, zb = top_line(body[np.abs(body[:, 0]) < .025], Y, Z, pct)
+        _, zh = top_line(head[np.abs(head[:, 0]) < .025], Y, Z, pct)
+        m = (yb >= min(y_w, y_h) - .005) & (yb <= max(y_w, y_h) + .005)
+        if m.sum() > 2:
+            yy, zz = yb[m], zb[m]
+            chord = zz[0] + (zz[-1] - zz[0]) * (yy - yy[0]) / ((yy[-1] - yy[0]) or 1)
+            d['hump' + tag + '_mm'] = round(1000 * float((zz - chord).max()), 1)
+            d['back_top' + tag + '_mm'] = round(1000 * float(zz.max()), 1)
+        if not len(zh) or not len(zb):
+            continue
+        d['crown' + tag + '_mm'] = round(1000 * float(zh.max()), 1)
+        d['head_clear' + tag + '_mm'] = round(1000 * float(zh.max() - zb.max()), 1)
+        if tag:
+            _, cb = top_line(body, CAM_RIGHT, CAM_UP, pct)
+            _, ch = top_line(head, CAM_RIGHT, CAM_UP, pct)
+            d['head_clear_cam_mm'] = round(1000 * float(ch.max() - cb.max()), 1)
+    return d
+
+
 def scan(clip):
     """Per-paw and per-body travel across the WHOLE clip.
 
@@ -168,13 +265,16 @@ def scan(clip):
     """
     pawz = {nm: [] for nm in ('FrontPaw.L', 'FrontPaw.R', 'RearPaw.L', 'RearPaw.R')
             if nm in rig.pose.bones}
+    pawy = {nm: [] for nm in pawz}
     lens = []
     rootp = []
     for frame in range(clip['start'], clip['end'] + 1):
         s.frame_set(frame)
         bpy.context.view_layer.update()
         for nm in pawz:
-            pawz[nm].append(1000 * world(rig.pose.bones[nm], tip=True).z)
+            tip = world(rig.pose.bones[nm], tip=True)
+            pawz[nm].append(1000 * tip.z)
+            pawy[nm].append(1000 * tip.y)
         tails = [b.name for b in rig.pose.bones if b.name.lower().startswith('tail')]
         h = rig.pose.bones.get('Head')
         t = rig.pose.bones.get(tails[-1]) if tails else None
@@ -191,10 +291,30 @@ def scan(clip):
            'paw_min_mm': {nm: round(min(v), 1) for nm, v in pawz.items()},
            'length_range_mm': round(max(lens) - min(lens), 1) if lens else None,
            'root_travel_mm': round(1000 * rt, 1)}
+    # paw_travel is VERTICAL (how high a paw comes up). The stride is the fore-aft sweep, and a
+    # planted paw must slide back at the same speed under every leg or the clip skates: the
+    # clips are in place, so the ground speed is how fast the planted paws move back.
+    out['paw_stride_mm'] = {nm: round(max(v) - min(v), 1) for nm, v in pawy.items()}
+    speeds = {}
+    for nm in pawz:
+        z, y = pawz[nm], pawy[nm]
+        floor = min(z)
+        # planted = within 3 mm of the clip's lowest (keys every 2nd frame: the in-betweens wobble ~1 mm)
+        v = [y[i + 1] - y[i] for i in range(len(y) - 1) if z[i] < floor + 3 and z[i + 1] < floor + 3]
+        if v:
+            v.sort()
+            speeds[nm] = round(v[len(v) // 2], 2)
+    if len(speeds) == 4 and max(abs(v) for v in speeds.values()) > .2:
+        out['stance_speed_mm_per_frame'] = speeds
+        out['stance_speed_spread_mm_per_frame'] = round(max(speeds.values()) - min(speeds.values()), 2)
     return out
 
 
 manifest = json.loads((OUT / 'animations.json').read_text())
+# V6_CLIPS=Walk,Run measures just those (plus Idle, the reference for distance_to_idle)
+ONLY = {c.strip() for c in os.environ.get('V6_CLIPS', '').split(',') if c.strip()}
+if ONLY:
+    manifest = [c for c in manifest if c['name'] in ONLY | {'Idle'}]
 rows = []
 for clip in manifest:
     travel = scan(clip)
@@ -209,6 +329,7 @@ for clip in manifest:
     bpy.context.view_layer.update()
     row = measure()
     row['lowest_mm'], row['lowest_parts'] = lowest_point_mm()
+    row['posture'] = posture()
     row.update(travel)
     row.update({'name': clip['name'], 'frame': best, 'length_frames': clip['end'] - clip['start'] + 1,
                 'departure': round(best_score, 1), 'angles': angles()})

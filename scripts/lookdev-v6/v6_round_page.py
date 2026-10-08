@@ -84,6 +84,9 @@ def main():
     ap.add_argument('--vs')
     ap.add_argument('--title')
     ap.add_argument('--note', default='')
+    # the comparison round re-measured with today's rulers (its own json predates new fields)
+    ap.add_argument('--vs-parts')
+    ap.add_argument('--vs-clips')
     a = ap.parse_args()
     rd = Path(a.round).resolve()
     vs = Path(a.vs).resolve() if a.vs else None
@@ -129,7 +132,7 @@ def main():
 
     # --- numbers ---
     parts = load(Path(rd, 'review-parts.json'))
-    vparts = load(Path(vs, 'review-parts.json')) if vs else None
+    vparts = load(Path(a.vs_parts)) if a.vs_parts else (load(Path(vs, 'review-parts.json')) if vs else None)
     if parts:
         out.append('<h2>部件实测（v6_part_audit.py）</h2>')
         out.append('<h3>爪：每个趾露出体表的顶点比例 / 最大探出</h3><div class="tbl"><table><tr><th>爪</th>'
@@ -145,6 +148,31 @@ def main():
                         ', '.join(num(x['max_proud_mm'], 0) for x in tv.values())]
             out.append(f'<tr><td>{k}</td>' + ''.join(f'<td>{c}</td>' for c in row) + '</tr>')
         out.append('</table></div>')
+        tc = parts.get('toe_clefts')
+        if tc:
+            vtc = (vparts or {}).get('toe_clefts') or {}
+            out.append('<h3>趾缝深度 mm（每爪三条，正＝两侧趾冠之后的沟；负＝没有沟，只是往后退的台阶）</h3>'
+                       '<p class="note">' + html.escape(str(tc.get('target', ''))) + '</p>'
+                       f'<div class="tbl"><table><tr><th>爪</th><th>{me}</th>' + (f'<th>{other}</th>' if vtc else '') + '</tr>')
+            for k in ('Front.L', 'Front.R', 'Rear.L', 'Rear.R'):
+                v, w = tc.get(k) or {}, vtc.get(k) or {}
+                out.append(f'<tr><td>{k}</td><td>{v.get("cleft_depth_sym_mm")}</td>'
+                           + (f'<td>{w.get("cleft_depth_sym_mm")}</td>' if vtc else '') + '</tr>')
+            out.append('</table></div>')
+        pc = parts.get('paw_coat')
+        if pc:
+            vpc = (vparts or {}).get('paw_coat') or {}
+            keys = ['toe_coat_mm', 'paw_back_coat_mm', 'leg_low_coat_mm', 'leg_mid_coat_mm', 'leg_top_coat_mm']
+            out.append('<h3>爪与腿的毛长（中位数 mm）</h3><div class="tbl"><table><tr><th></th>'
+                       + ''.join(f'<th>{k}</th>' for k in keys) + '<th>躯干</th></tr>')
+            for nm, d in ((me, pc), (other, vpc)):
+                if not d:
+                    continue
+                for leg in ('Front.L', 'Rear.L'):
+                    row = d.get(leg) or {}
+                    out.append(f'<tr><td>{nm} {leg}</td>' + ''.join(f'<td>{num(row.get(k))}</td>' for k in keys)
+                               + f'<td>{num(d.get("torso_coat_mm"))}</td></tr>')
+            out.append('</table></div>')
         ear = parts.get('ears', {}).get('L')
         if ear:
             vear = (vparts or {}).get('ears', {}).get('L') if vparts else None
@@ -184,7 +212,7 @@ def main():
     rc = load(Path(rd, 'review-clips.json'))
     vrc = None
     if vs:
-        vrc = load(Path(vs, 'review-clips.json')) or load(Path(vs, 'review-clips-fix.json'))
+        vrc = (load(Path(a.vs_clips)) if a.vs_clips else None) or load(Path(vs, 'review-clips.json')) or load(Path(vs, 'review-clips-fix.json'))
     if rc:
         vmap = {r['name']: r for r in (vrc or [])}
         out.append('<h2>动作实测（v6_clip_review.py）</h2><p class="note">最低点＝真实顶点（不含毛）离地 mm，负数＝穿地；'
@@ -208,6 +236,27 @@ def main():
                        + f'<td>{html.escape(parts_s)}</td><td>{num(travel(r))}</td>' + (f'<td>{num(travel(o) if o else None)}</td>' if vrc else '')
                        + f'<td>{num(r.get("distance_to_idle"))}</td>' + (f'<td>{num(o.get("distance_to_idle"))}</td>' if vrc else '') + '</tr>')
         out.append('</table></div>')
+        if any('posture' in r for r in rc):
+            out.append('<h3>体态与步态（代表帧；毛面＝护毛每 10 mm 一格的 97 分位）</h3><p class="note">'
+                       '头露出＝头顶（不含耳）比身体最高点高多少；镜头＝动作渲染那台 15° 俯视正交相机看到的同一量。'
+                       '抬爪＝爪尖竖直行程（前 / 后），步幅＝爪尖前后行程，着地速度差＝四只着地爪往后滑的速度之差（0＝不打滑）。</p>'
+                       '<div class="tbl"><table><tr><th>动作</th>'
+                       + ''.join(f'<th>{h} {n}</th>' for h in ('头露出 毛面', '头露出 镜头', '抬爪 前/后', '步幅 前/后', '着地速度差')
+                                 for n in ([me, other] if vrc else [me])) + '</tr>')
+
+            def cells(r):
+                p_, t, st = r.get('posture') or {}, r.get('paw_travel_mm') or {}, r.get('paw_stride_mm') or {}
+                fb = lambda d: (f'{num(max(d.get("FrontPaw.L", 0), d.get("FrontPaw.R", 0)), 0)} / '
+                                f'{num(max(d.get("RearPaw.L", 0), d.get("RearPaw.R", 0)), 0)}') if d else '—'
+                return [num(p_.get('head_clear_coat_mm')), num(p_.get('head_clear_cam_mm')), fb(t), fb(st),
+                        num(r.get('stance_speed_spread_mm_per_frame'), 2)]
+            for r in rc:
+                if r['name'] not in ('Idle', 'Walk', 'Run', 'Happy', 'Curious', 'Knead', 'PawPlay', 'Bite'):
+                    continue
+                a_, b_ = cells(r), cells(vmap.get(r['name'], {})) if vrc else None
+                row = [x for pair_ in zip(a_, b_) for x in pair_] if b_ else a_
+                out.append(f'<tr><td>{r["name"]}</td>' + ''.join(f'<td>{c}</td>' for c in row) + '</tr>')
+            out.append('</table></div>')
     out.append('</div></body></html>')
     Path(rd, 'review.html').write_text('\n'.join(out), encoding='utf-8')
     print('wrote', Path(rd, 'review.html'))
