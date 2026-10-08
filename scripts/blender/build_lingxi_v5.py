@@ -317,14 +317,15 @@ jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True 
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
 mouthpink=mat('LX_MouthPink',(.30,.07,.08),.5)   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
-cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.392),CAV_Z),(.042,_v6('V6_CAV_RY',.040),_v6('V6_CAV_RZ',.020)),mouthpink)
+cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.392),CAV_Z),(.042,_v6('V6_CAV_RY',.040),_v6('V6_CAV_RZ',.020)),mouthpink)   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
 # Round J: the bag is a CUP, open at the front. Closed, it held the tongue, the floor and the lower canines
 # inside it, so a yawn showed the bag's own front wall - red, with the tongue's tip poking out under it.
-_cut=_v6('V6_CAV_CUT',-9.0)
+_cut=_v6('V6_CAV_CUT',0.0)   # the front half goes: shut, nothing showed (round-j-test z3: no cavity rays at rest)
 if _cut>-9:
- _bm=bmesh.new();_bm.from_mesh(cavity.data);_cy=_v6('V6_CAV_Y',-.392);_ry=_v6('V6_CAV_RY',.040)
- bmesh.ops.delete(_bm,geom=[f for f in _bm.faces if f.calc_center_median().y<-_cut*_ry],context='FACES')   # object-local: sphere() keeps the centre as the origin;_bm.to_mesh(cavity.data);_bm.free()   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
-floor=sphere('LX_MouthFloor',(0,-.394,_v6('V6_FLOOR_Z',.4485)+LIP_DZ),(.026,.028,_v6('V6_FLOOR_RZ',.006)),mouthpink)          # floor, on the jaw (round J: 1.5 mm up, its underside sat on the chin skin)
+ _bm=bmesh.new();_bm.from_mesh(cavity.data);_ry=_v6('V6_CAV_RY',.040)
+ bmesh.ops.delete(_bm,geom=[f for f in _bm.faces if f.calc_center_median().y<-_cut*_ry],context='FACES')   # object-local: sphere() keeps the centre as the origin
+ _bm.to_mesh(cavity.data);_bm.free()
+floor=sphere('LX_MouthFloor',(0,-.394,_v6('V6_FLOOR_Z',.4455)+LIP_DZ),(.026,.028,_v6('V6_FLOOR_RZ',.003)),mouthpink)          # floor, on the jaw (round J: 1.5 mm up, its underside sat on the chin skin)
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
 # actually laps and how it scoops a paw.
@@ -957,6 +958,16 @@ for obj,region,mtl in [(body,'body',bodycoat),(head,'Head',headcoat),(tail,'tail
  attr.data.foreach_set('color',np.column_stack((colors,np.ones(len(colors)))).astype('f').ravel())
  att=mtl.node_tree.nodes.new('ShaderNodeVertexColor');att.layer_name='fur_color'
  mtl.node_tree.links.new(att.outputs['Color'],mtl.node_tree.nodes.get('Principled BSDF').inputs['Base Color'])
+# Round J: the only way to see the head skin's BACK is through the open mouth - at a full yawn, between the
+# lower lip and the mouth floor, the inside of the chin (v6_part_audit shell_rays: a strip at the bottom of
+# the gape). Shaded as mouth, not coat, it reads as the mouth's own lining. (Geometry cannot close it: any
+# floor reaching the lip pokes out of the receding chin when the mouth is shut - round-j-test g1-g3.)
+_nt=headcoat.node_tree;_geo=_nt.nodes.new('ShaderNodeNewGeometry');_mx=_nt.nodes.new('ShaderNodeMix');_mx.data_type='RGBA'
+_io=lambda socks,ident:next(s for s in socks if s.identifier==ident)
+_va=next(n for n in _nt.nodes if n.type=='VERTEX_COLOR')
+_nt.links.new(_geo.outputs['Backfacing'],_io(_mx.inputs,'Factor_Float'));_nt.links.new(_va.outputs['Color'],_io(_mx.inputs,'A_Color'))
+_io(_mx.inputs,'B_Color').default_value=(.16,.035,.04,1)
+_nt.links.new(_io(_mx.outputs,'Result_Color'),_nt.nodes.get('Principled BSDF').inputs['Base Color'])
 # Lid colour: the coat the lid sits in, darkening to a narrow near-black rim at the eye - the
 # line every cat's eye has. Evaluated on the authored (pre head-scale) basis, like the coat.
 for o in eyelids:
