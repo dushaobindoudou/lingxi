@@ -1683,14 +1683,16 @@ LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.105,spine=.06,neck=.1
 # Now a quarter turn, the root lifted by the body's half-width, the neck bent down to lay the cheek on the
 # floor - the head rolls more than the neck bends, so the neck stays near level (-7 deg) and the cheek ~15 mm up,
 # inside its coat (the lower ear folded in or it is the lowest thing at -28 mm), the legs out loose: the forelegs reach
-# forward, the hind back, and the upper pair swings out of its plane (add_*) to drape over the lower one.
-SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2012,spine=.10,spine_side=0,neck=0,neck_side=.13,head=0,head_side=.40,tail=0,tail_side=.30,tail_k=.25,ear_x=0,ear_z=-.60,
- f_dy=.18,f_dz=.07,f_pa=.2,h_dy=.17,h_dz=.09,h_pa=.8,add_FL=.08,add_FR=.85,add_HL=.08,add_HR=1.05).items()}
+# forward, the hind a little drawn up, and the upper pair swings out of its plane (add_*) to drape over the lower one
+# (reached back, the upper hind leg stood up over the hip in the round-l render).
+SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2047,spine=.10,spine_side=0,neck=0,neck_side=.13,head=0,head_side=.40,head_roll=0,tail=0,tail_side=.30,tail_k=.25,ear_x=0,ear_z=-.60,
+ f_dy=.18,f_dz=.07,f_pa=.2,h_dy=.05,h_dz=.12,h_pa=.8,add_FL=.08,add_FR=1.0,add_HL=.08,add_HR=1.0).items()}
 # Sleep was SideLie with the lids shut (root, roll, back line and length all within 0.5 mm of it). A sleeping cat
 # curls up: on the same flank, the back bent (Spine/Neck/Head flexed, which on its side is a C on the floor), the
 # hind legs drawn forward, the forepaws tucked, the tail wrapped round the rump, the nose down by the paws. The
-# pelvis's pitch (yaw) turns the curl on the floor so the pose camera sees the closed eyes and the C, not the crown.
-SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2055,spine=.8,spine_side=0,neck=.6,neck_side=.2,head=.6,head_side=.2,tail=-.5,tail_side=.25,tail_k=0,ear_x=0,ear_z=-.60,
+# pelvis's pitch (yaw) turns the curl on the floor so the pose camera sees the closed eyes and the C, not the crown,
+# and the head turns back up off its cheek a little (head_roll), chin on the paws.
+SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2055,spine=.8,spine_side=0,neck=.6,neck_side=.2,head=.6,head_side=.2,head_roll=-.6,tail=-.5,tail_side=.25,tail_k=0,ear_x=0,ear_z=-.60,
  f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.18,h_dz=.12,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
@@ -1803,7 +1805,7 @@ def pose(name,u):
    pb['Pelvis'].rotation_euler[0]=S['yaw']*f   # rolled a quarter turn, the pelvis's pitch is a turn on the floor (Root's own y would be applied before the roll)
    pb['Spine'].rotation_euler[0]=S['spine']*f;pb['Spine'].rotation_euler[2]=S['spine_side']*f
    pb['Neck'].rotation_euler[0]=S['neck']*f;pb['Neck'].rotation_euler[2]=S['neck_side']*f
-   pb['Head'].rotation_euler[0]=S['head']*f;pb['Head'].rotation_euler[2]=S['head_side']*f
+   pb['Head'].rotation_euler[0]=S['head']*f;pb['Head'].rotation_euler[2]=S['head_side']*f;pb['Head'].rotation_euler[1]+=S['head_roll']*f
    for i,tb in enumerate(('Tail0','Tail1','Tail2','Tail3','Tail4')):k_=1-S['tail_k']*i;pb[tb].rotation_euler[0]=S['tail']*k_*f;pb[tb].rotation_euler[2]=S['tail_side']*k_*f
    pb['Ear.L'].rotation_euler[0]=S['ear_x']*f;pb['Ear.L'].rotation_euler[2]=S['ear_z']*f
    if name=='Sleep':blink=1
