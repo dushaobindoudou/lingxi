@@ -336,3 +336,62 @@ V6_LICK_WRIST=1.0 V6_CHEST_DROP=.035`；`V6_LICK_FROM=<lick-solve.json>` 只用�
 1. 侧面的脸：侧视看不到眼睛和鼻子——脸太平、两颊（毛）太宽，眼和口鼻都朝正前方。要做口鼻前伸、两颊收窄的头部造型改动。
 2. 哈欠开口比参考仍小一圈，舌头可以再多露。
 3. 毛色仍是暖橘（用户之前偏好 round B 的暖色），没动。
+
+---
+
+## Round L 动作域（Claude 动作会话，2026-10-08）——躺姿三兄弟 + Lick 后半身 / 尾巴
+
+任务单：`reviews/TASK-CLAUDE-round-l-actions.md`。只动了动作域（`pose()` 的 LieDown/SideLie/Sleep/Lick 块、`place_legs` 的躺姿和 Lick 腿靶、
+新参数表 `LIEDOWN` / `SIDELIE` / `SLEEP` / `LICK_HIND` / `LICK_TAIL(_SIDE)`），没碰 BODY_K / NeckRuff / GAPE_W / SIT_PITCH / 牙齿。
+**提交**：4b99795（三个躺姿 + Lick）· 0fc4427（SideLie 上侧后腿、Sleep 头回正）。（SIDELIE 的最早版本被 14e340c 一起带进去了，见上节说明。）
+**渲染**：`assets/characters/lingxi/v6/round-l/` = 代码 0fc4427，standard 质量，`run.sh` 分步（build / fur / audit / clips / gait / poses），
+`knobs.txt`、`pipeline.out`、`review-clips.json`、`review-parts.json`、`gait.json`、`poses/`×15；对照图 `compare-k-vs-l-lying.jpg`（上 round-k、下 round-l：
+LieDown / SideLie / Sleep / Lick）、`compare-k-vs-l-gait.jpg`（Walk / Run / Idle / Stretch）。`round-l/pass1/` 是 4b99795 的第一遍（SideLie 上侧后腿竖着），别发布。
+⚠️ 远程审阅页（https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW）若已用 round-l 的图发布，那是 pass1 或更早的，需要用现在的 `round-l/poses/` 重新发布
+（这个会话没有 Artifact 工具，发不了）。
+⚠️ 构建用了 `V6_LICK_FROM=round-l-act/pv1/lick-solve.json`（同一份代码的 preview 构建求出的舔爪解，与毛发质量无关，省 90 s）。
+渲染之后对方会话又有未提交改动（build 脚本 + `stage_imagegen_textures.py`），不在 round-l 里。
+
+| 动作 | 量 | round-k | round-l | 目标 | 达标 |
+|---|---|---|---|---|---|
+| LieDown | 最低点 | Body +0.4（前爪折在胸里，爪垫离地 58.5 mm） | **Body +0.4，前趾 +2.8** | 胸腹贴地 0~+2 | ✅ |
+| | 脊柱世界俯仰 | 2.5° | **4.5°** | 3–6° | ✅ |
+| | 前腿 | 腕 108 mm 高、向后折进胸口（"两个雪橇"） | 前臂平放在肩前地面，腕前伸 150 mm；爪最前 −387 mm、鼻尖 −414 mm | 前伸贴胸侧、不超出鼻尖太多 | ✅ |
+| | 颈 / 头 | 颈 46°、头 0 | 颈 40°（下压 .12）、头 −6.9°（本骨架 + 是低头，所以是抬头）、头离地 248 mm | 颈有弧度、头微抬 | ✅ |
+| | 尾巴 | 直拖在后面 | 绕到镜头一侧的地面 | — | — |
+| SideLie | 翻滚 / root | 1.25 rad / +139 mm | **1.57 / +204.7 mm**（≈体宽一半） | 按体宽重推 | ✅ |
+| | 最低点 | 后趾 −2.3，Body +5.5（躯干 +27 mm 悬空） | **Body +0.6**（躯干侧面 ~+2） | Body 贴地 0~+2，不靠后趾 | ✅ |
+| | 头 / 颈 | 颈 13.1°、头立着离地 130 mm | **颈 −7.4°**、头侧枕离地 20.8 mm（在毛里） | 颈 ≤8°，头贴地或近地 | ✅ |
+| | 四爪 | 上侧爪尖 264 / 277 mm 朝天 | 上侧 240 / 219 mm、水平伸出并出平面搭向下侧腿；下侧 90 / 75 mm 压在身下 | 不朝天 | ✅（见遗留 1） |
+| Sleep | 姿态 | 与 SideLie 同一姿态（back_top / 身长差 <1 mm） | 同侧躺 + 脊柱 .8 / 颈 .6 / 头 .6 屈成 C 形、后腿前收、前爪收、尾巴绕臀 | 蜷成团 | ✅ |
+| | 身长（鼻尖–尾尖） | 999.6 | **457.0** | ≤ 920 | ✅ |
+| | head_pitch | 11.5° | **34.4°**（SideLie 0°） | 大于 SideLie | ✅ |
+| | tail_deg | 6.9 | **214.9**（尾巴在镜头一侧可见） | 有表现 | ✅ |
+| | 最低点 | 后趾 −3.1 | **Body +0.2** | −5~+2 | ✅ |
+| | 与 SideLie 的差 | distance_to_idle 187.8 vs 190.9 | 219.6 vs 192.8；身长 457 vs 987、头 34° vs 0°、尾 215 vs 43 | 显著 | ✅ |
+| Lick | 最低点 | −14.9（round-l-look −16.6，后腿大腿皮肤穿地） | **−6.4**（两大腿之间的腹褶，渲染里看不到）；大腿皮肤出地面 | — | 改善 |
+| | 尾巴 | 卷在身后半空（尖端离地 141 mm），渲染里看不到 | 贴地绕右后腿，尖端 (163, 285, 24) mm，pose 图里可见 | 绕到侧前方可见 | ✅ 可见；没绕到前方（见遗留 3） |
+| 步态 | Walk 支撑滑移 / Run / 腾空帧 | 0.04 / 0.81 mm / 0 | **0.03 / 0.51 mm / 0**，步序、接地数不变 | 不改坏 | ✅ |
+
+**做法要点**
+- 躺姿参数都在一张表里（`LIEDOWN` / `SIDELIE` / `SLEEP`，env `V6_LD_*` / `V6_SL_*` / `V6_SP_*` 可扫），默认值就是本轮取值，每个都在已建骨架上量过。
+- SideLie / Sleep 共用一段：Root 绕体轴翻 90°、抬到体宽一半；颈 / 头的侧弯（`*_side`，骨骼局部 z）在侧躺时就是"往地上低"；下侧耳朵 Ear.L z −.6 内收
+  （不收它是最低点 −28 mm）；上侧两条腿 IK 之后再绕大腿 / 上臂骨局部 z 转出腿平面（`add_*`），搭到下侧腿上。
+- Sleep 的"在地上转方向"用 Pelvis 的 x 转：翻了 90° 之后骨盆俯仰就是绕世界竖轴转；Root 的 y 在 XYZ 欧拉里先于翻滚生效，会变成俯仰（试过，整只猫立起来）。
+- Lick：后腿靶跗关节 +30 mm、root +3 mm（再高左前爪就离地，坐姿已在前腿全长）；尾巴 Tail1–4 的 x/z 用 `round-l-act/tailopt.py` 在已建骨架上搜
+  （目标：贴地、绕右后腿、尾巴网格不进身体）。
+- 迭代工具（scratch，不进仓库）：`round-l-act/probe.py` 载入一个 preview 构建，执行**当前**构建脚本的姿态段（舔爪解复用），4 s 量一个姿态，
+  `PROBE_RENDER=<dir>` 低采样出 pose / side / front / top 视图；`sweep.sh` 批量扫 env 旋钮。改姿态不必每次 build。
+
+**P1-2 步态观感（只记录，没改）**：Walk 那一帧正常（一只前爪抬起）。Run 的代表帧和 Walk 很像——步幅小、抬脚低、前腿显得短粗，
+单看 contact sheet 分不出跑和走；Run 的 stride .19 / lift .055 可以再大，但会动步态审计的数字，留给下一轮。
+Jump 后爪接地帧位移 0.91 → 2.74 mm（gait.json），动作域没碰 Jump，应是 BODY_K / 前臂蒙皮改动带来的，请复核。
+
+**遗留 / 风险**
+1. SideLie 从 pose 相机（右前上方）看到的是肚皮和四条腿：上侧两腿关节在 30 cm 高，爪只能落到 22–24 cm；再往下搭（add > 1）大腿皮肤会顶到髋上方。
+   如果用户更想看"背对镜头的侧躺"，把 `V6_SL_ROLL` 改成 −1.57（翻到右侧）并镜像 add_* / 耳朵即可试。
+2. Sleep 的脸埋在爪和毛里，闭眼在有毛渲染里不太看得到（无毛预览里清楚）；想露脸可试 `V6_SP_HEAD_ROLL` −.9、`V6_SP_YAW` −1.2。
+3. Lick 尾巴只到右后腿旁边（尖端在髋后 33 mm），再往前会穿进大腿；"后半身一团棉"剩下的是毛系统（大腿外侧白色底毛把轮廓填平），没动毛系统。
+   Lick 着地的左前爪离地 +4.9 mm（root +3 mm 的代价）。
+4. 过渡帧：SideLie 在前 1/3 线性翻滚 + 抬 root，u≈.1 时后趾 −2.9 mm；LieDown 下降过程中前趾 1–3 mm 离地。
+5. 侧躺 / 睡觉绕地面的体轴翻滚，身体整体往 −x 偏 ~0.3 m（round-k 的 1.25 rad 时就这样）；应用里原地播放要知道这一点。
