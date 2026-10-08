@@ -704,6 +704,20 @@ def lick_contact():
     ttree = bvhtree.BVHTree.FromPolygons(tg[0].tolist(), tg[1])
     best = None
     pairs = {}
+    # the paw ball itself is LX_Body: its surface counts as paw within 70 mm of the raised paw's bones
+    pw = rig.pose.bones['FrontPaw.' + paw]
+    a_, b_ = rig.matrix_world @ pw.head, rig.matrix_world @ pw.tail
+    bg = eval_tris('LX_Body', polys=True)
+    btree = bvhtree.BVHTree.FromPolygons(bg[0].tolist(), bg[1])
+    for v in tv:
+        loc, nor, _i, dist = btree.find_nearest(v, .5)
+        if loc is None:
+            continue
+        q = a_ + (b_ - a_) * max(0, min(1, (loc - a_).dot(b_ - a_) / (b_ - a_).length_squared))
+        if (loc - q).length < .07:
+            sd = dist if (v - loc).dot(nor) >= 0 else -dist
+            if best is None or sd < best[0]:
+                best = (sd, 'LX_Body (paw)')
     for n in parts + ['LX_Head', 'LX_Jaw', 'LX_LipUpper.L', 'LX_LipUpper.R', 'LX_LipLower', 'LX_Body'] + \
             [o.name for o in s.objects if o.name.startswith('LX_Tooth')]:
         g = eval_tris(n, polys=True)
