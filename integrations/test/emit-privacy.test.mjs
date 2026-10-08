@@ -66,3 +66,33 @@ test('Codex turn end forwards the exact question for the cat to show', async () 
   assert.match(event.result, /你希望周五上午还是下午提醒？/);
   assert.equal(event.label, undefined);
 });
+
+// Codex names each new task in a throwaway thread of its own, and that thread's end fires
+// `notify` too. The cat used to say "Codex 回复结束" for it and read the title - JSON, in one
+// version of the prompt - out loud. Mirrors lib.rs's is_codex_title_turn.
+test('Codex naming a task is not a turn: nothing is sent, in either version of the prompt', async () => {
+  const json = await emit('codex', {
+    type: 'agent-turn-complete', 'thread-id': 'title-thread',
+    'input-messages': ['You are a helpful assistant. You will be presented with a user prompt, and your job is to provide a short title for a task that will be created from that prompt.'],
+    'last-assistant-message': '{"title":"修复猫的气泡","description":"lingxi codex notify"}',
+  });
+  assert.equal(json.length, 0, `a title turn was reported: ${json[0]}`);
+  const plain = await emit('codex', {
+    type: 'agent-turn-complete', 'thread-id': 'title-thread-2',
+    'input-messages': ['Generate a concise, single-line task title of at most 36 characters. Do not answer the request.\n\nUser prompt:\n修一下气泡'],
+    'last-assistant-message': '修复气泡显示',
+  });
+  assert.equal(plain.length, 0, `a plain-text title turn was reported: ${plain[0]}`);
+  const jsonOnly = await emit('codex', { type: 'agent-turn-complete', 'thread-id': 't', 'last-assistant-message': '{"title": "x"}' });
+  assert.equal(jsonOnly.length, 0);
+});
+
+test('a user asking Codex for a title of their own is still a turn', async () => {
+  const bodies = await emit('codex', {
+    type: 'agent-turn-complete', 'thread-id': 'real',
+    'input-messages': ['Generate a title for my blog post about cats'],
+    'last-assistant-message': '可以叫「猫的一天」。',
+  });
+  assert.equal(bodies.length, 1);
+  assert.match(JSON.parse(bodies[0]).result, /猫的一天/);
+});

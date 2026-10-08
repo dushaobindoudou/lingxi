@@ -199,6 +199,40 @@ function fromClaude(raw) {
 }
 
 /**
+ * Whether this "turn" is Codex naming a task rather than talking to the user.
+ *
+ * When a task is started, the Codex app asks the model for a title in a separate, throwaway
+ * thread, and that thread's end fires `notify` like any other turn. Its reply is the title -
+ * plain text in one version of the prompt, `{"title":"…","description":"…"}` in another - so the
+ * cat announced "Codex 回复结束" for a turn the user never saw, and read the JSON out loud.
+ *
+ * Recognised by either end of the turn: the input is the generator's own instruction (it opens
+ * with "You are a helpful assistant…" or "Generate a…", and talks about a title for a prompt),
+ * or the reply is a JSON object with a `title`. Both are needed - neither prompt has a stable
+ * wording across versions, and only one of them answers in JSON. A user who asks for a title
+ * for something of theirs does not open with that instruction and does not mention a prompt.
+ *
+ * Mirrored by lib.rs's is_codex_title_turn, case for case.
+ */
+function isCodexTitleTurn(raw) {
+  const inputs = raw['input-messages'] ?? raw.input_messages;
+  const first = Array.isArray(inputs) && typeof inputs[0] === 'string' ? inputs[0] : '';
+  const head = first.slice(0, 600).toLowerCase().trimStart();
+  if ((head.startsWith('you are a helpful assistant') || head.startsWith('generate a'))
+    && head.includes('title') && head.includes('prompt')) {
+    return true;
+  }
+  const reply = raw['last-assistant-message'] ?? raw.message;
+  if (typeof reply !== 'string' || !reply.trim().startsWith('{')) return false;
+  try {
+    const parsed = JSON.parse(reply);
+    return parsed !== null && typeof parsed === 'object' && typeof parsed.title === 'string';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Codex `notify` payloads -> task events.
  *
  * Codex invokes `notify = ["<program>", "<arg>"]` with a JSON blob describing what happened.
@@ -206,6 +240,7 @@ function fromClaude(raw) {
  * anything it does not recognise rather than inventing a state.
  */
 function fromCodex(raw) {
+  if (isCodexTitleTurn(raw)) return null;
   const type = raw.type ?? raw.event ?? raw.kind;
   const session = raw['thread-id'] ?? raw.thread_id ?? raw.session_id ?? 'codex-session';
   const result = raw['last-assistant-message'] ?? raw.message ?? undefined;

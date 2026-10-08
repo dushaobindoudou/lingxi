@@ -912,6 +912,15 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
     let summary = raw.get("summary").and_then(|v| v.as_str()).unwrap_or("");
     let observed_at = now_millis();
     let result_text = raw.get("result").and_then(|v| v.as_str());
+    // Codex's plugin hooks (integrations/hosts/codex/plugin/scripts/event.sh) forward the reply as
+    // `result`. Should Codex's title-naming thread reach them too, this is the one end of that
+    // turn a Stop hook carries - see is_codex_title_turn, which catches it on the notify path.
+    if provider == "codex"
+        && state == "completed"
+        && result_text.is_some_and(|reply| is_codex_title_turn(&serde_json::json!({ "last-assistant-message": reply })))
+    {
+        return Some(codex_title_turn_event(sequence));
+    }
     // A chat turn whose own words end on a question is waiting on the user, whoever reports it.
     let question = (state == "completed" && kind == "chat").then(|| result_text.and_then(closing_question)).flatten();
     // Set by the hook adapter (integrations/adapters/lingxi-emit.mjs), never by an agent's report.
@@ -981,6 +990,9 @@ fn normalize_codex_notify_event(raw: &serde_json::Value, sequence: u64) -> Optio
         .or_else(|| raw.get("event"))
         .or_else(|| raw.get("kind"))
         .and_then(|v| v.as_str())?;
+    if is_codex_title_turn(raw) {
+        return Some(codex_title_turn_event(sequence));
+    }
     let state = match kind_of {
         "agent-turn-complete" | "turn-ended" | "turn_complete" => "completed",
         "turn-started" | "turn_started" => "running",
@@ -1031,6 +1043,87 @@ fn normalize_codex_notify_event(raw: &serde_json::Value, sequence: u64) -> Optio
         from_hook: true,
         turn_end,
     })
+}
+
+/// Whether this "turn" is Codex naming a task rather than talking to the user.
+///
+/// When a task is started, the Codex app asks the model for a title in a separate, throwaway
+/// thread, and that thread's end fires `notify` like any other turn. Its reply is the title -
+/// plain text in one version of the prompt, `{"title":"…","description":"…"}` in another - so the
+/// cat announced "Codex 回复结束" for a turn the user never saw, and read the JSON out loud.
+///
+/// Recognised by either end of the turn: the input is the generator's own instruction (it opens
+/// with "You are a helpful assistant…" or "Generate a…", and talks about a title for a prompt),
+/// or the reply is a JSON object with a `title`. Both are needed - neither prompt has a stable
+/// wording across versions, and only one of them answers in JSON. A user who asks for a title
+/// for something of theirs does not open with that instruction and does not mention a prompt.
+///
+/// Mirrors `isCodexTitleTurn` in integrations/adapters/lingxi-emit.mjs, case for case.
+fn is_codex_title_turn(raw: &serde_json::Value) -> bool {
+    let first = raw
+        .get("input-messages")
+        .or_else(|| raw.get("input_messages"))
+        .and_then(|v| v.as_array())
+        .and_then(|inputs| inputs.first())
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let head = first.chars().take(600).collect::<String>().to_lowercase();
+    let head = head.trim_start();
+    if (head.starts_with("you are a helpful assistant") || head.starts_with("generate a"))
+        && head.contains("title")
+        && head.contains("prompt")
+    {
+        return true;
+    }
+    let reply = raw
+        .get("last-assistant-message")
+        .or_else(|| raw.get("message"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    reply.trim().starts_with('{')
+        && serde_json::from_str::<serde_json::Value>(reply.trim())
+            .ok()
+            .is_some_and(|value| value.get("title").is_some_and(|title| title.is_string()))
+}
+
+/// What a Codex title turn is answered with: claimed - it IS Codex's - but as nothing to act on.
+/// The `unknown` state is answered 200 and not recorded (see /task-event), and the summary is
+/// the reason given.
+fn codex_title_turn_event(sequence: u64) -> TaskEvent {
+    TaskEvent {
+        schema_version: 1,
+        provider: "codex".to_string(),
+        source_id: "codex".to_string(),
+        task_id: "codex-title".to_string(),
+        event_id: format!("codex-title-{sequence}"),
+        state: "unknown".to_string(),
+        sequence,
+        observed_at: now_millis(),
+        summary: "Codex 生成任务标题的内部回合，不是对话".to_string(),
+        kind: "chat".to_string(),
+        mood: "focused".to_string(),
+        progress: None,
+        session: None,
+        label: None,
+        result: None,
+        echo: false,
+        label_is_folder: false,
+        from_hook: true,
+        turn_end: false,
+    }
+}
+
+/// Whether a reply is data rather than prose: a JSON object or array, taken whole.
+///
+/// The bubble speaks the first sentence of a reply, and a reply that is `{"title": …}` has no
+/// sentence - its "first sentence" was the opening brace and a key. Whatever produced it (a host's
+/// own structured-output turn, a model asked for raw JSON), the cat has nothing to say about it.
+fn is_structured_reply(text: &str) -> bool {
+    let text = text.trim();
+    // An object never reads as prose, parseable or not (`{title: ''}` is still not a sentence).
+    // A leading `[` can (`[WIP] 修好了`), so an array only counts when it really is one.
+    (text.starts_with('{') && text.ends_with('}'))
+        || (text.starts_with('[') && text.ends_with(']') && serde_json::from_str::<serde_json::Value>(text).is_ok())
 }
 
 /// Longest session name shown on the bubble / 主界面 row, in characters.
@@ -1088,6 +1181,9 @@ fn closing_question(text: &str) -> Option<String> {
 /// skipped (none of them reads as something a cat could say), list markers and quotes are
 /// stripped, and inline emphasis/code/links are reduced to their text.
 fn prose_lines(text: &str) -> Vec<String> {
+    if is_structured_reply(text) {
+        return Vec::new();
+    }
     let mut in_fence = false;
     let mut out = Vec::new();
     for raw_line in text.lines() {
@@ -7268,6 +7364,15 @@ mod tests {
             Some("Bash 这边一直拿不到自动模式的安全判定"),
         );
         assert_eq!(turn_line("```\ncode only\n```"), None);
+        // A reply that is data has no sentence to say - not even its opening brace.
+        assert_eq!(turn_line("{\"title\":\"修复猫的气泡\",\"description\":\"x\"}"), None);
+        assert_eq!(turn_line("{\n  \"title\": \"修复\"\n}"), None);
+        assert_eq!(turn_line("{title: ''}"), None);
+        assert_eq!(turn_line("[{\"a\": 1}]"), None);
+        assert_eq!(closing_question("{\"q\": \"要继续吗？\"}"), None);
+        // ...but a line that merely opens with a bracket is still prose.
+        assert!(turn_line("[WIP] 气泡修好了。").is_some_and(|line| line.contains("气泡修好了")));
+        assert_eq!(turn_line(""), None);
     }
 
     #[test]
@@ -7377,6 +7482,33 @@ mod tests {
         assert_eq!(event.state, "needs_input");
         assert_eq!(event.result.as_deref(), Some("需要你确认部署窗口吗？"));
 
+        // Codex naming a task in its own throwaway thread is not a turn - either way it answers.
+        let titled = serde_json::json!({
+            "type": "agent-turn-complete", "thread-id": "title-thread",
+            "input-messages": ["You are a helpful assistant. You will be presented with a user prompt, and your job is to provide a short title for a task that will be created from that prompt."],
+            "last-assistant-message": "{\"title\":\"修复猫的气泡\",\"description\":\"lingxi codex notify\"}",
+        });
+        let event = normalize_codex_notify_event(&titled, 6).expect("claimed, so no other mapper takes it");
+        assert_eq!(event.state, "unknown", "a title turn must not be recorded or reacted to");
+        assert_eq!(event.result, None);
+        let plain_title = serde_json::json!({
+            "type": "agent-turn-complete", "thread-id": "title-thread-2",
+            "input-messages": ["Generate a concise, single-line task title of at most 36 characters and under five words where possible. Do not answer the request.\n\nUser prompt:\n修一下气泡"],
+            "last-assistant-message": "修复气泡显示",
+        });
+        assert_eq!(normalize_codex_notify_event(&plain_title, 7).unwrap().state, "unknown");
+        let json_only = serde_json::json!({ "type": "agent-turn-complete", "thread-id": "t", "last-assistant-message": "{\"title\": \"x\"}" });
+        assert_eq!(normalize_codex_notify_event(&json_only, 8).unwrap().state, "unknown");
+        // ...and a user asking for a title of their own is still a real turn.
+        let users = serde_json::json!({
+            "type": "agent-turn-complete", "thread-id": "real",
+            "input-messages": ["Generate a title for my blog post about cats"],
+            "last-assistant-message": "可以叫「猫的一天」。",
+        });
+        let event = normalize_codex_notify_event(&users, 9).unwrap();
+        assert_eq!(event.state, "completed");
+        assert_eq!(event.result.as_deref(), Some("可以叫「猫的一天」"));
+
         // And the whole point of returning Option: anything else must fall through to the next
         // mapper rather than being invented into a state.
         assert!(normalize_codex_notify_event(&serde_json::json!({ "type": "something-new" }), 3).is_none());
@@ -7384,6 +7516,16 @@ mod tests {
         // A Claude hook payload must NOT be claimed by this mapper.
         let claude = serde_json::json!({ "session_id": "s1", "hook_event_name": "Stop" });
         assert!(normalize_codex_notify_event(&claude, 5).is_none());
+
+        // The Codex plugin's hooks arrive as generic events with the reply in `result`.
+        let hooked = |reply: &str| normalize_generic_task_event(&serde_json::json!({
+            "provider": "codex", "agent": "codex", "origin": "hook", "kind": "chat",
+            "state": "completed", "taskId": "s", "session": "s", "result": reply,
+        }), 10).unwrap();
+        assert_eq!(hooked("{\"title\":\"修复气泡\",\"description\":\"x\"}").state, "unknown");
+        let real = hooked("气泡修好了。");
+        assert_eq!(real.state, "completed");
+        assert_eq!(real.result.as_deref(), Some("气泡修好了"));
     }
 
     #[test]
