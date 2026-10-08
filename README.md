@@ -67,6 +67,7 @@ npm run tauri dev            # 开发
 | `/probe-airborne.html` | **回归探针**：跳跃的真实高度、滞空和躯干下落的重力；加 `?strip` 出侧视图 |
 | `/probe-framing.html` | **回归探针**：各视角 / 各尺寸下屏幕四边各裁掉猫的多少 |
 | `/probe-unproject.html` | **回归探针**：屏幕坐标↔世界坐标是否处处可逆（曾经在屏幕底部失效） |
+| `/probe-fit.html` | **回归探针**：贴合画布 + 合并绘制与旧的整屏逐块渲染逐像素对比，画布不得裁到猫 |
 | `/rig-preview.html` `/style-lab.html` | 骨架和配色试验 |
 
 `probe-gait.html` 是几个结构性 bug 的回归检查，健康值写在文件头部。改动画系统之前先看它。

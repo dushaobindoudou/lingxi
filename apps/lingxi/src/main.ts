@@ -62,7 +62,8 @@ async function main() {
   });
   dlog('main() start');
   const host = createTauriDesktopHost();
-  const renderer = createThreeRenderer();
+  // Fitted: the canvas follows the cat instead of covering the screen - see the renderer.
+  const renderer = createThreeRenderer({ fitCanvasToCat: true });
   const engineRecorder = createActivityRecorder();
   const stage = document.getElementById('stage');
   if (!stage) throw new Error('index.html must contain #stage');
@@ -440,8 +441,11 @@ async function main() {
   // a gentle wind-down rather than an abrupt switch-off. This is deliberately NOT gated on
   // whether the event earned a spoken reaction - silent progress still means someone is
   // working; waking is not narrating (see src-tauri's react_to_task_event).
+  // Not markInteresting(): a busy agent sends a task event every few seconds for as long as it
+  // works, which held the renderer at full rate all day for a cat sitting still. If the pulse gets
+  // the cat moving, the frame loop goes back to full rate the moment it does (see step), and any
+  // visible reaction arrives as its own play-*/say event, which does count.
   void listen<{ busy: boolean }>('agent-activity', () => {
-    markInteresting();
     engine.activityPulse(performance.now());
   });
 
@@ -528,6 +532,7 @@ async function main() {
       if (isChargingToy) return;
     }
     isMouseDown = true;
+    markInteresting();
     dragStartedAt = performance.now();
     dragMoved = false;
     engine.beginDrag(cursor);
@@ -603,15 +608,12 @@ async function main() {
   // Push a perception snapshot to Rust twice a second. Not every frame - that would be 60 IPC
   // calls a second for data nobody reads that fast - but the old two-second interval was too
   // coarse to even observe a short action clip through, let alone react to one.
-  let lastPerceptionAt = 0;
-  setInterval(() => {
+  // Stopped outright while suspended (see the power governor): suspend() pushes one last snapshot
+  // saying so, and the bridge serves that until the cat is back.
+  const PERCEPTION_INTERVAL_MS = 500;
+  let perceptionTimer: ReturnType<typeof setInterval> | null = null;
+  function pushPerception() {
     const now = performance.now();
-    // While dormant nothing is moving, so re-sending the same snapshot twice a second is pure
-    // IPC for no reader. Once every 5s is enough for an agent polling /perception to see a
-    // live-but-quiet cat rather than a stale one.
-    const minInterval = tier === 'dormant' ? 5000 : 0;
-    if (now - lastPerceptionAt < minInterval) return;
-    lastPerceptionAt = now;
     const snapshot = {
       observedAt: Date.now(),
       cursor,
@@ -661,7 +663,7 @@ async function main() {
       power: tier,
     };
     void invoke('report_perception', { snapshot }).catch(() => {});
-  }, 500);
+  }
 
   let lastFrameAt: number | null = null;
   let loggedFirstFrame = false;
@@ -670,19 +672,48 @@ async function main() {
   let lastRafAt = 0;
   let wasHit = false;
   let heldForAction: string | null = null;
+  /** The pending requestAnimationFrame, or 0. Cancelled outright while suspended. */
+  let rafHandle = 0;
+  /** Below the display's rate, the gap before the next rAF is waited out on this timer. */
+  let frameTimer: ReturnType<typeof setTimeout> | null = null;
   function frame(now: number) {
+    rafHandle = 0;
     // Recorded before any early return: this timestamp is the evidence that the compositor is
-    // still drawing us, which is what separates 'idle' from 'dormant'.
+    // still drawing us, which is what separates 'idle' from 'stalled'.
     lastRafAt = performance.now();
-    // The compositor came back. 'dormant' is not cleared here - that needs the platform to say
-    // we are visible again, which is what the visibilitychange listener is for.
+    // Suspended: let the loop die here. resume() is what starts it again.
+    if (tier === 'dormant') return;
+    // The compositor came back.
     if (tier === 'stalled') setTier('active');
-    const interval = FRAME_INTERVAL[tier];
-    if (interval === 0 || lastRafAt - lastRenderAt >= interval) {
+    const interval = frameInterval();
+    // A few ms of slack: rAF timestamps jitter, and a strict comparison turned 30fps into 20.
+    if (interval === 0 || lastRafAt - lastRenderAt >= interval - 4) {
       lastRenderAt = lastRafAt;
       step(now);
     }
-    requestAnimationFrame(frame);
+    scheduleFrame();
+  }
+
+  /**
+   * Ask for the next frame. At full rate that is simply the next rAF. Below it, most of the gap
+   * is waited out on a timer FIRST and the rAF requested only for the frame that will actually be
+   * drawn: a pending rAF keeps WebKit running its rendering update on every vsync even when the
+   * callback then does nothing, so asking for one per display frame and skipping half of them was
+   * paying for 60fps to draw 30.
+   */
+  function scheduleFrame() {
+    if (rafHandle || frameTimer || tier === 'dormant') return;
+    const interval = frameInterval();
+    // Wake up roughly half a display frame before the frame is due, then let rAF align it to vsync.
+    const wait = interval > 0 && Number.isFinite(interval) ? interval - 10 - (performance.now() - lastRenderAt) : 0;
+    if (wait > 0) {
+      frameTimer = setTimeout(() => {
+        frameTimer = null;
+        if (tier !== 'dormant') rafHandle = requestAnimationFrame(frame);
+      }, wait);
+    } else {
+      rafHandle = requestAnimationFrame(frame);
+    }
   }
 
   function step(now: number) {
@@ -700,6 +731,9 @@ async function main() {
       // advance the simulation a second time, off the animation clock, and every distance the
       // gait integrates would be wrong.
       lastEngineSnapshot = snapshot;
+      // Back to full rate the frame something starts moving, not at the watchdog's next look:
+      // a walk that starts at 30fps reads as a stutter.
+      if (tier === 'idle' && !catIsStill()) setTier('active');
       renderer.render(snapshot, deltaSeconds, cursor);
 
       // --- sleep, made visible ----------------------------------------------------------
@@ -847,29 +881,32 @@ async function main() {
     }
   }
 
-  // Watchdog. requestAnimationFrame is the right driver when the window is being composited,
-  // but it is entirely at the compositor's discretion: a webview that the OS considers hidden,
-  // occluded or otherwise not worth drawing simply stops being called, and a pet whose whole
-  // simulation lives inside rAF freezes solid until something happens to wake it. That is not
-  // an acceptable failure mode for something that is supposed to be quietly alive on your
-  // desktop all day, so the simulation gets a floor: if no frame has run for a while, drive it
-  // from a timer instead. Rendering while nothing is composited costs nothing visible, and the
-  // cat is in the right place when the window comes back.
   // Settings reconcile. A tray click reaches this webview as a broadcast event, and an event is
   // a one-shot: if it is not processed the change is lost, and the user has to click again -
   // reported as "有时候托盘菜单需要点击两次才能有效果". Rust holds the authoritative,
   // persisted state, so rather than trying to make one-shot delivery perfect, the renderer
   // checks it periodically and applies anything it missed. On a timer rather than rAF for the
   // same reason as the watchdog below: timers keep running when the compositor stops drawing.
+  //
+  // While suspended it is the ONE timer left running, and slowly: its job then is to notice a
+  // wake-up whose event was missed (status.present / status.visible), so the cat can never stay
+  // frozen just because one event did not arrive.
   const RECONCILE_INTERVAL_MS = 1500;
+  const SUSPENDED_RECONCILE_INTERVAL_MS = 30_000;
   let lastStatusJson = '';
-  let lastReconcileAt = 0;
-  setInterval(() => {
-    const now = performance.now();
-    if (tier === 'dormant' && now - lastReconcileAt < 10_000) return;
-    lastReconcileAt = now;
-    void invoke<HostStatus>('get_status')
+  let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleReconcile(delay = tier === 'dormant' ? SUSPENDED_RECONCILE_INTERVAL_MS : RECONCILE_INTERVAL_MS) {
+    if (reconcileTimer) clearTimeout(reconcileTimer);
+    reconcileTimer = setTimeout(reconcile, delay);
+  }
+  function reconcile() {
+    reconcileTimer = null;
+    void invoke<HostStatus & { present?: boolean }>('get_status')
       .then((status) => {
+        // The Rust side is the truth for both of these; the events are only the fast path.
+        suspendedBy.user = !status.visible;
+        if (typeof status.present === 'boolean') suspendedBy.system = !status.present;
+        updateSuspension();
         // Compare before applying: setSkin rebuilds the rig and repaints both atlases, so
         // calling it every 1.5s because nothing changed would be genuinely expensive.
         const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius]);
@@ -879,8 +916,11 @@ async function main() {
         applyStatus(status);
         if (missed) dlog(`reconciled settings the event path missed: ${json}`);
       })
-      .catch(() => {});
-  }, RECONCILE_INTERVAL_MS);
+      .catch(() => {})
+      .finally(() => {
+        if (!reconcileTimer) scheduleReconcile();
+      });
+  }
 
   // --- power governor -----------------------------------------------------------------------
   //
@@ -898,8 +938,11 @@ async function main() {
   // exact failure the original watchdog existed to prevent, removed on a theory that did not hold.
   //
   // So rAF stalling is no longer evidence of anything except that we cannot DRAW. The simulation
-  // keeps running off a timer when that happens, as it did before. Dormancy now requires the
-  // platform to actually say so.
+  // keeps running off a timer when that happens. Dormancy requires someone to actually say so:
+  // the user hiding the cat, the page being hidden, or the OS saying nobody can see the screen
+  // (display asleep, locked, screen saver, machine going to sleep - see lib.rs's
+  // watch_system_presence). Dormant is OFF, not slow: no rAF, no watchdog, no perception pushes,
+  // and the Rust threads park too - one 30s reconcile is all that is left.
   type PowerTier = 'active' | 'idle' | 'stalled' | 'dormant';
   let tier: PowerTier = 'active';
   /** Frame interval per tier, ms. 0 = draw on every rAF callback. */
@@ -911,19 +954,50 @@ async function main() {
     stalled: 100,
     dormant: Infinity,
   };
-  /** No interaction and nothing happening for this long drops to `idle`. */
-  const IDLE_AFTER_MS = 45_000;
+  /** A sleeping cat breathes slowly and barely moves; 20fps of that is indistinguishable from 30. */
+  const SLEEPING_FRAME_INTERVAL = 1000 / 20;
+  function frameInterval(): number {
+    if (tier === 'idle' && lastEngineSnapshot?.state === 'sleep') return SLEEPING_FRAME_INTERVAL;
+    return FRAME_INTERVAL[tier];
+  }
+  /**
+   * No interaction and nothing happening for this long drops to `idle`. It was 45s when getting
+   * back to full rate waited on the watchdog; now the first frame that moves does it (see step),
+   * so all a short delay risks is a resting cat breathing at 30fps - which is the point.
+   */
+  const IDLE_AFTER_MS = 10_000;
   /** rAF quiet for this long means the compositor has stopped drawing us - NOT that we are hidden. */
   const STALLED_AFTER_MS = 1_000;
   let lastInterestingAt = performance.now();
   let lastRenderAt = 0;
-  /** True only when the platform says so: the tab is hidden, or the user hid the cat. */
-  let hiddenByPlatform = false;
+  /**
+   * Each reason the cat is suspended. Any one is enough; all must clear to resume.
+   *
+   * `page` starts false rather than at document.hidden, deliberately: only a visibilitychange is
+   * taken as the page being hidden, as it always was. This overlay is exactly the kind of window
+   * WebKit misjudges (see above), and a misjudgement at startup would freeze the cat for good.
+   */
+  const suspendedBy = { user: false, page: false, system: false };
 
   /** Anything that means the user is present, or the cat is mid-something worth seeing. */
   function markInteresting() {
     lastInterestingAt = performance.now();
-    if (tier !== 'active' && !hiddenByPlatform) setTier('active');
+    if (tier !== 'active' && tier !== 'dormant') setTier('active');
+  }
+
+  /**
+   * Whether dropping the frame rate is free right now. Only while nothing is MOVING: a
+   * stationary cat breathing at 30fps is indistinguishable from one at 60; a walking cat is not.
+   */
+  function catIsStill(): boolean {
+    const snapshot = lastEngineSnapshot;
+    if (snapshot == null || snapshot.toy != null) return false;
+    // A sleeping cat is the stillest it ever gets - exactly the case the idle tier exists for. It
+    // is checked before playingAction because a nap IS a playing clip: curled-sleep is restarted
+    // whenever it ends (see step), so requiring no clip kept every nap at 60fps from start to end.
+    if (snapshot.state === 'sleep') return true;
+    // Not 'dragged': being carried around under the pointer is the opposite of still.
+    return snapshot.state === 'idle' && !renderer.playingAction;
   }
 
   function setTier(next: PowerTier) {
@@ -940,52 +1014,103 @@ async function main() {
       // a multi-second delta. The engine clamps it anyway, but the fx layer reads it too.
       lastFrameAt = null;
     }
+    // A timer-gated frame may be pending for up to a slow frame's worth; at full rate the next
+    // frame should be the next vsync.
+    if (next === 'active' && frameTimer) {
+      clearTimeout(frameTimer);
+      frameTimer = null;
+      scheduleFrame();
+    }
   }
 
-  const WATCHDOG_INTERVAL_MS = 100;
-  setInterval(() => {
+  // Watchdog. requestAnimationFrame is the right driver when the window is being composited,
+  // but it is entirely at the compositor's discretion: a webview that the OS considers hidden,
+  // occluded or otherwise not worth drawing simply stops being called, and a pet whose whole
+  // simulation lives inside rAF freezes solid until something happens to wake it. That is not
+  // an acceptable failure mode for something that is supposed to be quietly alive on your
+  // desktop all day, so the simulation gets a floor: if no frame has run for a while, drive it
+  // from a timer instead. Rendering while nothing is composited costs nothing visible, and the
+  // cat is in the right place when the window comes back.
+  //
+  // It looks twice a second while frames are flowing - all it has to notice then is a 1s stall
+  // or 45s of stillness - and ten times a second only while it is the one driving the cat.
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  function watchdog() {
+    watchdogTimer = null;
+    if (tier === 'dormant') return;
     const now = performance.now();
-    if (hiddenByPlatform) return; // dormant until the platform says otherwise
-    const rafQuietFor = now - lastRafAt;
-    if (rafQuietFor >= STALLED_AFTER_MS) {
+    if (now - lastRafAt >= STALLED_AFTER_MS) {
       // Cannot draw. Keep the simulation alive from this timer so the cat is not frozen on screen
       // and is in the right place the moment the compositor takes an interest again.
       if (tier !== 'stalled') setTier('stalled');
       step(performance.now());
-      return;
+    } else if (tier === 'active' && catIsStill() && now - lastInterestingAt > IDLE_AFTER_MS) {
+      setTier('idle');
     }
-    // Dropping the frame rate is only free while nothing is MOVING. A stationary cat breathing at
-    // 30fps is indistinguishable from one at 60; a walking cat is not.
-    const catIsStill =
-      lastEngineSnapshot != null
-      && (lastEngineSnapshot.state === 'idle'
-        || lastEngineSnapshot.state === 'dragged'
-        // A sleeping cat is the stillest it ever gets - exactly the case this tier exists for.
-        || lastEngineSnapshot.state === 'sleep')
-      && !renderer.playingAction
-      && lastEngineSnapshot.toy == null;
-    if (tier === 'active' && catIsStill && now - lastInterestingAt > IDLE_AFTER_MS) setTier('idle');
-    if (tier === 'idle' && !catIsStill) setTier('active');
-  }, WATCHDOG_INTERVAL_MS);
+    watchdogTimer = setTimeout(watchdog, tier === 'stalled' ? 100 : 500);
+  }
 
-  // The platform saying so, which is the ONLY thing that now counts as "nobody can see it".
+  function suspend() {
+    setTier('dormant');
+    if (rafHandle) cancelAnimationFrame(rafHandle);
+    rafHandle = 0;
+    for (const timer of [frameTimer, watchdogTimer]) if (timer) clearTimeout(timer);
+    frameTimer = watchdogTimer = null;
+    if (perceptionTimer) clearInterval(perceptionTimer);
+    perceptionTimer = null;
+    // One last, accurate snapshot - the bridge serves it until the cat is back.
+    pushPerception();
+    scheduleReconcile();
+  }
+
+  function resume() {
+    // Not markInteresting(): that refuses to leave 'dormant', which is the point of it elsewhere.
+    lastInterestingAt = performance.now();
+    setTier('active');
+    lastRafAt = performance.now(); // a fresh grace period before the watchdog may call it a stall
+    startTimers();
+    scheduleFrame();
+    // Anything changed while we were away (a tray click, a theme) is picked up now, not in 30s.
+    scheduleReconcile(0);
+  }
+
+  function updateSuspension() {
+    const suspended = suspendedBy.user || suspendedBy.page || suspendedBy.system;
+    if (suspended && tier !== 'dormant') suspend();
+    else if (!suspended && tier === 'dormant') resume();
+  }
+
+  function startTimers() {
+    if (!watchdogTimer) watchdogTimer = setTimeout(watchdog, 500);
+    if (!perceptionTimer) perceptionTimer = setInterval(pushPerception, PERCEPTION_INTERVAL_MS);
+  }
+
+  // The page being hidden is one way the platform says nobody can see it.
   document.addEventListener('visibilitychange', () => {
-    hiddenByPlatform = document.hidden;
-    if (document.hidden) setTier('dormant');
-    else markInteresting();
+    suspendedBy.page = document.hidden;
+    updateSuspension();
   });
-  // The user hiding the cat from the tray is the other genuine case. Event name taken from
-  // lib.rs's set_visible - an invented one would have produced a listener that never fires and a
-  // saving that never happens, with nothing to show it was broken.
+  // The user hiding the cat from the tray is another. Event name taken from lib.rs's set_visible -
+  // an invented one would have produced a listener that never fires and a saving that never
+  // happens, with nothing to show it was broken.
   void listen<boolean>('companion-visibility', (event) => {
-    hiddenByPlatform = !event.payload;
-    if (hiddenByPlatform) setTier('dormant');
-    else markInteresting();
+    suspendedBy.user = !event.payload;
+    updateSuspension();
+  });
+  // And the OS saying nobody can see the SCREEN: display asleep, locked, screen saver, the machine
+  // going to sleep, another user at the console. The cat is still "visible" by every measure the
+  // page itself has, so without this it rendered on, at the watchdog's 10fps, all night.
+  void listen<{ present: boolean }>('system-presence', (event) => {
+    suspendedBy.system = !event.payload.present;
+    updateSuspension();
   });
 
   dlog('starting frame loop');
   lastRafAt = performance.now();
-  requestAnimationFrame(frame);
+  startTimers();
+  scheduleReconcile();
+  scheduleFrame();
+  updateSuspension();
 }
 
 main().catch((error) => {

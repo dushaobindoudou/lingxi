@@ -403,6 +403,8 @@ export function createStageFx(): StageFx {
   let bubbleStyle: BubbleStyle = { ...DEFAULT_BUBBLE_STYLE };
   let bubble: HTMLDivElement | null = null;
   let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Where the current bubble was last anchored, so a cat sitting still does not re-lay it out. */
+  let bubbleAnchoredAt: { bubble: HTMLDivElement; x: number; y: number } | null = null;
   /** Effects that follow the cat rather than staying where they were fired. */
   const tracked = new Set<SVGElement>();
 
@@ -715,6 +717,12 @@ export function createStageFx(): StageFx {
 
     anchorBubble(x, y) {
       if (!bubble) return;
+      // Called every frame. Measuring the bubble below forces a layout whenever the previous frame
+      // moved it, so a bubble over a cat that has not moved is left exactly where it is.
+      const rx = Math.round(x);
+      const ry = Math.round(y);
+      if (bubbleAnchoredAt?.bubble === bubble && bubbleAnchoredAt.x === rx && bubbleAnchoredAt.y === ry) return;
+      bubbleAnchoredAt = { bubble, x: rx, y: ry };
       // Keep the entire bubble inside the transparent companion window. The cat is allowed to
       // roam to the display edge, but a centred bubble there would lose its left/right half.
       // Width is explicit in CSS (rather than auto) so measuring it here cannot create a

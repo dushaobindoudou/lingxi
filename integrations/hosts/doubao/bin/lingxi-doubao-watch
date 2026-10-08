@@ -31,6 +31,7 @@ import glob
 import json
 import os
 import re
+import select
 import sys
 import time
 import urllib.error
@@ -38,7 +39,8 @@ import urllib.request
 
 HOME = os.path.expanduser("~")
 DOUBAO = os.environ.get("LINGXI_DOUBAO_DIR", os.path.join(HOME, "Library/Application Support/Doubao"))
-LOG_GLOB = os.path.join(DOUBAO, "sdk_storage/log/saman_*.log")
+LOG_DIR = os.path.join(DOUBAO, "sdk_storage/log")
+LOG_GLOB = os.path.join(LOG_DIR, "saman_*.log")
 SESSIONS = os.path.join(DOUBAO, "Default/.doubao/agent_mode/workspace/.sessions")
 PORT = int(os.environ.get("LINGXI_PORT", "47811"))
 TOKEN_FILE = os.environ.get(
@@ -50,7 +52,10 @@ ACTIVE_FILE = os.path.join(STATE_DIR, "active-conversation")
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LOGO_FILE = os.path.join(PLUGIN_DIR, "doubao-logo")
 DEBUG = os.environ.get("LINGXI_DOUBAO_WATCH_DEBUG") == "1"
+# The most often the logs are read. Between reads it sleeps until 豆包 actually writes - see LogWaiter.
 POLL_SECONDS = float(os.environ.get("LINGXI_DOUBAO_WATCH_POLL", "1"))
+# With nothing written, look again this often anyway, in case a change went unnoticed.
+RESCAN_SECONDS = float(os.environ.get("LINGXI_DOUBAO_WATCH_RESCAN", "60"))
 LABEL_MAX = 40
 
 TURN = re.compile(
@@ -218,6 +223,7 @@ class Watcher:
             self.report("running", self.current, "新一轮对话开始")
 
     def run(self):
+        waiter = LogWaiter()
         # Offsets per file, so a log that stops being the newest and becomes it again (豆包 writes
         # from several processes) is resumed, never replayed. At start-up every existing log is
         # taken as read: history is not news. A file that appears later is read from its start.
@@ -225,7 +231,9 @@ class Watcher:
         pending = {}
         debug("watching", len(offsets), "log file(s)")
         while True:
-            for path in sorted(glob.glob(LOG_GLOB), key=os.path.getmtime)[-2:]:
+            newest = sorted(glob.glob(LOG_GLOB), key=os.path.getmtime)[-2:]
+            waiter.watch(newest)
+            for path in newest:
                 try:
                     size = os.path.getsize(path)
                     offset = offsets.get(path, 0)
@@ -251,7 +259,61 @@ class Watcher:
             for conversation, began in list(self.started.items()):
                 if time.time() - began > 7200:
                     self.started.pop(conversation, None)
-            time.sleep(POLL_SECONDS)
+            waiter.wait()
+
+
+class LogWaiter:
+    """Sleep until 豆包 writes to its log, instead of looking every second.
+
+    The watcher runs for as long as the user is logged in, which is every hour the machine is on,
+    screen off and 豆包 closed included - and it used to list the log directory and stat every
+    log in it once a second throughout, 86,400 times a day, to find nothing. kqueue tells us
+    instead: the newest logs growing, or the directory gaining a file (豆包 rotating to a new
+    log). Reads are still at most POLL_SECONDS apart, so a chatty 豆包 costs no more than it
+    did, and a silent one costs one look every RESCAN_SECONDS.
+
+    Without kqueue (not macOS) it is the plain poll it always was.
+    """
+
+    EVENTS = (
+        getattr(select, "KQ_NOTE_WRITE", 0) | getattr(select, "KQ_NOTE_EXTEND", 0)
+        | getattr(select, "KQ_NOTE_DELETE", 0) | getattr(select, "KQ_NOTE_RENAME", 0)
+    )
+
+    def __init__(self):
+        self.kq = select.kqueue() if hasattr(select, "kqueue") else None
+        self.fds = {}  # path -> fd being watched
+        self.last_read = time.monotonic()
+
+    def watch(self, paths):
+        if not self.kq:
+            return
+        wanted = set(paths) | {LOG_DIR}
+        for path in [p for p in self.fds if p not in wanted]:
+            os.close(self.fds.pop(path))  # closing the fd also removes its kevent
+        for path in wanted - set(self.fds):
+            try:
+                # O_EVTONLY: watch without holding the file open for reading - a rotated-away log
+                # can still be deleted, and a volume holding one can still unmount.
+                fd = os.open(path, os.O_RDONLY | getattr(os, "O_EVTONLY", 0x8000))
+            except OSError:
+                continue  # not there yet; the next rescan tries again
+            self.fds[path] = fd
+            self.kq.control([select.kevent(
+                fd, filter=select.KQ_FILTER_VNODE, flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR, fflags=self.EVENTS,
+            )], 0)
+
+    def wait(self):
+        if self.kq:
+            # No directory to watch yet (豆包 not installed, or never run): look again sooner than
+            # the idle rescan, so its first log is not missed by a whole minute.
+            timeout = RESCAN_SECONDS if LOG_DIR in self.fds else min(RESCAN_SECONDS, 10)
+            self.kq.control(None, 16, timeout)
+        # Never read more often than POLL_SECONDS, however fast 豆包 writes.
+        gap = POLL_SECONDS - (time.monotonic() - self.last_read)
+        if gap > 0:
+            time.sleep(gap)
+        self.last_read = time.monotonic()
 
 
 if __name__ == "__main__":

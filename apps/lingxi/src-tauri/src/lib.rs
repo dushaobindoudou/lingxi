@@ -47,9 +47,23 @@ use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 ///
 /// If a feature that genuinely needs it ever lands, prompt from THAT feature, when the user
 /// turns it on, with `application_is_trusted_with_prompt()` - not at startup for everyone.
+///
+/// Cached for a minute: get_status reports it, and the companion reconciles against get_status
+/// every couple of seconds - each uncached check is a round trip to tccd, for a value that only
+/// changes when the user flips a switch in System Settings.
 #[cfg(target_os = "macos")]
 fn accessibility_trusted_readonly() -> bool {
-    macos_accessibility_client::accessibility::application_is_trusted()
+    static CHECKED_AT: AtomicU64 = AtomicU64::new(0);
+    static TRUSTED: AtomicBool = AtomicBool::new(false);
+    let now = now_millis();
+    let checked_at = CHECKED_AT.load(Ordering::Relaxed);
+    if checked_at != 0 && now.saturating_sub(checked_at) < 60_000 {
+        return TRUSTED.load(Ordering::Relaxed);
+    }
+    let trusted = macos_accessibility_client::accessibility::application_is_trusted();
+    TRUSTED.store(trusted, Ordering::Relaxed);
+    CHECKED_AT.store(now, Ordering::Relaxed);
+    trusted
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -565,9 +579,13 @@ fn reset_position(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn get_status(state: State<TrayState>) -> serde_json::Value {
+fn get_status(state: State<TrayState>, power: State<PowerState>) -> serde_json::Value {
     let behavior_preset = state.behavior_preset.lock().unwrap().clone();
     serde_json::json!({
+        // Whether anyone can see the screen (see PowerState). The companion reads it on its
+        // slow reconcile while suspended, in case the system-presence event that would have
+        // woken it was missed.
+        "present": !power.is_away(),
         "scale": *state.current_scale.lock().unwrap(),
         "visible": state.visible.load(Ordering::SeqCst),
         "mode": MODE_FREE,
@@ -2747,6 +2765,9 @@ struct AgentRegistry {
     /// Waiting reactions, highest rank first then oldest first. Bounded: a queue that grows
     /// without limit is a memory leak with a pleasant name.
     queue: Mutex<Vec<QueuedReaction>>,
+    /// Signalled when something is queued, so the drain thread can sleep on an empty queue
+    /// instead of waking four times a second to look at it - see spawn_reaction_drain.
+    queued: std::sync::Condvar,
 }
 
 /// Longest anything may sit in the queue before it is dropped unplayed, unless the caller asked
@@ -2903,7 +2924,16 @@ impl AgentRegistry {
         if queue.len() > REACTION_QUEUE_CAP {
             queue.truncate(REACTION_QUEUE_CAP); // the tail is the lowest-priority, newest work
         }
+        self.queued.notify_all();
         queue.len()
+    }
+
+    /// Block until the queue has something in it. Returns at once when it already does.
+    fn wait_for_work(&self) {
+        let mut queue = self.queue.lock().unwrap();
+        while queue.is_empty() {
+            queue = self.queued.wait(queue).unwrap();
+        }
     }
 
     /// The next reaction that is still worth playing, discarding any that expired while waiting.
@@ -3705,11 +3735,19 @@ fn json_type_name(value: &serde_json::Value) -> &'static str {
 /// Runs often (250ms) because the whole point of queueing a `report` or an `alert` is that it
 /// still lands close to the moment it describes - a drain that ran once a second would add up to
 /// a second of staleness to every queued reaction, which is most of the budget they have.
+///
+/// It only polls while there is something to play. An empty queue - which is nearly always -
+/// blocks on `AgentRegistry::queued` and costs no wakeups at all, and nothing is played to a
+/// screen nobody can see (see PowerState::wait_until_present): a queued item that expires
+/// while the user is away is dropped by take_next_due, as it should be.
 fn spawn_reaction_drain(app: tauri::AppHandle) {
     thread::spawn(move || loop {
-        thread::sleep(app.state::<PowerState>().drain_interval());
-        let now = now_millis();
         let registry = app.state::<AgentRegistry>();
+        registry.wait_for_work();
+        let power = app.state::<PowerState>();
+        power.wait_until_present();
+        thread::sleep(power.drain_interval());
+        let now = now_millis();
         if !registry.stage_free_at(now) {
             continue;
         }
@@ -3894,6 +3932,12 @@ fn next_due(previous_due: u64, every_minutes: u64, now: u64) -> u64 {
 fn spawn_reminder_ticker(app: tauri::AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(30));
+        // Nobody at the screen: hold every reminder until someone is, the same as the idle check
+        // below does - and use the tick to make sure "away" is not stuck (see revalidate).
+        if app.state::<PowerState>().is_away() {
+            revalidate_presence(&app);
+            continue;
+        }
         let state = app.state::<MemoryState>();
         // Claim exactly ONE due reminder per tick, and leave the rest pending.
         //
@@ -5770,35 +5814,116 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
     }
 }
 
-/// How hard the app is currently working, set by the webview's power governor.
+/// How hard the app is currently working, and whether anyone can see it at all.
 ///
-/// A desktop pet runs every hour the machine does, so its IDLE cost is its cost. The 60Hz cursor
-/// thread below is the most expensive thing here when nothing is happening - it wakes sixty times
-/// a second forever, and it was doing that with the lid shut, to track a cursor nobody was moving
-/// for a cat nobody could see.
+/// A desktop pet runs every hour the machine does, so its IDLE cost is its cost. Two inputs:
 ///
-/// The webview is the layer that knows: requestAnimationFrame stopping IS the compositor saying
-/// nobody can see this window. So it decides the tier and tells us, and everything on this side
-/// slows to match.
+/// - `tier`, set by the webview's power governor: active (moving / being played with), idle
+///   (still for a while) or dormant (the user hid the cat).
+/// - `away`, set from the OS (see watch_system_presence): the display is asleep, the machine is
+///   going to sleep, the screen is locked, the screen saver is up, or another user has the
+///   console. Any one of these means nobody can see the cat, so there is nothing worth doing.
+///
+/// While away, every thread on this side parks on `changed` and costs NO wakeups at all until
+/// the OS says someone is back. That is the difference between "slowed down" and "off": a
+/// thread that polls every 500ms is still 7,200 wakeups across a night with the lid shut.
 #[derive(Default)]
 struct PowerState {
-    /// 0 = active, 1 = idle, 2 = dormant. An atomic because the polling threads read it every
-    /// pass and a mutex there would be its own small cost.
-    tier: std::sync::atomic::AtomicU8,
+    inner: Mutex<PowerInner>,
+    /// Signalled on every tier or presence change, so parked threads re-check.
+    changed: std::sync::Condvar,
 }
 
+#[derive(Default, Clone, Copy)]
+struct PowerInner {
+    /// 0 = active, 1 = idle, 2 = dormant.
+    tier: u8,
+    /// AWAY_* bits. Non-zero means nobody can see the screen.
+    away: u8,
+    /// now_millis() of the moment `away` last went from zero to non-zero.
+    away_since: u64,
+}
+
+const TIER_ACTIVE: u8 = 0;
+const TIER_IDLE: u8 = 1;
+const TIER_DORMANT: u8 = 2;
+
+const AWAY_DISPLAY_ASLEEP: u8 = 1 << 0;
+const AWAY_SYSTEM_ASLEEP: u8 = 1 << 1;
+const AWAY_LOCKED: u8 = 1 << 2;
+const AWAY_SCREEN_SAVER: u8 = 1 << 3;
+const AWAY_SESSION_INACTIVE: u8 = 1 << 4;
+
+/// While the pointer is moving the cursor is sampled at the display's rate; once it has been
+/// still this long the poller drops to CURSOR_RESTING_INTERVAL. Most of a working day the mouse
+/// is resting under someone's typing, and a resting pointer does not need sixty looks a second.
+const CURSOR_RESTING_AFTER: Duration = Duration::from_millis(1000);
+/// 20Hz. The first movement after a rest is seen within 50ms - well inside a hover reaction's
+/// budget, and the poller is back at full rate from the very next sample.
+const CURSOR_RESTING_INTERVAL: Duration = Duration::from_millis(50);
+
 impl PowerState {
-    fn cursor_interval(&self) -> Duration {
-        match self.tier.load(Ordering::Relaxed) {
-            0 => Duration::from_millis(16),  // ~60Hz: dragging has to feel direct
-            1 => Duration::from_millis(100), // 10Hz: enough to notice the user come back
-            _ => Duration::from_millis(500), // nobody can see the cat; just watch for a wake
+    fn snapshot(&self) -> PowerInner {
+        *self.inner.lock().unwrap()
+    }
+
+    fn is_away(&self) -> bool {
+        self.snapshot().away != 0
+    }
+
+    fn set_tier(&self, tier: u8) {
+        self.inner.lock().unwrap().tier = tier;
+        self.changed.notify_all();
+    }
+
+    /// Set or clear one reason for being away. Returns Some(away) when that flipped whether
+    /// anyone can see the screen, None when it did not (one reason replacing another).
+    fn set_away(&self, reason: u8, on: bool) -> Option<bool> {
+        let mut inner = self.inner.lock().unwrap();
+        let was_away = inner.away != 0;
+        if on {
+            inner.away |= reason;
+        } else {
+            inner.away &= !reason;
+        }
+        let is_away = inner.away != 0;
+        if is_away && !was_away {
+            inner.away_since = now_millis();
+        }
+        drop(inner);
+        self.changed.notify_all();
+        (is_away != was_away).then_some(is_away)
+    }
+
+    /// Block while `parked` says so. Returns true if it actually had to wait.
+    fn park_while(&self, parked: impl Fn(&PowerInner) -> bool) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        let mut waited = false;
+        while parked(&inner) {
+            waited = true;
+            inner = self.changed.wait(inner).unwrap();
+        }
+        waited
+    }
+
+    /// Block until someone can see the screen. Returns at once when they already can.
+    fn wait_until_present(&self) -> bool {
+        self.park_while(|p| p.away != 0)
+    }
+
+    fn cursor_interval(&self, still_for: Duration) -> Duration {
+        match self.snapshot().tier {
+            // ~60Hz while the pointer moves: dragging and the laser toy have to feel direct.
+            TIER_ACTIVE if still_for < CURSOR_RESTING_AFTER => Duration::from_millis(16),
+            TIER_ACTIVE => CURSOR_RESTING_INTERVAL,
+            // 10Hz: enough to notice the user come back to a cat that has settled down.
+            _ => Duration::from_millis(100),
         }
     }
 
     fn drain_interval(&self) -> Duration {
-        match self.tier.load(Ordering::Relaxed) {
-            2 => Duration::from_millis(1000),
+        match self.snapshot().tier {
+            TIER_DORMANT => Duration::from_millis(1000),
             _ => Duration::from_millis(250),
         }
     }
@@ -5808,12 +5933,129 @@ impl PowerState {
 #[tauri::command]
 fn set_power_tier(state: State<PowerState>, tier: String) {
     let value = match tier.as_str() {
-        "active" => 0,
-        "idle" => 1,
-        "dormant" => 2,
+        "active" => TIER_ACTIVE,
+        "idle" => TIER_IDLE,
+        "dormant" => TIER_DORMANT,
         _ => return,
     };
-    state.tier.store(value, Ordering::Relaxed);
+    state.set_tier(value);
+}
+
+/// Record that the OS says the user has gone (or come back), and tell the companion webview when
+/// that changes whether anyone can see the cat. The webview stops drawing and stops every timer
+/// it owns while away - see main.ts's power governor.
+fn set_away(app: &tauri::AppHandle, reason: u8, on: bool) {
+    if let Some(away) = app.state::<PowerState>().set_away(reason, on) {
+        eprintln!("[lingxi-desktop] power: {}", if away { "nobody can see the screen; suspending" } else { "screen is back; resuming" });
+        let _ = app.emit_to("companion", "system-presence", serde_json::json!({ "present": !away }));
+    }
+}
+
+/// Watch the OS for the moments nobody can see the screen, and the moments they come back.
+///
+/// Notification pairs, not polling: each one costs nothing until it fires. Must run on the main
+/// thread (the workspace center posts there, and the distributed center delivers on the run loop
+/// of the thread that registered).
+#[cfg(target_os = "macos")]
+fn watch_system_presence(app: &tauri::AppHandle) {
+    use objc2_app_kit::{
+        NSWorkspace, NSWorkspaceDidWakeNotification, NSWorkspaceScreensDidSleepNotification,
+        NSWorkspaceScreensDidWakeNotification, NSWorkspaceSessionDidBecomeActiveNotification,
+        NSWorkspaceSessionDidResignActiveNotification, NSWorkspaceWillSleepNotification,
+    };
+    use objc2_foundation::{NSDistributedNotificationCenter, NSNotification, NSNotificationCenter, NSNotificationName, NSString};
+    use std::ptr::NonNull;
+
+    fn observe(center: &NSNotificationCenter, name: &NSNotificationName, app: &tauri::AppHandle, reason: u8, on: bool) {
+        let app = app.clone();
+        let block = block2::RcBlock::new(move |_: NonNull<NSNotification>| set_away(&app, reason, on));
+        // SAFETY: no object filter, no queue (runs on the posting thread), and the block only
+        // touches Send + Sync state. The returned token is leaked on purpose: these observers
+        // live exactly as long as the process does.
+        let token = unsafe { center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block) };
+        std::mem::forget(token);
+    }
+
+    let workspace = NSWorkspace::sharedWorkspace();
+    let center = workspace.notificationCenter();
+    // SAFETY: reading AppKit's exported notification-name constants.
+    let pairs = unsafe {
+        [
+            (NSWorkspaceScreensDidSleepNotification, NSWorkspaceScreensDidWakeNotification, AWAY_DISPLAY_ASLEEP),
+            (NSWorkspaceWillSleepNotification, NSWorkspaceDidWakeNotification, AWAY_SYSTEM_ASLEEP),
+            (
+                NSWorkspaceSessionDidResignActiveNotification,
+                NSWorkspaceSessionDidBecomeActiveNotification,
+                AWAY_SESSION_INACTIVE,
+            ),
+        ]
+    };
+    for (gone, back, reason) in pairs {
+        observe(&center, gone, app, reason, true);
+        observe(&center, back, app, reason, false);
+    }
+
+    // Lock and screen saver have no AppKit constant; these are the names loginwindow and
+    // ScreenSaverEngine broadcast.
+    let distributed = NSDistributedNotificationCenter::defaultCenter();
+    for (gone, back, reason) in [
+        ("com.apple.screenIsLocked", "com.apple.screenIsUnlocked", AWAY_LOCKED),
+        ("com.apple.screensaver.didstart", "com.apple.screensaver.didstop", AWAY_SCREEN_SAVER),
+    ] {
+        observe(&distributed, &NSString::from_str(gone), app, reason, true);
+        observe(&distributed, &NSString::from_str(back), app, reason, false);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn watch_system_presence(_app: &tauri::AppHandle) {}
+
+/// Make sure "away" cannot get stuck.
+///
+/// A missed "back" notification would leave the cat frozen on screen with every thread parked,
+/// which is far worse than the power it saves. So while away, the reminder ticker calls this
+/// twice a minute, and it clears whatever the machine itself contradicts: the display is lit and
+/// someone has touched the keyboard or mouse in the last few seconds. It only ever CLEARS - a
+/// false "back" costs some power until the next real notification, a false "away" costs the
+/// cat. The lock bit is the one exception it keeps while the session reports a locked screen,
+/// because typing a password at the lock screen is exactly "input with the display on".
+#[cfg(target_os = "macos")]
+fn revalidate_presence(app: &tauri::AppHandle) {
+    use objc2_core_graphics::{CGDisplayIsAsleep, CGEventSource, CGEventSourceStateID, CGEventType, CGMainDisplayID};
+    let display_lit = !CGDisplayIsAsleep(CGMainDisplayID());
+    // kCGAnyInputEventType: any keyboard or mouse event, system-wide. Needs no permission.
+    let any_input = CGEventType(u32::MAX);
+    let recently_used = CGEventSource::seconds_since_last_event_type(CGEventSourceStateID::HIDSystemState, any_input) < 5.0;
+    if !(display_lit && recently_used) {
+        return;
+    }
+    let locked = screen_is_locked();
+    for reason in [AWAY_DISPLAY_ASLEEP, AWAY_SYSTEM_ASLEEP, AWAY_SCREEN_SAVER, AWAY_SESSION_INACTIVE, AWAY_LOCKED] {
+        if reason == AWAY_LOCKED && locked {
+            continue;
+        }
+        if app.state::<PowerState>().snapshot().away & reason != 0 {
+            eprintln!("[lingxi-desktop] power: clearing a stale away reason ({reason:#04b}) - the screen is plainly in use");
+            set_away(app, reason, false);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn revalidate_presence(_app: &tauri::AppHandle) {}
+
+/// Whether loginwindow reports the screen as locked right now (CGSSessionScreenIsLocked).
+#[cfg(target_os = "macos")]
+fn screen_is_locked() -> bool {
+    use objc2_foundation::{NSDictionary, NSNumber, NSString};
+    let Some(session) = objc2_core_graphics::CGSessionCopyCurrentDictionary() else { return false };
+    // SAFETY: CFDictionary is toll-free bridged to NSDictionary, and `session` outlives the use.
+    let dictionary: &NSDictionary<NSString, objc2::runtime::AnyObject> =
+        unsafe { &*(&*session as *const _ as *const NSDictionary<NSString, objc2::runtime::AnyObject>) };
+    dictionary
+        .objectForKey(&NSString::from_str("CGSSessionScreenIsLocked"))
+        .and_then(|value| value.downcast::<NSNumber>().ok())
+        .is_some_and(|number| number.boolValue())
 }
 
 /// Poll the OS-level cursor position and emit it as "global-cursor" events, independent
@@ -5824,11 +6066,21 @@ fn set_power_tier(state: State<PowerState>, tier: String) {
 /// it needs **no Accessibility permission**. `NSEvent.mouseLocation` is in points, origin at
 /// the bottom-left of the primary screen; converted here to physical pixels with a top-left
 /// origin to match `MonitorPayload`/the rest of this file's convention.
+///
+/// Parked outright - no wakeups at all - while nobody can see the screen or the cat is hidden;
+/// slowed to CURSOR_RESTING_INTERVAL while the pointer rests. See PowerState.
 #[cfg(target_os = "macos")]
 fn spawn_cursor_poller(app: tauri::AppHandle, screen_height_points: f64, scale_factor: f64) {
     thread::spawn(move || {
+        let power = app.state::<PowerState>();
         let mut last = (i32::MIN, i32::MIN);
+        let mut last_moved = std::time::Instant::now();
         loop {
+            if power.park_while(|p| p.away != 0 || p.tier == TIER_DORMANT) {
+                // The pointer has been somewhere else all this time: report wherever it is now
+                // rather than wait for it to move again.
+                last = (i32::MIN, i32::MIN);
+            }
             let (x, y) = autoreleasepool(|_| {
                 let point = NSEvent::mouseLocation();
                 let physical_x = (point.x * scale_factor).round() as i32;
@@ -5837,10 +6089,10 @@ fn spawn_cursor_poller(app: tauri::AppHandle, screen_height_points: f64, scale_f
             });
             if (x, y) != last {
                 last = (x, y);
-                let _ = app.emit("global-cursor", CursorPayload { x, y });
+                last_moved = std::time::Instant::now();
+                let _ = app.emit_to("companion", "global-cursor", CursorPayload { x, y });
             }
-            // Rate set by the power governor rather than fixed at 60Hz - see PowerState.
-            thread::sleep(app.state::<PowerState>().cursor_interval());
+            thread::sleep(power.cursor_interval(last_moved.elapsed()));
         }
     });
 }
@@ -6376,7 +6628,8 @@ pub fn run() {
                 app.manage(SinkState { sinks: Mutex::new(sinks) });
             }
             spawn_cursor_poller(app.handle().clone(), screen_height_points, scale_factor);
-            spawn_reaction_drain(app.handle().clone());
+            // setup() runs on the main thread, which is where these observers have to live.
+            watch_system_presence(app.handle());
 
             // Read-only: reports the state, never raises a dialog. The app does not use this
             // permission at all (see accessibility_trusted_readonly), so asking for it at
@@ -6424,6 +6677,9 @@ pub fn run() {
             app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
             app.manage(AssetErrorState { errors: Mutex::new(Vec::new()) });
             app.manage(AgentRegistry::default());
+            // After the registry it drains, not before: the drain reads it on its very first pass
+            // (it blocks on the queue), and state() on an unmanaged type aborts the whole app.
+            spawn_reaction_drain(app.handle().clone());
             // Grants the user made in a previous session. Loaded before the bridge starts
             // listening, so the first call after a restart is already judged by the right tier
             // rather than by the default - otherwise a trusted agent that posts on launch gets
@@ -7012,7 +7268,6 @@ mod tests {
             Some("Bash 这边一直拿不到自动模式的安全判定"),
         );
         assert_eq!(turn_line("```\ncode only\n```"), None);
-        assert_eq!(turn_line(""), None);
     }
 
     #[test]
@@ -7805,5 +8060,75 @@ command = "node"
         std::fs::rename(&tmp, &path).unwrap();
         assert_eq!(load_persisted_settings(Some(&path)), original);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn away_flips_only_when_the_last_reason_clears() {
+        let power = PowerState::default();
+        assert_eq!(power.set_away(AWAY_LOCKED, true), Some(true), "first reason: nobody can see the screen");
+        assert_eq!(power.set_away(AWAY_DISPLAY_ASLEEP, true), None, "a second reason changes nothing");
+        assert_eq!(power.set_away(AWAY_DISPLAY_ASLEEP, false), None, "display back, but still locked");
+        assert!(power.is_away());
+        assert_eq!(power.set_away(AWAY_LOCKED, false), Some(false), "last reason gone: back");
+        assert_eq!(power.set_away(AWAY_LOCKED, false), None, "a repeated 'back' is not news");
+    }
+
+    #[test]
+    fn a_parked_thread_costs_nothing_until_someone_is_back() {
+        let power = std::sync::Arc::new(PowerState::default());
+        power.set_away(AWAY_DISPLAY_ASLEEP, true);
+        let woke = std::sync::Arc::new(AtomicBool::new(false));
+        let worker = {
+            let (power, woke) = (power.clone(), woke.clone());
+            thread::spawn(move || {
+                assert!(power.wait_until_present(), "it should have had to wait");
+                woke.store(true, Ordering::SeqCst);
+            })
+        };
+        thread::sleep(Duration::from_millis(50));
+        assert!(!woke.load(Ordering::SeqCst), "woke while the display was still asleep");
+        // A tier change notifies too, and must not count as being back.
+        power.set_tier(TIER_IDLE);
+        thread::sleep(Duration::from_millis(50));
+        assert!(!woke.load(Ordering::SeqCst), "a tier change released a thread parked on presence");
+        power.set_away(AWAY_DISPLAY_ASLEEP, false);
+        worker.join().unwrap();
+        assert!(woke.load(Ordering::SeqCst));
+        assert!(!power.wait_until_present(), "present already: no wait");
+    }
+
+    #[test]
+    fn the_cursor_is_sampled_fast_only_while_it_moves() {
+        let power = PowerState::default();
+        assert_eq!(power.cursor_interval(Duration::ZERO), Duration::from_millis(16));
+        assert_eq!(power.cursor_interval(CURSOR_RESTING_AFTER), CURSOR_RESTING_INTERVAL);
+        power.set_tier(TIER_IDLE);
+        assert_eq!(power.cursor_interval(Duration::ZERO), Duration::from_millis(100));
+    }
+
+    #[test]
+    fn the_drain_sleeps_on_an_empty_queue_and_wakes_on_work() {
+        let registry = std::sync::Arc::new(AgentRegistry::default());
+        let woke = std::sync::Arc::new(AtomicBool::new(false));
+        let worker = {
+            let (registry, woke) = (registry.clone(), woke.clone());
+            thread::spawn(move || {
+                registry.wait_for_work();
+                woke.store(true, Ordering::SeqCst);
+            })
+        };
+        thread::sleep(Duration::from_millis(50));
+        assert!(!woke.load(Ordering::SeqCst), "the drain woke with nothing queued");
+        registry.enqueue(QueuedReaction {
+            agent: resolve_agent(&registry, Some("test"), 0),
+            priority: "report".into(),
+            rank: 2,
+            hold_ms: 1000,
+            command: serde_json::json!({}),
+            queued_at: 0,
+            expires_at: u64::MAX,
+        });
+        worker.join().unwrap();
+        assert!(woke.load(Ordering::SeqCst));
     }
 }

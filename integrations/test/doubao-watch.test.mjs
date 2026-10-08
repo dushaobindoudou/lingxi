@@ -52,6 +52,9 @@ test('a 豆包 turn is reported as it starts, waits on the user, and ends - and 
       // TMPDIR too: /usr/bin/python3 is the xcrun shim, which without its cache takes seconds to start.
       PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: root, LINGXI_DOUBAO_DIR: doubao, LINGXI_PORT: String(server.address().port),
       LINGXI_TOKEN_FILE: join(root, 'token'), LINGXI_DOUBAO_STATE: state, LINGXI_DOUBAO_WATCH_POLL: '0.05',
+      // Far longer than the test: every event below has to arrive because the watcher was WOKEN by
+      // the write (kqueue), not because it happened to look - it no longer looks every second.
+      LINGXI_DOUBAO_WATCH_RESCAN: '600',
       LINGXI_DOUBAO_WATCH_DEBUG: '1',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -81,6 +84,13 @@ test('a 豆包 turn is reported as it starts, waits on the user, and ends - and 
     // 豆包's face is registered once for this app instance, not on every event.
     assert.equal(registrations.length, 1);
     assert.equal(registrations[0].id, 'doubao');
+
+    // 豆包 rotates to a new log: a file that did not exist when the watcher started is read from
+    // its first line, and noticed when it appears rather than at the next rescan.
+    writeFileSync(join(doubao, 'sdk_storage/log/saman_2026.0930.1.log'), logLine('Register added blocker', '333'));
+    assert.ok(await until(() => events.length >= 4), 'a turn in a newly rotated log was never reported');
+    assert.equal(events[3].taskId, '333');
+    assert.equal(events[3].state, 'running');
   } finally {
     child.kill();
     server.close();

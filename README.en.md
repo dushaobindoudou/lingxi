@@ -69,6 +69,7 @@ After `npm run dev` (inside `apps/lingxi`) you can open these. They are not in t
 | `/probe-airborne.html` | **Regression probe**: a jump's real height, hang time, and the gravity the torso falls at; add `?strip` for a side view |
 | `/probe-framing.html` | **Regression probe**: how much of the cat each screen edge crops, per camera and per size |
 | `/probe-unproject.html` | **Regression probe**: whether screen coordinates ↔ world coordinates are invertible everywhere (it used to fail at the bottom of the screen) |
+| `/probe-fit.html` | **Regression probe**: the fitted canvas + merged body against the old full-screen, per-box rendering, pixel by pixel; the canvas must never clip the cat |
 | `/rig-preview.html` `/style-lab.html` | Skeleton and palette experiments |
 
 `probe-gait.html` is the regression check for several structural bugs. The healthy values are written at the top of the file. Read it before you change the animation system.

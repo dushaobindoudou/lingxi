@@ -25,6 +25,7 @@ import { createIdleAnimator } from './anim/idle.ts';
 import { createBodyFlex } from './anim/body-flex.ts';
 import { CAMERA_PRESETS, DEFAULT_CAMERA_ID, AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, cameraPreset } from './rig/cameras.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
+import { mergeBody, type MergedBody } from './rig/merged-body.ts';
 
 export { CAMERA_PRESETS, DEFAULT_CAMERA_ID, type CameraPreset } from './rig/cameras.ts';
 
@@ -77,7 +78,21 @@ export function listSkins(): readonly ArtSkin[] {
   return SKINS;
 }
 
-export function createThreeRenderer(): Renderer {
+export interface ThreeRendererOptions {
+  /**
+   * Size the canvas to the cat instead of the whole frame, and move it with the cat. For the
+   * desktop companion, whose frame is the entire screen - see fitCanvasToFrame. Off by default:
+   * the dev probes read the full canvas.
+   */
+  fitCanvasToCat?: boolean;
+  /**
+   * Draw the body as one call (rig/merged-body.ts). On by default; off only to give
+   * probe-fit.html the old per-box picture to compare against.
+   */
+  mergeBody?: boolean;
+}
+
+export function createThreeRenderer(options: ThreeRendererOptions = {}): Renderer {
   const scene = new THREE.Scene();
   // Clip planes deliberately enormous and symmetric about the camera, INCLUDING a negative
   // near. An orthographic projection has no divide-by-depth, so "near" is only a clip test,
@@ -191,7 +206,10 @@ export function createThreeRenderer(): Renderer {
   let bodyMaterial!: THREE.MeshStandardMaterial;
   let faceMaterial!: THREE.MeshBasicMaterial;
   let faceGeometry!: THREE.PlaneGeometry;
+  let faceDecal!: THREE.Mesh;
   let bodyController!: ReturnType<typeof createBodyController>;
+  /** The whole body as one draw call - see rig/merged-body.ts. Rebuilt with the rig. */
+  let mergedBody: MergedBody | null = null;
 
   // Rebuilt with the rig, because the gait measures its stride off the rig's actual bone
   // lengths - a skin with different proportions gets a stride that suits it.
@@ -227,6 +245,8 @@ export function createThreeRenderer(): Renderer {
   function mountSkin(next: CustomSkin) {
     const epoch = ++mountEpoch;
     if (rig) {
+      mergedBody?.dispose();
+      mergedBody = null;
       scene.remove(rig.root);
       rig.dispose();
       bodyTexture.dispose();
@@ -292,6 +312,7 @@ export function createThreeRenderer(): Renderer {
     const faceMesh = new THREE.Mesh(faceGeometry, faceMaterial);
     faceMesh.position.set(headSpec.box.offset[0], headSpec.box.offset[1], headSpec.box.offset[2] + hz / 2 + 0.025);
     rig.node('head').add(faceMesh);
+    faceDecal = faceMesh;
 
     bodyController = createBodyController(rig, SKELETON);
     idleAnimator = createIdleAnimator(rig);
@@ -318,6 +339,11 @@ export function createThreeRenderer(): Renderer {
     rig.root.position.copy(keepPosition);
     rig.root.quaternion.copy(keepQuaternion);
     rig.root.updateMatrixWorld(true);
+    // Last, once every box that is going to be hidden has been: only what is drawn is merged.
+    if (options.mergeBody !== false) {
+      mergedBody = mergeBody(rig.root, bodyMaterial);
+      scene.add(mergedBody.mesh);
+    }
     lastFrame = director.update(0, 'idle', false);
     repaintFace();
   }
@@ -632,7 +658,129 @@ export function createThreeRenderer(): Renderer {
   }
   const headBoxHeight = SKELETON.nodes.find((node) => node.id === 'head')!.box.size[1];
   const raycaster = new THREE.Raycaster();
+  // Every layer: the body's boxes moved to their own layer when the merged body took over drawing
+  // them (rig/merged-body.ts), and hit testing has to keep seeing them exactly as before.
+  raycaster.layers.enableAll();
   const ndc = new THREE.Vector2();
+
+  // --- canvas fitted to the cat -------------------------------------------------------------
+  //
+  // The companion's frame is the whole screen, and the cat is a few hundred pixels of it. A
+  // full-frame canvas meant every frame cleared, multisampled, resolved and handed the compositor
+  // a screen-sized surface - on a Retina panel ~5.6 million pixels, sixty times a second, for a
+  // picture that is >95% transparent - and the window server then recomposited the whole screen
+  // behind it every frame, because the whole surface had changed.
+  //
+  // So the canvas is sized to what is actually drawn and moved with the cat. The camera still
+  // frames the whole screen - setViewOffset renders exactly the sub-rectangle the canvas covers -
+  // so every screen<->world mapping in this file is untouched, and with the rectangle on whole
+  // pixels the result is the same image, pixel for pixel, cut out of the same frame.
+  const fitCanvas = options.fitCanvasToCat === true;
+  /** Where the canvas sits in the full frame, logical px. width 0 = refit on the next frame. */
+  const canvasRect = { x: 0, y: 0, width: 0, height: 0 };
+  /** The drawn cat's screen bounds as of the last frame (fit mode only); null before the first. */
+  let catRect: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  let shrinkWantedSince: number | null = null;
+  /** Antialiasing fringe and rounding, logical px. */
+  const FIT_PADDING_PX = 6;
+  /** Canvas sizes come in steps of this, with headroom, so a pose change does not reallocate. */
+  const FIT_QUANTUM_PX = 64;
+  const FIT_HEADROOM = 1.2;
+  /** A canvas much bigger than needed is only shrunk once that has held for this long. */
+  const FIT_SHRINK_AFTER_SECONDS = 2;
+  const viewProjection = new THREE.Matrix4();
+  const meshToClip = new THREE.Matrix4();
+  const corner = new THREE.Vector3();
+
+  /** Screen bounds, logical px, of everything the cat draws - each box's own corners projected. */
+  function measureDrawnRect() {
+    viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const rect = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    const include = (mesh: THREE.Mesh) => {
+      const geometry = mesh.geometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      const { min, max } = geometry.boundingBox!;
+      meshToClip.multiplyMatrices(viewProjection, mesh.matrixWorld);
+      for (let i = 0; i < 8; i++) {
+        corner.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z).applyMatrix4(meshToClip);
+        const x = (corner.x * 0.5 + 0.5) * width;
+        const y = (-corner.y * 0.5 + 0.5) * height;
+        if (x < rect.x0) rect.x0 = x;
+        if (x > rect.x1) rect.x1 = x;
+        if (y < rect.y0) rect.y0 = y;
+        if (y > rect.y1) rect.y1 = y;
+      }
+    };
+    if (mergedBody) for (const box of mergedBody.boxes) include(box);
+    else rig.root.traverse((object) => { if (object instanceof THREE.Mesh && object.visible && object !== faceDecal) include(object); });
+    include(faceDecal);
+    include(shadow);
+    return rect;
+  }
+
+  /**
+   * Size and place the canvas for this frame, and point the camera at that piece of the frame.
+   * The caller renders and then clears the view offset, so nothing else ever sees it.
+   */
+  function fitCanvasToFrame() {
+    scene.updateMatrixWorld();
+    const drawn = measureDrawnRect();
+    catRect = drawn;
+    // Whole frame whenever something may be drawn far from the cat: a toy (the yarn ball rolls
+    // anywhere and the laser's trail is a world layer) or a performance (the cat rushes the
+    // lens). Both are short and user-initiated; the saving is for the other 99% of the day.
+    const full = toyProp != null || performanceScale != null;
+    const x0 = full ? 0 : Math.max(0, Math.floor(drawn.x0 - FIT_PADDING_PX));
+    const y0 = full ? 0 : Math.max(0, Math.floor(drawn.y0 - FIT_PADDING_PX));
+    const x1 = full ? width : Math.min(width, Math.ceil(drawn.x1 + FIT_PADDING_PX));
+    const y1 = full ? height : Math.min(height, Math.ceil(drawn.y1 + FIT_PADDING_PX));
+    const needW = Math.max(1, x1 - x0);
+    const needH = Math.max(1, y1 - y0);
+    const sized = (need: number, limit: number) => Math.min(limit, Math.ceil((need * FIT_HEADROOM) / FIT_QUANTUM_PX) * FIT_QUANTUM_PX);
+
+    let w = canvasRect.width;
+    let h = canvasRect.height;
+    if (full) {
+      w = width;
+      h = height;
+      shrinkWantedSince = null;
+    } else if (needW > w || needH > h) {
+      // Grow at once - anything less clips the cat.
+      w = Math.max(w, sized(needW, width));
+      h = Math.max(h, sized(needH, height));
+      shrinkWantedSince = null;
+    } else {
+      const fitW = sized(needW, width);
+      const fitH = sized(needH, height);
+      if (fitW < w * 0.7 || fitH < h * 0.7) {
+        shrinkWantedSince ??= elapsed;
+        if (elapsed - shrinkWantedSince >= FIT_SHRINK_AFTER_SECONDS) {
+          w = fitW;
+          h = fitH;
+          shrinkWantedSince = null;
+        }
+      } else {
+        shrinkWantedSince = null;
+      }
+    }
+    // Centred on what is drawn and kept on screen. The size is never below the need, so the
+    // clamp can only slide the canvas, never cut the cat.
+    const x = Math.floor(Math.min(Math.max((x0 + x1 - w) / 2, 0), Math.max(0, width - w)));
+    const y = Math.floor(Math.min(Math.max((y0 + y1 - h) / 2, 0), Math.max(0, height - h)));
+
+    if (w !== canvasRect.width || h !== canvasRect.height) {
+      renderer.setSize(w, h, true);
+      canvasRect.width = w;
+      canvasRect.height = h;
+    }
+    if (x !== canvasRect.x || y !== canvasRect.y || !renderer.domElement.style.transform) {
+      // A transform, not left/top: it moves the composited layer without touching layout.
+      renderer.domElement.style.transform = `translate(${x}px, ${y}px)`;
+      canvasRect.x = x;
+      canvasRect.y = y;
+    }
+    camera.setViewOffset(width, height, x, y, w, h);
+  }
 
   return {
     capabilities,
@@ -641,7 +789,13 @@ export function createThreeRenderer(): Renderer {
       container = target;
       container.appendChild(renderer.domElement);
       renderer.domElement.style.position = 'absolute';
-      renderer.domElement.style.inset = '0';
+      if (fitCanvas) {
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.willChange = 'transform';
+      } else {
+        renderer.domElement.style.inset = '0';
+      }
       renderer.domElement.style.pointerEvents = 'none'; // hit-testing is done in world space by main.ts, not DOM events
     },
 
@@ -650,7 +804,8 @@ export function createThreeRenderer(): Renderer {
       height = Math.max(1, h);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       renderer.setPixelRatio(dpr);
-      renderer.setSize(width, height, true);
+      if (fitCanvas) canvasRect.width = canvasRect.height = 0; // refit on the next frame
+      else renderer.setSize(width, height, true);
       // keep the model a fixed apparent size regardless of window size: fix world-units-per-pixel
       unitsPerPixelX = 2.6 / Math.max(width, height);
       unitsPerPixelY = unitsPerPixelX;
@@ -1169,10 +1324,25 @@ export function createThreeRenderer(): Renderer {
       // context throws or silently no-ops depending on the browser, and neither is better
       // than skipping.
       if (contextLost) return;
-      renderer.render(scene, camera);
+      if (fitCanvas) {
+        fitCanvasToFrame();
+        renderer.render(scene, camera);
+        camera.clearViewOffset();
+      } else {
+        renderer.render(scene, camera);
+      }
     },
 
     hitTest(point: { x: number; y: number }, precise = false) {
+      // Nowhere near the drawn cat: no raycast. This runs twice a frame against wherever the
+      // pointer happens to be, which is almost always somewhere else on the screen. The margin
+      // covers the small-size fallback circle below and a frame's worth of movement.
+      if (catRect) {
+        const margin = MIN_HIT_RADIUS_PX + 16;
+        if (point.x < catRect.x0 - margin || point.x > catRect.x1 + margin || point.y < catRect.y0 - margin || point.y > catRect.y1 + margin) {
+          return false;
+        }
+      }
       ndc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
       // Precise: intersect the actual boxes. The old bounding-sphere test treated a
@@ -1203,6 +1373,8 @@ export function createThreeRenderer(): Renderer {
         toyProp.dispose();
         toyProp = null;
       }
+      mergedBody?.dispose();
+      mergedBody = null;
       rig.dispose();
       bodyTexture.dispose();
       bodyMaterial.dispose();
