@@ -168,7 +168,13 @@ def merge(objects,name,voxel=.009):
 # Old chest was 380mm deep on a 710mm torso: withers 530mm, i.e. height/length .66 against
 # a real cat's ~.55, which is what made it look short and barrel-like. New silhouette has a
 # waist (torso narrower than chest and rump), a level back line and a slightly longer body.
-parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',(0,-.205,.405),(.155,.14,.115)),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',(0,-.17,.315),(.145,.17,.160)),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
+# Round J (REPORT B6/B7): the chest stood high over long-looking forelegs - foreleg below the chest .219 of
+# the body (real vertices; .260 in the render against the reference's .174). The chest comes DOWN between
+# the forelegs (its top stays): a fuller, deeper kitten chest and less bare leg under it, with nothing in
+# the legs or the clips' ground calibration touched.
+CHEST_DROP=_v6('V6_CHEST_DROP',.035)
+CHEST=((0,-.17,.315-CHEST_DROP/2),(.145,.17,.160+CHEST_DROP/2))
+parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',(0,-.205,.405),(.155,.14,.115)),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',*CHEST),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
 for s in [-1,1]:
  parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.040),(.054,.064,.038)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.040),(.053,.062,.037))]
 body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
@@ -1484,7 +1490,7 @@ def solve_lick(sit):
  pad_n=(pw.matrix_local.inverted().to_3x3()@Vector((0,0,-1))).normalized()
  # ...and the open jaw must not sink into the neck ruff or the chest when the head comes down to the paw
  # (one solve bent the head 42 deg and the open chin went into the chest - 92 polygon pairs with the tongue).
- chest=[(Vector(body_xf(c)),Vector((r[0],r[1]*BODY_K,r[2]))) for c,r in (((0,-.205,.405),(.155,.14,.115)),((0,-.17,.315),(.145,.17,.160)))]
+ chest=[(Vector(body_xf(c)),Vector((r[0],r[1]*BODY_K,r[2]))) for c,r in (((0,-.205,.405),(.155,.14,.115)),CHEST)]
  jf=_fk({'Jaw':(JAW_OPEN['Lick'],0,0)});jm=ad.bones['Head'].matrix_local.inverted()@jf('Jaw')@ad.bones['Jaw'].matrix_local.inverted()
  chin_l=[jm@Vector(head_xf(p)) for p in ((0,-.425,.418),(0,-.395,.410),(0,-.365,.415))]
  sp_rest=ad.bones['Spine'].matrix_local
@@ -1690,6 +1696,7 @@ def pose(name,u):
   # 11cm left the silhouette 0.721 tall against Idle's 0.755 - a 4cm difference on a 75cm cat,
   # which is why "lying down" looked like "standing with odd legs".
   f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.11*f
+  if name=='LieDown':pb['Root'].location.y+=.0105*f   # round J: the chest/belly lay 8-10 mm into the floor (v6_clip_review lowest, LX_Body); now it rests on it
   pb['Spine'].rotation_euler[0]=.10*f
   # Rolled onto its flank the body's width becomes its height, and the lowest thing is a hind
   # toe 193 mm under the floor (v6_ground_calib.py). Lifting the root that much puts the
@@ -1705,7 +1712,7 @@ def pose(name,u):
   # lie-down targets, so its frame was LieDown again (root -110 mm, nose-to-tail +3.9 mm
   # against Idle's +0.8): two cards of the same pose under two names.
   f_=min(1,u*3);s_=math.sin(math.pi*u)
-  pb['Root'].location.y=-.055*f_;pb['Spine'].rotation_euler[0]=.16*s_*f_
+  pb['Root'].location.y=-.0435*f_;pb['Spine'].rotation_euler[0]=.16*s_*f_   # round J: -.055 sank the chest 7.3 mm into the floor
   pb['Head'].rotation_euler[0]=-.22*s_*f_;pb['Tail1'].rotation_euler[0]=-.35*s_*f_
  if name=='Curious':
   # Leaning in, head cocked, weight forward. The old version rotated the head 13 degrees at its
