@@ -174,7 +174,9 @@ def merge(objects,name,voxel=.009):
 # the legs or the clips' ground calibration touched.
 CHEST_DROP=_v6('V6_CHEST_DROP',.035)
 CHEST=((0,-.17,.315-CHEST_DROP/2),(.145,.17,.160+CHEST_DROP/2))
-parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',(0,-.205,.405),(.155,.14,.115)),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',*CHEST),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
+RUFF_DROP=_v6('V6_RUFF_DROP',.04)
+RUFF=((0,-.205,.405-RUFF_DROP/2),(.155,.14,.115-RUFF_DROP/2))   # top comes down RUFF_DROP, bottom stays
+parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',*RUFF),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',*CHEST),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
 for s in [-1,1]:
  parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.040),(.054,.064,.038)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.040),(.053,.062,.037))]
 body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
@@ -1316,7 +1318,12 @@ HEAD_S=.90;HEAD_SCALE=np.array([HEAD_S*_v6('V6_HEAD_SX',1.0),HEAD_S,HEAD_S*_v6('
 # dachshund under a kitten's head, and half of why the head "looked big" from the front. The body
 # (everything but the head) is compressed nose-to-tail about y=.06, and the head rides back with
 # the neck by the same amount, so nothing else has to know.
-BODY_K=.86;BODY_Y0=.06
+# Round L (REPORT B6 / ISSUES E4: shoulder height / body length .668 in the render against the reference's
+# .591): shoulder = foreleg below the chest + the trunk above it, and the forelegs were already right (.168
+# vs .174) - the trunk was 22% too deep for its length. Not the legs, then: the body back out to .90 (head /
+# body .421 -> .402, reference .411) and the neck ruff's top down 40 mm (it WAS the measured withers, and the
+# ridge behind the head side-on). Vertex shoulder / body .761 -> .671 (round-l-test s0-s3).
+BODY_K=_v6('V6_BODY_K',.90);BODY_Y0=.06
 def body_xf(p):p=np.asarray(p,dtype='f');return (float(p[0]),float(BODY_Y0+BODY_K*(p[1]-BODY_Y0)),float(p[2]))
 HEAD_SHIFT=np.array([0,body_xf(HEAD_PIVOT)[1]-HEAD_PIVOT[1],0])
 def head_xf(p):return tuple(HEAD_PIVOT+HEAD_SCALE*(np.asarray(p,dtype='f')-HEAD_PIVOT)+HEAD_SHIFT)
@@ -1473,7 +1480,7 @@ def solve_sit():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
-  c+=12*abs(pitch-math.radians(44))   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
+  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',41)))   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
   mz=(f('Head')@mouth_l).z;c+=60*max(0,.49-mz)   # round J: .49 on the REAL mouth = .50 on the old authored-space point; 60 (was 15): the real mouth sits closer to the neck, so at 15 the solve dropped it 53 mm and bent the head 42 deg onto the chest
   hd0=f('Head').translation;hd1=_tip(f,'Head');c+=3*abs(math.atan2(hd1.z-hd0.z,-(hd1.y-hd0.y))-math.radians(12))
@@ -1538,7 +1545,7 @@ def solve_lick(sit):
  pad_n=(pw.matrix_local.inverted().to_3x3()@Vector((0,0,-1))).normalized()
  # ...and the open jaw must not sink into the neck ruff or the chest when the head comes down to the paw
  # (one solve bent the head 42 deg and the open chin went into the chest - 92 polygon pairs with the tongue).
- chest=[(Vector(body_xf(c)),Vector((r[0],r[1]*BODY_K,r[2]))) for c,r in (((0,-.205,.405),(.155,.14,.115)),CHEST)]
+ chest=[(Vector(body_xf(c)),Vector((r[0],r[1]*BODY_K,r[2]))) for c,r in (RUFF,CHEST)]
  jf=_fk({'Jaw':(JAW_OPEN['Lick'],0,0)});jm=ad.bones['Head'].matrix_local.inverted()@jf('Jaw')@ad.bones['Jaw'].matrix_local.inverted()
  chin_l=[jm@Vector(head_xf(p)) for p in ((0,-.425,.418),(0,-.395,.410),(0,-.365,.415))]
  sp_rest=ad.bones['Spine'].matrix_local
@@ -1744,7 +1751,7 @@ def pose(name,u):
   # 11cm left the silhouette 0.721 tall against Idle's 0.755 - a 4cm difference on a 75cm cat,
   # which is why "lying down" looked like "standing with odd legs".
   f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.11*f
-  if name=='LieDown':pb['Root'].location.y+=.0105*f   # round J: the chest/belly lay 8-10 mm into the floor (v6_clip_review lowest, LX_Body); now it rests on it
+  if name=='LieDown':pb['Root'].location.y+=.0115*f   # round J: the chest/belly lay 8-10 mm into the floor (v6_clip_review lowest, LX_Body); now it rests on it
   pb['Spine'].rotation_euler[0]=.10*f
   # Rolled onto its flank the body's width becomes its height, and the lowest thing is a hind
   # toe 193 mm under the floor (v6_ground_calib.py). Lifting the root that much puts the
@@ -1760,7 +1767,7 @@ def pose(name,u):
   # lie-down targets, so its frame was LieDown again (root -110 mm, nose-to-tail +3.9 mm
   # against Idle's +0.8): two cards of the same pose under two names.
   f_=min(1,u*3);s_=math.sin(math.pi*u)
-  pb['Root'].location.y=-.0435*f_;pb['Spine'].rotation_euler[0]=.16*s_*f_   # round J: -.055 sank the chest 7.3 mm into the floor
+  pb['Root'].location.y=-.0415*f_;pb['Spine'].rotation_euler[0]=.16*s_*f_   # round J: -.055 sank the chest 7.3 mm into the floor
   pb['Head'].rotation_euler[0]=-.22*s_*f_;pb['Tail1'].rotation_euler[0]=-.35*s_*f_
  if name=='Curious':
   # Leaning in, head cocked, weight forward. The old version rotated the head 13 degrees at its
