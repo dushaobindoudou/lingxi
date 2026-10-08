@@ -2038,7 +2038,7 @@ dependencies = [
 name = "lingxi"
 version = "0.3.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "block2",
  "macos-accessibility-client",
  "objc2",
