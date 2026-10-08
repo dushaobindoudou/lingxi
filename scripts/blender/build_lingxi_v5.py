@@ -240,7 +240,8 @@ LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather
 LIP_DZ=LIP0-.4575   # the mouth assembly MUST ride with the lip line - cavity/floor/tongue/teeth/jaw - or pink skin peeks above the new lip (v6 lesson)
 MOUTH_W=.024*_v6('V6_MOUTH_W',1.0);MW_K=MOUTH_W/.024;MW2=MOUTH_W*(.016/.024)   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
 LIP_SAG=.0035*_v6('V6_LIP_SAG',1.0)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m")
-GAPE_W=.036*_v6('V6_GAPE_W',1.0)    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
+GAPE_W=.036*_v6('V6_GAPE_W',1.2)   # round L: 1.2 - the yawn's corners open to ~70 mm; past 1.2 the cut does not get wider (round-l-test y3)
+#    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
                # yawn opens the corners back to here - a cat's gape runs well past its visible lips
 def lip_z(x):
  """Height of the upper-lip line at x: the two arcs of the omega meeting under the philtrum,
@@ -316,7 +317,8 @@ jaw=merge([sphere('JawL',(-.022,-.398,.424+LIP_DZ),(.030,.034,.008)),sphere('Jaw
 jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True   # chin skin is the head's now
 # The mouth bag: big enough to fill the whole gap when the jaw drops (otherwise the gap shows the
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
-mouthpink=mat('LX_MouthPink',(.30,.07,.08),.5)   # rosy, like the yawn reference - near-black read as a hole
+_ML=_v6('V6_MOUTH_LIGHT',1.6)   # round L: x1.6 - with the bag open the whole yawn showed it, a deep red where the reference is rosy
+mouthpink=mat('LX_MouthPink',(.30*_ML,.07*_ML,.08*_ML),.5)   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
 cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.392),CAV_Z),(.042,_v6('V6_CAV_RY',.040),_v6('V6_CAV_RZ',.020)),mouthpink)   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
 # Round J: the bag is a CUP, open at the front. Closed, it held the tongue, the floor and the lower canines
@@ -995,7 +997,7 @@ _nt=headcoat.node_tree;_geo=_nt.nodes.new('ShaderNodeNewGeometry');_mx=_nt.nodes
 _io=lambda socks,ident:next(s for s in socks if s.identifier==ident)
 _va=next(n for n in _nt.nodes if n.type=='VERTEX_COLOR')
 _nt.links.new(_geo.outputs['Backfacing'],_io(_mx.inputs,'Factor_Float'));_nt.links.new(_va.outputs['Color'],_io(_mx.inputs,'A_Color'))
-_io(_mx.inputs,'B_Color').default_value=(.16,.035,.04,1)
+_io(_mx.inputs,'B_Color').default_value=(.16*_ML,.035*_ML,.04*_ML,1)
 _nt.links.new(_io(_mx.outputs,'Result_Color'),_nt.nodes.get('Principled BSDF').inputs['Base Color'])
 # Lid colour: the coat the lid sits in, darkening to a narrow near-black rim at the eye - the
 # line every cat's eye has. Evaluated on the authored (pre head-scale) basis, like the coat.
