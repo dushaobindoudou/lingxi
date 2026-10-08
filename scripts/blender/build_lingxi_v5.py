@@ -245,21 +245,23 @@ CHEST=((0,-.17,.315-CHEST_DROP/2),(.145,.17,.160+CHEST_DROP/2))
 RUFF_DROP=_v6('V6_RUFF_DROP',.04)
 RUFF=((0,-.205,.405-RUFF_DROP/2),(.155,.14,.115-RUFF_DROP/2))   # top comes down RUFF_DROP, bottom stays
 parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',*RUFF),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',*CHEST),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
+PAW_LOW=_v6('V6_PAW_LOW',.024)   # round N: the paw ball's top comes down this much, bottom (ground contact) stays
+PAW_RYK=_v6('V6_PAW_RYK',.90)    # ...and it is 10% shorter: lowered, its low front bulged 6.5 mm further out and dipped through the floor when the paw pitched (LieDown / Stretch)
 for s in [-1,1]:
- parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.040),(.054,.064,.038)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.040),(.053,.062,.037))]
+ parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.040-PAW_LOW/2),(.054,.064*PAW_RYK,.038-PAW_LOW/2)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.040-PAW_LOW/2),(.053,.062*PAW_RYK,.037-PAW_LOW/2))]
 body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
 MG=_v6('V6_MUZZLE_GROW',0.0)   # muzzle volume grows DOWN, top edge fixed (.472+.032=.504); only needed if the lip line moves below the muzzle's reach
 # Toes sit AT the front of the paw ball (round E, 2026-09-30). They used to be placed 2cm ahead of
 # the paw's centre inside a ball 17.6cm deep - buried, so the foot read as a pom-pom however the
 # coat was set. The ball is shorter now (ry .088 -> .072 front, .085 -> .070 rear) and each toe's
 # centre is 6mm proud of its front surface.
-PAW_FRONT_Y={'Front':-.215-.064,'Rear':.245-.062}
+PAW_FRONT_Y={'Front':-.215-.064*PAW_RYK,'Rear':.245-.062*PAW_RYK}
 # Round G (review b4 + round F audit): F's toes sat in one straight row 3mm AHEAD of the ball -
 # 25-33mm proud, and 42mm wide at 22mm spacing, so neighbours overlapped by 20mm and no cleft
 # showed: four cotton balls glued on the front. Now each toe sits ON the paw ellipsoid where it
 # is (the outer toes follow the round front back ~16mm), TOE_IN inside it, so the front edge
 # stands ~12mm proud; narrower toes at 24mm spacing leave a ~6mm-deep cleft between them.
-PAW={'Front':((.108,-.215,.040),(.054,.064,.038)),'Rear':((.12,.245,.040),(.053,.062,.037))}
+PAW={'Front':((.108,-.215,.040-PAW_LOW/2),(.054,.064*PAW_RYK,.038-PAW_LOW/2)),'Rear':((.12,.245,.040-PAW_LOW/2),(.053,.062*PAW_RYK,.037-PAW_LOW/2))}   # == the FrontPaw/RearPaw spheres
 PAD_C={(pre,s):(s*x,y-.026) for pre,y,x in (('Front',-.17,.108),('Rear',.26,.12)) for s in (-1,1)}   # main pad centres (x, y), as the pads are built below   # == the FrontPaw/RearPaw spheres above
 # Round G2: G's toes read as four small pom-poms along the bottom edge (36mm tall on a 78mm paw);
 # the reference's toes ARE the front half of the paw - taller now (42mm). And the outer toes follow
@@ -272,13 +274,18 @@ PAD_C={(pre,s):(s*x,y-.026) for pre,y,x in (('Front',-.17,.108),('Rear',.26,.12)
 # Now the lobes keep G2's height, sit 4 mm deeper and lean on a gentler arc (outer toes ~2 mm back):
 # every cleft is a groove behind both of its crowns. 22 mm apart on 32 mm toes (10 mm overlap): pressed
 # together, the clefts are lines, not the gaps between four eggs (24 mm, round-i-test s2).
-TOE_DX=.022;TOE_R=(.016,.020,.022*_v6('V6_TOE_H',.82));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.15)
+TOE_DX=_v6('V6_TOE_DX',.027);TOE_R=(.016*_v6('V6_TOE_W',1.06),.020,.022*_v6('V6_TOE_H',.95));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',.6);TOE_ARC=_v6('V6_TOE_ARC',.04)
+# round N (codex paw refs lingxi-ref-paw-front/-side): the four toes ARE the front of the foot - creases .29 of the
+# foot's width apart, lobes .40 of it tall. Was 22 mm apart on a 98 mm row under a 108 mm, 78 mm tall paw ball: four
+# beads under a club. Now 27 mm apart (row 115 mm = the ball), 34 x 42 mm, 7 mm deeper forward, ball 24 mm lower
+# (V6_PAW_LOW), outer toes barely back: clefts 1.4/3.4 -> 4.5/5.3 mm (v6_part_audit toe_clefts, sym).
 # round L: .82 high (44 -> 36 mm), bottoms where they were - taller than wide they read as four fingers; the reference's toes are low round bumps (round-l-test t3/t4)
 def toe_xy(pre,s,i):
  (cx,cy,cz),(rx,ry,rz)=PAW[pre];dx=(i-1.5)*TOE_DX;h=((TOE_Z-cz)/rz)**2
  yc=cy-ry*math.sqrt(max(1-h,.05));yi=cy-ry*math.sqrt(max(1-(dx/rx)**2-h,.05))
  return s*cx+dx,yc+TOE_ARC*(yi-yc)+TOE_IN
-head=merge([sphere('Cranium',(0,-.285,.518),(.165,.147,.142)),sphere('CheekL',(-.095,-.340,.466),(.070,.082,.064)),sphere('CheekR',(.095,-.340,.466),(.070,.082,.064)),sphere('MuzzleL',(-.031,-.408,.472-MG),(.052,.047,.032+MG)),sphere('MuzzleR',(.031,-.408,.472-MG),(.052,.047,.032+MG))],'LX_Head',.005)
+CK_RX,CK_RZ=_v6('V6_CHEEK_RX',.070),_v6('V6_CHEEK_RZ',.064)   # round N (「脸是不是胖了」): the cheek lobes' width and depth, top edge fixed (.530)
+head=merge([sphere('Cranium',(0,-.285,.518),(.165,.147,.142)),sphere('CheekL',(-.095,-.340,.530-CK_RZ),(CK_RX,.082,CK_RZ)),sphere('CheekR',(.095,-.340,.530-CK_RZ),(CK_RX,.082,CK_RZ)),sphere('MuzzleL',(-.031,-.408,.472-MG),(.052,.047,.032+MG)),sphere('MuzzleR',(.031,-.408,.472-MG),(.052,.047,.032+MG))],'LX_Head',.005)
 head.data.materials.clear();head.data.materials.append(headcoat)
 # --- Head sculpt ---------------------------------------------------------------------------------
 # The skull was a union of ellipsoids: every feature a kitten's face has in relief - brow over
@@ -392,7 +399,7 @@ jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True 
 _ML=_v6('V6_MOUTH_LIGHT',1.6)   # round L: x1.6 - with the bag open the whole yawn showed it, a deep red where the reference is rosy
 mouthpink=mat('LX_MouthPink',(.30*_ML,.07*_ML,.08*_ML),.5)   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
-cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.392),CAV_Z),(.042,_v6('V6_CAV_RY',.040),_v6('V6_CAV_RZ',.020)),mouthpink)   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
+cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.458),CAV_Z),(.042,_v6('V6_CAV_RY',.040),_v6('V6_CAV_RZ',.020)),mouthpink)   # round M: -.392 -> -.458, 66 mm forward (WorkBuddy round-l-cav sweep): yawn leak 0, gape .218 / bite .180   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
 # Round J: the bag is a CUP, open at the front. Closed, it held the tongue, the floor and the lower canines
 # inside it, so a yawn showed the bag's own front wall - red, with the tongue's tip poking out under it.
 _cut=_v6('V6_CAV_CUT',0.0)   # the front half goes: shut, nothing showed (round-j-test z3: no cavity rays at rest)
@@ -400,6 +407,21 @@ if _cut>-9:
  _bm=bmesh.new();_bm.from_mesh(cavity.data);_ry=_v6('V6_CAV_RY',.040)
  bmesh.ops.delete(_bm,geom=[f for f in _bm.faces if f.calc_center_median().y<-_cut*_ry],context='FACES')   # object-local: sphere() keeps the centre as the origin
  _bm.to_mesh(cavity.data);_bm.free()
+# Round N (user: 「嘴还是有点穿模」): pushed 66 mm forward (round M), the cup's lower rim stood up to 55 mm in FRONT of
+# the chin skin - a pink arc under the lip at rest (Rest gape .011) and a pink bulge outside the lower lip in a yawn.
+# Its lower half (the jaw-bound floor) is pulled back to at most V6_CAV_CLAMP proud of the head's front skin: Rest
+# .011 -> .001, yawn leak 0; the yawn's measured gape drops .221 -> .187, the part that was the bag OUTSIDE the lip.
+_ccl=_v6('V6_CAV_CLAMP',-.004)
+if _ccl>-9:
+ from mathutils import bvhtree
+ bpy.context.view_layer.update();_hm=head.matrix_world;_cm=cavity.matrix_world;_ci=_cm.inverted()
+ _ht=bvhtree.BVHTree.FromPolygons([(_hm@v.co)[:] for v in head.data.vertices],[p.vertices[:] for p in head.data.polygons])
+ for v in cavity.data.vertices:
+  p=_cm@v.co
+  if p.z>=CAV_Z:continue
+  hy=[h[0].y for dx in (-.001,0,.001) for dz in (-.001,0,.001) for h in [_ht.ray_cast(Vector((p.x+dx,-1.0,p.z+dz)),Vector((0,1,0)),2.0)] if h[0] is not None]
+  if hy and p.y<min(hy)+_ccl:p.y=min(hy)+_ccl;v.co=_ci@p
+ cavity.data.update()
 floor=sphere('LX_MouthFloor',(0,-.394,_v6('V6_FLOOR_Z',.4455)+LIP_DZ),(.026,.028,_v6('V6_FLOOR_RZ',.003)),mouthpink)          # floor, on the jaw (round J: 1.5 mm up, its underside sat on the chin skin)
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
@@ -1166,7 +1188,8 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   for s in [-1,1]:keep &= ~((((root[:,0]-s*EYE_X)/(EYE_R*.90))**2+((root[:,2]-EYE_Z)/(EYE_R*.90))**2<1)&(root[:,1]<-.395))
   # Keep the coat off the nose leather only. This window used to run from the nose all the way
   # down (z<.503), shaving a 48mm-wide bald strip over the mouth and chin.
-  keep &= ~((abs(root[:,0])<NW*1.12)&(root[:,1]<-.427)&(root[:,2]<NC[2]+NH+.0025)&(root[:,2]>NC[2]-NH-.0035))   # follows V6_NOSE_W/_DZ/_H (== .024, .470-.503 at 1.0)
+  if _v6('V6_NOSE_BALD_RECT',0)>0:keep &= ~((abs(root[:,0])<NW*1.12)&(root[:,1]<-.427)&(root[:,2]<NC[2]+NH+.0025)&(root[:,2]>NC[2]-NH-.0035))
+  else:keep &= ~((((root[:,0])/(NW*_v6('V6_NOSE_BALD',1.04)))**2+((root[:,2]-NC[2]+.0005)/(NH*_v6('V6_NOSE_BALD',1.04)+.002))**2<1)&(root[:,1]<-.427))   # round N (user: 「鼻子周围的白色有问题」): the window is the leather's own oval - the rectangle left bare white skin at its four corners, a flat white plate behind the nose
   # Part the coat along the lip line. Strands rooted ON it cross the omega and stitch it into a
   # dotted line - v6 round A: continuous on a bald render, dashes with fur, and shortening the
   # upper-lip coat to .12 did not help. A real cat's coat parts at the lip.
@@ -1178,7 +1201,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   keep=np.ones(n,dtype=bool)
   for s in (-1,1):
    for pre,px in (('Front',s*.108),('Rear',s*.12)):
-    keep&=~((np.abs(root[:,0]-px)<.050)&(root[:,2]<TOE_Z+TOE_R[2]-.008)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN))   # round I: up to 8 mm under the toes' tops (G3: z<.034); the paw's coat above combs down over them   # round G3: .046 -> .034, the taller toes cover the rest; above them the bare band showed   # the toe row's back edge moves in with TOE_IN (round G)
+    keep&=~((np.abs(root[:,0]-px)<1.5*TOE_DX+.017)&(root[:,2]<TOE_Z+TOE_R[2]-.008)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN)&(root[:,1]>PAW_FRONT_Y[pre]-.06))   # round N: x follows the toe row; and a y floor - the Rear test (y<.21) also bared the whole lower FRONT paw ball   # round I: up to 8 mm under the toes' tops (G3: z<.034); the paw's coat above combs down over them   # round G3: .046 -> .034, the taller toes cover the rest; above them the bare band showed   # the toe row's back edge moves in with TOE_IN (round G)
   root=root[keep];normal=normal[keep];n=len(root)
  if root_filter is not None:
   m=root_filter(root);root=root[m];normal=normal[m];n=len(root)
@@ -1214,7 +1237,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # instead of a clipped sphere - uniform length is what made it read as a ball.
   tq=root*np.array([41.,37.,43.]);tuft=.5+.5*np.sin(tq[:,0]+1.7*np.sin(tq[:,2]))*np.sin(tq[:,1]*1.3+tq[:,2]*.7)
   ln*=(.78+.44*tuft)[:,None,None]
-  ruff=1+.75*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # cheek fluff widens the lower face
+  ruff=1+_v6('V6_CHEEK_FLUFF',.30)*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # cheek fluff widens the lower face; round N (「脸是不是胖了」): .75 -> .30, the face 3-5% narrower below the eyes (face view rows at the eye / mouth / chin)
   bib=1+.5*np.clip((.50-root[:,2])/.08,0,1)
   # ...but not on the whisker pads (round G): the bib lengthened the upper-lip coat by ~1.3x and
   # that is what hung over the mouth. Below the lip the chin keeps its fluff.
@@ -1235,7 +1258,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
  # Fluff physics: the strand hugs the skin at the root, lifts away through the middle,
  # and the tip drifts along the coat direction - then two wave frequencies (a slow
  # bend plus a faster kink) give the micro-curl a long-haired kitten actually has.
- stand={'tail':1.7,'body':1.15,'Head':1.12,'paw':.45,'sole':.55}.get(reg,1.0)*_v6('V6_STAND',1.0)   # round I: the toes' velvet lies down (1.0 stood it off as a halo)
+ stand={'tail':1.7,'body':1.15,'Head':1.12,'paw':_v6('V6_TOE_STAND',.7),'sole':.55}.get(reg,1.0)*_v6('V6_STAND',1.0)   # round I: the toes' velvet lies down (1.0 stood it off as a halo)
  if o.name.startswith('LX_Lid'):stand=.28     # lid coat lies flat: a furry lid, not a brush of lashes
  lift=(.78*t-.34*t*t)*stand*_v6('V6_LIFT',1.0);drift=(.50*t*t)/stand
  if reg=='body':
@@ -1331,7 +1354,8 @@ for o in [o for o in list(bpy.data.objects) if o.name.startswith(('LX_FrontToe',
  tp='Front' if 'Front' in o.name else 'Rear';ti=int(o.name.split('Toe')[1][0]);ts=-1 if o.name.endswith('.L') else 1
  _btx,_bty=toe_xy(tp,ts,ti)
  _bean=lambda r,bx=_btx,by=_bty:~((((r[:,0]-bx)/.0095)**2+((r[:,1]-by-.002)/.0115)**2<1)&(r[:,2]<.012))   # round L: the bean is bare skin (painted on the toe, see toemat)
- groom(o,max(1,int(_v6('V6_TOE_FUR_N',2200)*SCALE)),_v6('V6_TOE_FUR',.009),'paw','under',root_filter=_bean,bind_as=o.vertex_groups[0].name,shade=toe_crease(tp,ts,ti))   # round L: 2.5 -> ~4 mm, 1400 -> 2200 - velvet you can see, not a bald ball; round I: 2.2 mm (was 3.3), under the paw's own coat; G3: the UNDERCOAT's thin strands - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
+ groom(o,max(1,int(_v6('V6_TOE_FUR_N',3000)*SCALE)),_v6('V6_TOE_FUR',.013),'paw','under',root_filter=_bean,bind_as=o.vertex_groups[0].name,shade=toe_crease(tp,ts,ti))   # round L: 2.5 -> ~4 mm, 1400 -> 2200 - velvet you can see, not a bald ball; round I: 2.2 mm (was 3.3), under the paw's own coat; G3: the UNDERCOAT's thin strands - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
+ if _v6('V6_TOE_GUARD_N',700)>0:groom(o,max(1,int(_v6('V6_TOE_GUARD_N',700)*SCALE)),_v6('V6_TOE_GUARD_LEN',.013),'paw','guard',root_filter=_bean,bind_as=o.vertex_groups[0].name,shade=toe_crease(tp,ts,ti))   # round N: a sparse guard coat over the velvet, the paw ball's own texture - velvet alone rendered each toe as a smooth white egg in front of a furry ball
 # Round L (user: 「爪子不对」): the paw's sole had ~100 strands - a raised paw (Lick) showed a smooth white glove
 # round its pink pad. The reference's sole is white fur with the bare pink pad and beans set in it. The sole's
 # faces are copied out of the body (sampling the whole body would put 0.04% of the roots there), groomed with

@@ -29,10 +29,12 @@ tl=mat.node_tree.nodes.new('ShaderNodeBsdfTranslucent');mx=mat.node_tree.nodes.n
 mat.node_tree.links.new(sock(a,'Color','outputs'),sock(tl,'Color'))
 mat.node_tree.links.new(bsdf.outputs[0],mx.inputs[1]);mat.node_tree.links.new(tl.outputs[0],mx.inputs[2])
 mat.node_tree.links.new(mx.outputs[0],sock(out_,'Surface'))
-sock(bsdf,'Roughness').default_value=.72
+import os
+def _k(n,d):return float(os.environ.get(n) or d)
+sock(bsdf,'Roughness').default_value=_k('V6_FUR_ROUGH',.72)
 # Sheen .25 laid a white velvet haze over the whole coat at grazing angles - the milky,
 # low-contrast look; a trace keeps the soft edge glow.
-for nm,val in [('Sheen Weight',.06),('Specular IOR Level',.2)]:
+for nm,val in [('Sheen Weight',_k('V6_FUR_SHEEN',.06)),('Specular IOR Level',_k('V6_FUR_SPEC',.2))]:
  try:sock(bsdf,nm).default_value=val
  except StopIteration:pass
 for src in [o for o in s.objects if o.name.startswith('LX_Fur_')]:

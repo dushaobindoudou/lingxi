@@ -9,6 +9,7 @@ P=Path(__file__).parent
 landmarks={
  'reference/turnaround-v1.png side panel':(595,815,1130,1288,202,425,518),
  'round-h/views/side.png':(865,600,250,60,342,580,740),
+ 'round-n/views/side.png':(866,625,255,60,349,645,735),   # 2026-10-08 round N (Claude): profile columns from the silhouette, rump = tail root
 }
 out={}
 for n,(nose,head,rump,tail,shoulder,chest,floor) in landmarks.items():

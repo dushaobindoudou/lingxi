@@ -161,6 +161,12 @@ if rig is not None and all(b in rig.pose.bones for b in ('FrontPaw.L', 'FrontPaw
     paw_c = (tips[0] + tips[1]) * .5
     paw_c.z = lo.z + .035
     VIEW_SPEC['paws'] = (paw_c, (tips[0] - tips[1]).length + .16, (0, -1, 0.45))
+    # Round N: one forepaw close up, like codex's paw references (reference/lingxi-ref-paw-front /
+    # -side): low and square on from the front, and from the paw's outer side (.L is the -x paw).
+    p1 = tips[0].copy()
+    p1.z = lo.z + .035
+    VIEW_SPEC['paw1'] = (p1, .17, (0, -1, 0.18))
+    VIEW_SPEC['paw1side'] = (p1, .17, (-1, 0, 0.12))
 
 done = []
 for name in VIEWS:

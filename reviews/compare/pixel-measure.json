@@ -30,5 +30,21 @@
     "foreleg_body": 0.26,
     "chest_shoulder": 0.598,
     "tail_body": 0.309
+  },
+  "round-n/views/side.png": {
+    "landmarks_px": {
+      "nose_x": 866,
+      "head_rear_x": 625,
+      "rump_x": 255,
+      "tail_tip_x": 60,
+      "shoulder_top_y": 349,
+      "chest_bottom_y": 645,
+      "paw_floor_y": 735
+    },
+    "head_body": 0.394,
+    "shoulder_body": 0.632,
+    "foreleg_body": 0.147,
+    "chest_shoulder": 0.767,
+    "tail_body": 0.319
   }
 }
