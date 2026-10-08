@@ -250,6 +250,14 @@ def jaw_share(x,y,z,below):
  # (width .056) tore the skin between them vertically on every open mouth - white bars beside the nose.
  wmax=GAPE_W+.8*np.clip(LIP0-.004-z,0,.05)            # the lower lip out to the gape corners, the full chin lower down
  return below*np.clip((-.345-y)/.045,0,1)*np.clip((wmax-np.abs(x))/.016,0,1)   # soft edge: stretches, never tears
+# Round J: the upper lip lifts off the teeth when the mouth gapes (the reference yawn's tall arch with the
+# canines hanging in its top corners). It stayed with the skull and only the jaw moved, which read as a
+# dropped jaw under a fixed muzzle. The LipUpper bone carries the lip line fully, fading out up the whisker
+# pads (nothing left 20 mm up, under the nose leather) and toward the cheeks past the gape's corners.
+LIP_RET_W=GAPE_W+.006
+def lip_share(x,y,z,above):
+ h=np.clip(1-(z-lip_z(x))/.020,0,1)
+ return above*h*h*np.clip((-.400-y)/.020,0,1)*np.clip((LIP_RET_W-np.abs(x))/.014,0,1)
 def eye_frame(s,lx,ly,lz):
  """Eye-local (x across, y into the head, z up) to world, for the eye on side s."""
  cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12)
@@ -292,26 +300,40 @@ bm.to_mesh(head.data);bm.free()
 # the socket/mouth carve above); the jaw below is the chin, and between them sits a real mouth.
 # The jaw is the lower half of the muzzle: two whisker-pad lobes and a chin, the same volume the
 # carve took off the head, so a closed mouth is a closed mouth (a single sphere left a slot).
-jaw=merge([sphere('JawL',(-.029,-.402,.446+LIP_DZ),(.047,.045,.026)),sphere('JawR',(.029,-.402,.446+LIP_DZ),(.047,.045,.026)),
-           sphere('Chin',(0,-.386,.431+LIP_DZ),(.054,.056,.022))],'LX_Jaw',.004)
+# Round J: LX_Jaw is hide_render and not exported (export_lingxi_v5_glb.py skips hidden meshes) - the chin
+# skin is the head's now. Its lobes still filled the lower muzzle up past the lip line, round the tongue,
+# so every lick crossed them (REPORT A4: 93 polygon pairs). It is kept as the jaw's placeholder, flat
+# under the mouth floor, where nothing the mouth does can reach it.
+jaw=merge([sphere('JawL',(-.022,-.398,.424+LIP_DZ),(.030,.034,.008)),sphere('JawR',(.022,-.398,.424+LIP_DZ),(.030,.034,.008)),
+           sphere('Chin',(0,-.392,.421+LIP_DZ),(.036,.040,.009))],'LX_Jaw',.004)
 jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True   # chin skin is the head's now
 # The mouth bag: big enough to fill the whole gap when the jaw drops (otherwise the gap shows the
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
 mouthpink=mat('LX_MouthPink',(.30,.07,.08),.5)   # rosy, like the yawn reference - near-black read as a hole
-cavity=sphere('LX_MouthCavity',(0,-.392,.455+LIP_DZ),(.034,.032,.016),mouthpink)
-floor=sphere('LX_MouthFloor',(0,-.394,.447+LIP_DZ),(.026,.028,.006),mouthpink)          # floor, on the jaw
+CAV_Z=.455+LIP_DZ
+cavity=sphere('LX_MouthCavity',(0,-.392,CAV_Z),(.034,.032,.016),mouthpink)
+floor=sphere('LX_MouthFloor',(0,-.394,.4485+LIP_DZ),(.026,.028,.006),mouthpink)          # floor, on the jaw (round J: 1.5 mm up, its underside sat on the chin skin)
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
 # actually laps and how it scoops a paw.
 tongue=sphere('LX_Tongue',(0,0,0),(.0135,.0255,.0042),mouthmat)
-for v in tongue.data.vertices:v.co=(v.co.x,v.co.y-.3975,v.co.z+.444+LIP_DZ)
+TONGUE_Z=.4465   # round J: 2.5 mm up from .444 - at rest the blade's underside poked 1.5 mm out through the chin skin
+for v in tongue.data.vertices:v.co=(v.co.x,v.co.y-.3975,v.co.z+TONGUE_Z+LIP_DZ)
 for v in tongue.data.vertices:
- if v.co.z>.444+LIP_DZ:v.co.z-=.0014*math.exp(-(v.co.x/.0045)**2)                 # centre groove
+ if v.co.z>TONGUE_Z+LIP_DZ:v.co.z-=.0014*math.exp(-(v.co.x/.0045)**2)                 # centre groove
 planar_uv(tongue,0,1,flip_v=True)  # tip at v=1
-tongue.shape_key_add(name='Basis');tk=tongue.shape_key_add(name='Out')
-for v,k in zip(tongue.data.vertices,tk.data):
+# Round J: two keys, so the tongue can go UP before it goes OUT. It lies on the floor 9 mm under the lip
+# line, behind the lower canines; the old single Out key slid it straight forward and dipped it 12 mm,
+# so the lick pushed the tongue out through the chin skin (179 polygon pairs with LX_Head, REPORT A4).
+# Up lifts the blade (not the root) over the lower canines and lip; Out then slides it 58 mm forward,
+# widening a little, the free end drooping toward the paw. pose() eases Up in ahead of Out.
+tongue.shape_key_add(name='Basis');tu=tongue.shape_key_add(name='Up');tk=tongue.shape_key_add(name='Out')
+TONGUE_CURL=_v6('V6_TONGUE_CURL',.007)   # the free end (past the lips) curls down onto the paw, like the reference's tongue on the pad
+TONGUE_UP=.017   # tongue bottom .4331 -> .4501 (authored, V6_LIP .98): over the lip line .4484 and the lower canines' tips .4421
+for v,u_,k in zip(tongue.data.vertices,tu.data,tk.data):
  t=min(1,max(0,(-.372-v.co.y)/.051))
- k.co=(v.co.x*(1+.30*t),v.co.y-.058*t,v.co.z-.012*t*t+.016*max(0,t-.62)**2/.1444)
+ u_.co=(v.co.x,v.co.y,v.co.z+TONGUE_UP*min(1,t/.40)**.7)
+ k.co=(v.co.x*(1-.08*t),v.co.y-.058*t,v.co.z-TONGUE_CURL*max(0,(t-.70)/.30)**2)   # narrowing a touch: widened (x1.25) it scraped the lip's corners, where the skin only half follows the jaw
 # Canines: two up, two down, only seen when the mouth opens.
 teeth=[]
 for s in [-1,1]:
@@ -361,14 +383,14 @@ def lip_curve(name,pts,region,bevel=.0009):
  bpy.ops.object.select_all(action='DESELECT');o.select_set(True);bpy.context.view_layer.objects.active=o
  bpy.ops.object.convert(target='MESH');return (o,region)
 _NB=NC[2]-NH   # nose-leather bottom: the philtrum hangs from it wherever V6_NOSE_DZ/_H put it
-lips=[lip_curve('LX_LipPhiltrum',[(0,-.4525,_NB),(0,-.4525,.5*(_NB+LIP0)),(0,-.4515,LIP0)],'HeadRigid')]
+lips=[lip_curve('LX_LipPhiltrum',[(0,-.4525,_NB),(0,-.4525,.5*(_NB+LIP0)),(0,-.4515,LIP0)],'Lip')]
 for side in (-1,1):
  pts=[]
  for j in range(14):
   u=j/13;x=side*MOUTH_W*u
   z=float(lip_z(x))
   pts.append((x,-.4515+.020*u*u,z))
- lips.append(lip_curve('LX_LipUpper.'+('L' if side<0 else 'R'),pts,'HeadRigid'))
+ lips.append(lip_curve('LX_LipUpper.'+('L' if side<0 else 'R'),pts,'Lip'))   # round J: rides the LipUpper bone with the skin under it
 lipmat_lower=mat('LX_LipLowerPink',(.82,.46,.50),.40)   # round D: the reference's mouth reads as this small pink lower lip under the pads
 lips.append(lip_curve('LX_LipLower',[(x,-.4500+.010*(x/MW2)**2,float(lip_z(x))-.0016) for x in np.linspace(-MW2,MW2,9)],'Jaw',bevel=.0017))   # round E: thick enough to show a little pink under the pads
 lips[-1][0].data.materials[0]=lipmat_lower   # the lower lip in pink, the upper crease faint (round D)
@@ -379,7 +401,7 @@ def bone(n,a,b,parent=None):
  if parent:x.parent=ad.edit_bones[parent]
  return x
 # Jaw hinge at the TMJ, under the ear's front: hinged inside the muzzle it jutted the chin forward instead of dropping it.
-bone('Root',(0,0,0),(0,0,.1));bone('Pelvis',(0,.24,.30),(0,.08,.33),'Root');bone('Spine',(0,.08,.33),(0,-.16,.36),'Pelvis');bone('Neck',(0,-.16,.36),(0,-.27,.48),'Spine');bone('Head',(0,-.27,.48),(0,-.38,.53),'Neck');bone('Jaw',(0,-.312,.470),(0,-.42,.436),'Head');bone('Tongue',(0,-.39,.438),(0,-.448,.438),'Jaw');bone('Nose',(0,-.43,.48),(0,-.45,.49),'Head')
+bone('Root',(0,0,0),(0,0,.1));bone('Pelvis',(0,.24,.30),(0,.08,.33),'Root');bone('Spine',(0,.08,.33),(0,-.16,.36),'Pelvis');bone('Neck',(0,-.16,.36),(0,-.27,.48),'Spine');bone('Head',(0,-.27,.48),(0,-.38,.53),'Neck');bone('Jaw',(0,-.312,.470),(0,-.42,.436),'Head');bone('Tongue',(0,-.39,.438),(0,-.448,.438),'Jaw');bone('Nose',(0,-.43,.48),(0,-.45,.49),'Head');bone('LipUpper',(0,-.440,LIP0+.010),(0,-.462,LIP0+.010),'Head')   # round J: lifts the upper lip off the teeth on a gape (lip_share)
 segments=[]
 for s in [-1,1]:
  suf='L' if s<0 else 'R'
@@ -432,12 +454,19 @@ def weights(points,region):
   t=np.clip((rho-base)/span,0,1);sa=np.abs(lz)/np.maximum(np.hypot(lx,lz),1e-9)
   wl=np.clip(1.6*(1-t),0,1)*(.25+.75*sa**.6)
   add(('LidUpper.' if ul=='U' else 'LidLower.')+sf,wl);add('Head',1-wl);return w
- if region=='HeadRigid':           # upper-lip parts: never split between head and jaw
+ if region=='HeadRigid':           # upper teeth: never split between head and jaw
   add('Head',1);return w
+ if region=='Lip':                 # the drawn upper lip: never on the jaw, but lifted with the lip skin
+  x,y,z=points.T;l=lip_share(x,y,z,1.0);add('Head',1-l);add('LipUpper',l);return w
+ if region=='Cavity':
+  # Round J: the mouth bag opens with the jaw - its floor goes down with the chin, its roof stays - so a
+  # wide gape never shows the white inside of the head shell between the bag and the lips.
+  j=np.clip((CAV_Z-points[:,2])/.012,0,1);add('Head',1-j);add('Jaw',j);return w
  if region=='Head':
-  x,y,z=points.T;j=jaw_share(x,y,z,(z<lip_z(x)-.0005).astype(float))
-  add('Head',1-j)
+  x,y,z=points.T;b=(z<lip_z(x)-.0005).astype(float);j=jaw_share(x,y,z,b);l=lip_share(x,y,z,1-b)
+  add('Head',1-j-l)
   if (j>0).any():add('Jaw',j)
+  if (l>0).any():add('LipUpper',l)
   return w
  if region not in ['body','tail']:
   add(region,1);return w
@@ -488,13 +517,15 @@ def bind(o,region,wpts=None):
 bind(body,'body');bind(head,'Head')
 # The split duplicates the lip-line vertices at one position, so weights by position cannot tell
 # the two lips apart; weight the head by which side of the mouth each vertex's faces are on.
-_hp=np.array([v.co[:] for v in head.data.vertices]);_hj=jaw_share(_hp[:,0],_hp[:,1],_hp[:,2],HEAD_BELOW)
-_gh=head.vertex_groups['Head'];_gj=head.vertex_groups.get('Jaw') or head.vertex_groups.new(name='Jaw')
-for i,j in enumerate(_hj):
- _gh.add([i],1-float(j),'REPLACE')
+_hp=np.array([v.co[:] for v in head.data.vertices]);_hj=jaw_share(_hp[:,0],_hp[:,1],_hp[:,2],HEAD_BELOW);_hl=lip_share(_hp[:,0],_hp[:,1],_hp[:,2],1-HEAD_BELOW)
+_gh=head.vertex_groups['Head'];_gj=head.vertex_groups.get('Jaw') or head.vertex_groups.new(name='Jaw');_gl=head.vertex_groups.get('LipUpper') or head.vertex_groups.new(name='LipUpper')
+for i,(j,l) in enumerate(zip(_hj,_hl)):
+ _gh.add([i],1-float(j)-float(l),'REPLACE')
  if j>0:_gj.add([i],float(j),'REPLACE')
  else:_gj.remove([i])
-for o,r in [(jaw,'Jaw'),(cavity,'HeadRigid'),(floor,'Jaw'),(tongue,'Tongue'),(nose,'Nose')]+teeth+lips:bind(o,r)
+ if l>0:_gl.add([i],float(l),'REPLACE')
+ else:_gl.remove([i])
+for o,r in [(jaw,'Jaw'),(cavity,'Cavity'),(floor,'Jaw'),(tongue,'Tongue'),(nose,'Nose')]+teeth+lips:bind(o,r)
 # Lip lines lie ON the skin (they floated as dark wings in front of the muzzle): move each lip
 # vertex to just in front of the nearest skin point, matched in the front (x,z) projection.
 _sk=np.array([v.co[:] for v in head.data.vertices]);_sk=_sk[_sk[:,1]<-.40]
@@ -1258,7 +1289,7 @@ for o in scene.objects:
  elif o.type=='MESH' and o.name.startswith('LX_'):
   body_xf_obj(o)
 bpy.context.view_layer.objects.active=rig;bpy.ops.object.mode_set(mode='EDIT')
-HEAD_BONES=['Head','Jaw','Tongue','Nose','Ear.L','Ear.R','Eye.L','Eye.R','Whisker.L','Whisker.R','LidUpper.L','LidUpper.R','LidLower.L','LidLower.R']
+HEAD_BONES=['Head','Jaw','Tongue','Nose','LipUpper','Ear.L','Ear.R','Eye.L','Eye.R','Whisker.L','Whisker.R','LidUpper.L','LidUpper.R','LidLower.L','LidLower.R']
 for eb in ad.edit_bones:
  if eb.name in HEAD_BONES:eb.head=head_xf(eb.head);eb.tail=head_xf(eb.tail)
  else:eb.head=body_xf(eb.head);eb.tail=body_xf(eb.tail)
@@ -1335,7 +1366,35 @@ def leg_ik(rots,locs,key,target,paw_ang):
  return ({up:(du*R['sign'][up],0,0),lo:(dl*R['sign'][lo],0,0),pw:(dp*R['sign'][pw],0,0)},abs(t.x-R['x']),over)
 def _paw_rest(key):return LREST[key]['ang'][LEGS[key][3]]
 def _root_delta(f):return f('Root')@ad.bones['Root'].matrix_local.inverted()
-mouth_l=ad.bones['Head'].matrix_local.inverted()@Vector((0,-.4515,LIP0))
+# Round J: the mouth point was given in AUTHORED space, but the bones are not - the head is scaled .9
+# about the neck and the body squeezed nose-to-tail (head_xf / body_xf above). The lick solve aimed the
+# paw at a point 60 mm in front of the lips, and "the palm" was a point ahead of the toes; REPORT A4
+# measured the tongue 77.7 mm short of the pad.
+mouth_l=ad.bones['Head'].matrix_local.inverted()@Vector(head_xf((0,-.4515,LIP0)))
+# The mouth's opening at each clip's peak, radians; + drops the chin. Until round J the clips drove the
+# Jaw NEGATIVE, which swings this bone UP into the skull: Yawn's -77 deg folded the chin skin inside the
+# head and left a 13.5 mm slit (REPORT A1: 26 px on a 700 px head, .037). Measured in v6_part_audit.py
+# (mouth_open): Yawn .62 -> see HANDOFF round J for the opening it gives.
+JAW_OPEN={'Yawn':_v6('V6_JAW_YAWN',.62),'Bite':_v6('V6_JAW_BITE',.40),'Lick':_v6('V6_JAW_LICK',.22)}
+# ...and the upper lip lifts off the teeth with it (LipUpper bone, lip_share): metres in the head's rest
+# frame, (0, back, up).
+LIP_LIFT={'Yawn':(0,.002,.007*_v6('V6_LIP_LIFT',1.0)),'Bite':(0,.0015,.005*_v6('V6_LIP_LIFT',1.0)),'Lick':(0,.0005,.002)}
+LIP_AX=ad.bones['LipUpper'].matrix_local.to_3x3().inverted()     # armature direction -> the bone's own axes
+# The lick: the tongue's tip, Up and Out keys full, the jaw at JAW_OPEN['Lick'] and the Tongue bone turned
+# toward the raised (right) paw - in the head's frame, so the solve can put the PAD on it.
+TONGUE_LICK=(_v6('V6_TONGUE_PITCH',0),0,_v6('V6_TONGUE_YAW',0))   # Tongue bone: x is mirrored (- = tip down), +z turns it to the cat's right. Both 0: tipped down
+# (-.05) the blade dragged through the lower lip, turned (.22) through the lip's corner; the Out key's free end droops instead.
+def _lick_tip():
+ """The tongue's tip at the lick (head-local) and the way it is pointing there: from the centre line
+  12 mm back to the tip, so the pad can face the tip square on."""
+ kb=tongue.data.shape_keys.key_blocks;B,U,O=(np.array([v.co[:] for v in kb[n].data]) for n in ('Basis','Up','Out'))
+ P=U+O-B;i=int(np.argmin(P[:,1]))
+ f=_fk({'Jaw':(JAW_OPEN['Lick'],0,0),'Tongue':TONGUE_LICK});m=f('Tongue')@ad.bones['Tongue'].matrix_local.inverted()
+ hl=ad.bones['Head'].matrix_local.inverted()
+ near=P[np.abs(P[:,1]-(P[i,1]+.012))<.002];back=near[np.argmin(np.abs(near[:,0])+np.abs(near[:,2]-P[i,2]))]   # on the centre line, level with the tip
+ tip,bk=hl@(m@Vector(P[i])),hl@(m@Vector(back))
+ return tip,(tip-bk).normalized()
+lick_l,lick_d=_lick_tip()
 # Lick is groomed SITTING, like reference/lingxi-ref-lick-paw.png: haunches down, chest up, left
 # forepaw planted, right paw raised pad-to-mouth. Two solves: the sit, then the paw and shoulder.
 def _sit_rots(v):
@@ -1362,7 +1421,7 @@ def solve_sit():
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
   c+=12*abs(pitch-math.radians(44))   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
-  mz=(f('Head')@mouth_l).z;c+=15*max(0,.50-mz)
+  mz=(f('Head')@mouth_l).z;c+=60*max(0,.49-mz)   # round J: .49 on the REAL mouth = .50 on the old authored-space point; 60 (was 15): the real mouth sits closer to the neck, so at 15 the solve dropped it 53 mm and bent the head 42 deg onto the chest
   hd0=f('Head').translation;hd1=_tip(f,'Head');c+=3*abs(math.atan2(hd1.z-hd0.z,-(hd1.y-hd0.y))-math.radians(12))
   return c+.01*float(np.dot(v,v))
  c_,v=_search(cost,[-.45,-.12,0,-.5,.3,.4],[-1.3,-.4,-.4,-1.0,-.6,-.6],[0,.4,.4,1.0,1.0,1.0],4000,11)
@@ -1373,27 +1432,119 @@ def solve_sit():
  print('SIT_SOLVE',json.dumps({'cost':round(c_,4),'v':[round(float(x),3) for x in v],'hip_z':round(f('RearUpper.L').translation.z,3),
   'mouth_z':round((f('Head')@mouth_l).z,3),'pitch_deg':round(_p,1),'sh_z':round(f('FrontUpper.L').translation.z,3),'over_mm':_ov}))
  return rots,locs,_sit_targets(f)
+def _ell_sd(q,c,r):
+ """Approximate signed distance (m) of points q (n,3) from the axis-aligned ellipsoid (c, r): k0(k0-1)/k1."""
+ d=q-c;k0=np.linalg.norm(d/r,axis=1);k1=np.maximum(np.linalg.norm(d/(r*r),axis=1),1e-9);return k0*(k0-1)/k1
 def solve_lick(sit):
  rots0,locs,T0=sit;k='FR'
- def build(v):
-  srx,srz,dn,dh,yaw,roll=v;r=dict(rots0)
-  r['Scap.R']=(srx,0,srz);r['Neck']=(rots0['Neck'][0]+dn,0,yaw*.4);r['Head']=(rots0['Head'][0]+dh,roll,yaw*.6)
-  f=_fk(r,locs);mouth=f('Head')@mouth_l;wrist=mouth+Vector((0,-.020,-.060))
-  pa=_ang(mouth+Vector((0,-.010,-.006))-wrist)
-  lr,off,over=leg_ik(r,locs,k,wrist,pa);r.update(lr);return r,mouth,off,over
- pw=ad.bones['FrontPaw.R'];palm_l=pw.matrix_local.inverted()@Vector((LREST['FR']['x'],-.215,.022))
+ # Round J: the paw that meets the tongue is solved against the paw's own parts, not a point. It is a
+ # 108 x 110 x 76 mm ball (the coat's volume) with the main pad flush on its underside and the four toes
+ # and their beans in front - a point-and-plane "palm" let the tongue reach the pad's plane through the
+ # toes (14.9 mm into FrontToe0.R) or past the pad's edge into the ball. Each part is the ellipsoid it
+ # was built from, in its own bone's rest frame (toes curled .45, as pose() curls them for the lick);
+ # the tongue is its front 25 mm, real vertices, both keys full. The tongue must TOUCH the pad or a bean
+ # (LICK_GAP off it) and stay out of every part, and the paw out of the muzzle.
+ sx=1.0;PX=sx*.108
+ def ell(bn,c,r):b=ad.bones[bn];return (bn,np.array(body_xf(c)),np.array((r[0],r[1]*BODY_K,r[2])))
+ ball=ell('FrontPaw.R',PAW['Front'][0][:1] and (PX,)+PAW['Front'][0][1:],PAW['Front'][1])
+ pad=ell('FrontPaw.R',(PX,-.17-.026,.010),(.022,.026,.007))
+ toes=[ell(f'FrontToe{i}.R',(toe_xy('Front',1,i)[0],toe_xy('Front',1,i)[1],TOE_Z),TOE_R) for i in range(4)]
+ beans=[ell(f'FrontToe{i}.R',(toe_xy('Front',1,i)[0],toe_xy('Front',1,i)[1]+.002,.0045),(.008,.010,.003)) for i in range(4)]
+ touch=[pad]+beans;solid=toes
+ # The ball is skinned, not rigid: with the wrist flexed its surface follows the forearm part-way (37 mm
+ # off a rigid ball, measured on the built rig). So the ball is the body mesh's own vertices around the
+ # pad, posed by their real weights (linear blend, as the armature modifier does), with their normals.
+ bc=np.array(body_xf(PAW['Front'][0]));bc[0]=PX
+ bv=np.array([v.co[:] for v in body.data.vertices]);bn_=np.array([v.normal[:] for v in body.data.vertices])
+ near=np.where(np.linalg.norm((bv-bc)/np.array((.075,.09,.06)),axis=1)<1)[0];near=near[::max(1,len(near)//300)]   # ~300 is dense enough (5-6 mm apart)
+ gnames={g.index:g.name for g in body.vertex_groups}
+ BW={}
+ for j,i in enumerate(near):
+  for g in body.data.vertices[i].groups:
+   if g.weight>1e-4 and gnames[g.group] in ad.bones:BW.setdefault(gnames[g.group],np.zeros(len(near)))[j]=g.weight
+ _ws=sum(BW.values());BW={b:w/np.maximum(_ws,1e-9) for b,w in BW.items()}
+ ballv,balln=bv[near],bn_[near]
+ kb=tongue.data.shape_keys.key_blocks;B,U,O=(np.array([v.co[:] for v in kb[n].data]) for n in ('Basis','Up','Out'))
+ P=(U+O-B)[::4]   # the whole blade (its middle once crossed a pad pressed into the mouth), every fourth vertex
+ tf=_fk({'Jaw':(JAW_OPEN['Lick'],0,0),'Tongue':TONGUE_LICK});tm=np.array(ad.bones['Head'].matrix_local.inverted()@tf('Tongue')@ad.bones['Tongue'].matrix_local.inverted())
+ tongue_l=P@tm[:3,:3].T+tm[:3,3]                                        # head-local
+ # The face the paw comes up to: the head mesh's vertices around the mouth (skinned on Head / Jaw / LipUpper,
+ # with the jaw at the lick's opening), and points on every rigid paw part's surface - none of them may
+ # go into the face (a pad once sat 10 mm inside the mouth with the tongue's root through it).
+ hv=np.array([v.co[:] for v in head.data.vertices]);hn=np.array([v.normal[:] for v in head.data.vertices])
+ mc=np.array(head_xf((0,-.43,LIP0)));hnear=np.where(np.linalg.norm((hv-mc)/np.array((.085,.07,.07)),axis=1)<1)[0];hnear=hnear[::max(1,len(hnear)//300)]
+ hg={g.index:g.name for g in head.vertex_groups};HW={}
+ for j,i in enumerate(hnear):
+  for g in head.data.vertices[i].groups:
+   if g.weight>1e-4 and hg[g.group] in ad.bones:HW.setdefault(hg[g.group],np.zeros(len(hnear)))[j]=g.weight
+ _ws=sum(HW.values());HW={b:w/np.maximum(_ws,1e-9) for b,w in HW.items()};facev,facen=hv[hnear],hn[hnear]
+ _gold=math.pi*(3-math.sqrt(5));_u=np.array([(math.cos(_gold*i)*math.sqrt(1-(1-2*(i+.5)/40)**2),math.sin(_gold*i)*math.sqrt(1-(1-2*(i+.5)/40)**2),1-2*(i+.5)/40) for i in range(40)])
+ skin=[(bn,c+_u*rr) for bn,c,rr in [pad]+toes]   # 40 points on each rigid part, in its bone's rest frame
+ pw=ad.bones['FrontPaw.R'];palm_l=pw.matrix_local.inverted()@Vector(body_xf((PX,-.17-.026,.010-.007)))
  pad_n=(pw.matrix_local.inverted().to_3x3()@Vector((0,0,-1))).normalized()
- def cost(v):
-  r,mouth,off,over=build(v);f=_fk(r,locs);pm=f('FrontPaw.R');palm=pm@palm_l;n_=(pm.to_3x3()@pad_n).normalized()
-  facing=n_.dot((mouth-palm).normalized());srx,srz,dn,dh,yaw,roll=v
-  # The face stays visible: the pad meets the mouth from BELOW (palm under the lip line).
-  return (25*(palm-(mouth+Vector((0,-.012,-.012)))).length+40*off+60*over+(1-facing)*.5+15*max(0,palm.z-(mouth.z-.004))
-          +.04*(srx*srx+srz*srz)+.25*(dn*dn+dh*dh)+.30*yaw*yaw+.10*roll*roll)
- c_,v=_search(cost,[-.3,.2,.1,.1,0,.1],[-1.2,-.9,-.3,-.3,-.15,-.25],[.6,.9,.4,.5,.15,.25],5000,7)   # small yaw: the face stays visible side-on
- r,mouth,off,over=build(v);f=_fk(r,locs);palm=f('FrontPaw.R')@palm_l
- print('LICK_SOLVE',json.dumps({'cost':round(c_,4),'v':[round(float(x),3) for x in v],'palm_to_mouth_mm':round((palm-mouth).length*1000,1),
-  'offplane_mm':round(off*1000,1),'palm_below_mouth_mm':round((mouth.z-palm.z)*1000,1)}))
- return {n:r[n] for n in ('Scap.R','Neck','Head')}
+ # ...and the open jaw must not sink into the neck ruff or the chest when the head comes down to the paw
+ # (one solve bent the head 42 deg and the open chin went into the chest - 92 polygon pairs with the tongue).
+ chest=[(Vector(body_xf(c)),Vector((r[0],r[1]*BODY_K,r[2]))) for c,r in (((0,-.205,.405),(.155,.14,.115)),((0,-.17,.315),(.145,.17,.160)))]
+ jf=_fk({'Jaw':(JAW_OPEN['Lick'],0,0)});jm=ad.bones['Head'].matrix_local.inverted()@jf('Jaw')@ad.bones['Jaw'].matrix_local.inverted()
+ chin_l=[jm@Vector(head_xf(p)) for p in ((0,-.425,.418),(0,-.395,.410),(0,-.365,.415))]
+ sp_rest=ad.bones['Spine'].matrix_local
+ tip_l=Vector(tongue_l[np.argmin(tongue_l[:,1])]) if False else lick_l
+ def build(v):
+  srx,srz,dn,dh,yaw,roll,wy,wz,dpa=v;r=dict(rots0)
+  r['Scap.R']=(srx,0,srz);r['Neck']=(rots0['Neck'][0]+dn,0,yaw*.4);r['Head']=(rots0['Head'][0]+dh,roll,yaw*.6)
+  f=_fk(r,locs);H=f('Head');tip=H@lick_l
+  wrist=tip+Vector((0,wy,wz));pa=_ang(tip-wrist)+dpa
+  lr,off,over=leg_ik(r,locs,k,wrist,pa);r.update(lr)
+  for i in range(4):r[f'FrontToe{i}.R']=(.45,0,0)
+  r['Jaw']=(JAW_OPEN['Lick'],0,0);r['Tongue']=TONGUE_LICK
+  return r,tip,off,over
+ def sds(f,pts,parts):
+  out=[]
+  for bn,c,rr in parts:
+   M=np.array((f(bn)@ad.bones[bn].matrix_local.inverted()).inverted());out.append(_ell_sd(pts@M[:3,:3].T+M[:3,3],c,rr))
+  return out
+ def lbs(f,W,v0,n0):
+  V=np.zeros_like(v0);N=np.zeros_like(n0)
+  for b_,w in W.items():
+   Dm=np.array(f(b_)@ad.bones[b_].matrix_local.inverted());V+=w[:,None]*(v0@Dm[:3,:3].T+Dm[:3,3]);N+=w[:,None]*(n0@Dm[:3,:3].T)
+  return V,N/np.maximum(np.linalg.norm(N,axis=1),1e-9)[:,None]
+ def surf_sd(V,N,pts):
+  """Signed distance of pts from a posed vertex cloud: along the nearest vertex's normal (+ = outside)."""
+  j=((pts[:,None,:]-V[None,:,:])**2).sum(-1).argmin(1);return np.einsum('ij,ij->i',pts-V[j],N[j])
+ def ball_sd(f,pts):
+  V,N=lbs(f,BW,ballv,balln);return surf_sd(V,N,pts)
+ def paw_pts(f):
+  V,_=lbs(f,BW,ballv,balln);out=[V]
+  for bn,S in skin:
+   Dm=np.array(f(bn)@ad.bones[bn].matrix_local.inverted());out.append(S@Dm[:3,:3].T+Dm[:3,3])
+  return np.concatenate(out)
+ def cost(v,_dbg=False):
+  r,tip,off,over=build(v);f=_fk(r,locs);H=np.array(f('Head'))
+  tw=tongue_l@H[:3,:3].T+H[:3,3]
+  touch_d=min(float(d.min()) for d in sds(f,tw,touch))
+  pen=sum(float(np.maximum(0,.0015-d).max()) for d in sds(f,tw,solid))+sum(float(np.maximum(0,LICK_GAP*.5-d).max()) for d in sds(f,tw,touch))
+  bsd=ball_sd(f,tw);pen+=float(np.maximum(0,.0015-bsd).max())
+  FV,FN=lbs(f,HW,facev,facen);mpen=float(np.maximum(0,.003-surf_sd(FV,FN,paw_pts(f))).max())
+  pm=f('FrontPaw.R');palm=pm@palm_l;n_=(pm.to_3x3()@pad_n).normalized()
+  mouth=f('Head')@mouth_l;srx,srz,dn,dh,yaw,roll,wy,wz,dpa=v
+  inv=sp_rest@f('Spine').inverted();Hm=f('Head')
+  sink=max(max(0,1.06-Vector([((inv@(Hm@q))-c)[i]/rr[i] for i in range(3)]).length) for q in chin_l for c,rr in chest)   # 1 = on the ellipsoid
+  wrist=abs(r['FrontPaw.R'][0]);elbow=r['FrontLower.R'][0]
+  # The wrist stays in a cat's range: folded 163 deg (an unbounded solve) the skinned paw ball stretched
+  # into a flat white paddle in front of the face (round-j-test n6).
+  terms=dict(touch=300*abs(touch_d-LICK_GAP),pen=400*pen,muzzle=200*mpen,off=200*off,over=60*over,wrist=6*max(0,wrist-LICK_WRIST_MAX),
+             below=15*max(0,palm.z-(mouth.z-.004)),sink=60*sink,reg=.04*(srx*srx+srz*srz)+.25*(dn*dn+dh*dh)+.15*yaw*yaw+.10*roll*roll)
+  if _dbg:terms.update(touch_mm=1000*touch_d,pen_mm=1000*pen,muzzle_mm=1000*mpen,facing=-n_.dot((tip-Hm@Vector(lick_l-lick_d*.012)).normalized()))
+  return terms if _dbg else sum(terms.values())
+ c_,v=_search(cost,[-.3,.2,.1,.1,0,.1,0,-.04,0],[-1.2,-.9,-.3,-.3,-.25,-.25,-.12,-.12,-1.6],[.6,.9,.4,.5,.25,.25,.12,.12,1.6],8000,7)   # yaw .25: the head turns to the paw a little, the face stays visible
+ r,tip,off,over=build(v);f=_fk(r,locs);palm=f('FrontPaw.R')@palm_l;mouth=f('Head')@mouth_l
+ print('LICK_SAMPLES',len(ballv),len(tongue_l),len(facev),sorted(BW),sorted(HW))
+ print('LICK_SOLVE',json.dumps({'cost':round(c_,4),'v':[round(float(x),3) for x in v],'offplane_mm':round(off*1000,1),'over_mm':round(over*1000,1),
+  'pad_below_mouth_mm':round((mouth.z-palm.z)*1000,1),'terms':{a:round(b,3) for a,b in cost(v,True).items()},'tip':[round(1000*c,1) for c in tip],'palm':[round(1000*c,1) for c in palm],
+  'paw_head':[round(1000*c,1) for c in f('FrontPaw.R').translation],'scap':[round(c,3) for c in r['Scap.R']],'rots':{n:[round(c,3) for c in r[n]] for n in ('FrontUpper.R','FrontLower.R','FrontPaw.R')}}))
+ return {n:r[n] for n in ('Scap.R','Neck','Head')},tuple(float(x) for x in v[6:9])
+LICK_WRIST_MAX=_v6('V6_LICK_WRIST',1.0)   # rad: the paw's turn off its rest angle beyond which the solve pays heavily
+LICK_GAP=.0010   # the pad's sole this far beyond the tongue's tip: touching, not pressed through it (v6_part_audit lick.gap_mm)
 # Eyelid bone angles. Closed, the upper rim comes down .81 eye-radii and the lower rises 1.13, so
 # they meet just above the eye's centre with the upper lid in front: a closed eye reads as the
 # upper rim's arch (the content kitten in reference/lingxi-ref-expressions.png), not a slit.
@@ -1416,7 +1567,11 @@ SIT=solve_sit()
 # paws +77 mm). The hind pads sat 13 mm low on their own account, so their targets come up too.
 for _k,(_t,_a) in SIT[2].items():
  if _k[0]=='H':_t.z+=.013;SIT[2][_k]=(_t,_a)
-LICK_UPPER=solve_lick(SIT)
+if os.environ.get('V6_LICK_FROM'):   # scratch iterations on the face only: reuse a previous build's solve (it does not depend on the mouth parts)
+ _lj=json.loads(Path(os.environ['V6_LICK_FROM']).read_text());LICK_UPPER={k:tuple(v) for k,v in _lj['upper'].items()};LICK_WRIST=tuple(_lj['wrist'])
+else:
+ LICK_UPPER,LICK_WRIST=solve_lick(SIT)   # LICK_WRIST: the wrist's offset from the tongue tip (y, z) and the paw's turn
+(OUT/'lick-solve.json').write_text(json.dumps({'upper':{k:list(v) for k,v in LICK_UPPER.items()},'wrist':list(LICK_WRIST)}))
 WALK=dict(duty=.62,stride=.12,lift=.035,off={'HL':0,'FL':.25,'HR':.5,'FR':.75})
 RUN=dict(duty=.40,stride=.20,lift=.060,off={'FL':0,'HR':0,'FR':.5,'HL':.5})
 def _gait(g,u,k):
@@ -1476,8 +1631,10 @@ def place_legs(name,u,pb,hold=0.0):
   elif name=='Lick':
    st,sa=SIT[2][k];tg=foot.lerp(st,hold);pa=pa+(sa-pa)*hold
    if k=='FR':
-    mouth=f('Head')@mouth_l;wr=mouth+Vector((0,-.020,-.060));tg=tg.lerp(wr,hold)
-    pa=pa+(_ang(mouth+Vector((0,-.010,-.006))-wr)-pa)*hold
+    # the solved wrist, carried by the head as the cat brings paw and tongue together (round J: it was
+    # re-derived here from the old mouth point, so the pad never met the tongue)
+    tip=f('Head')@lick_l;wr=tip+Vector((0,LICK_WRIST[0],LICK_WRIST[1]));tg=tg.lerp(wr,hold)
+    pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
   lr,_,_=leg_ik(rots,locs,k,tg,pa)
   for n,rv in lr.items():pb[n].rotation_euler=rv
 def pose(name,u):
@@ -1546,7 +1703,7 @@ def pose(name,u):
   pb['Tail3'].rotation_euler[0]=.30*math.sin(phase*2+1)
  if name in ['Yawn','Bite','Lick']:
   fac=math.sin(math.pi*u)**2 if name=='Yawn' else (.5-.5*math.cos(phase*2))
-  pb['Jaw'].rotation_euler[0]=-1*(1.35 if name=='Yawn' else .32)*fac
+  pb['Jaw'].rotation_euler[0]=JAW_OPEN[name]*fac;pb['LipUpper'].location=LIP_AX@(Vector(LIP_LIFT[name])*fac)
   if name=='Yawn':
    blink=.85*fac;pb['Head'].rotation_euler[0]+=-.48*fac   # a cat tips its head back to yawn
    pb['Spine'].rotation_euler[0]+=.14*fac;pb['Root'].location.y+=-.030*fac   # and drops its chest as the jaw opens
@@ -1560,15 +1717,17 @@ def pose(name,u):
    # the legs follow their targets through place_legs().
    # Sitting, the tail has to come round beside the haunch. Left alone it hung straight down
    # through the floor: -86 mm, the lowest thing in the whole clip.
-   pb['Tail1'].rotation_euler[0]=-.40*hold;pb['Tail2'].rotation_euler[0]=1.15*hold
+   pb['Tail1'].rotation_euler[0]=-.27*hold;pb['Tail2'].rotation_euler[0]=1.15*hold   # round J: -.40 -> -.27, the re-solved sit pitches 0.4 deg more and the tip went 7.5 mm under
    pb['Tail3'].rotation_euler[0]=1.10*hold;pb['Tail4'].rotation_euler[0]=1.05*hold   # swept on the built rig: this set lands the tip at +0.2 mm
    for bn,rv in {**SIT[0],**LICK_UPPER}.items():pb[bn].rotation_euler=tuple(c*hold for c in rv)
    for bn,lc in SIT[1].items():pb[bn].location=tuple(c*hold for c in lc)
    for i in range(4):pb[f'FrontToe{i}.R'].rotation_euler[0]=.45*hold
    fac*=hold
-   pb['Jaw'].rotation_euler[0]=-.32*fac;pb['Tongue'].rotation_euler[0]=-.25*fac;tongue.data.shape_keys.key_blocks['Out'].value=fac
+   pb['Jaw'].rotation_euler[0]=JAW_OPEN['Lick']*fac;pb['LipUpper'].location=LIP_AX@(Vector(LIP_LIFT['Lick'])*fac)
+   pb['Tongue'].rotation_euler=tuple(c*fac for c in TONGUE_LICK)
+   # Up leads Out: the blade clears the lower canines and lip before it slides forward over them.
+   kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(1,fac/.35);e=min(1,max(0,(fac-.15)/.85));kb['Out'].value=e*e*(3-2*e)
    squint=0          # eyes open on the viewer, as in the reference
-  if name=='Yawn':tongue.data.shape_keys.key_blocks['Out'].value=.30*fac   # the tongue curls at the top of a yawn
   if name=='Bite':
    # Airplane ears. The ears are the clearest mood signal a cat has, and Bite previously
    # played with exactly the same face as Lick - only the jaw differed.
