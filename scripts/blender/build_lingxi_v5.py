@@ -1613,6 +1613,15 @@ def solve_lick(sit):
   'paw_head':[round(1000*c,1) for c in f('FrontPaw.R').translation],'scap':[round(c,3) for c in r['Scap.R']],'rots':{n:[round(c,3) for c in r[n]] for n in ('FrontUpper.R','FrontLower.R','FrontPaw.R')}}))
  return {n:r[n] for n in ('Scap.R','Neck','Head')},tuple(float(x) for x in v[6:9])
 LICK_WRIST_MAX=_v6('V6_LICK_WRIST',1.0)   # rad: the paw's turn off its rest angle beyond which the solve pays heavily
+# Round L (Lick, REPORT P1-1): the sitting haunch. The hind targets' hock 30 mm higher takes the thigh's skin out of the
+# floor (LX_Body -16.6 -> the belly crease between the thighs, -9.4), and the root 3 mm up takes 3 more off that; any
+# higher and the planted forepaw leaves the floor with it (the sit is at the foreleg's full reach): it is ~5 mm up.
+LICK_HIND=(_v6('V6_LH_DY',0),_v6('V6_LH_DZ',.03),_v6('V6_LH_PA',0),_v6('V6_LH_LIFT',.003))   # hock dy, dz, paw turn; root lift
+# ...and the tail: curled up behind the rump (tail_deg 204) it was never in the picture. Tail1-4 x / z searched on the
+# built rig (round-l-act/tailopt.py: on the floor, round the right haunch toward the front, out of the body): it lies
+# along the floor beside the right haunch, tip 163 mm out to the camera's side, 24 mm up.
+LICK_TAIL=[_v6('V6_LT_X%d'%i,d) for i,d in enumerate((-.359,-.523,-.591,-.131))]
+LICK_TAIL_SIDE=[_v6('V6_LT_SIDE%d'%i,d) for i,d in enumerate((-1.145,-.202,-.586,-.143))]
 LICK_GAP=.0010   # the pad's sole this far beyond the tongue's tip: touching, not pressed through it (v6_part_audit lick.gap_mm)
 # Eyelid bone angles. Closed, the upper rim comes down .81 eye-radii and the lower rises 1.13, so
 # they meet just above the eye's centre with the upper lid in front: a closed eye reads as the
@@ -1661,8 +1670,28 @@ def _gait(g,u,k):
  # moved 4-6 mm a frame as it touched down.)
  s_=(ph-g['duty'])/(1-g['duty']);e=s_*s_*(3-2*s_);D=ROOT_TRAVEL(g)
  return g['stride']*.5-D*e+D*(1-g['duty'])*s_,g['lift']*math.sin(math.pi*s_),math.sin(math.pi*s_)
-SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,lift=.20,spine=.10,neck=0,neck_side=0,head=0,head_side=0,tail=0,ear_x=0,ear_z=0,
- f_dy=.08,f_dz=.04,f_pa=.3,h_dy=.06,h_dz=.05,h_pa=.3,add_FL=0,add_FR=0,add_HL=0,add_HR=0).items()}
+# Round L LieDown (user: 「躺下去的效果不好」): a sphinx. The forelegs used to fold back INTO the chest (wrists 108 mm
+# up, the pads 59 mm off the floor) and showed as two white sleds under it, the back went flat (spine 2.2 deg) and
+# the body ran longer than Idle's. Now the forearms lie on the floor ahead of the shoulders (wrist f_dy forward,
+# f_z up, the paw at f_pa deg - flat, toes down), the chest settles between them, the hocks fold under the
+# haunches, the back keeps its line (spine .06 -> ~4.5 deg), the head comes a little up off a lowered neck and
+# the tail comes round the flank on the floor. drop/f_z/h_z are set on the built rig: chest 0-1 mm, toes ~3 mm.
+LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.105,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-.45,
+ f_dy=.15,f_z=.073,f_pa=-145,h_dy=.05,h_z=.09,h_pa=-178).items()}
+# Round L SideLie (user: 「躺下去的效果不好」): on its flank for real. It was rolled 1.25 rad - belly half up, the four
+# legs pointing up at 45 deg (paws 264-277 mm), the torso 27 mm off the floor on a hind toe and the head upright.
+# Now a quarter turn, the root lifted by the body's half-width, the neck bent down to lay the cheek on the
+# floor - the head rolls more than the neck bends, so the neck stays near level (-7 deg) and the cheek ~15 mm up,
+# inside its coat (the lower ear folded in or it is the lowest thing at -28 mm), the legs out loose: the forelegs reach
+# forward, the hind back, and the upper pair swings out of its plane (add_*) to drape over the lower one.
+SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2012,spine=.10,spine_side=0,neck=0,neck_side=.13,head=0,head_side=.40,tail=0,tail_side=.30,tail_k=.25,ear_x=0,ear_z=-.60,
+ f_dy=.18,f_dz=.07,f_pa=.2,h_dy=.17,h_dz=.09,h_pa=.8,add_FL=.08,add_FR=.85,add_HL=.08,add_HR=1.05).items()}
+# Sleep was SideLie with the lids shut (root, roll, back line and length all within 0.5 mm of it). A sleeping cat
+# curls up: on the same flank, the back bent (Spine/Neck/Head flexed, which on its side is a C on the floor), the
+# hind legs drawn forward, the forepaws tucked, the tail wrapped round the rump, the nose down by the paws. The
+# pelvis's pitch (yaw) turns the curl on the floor so the pose camera sees the closed eyes and the C, not the crown.
+SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2055,spine=.8,spine_side=0,neck=.6,neck_side=.2,head=.6,head_side=.2,tail=-.5,tail_side=.25,tail_k=0,ear_x=0,ear_z=-.60,
+ f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.18,h_dz=.12,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
  names=['Root','Pelvis','Spine','Neck','Head','Scap.L','Scap.R']
@@ -1676,7 +1705,7 @@ def place_legs(name,u,pb,hold=0.0):
   # .045 was the folded ankle's height, and it put the folded paw 63 mm BELOW the floor
   # (v6_ground_calib.py). Raise the target rather than the root: the silhouette still has
   # to lose its height when the cat lies down.
-  lie[k]=(Vector((LREST[k]['x'],hy-.075,.108+.11)),math.radians(-170)) if k[0]=='F' else (Vector((LREST[k]['x'],hy+.045,.108+.11)),math.radians(-178))
+  L=LIEDOWN;lie[k]=(Vector((LREST[k]['x'],hy-L['f_dy'],L['f_z']+L['drop'])),math.radians(L['f_pa'])) if k[0]=='F' else (Vector((LREST[k]['x'],hy+L['h_dy'],L['h_z']+L['drop'])),math.radians(L['h_pa']))
  for k in LEGS:
   foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot
   if name in ('Walk','Run'):
@@ -1688,12 +1717,8 @@ def place_legs(name,u,pb,hold=0.0):
    tg=foot+(Vector((0,-.09*lift,.30*lift)) if k[0]=='F' else Vector((0,.11*lift,.27*lift)));pa+=lift*(.9 if k[0]=='F' else 1.2)
   elif name in ('LieDown','SideLie','Sleep'):
    fr=1.0 if name=='Sleep' else min(1,u*3);lt,la=lie[k]
-   if name=='SideLie':
-    S=SIDELIE;lt=foot+(Vector((0,-S['f_dy'],S['f_dz'])) if k[0]=='F' else Vector((0,S['h_dy'],S['h_dz'])));la=pa+(S['f_pa'] if k[0]=='F' else S['h_pa'])
-   elif name=='Sleep':
-    # On its side a cat's legs lie out loose and a little bent, one pair drawn up - not folded
-    # under it as in the sphinx, which rolled over became four paws in the air.
-    lt=foot+(Vector((0,-.035,.06)) if k[0]=='F' else Vector((0,-.05,.07)));la=pa+.5
+   if name in ('SideLie','Sleep'):
+    S=SIDELIE if name=='SideLie' else SLEEP;lt=foot+(Vector((0,-S['f_dy'],S['f_dz'])) if k[0]=='F' else Vector((0,S['h_dy'],S['h_dz'])));la=pa+(S['f_pa'] if k[0]=='F' else S['h_pa'])
    tg=RD@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
    if name in ('SideLie','Sleep'):pa=pa+_ang(RD.to_3x3()@Vector((0,1,0)))
   elif name=='Bite':
@@ -1716,7 +1741,9 @@ def place_legs(name,u,pb,hold=0.0):
   elif name=='PawPlay' and k=='FL':
    a=max(0,math.sin(u*math.tau*1.5-.6))**1.5;tg=foot+Vector((0,-.13*a,.16*a));pa+=1.1*a   # a quick swat out of the bow, not a slow wave
   elif name=='Lick':
-   st,sa=SIT[2][k];tg=foot.lerp(st,hold);pa=pa+(sa-pa)*hold
+   st,sa=SIT[2][k]
+   if k[0]=='H':st=st+Vector((0,LICK_HIND[0],LICK_HIND[1]));sa=sa+LICK_HIND[2]
+   tg=foot.lerp(st,hold);pa=pa+(sa-pa)*hold
    if k=='FR':
     # the solved wrist, carried by the head as the cat brings paw and tongue together (round J: it was
     # re-derived here from the old mouth point, so the pad never met the tongue)
@@ -1724,7 +1751,7 @@ def place_legs(name,u,pb,hold=0.0):
     pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
   lr,_,_=leg_ik(rots,locs,k,tg,pa)
   for n,rv in lr.items():pb[n].rotation_euler=rv
-  if name=='SideLie':pb[LEGS[k][1]].rotation_euler[2]=SIDELIE['add_'+k]*min(1,u*3)   # out of the leg's plane: the upper pair drapes onto the lower
+  if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]=(SIDELIE['add_'+k]*min(1,u*3) if name=='SideLie' else SLEEP['add_'+k])   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
  for p in rig.pose.bones:p.location=(0,0,0);p.rotation_euler=(0,0,0);p.scale=(1,1,1)
  for o in shapeobs:
@@ -1764,22 +1791,22 @@ def pose(name,u):
   # 11cm left the silhouette 0.721 tall against Idle's 0.755 - a 4cm difference on a 75cm cat,
   # which is why "lying down" looked like "standing with odd legs".
   f=min(1,u*3) if name!='Sleep' else 1;pb['Root'].location.y=-.11*f
-  if name=='LieDown':pb['Root'].location.y+=.0115*f   # round J: the chest/belly lay 8-10 mm into the floor (v6_clip_review lowest, LX_Body); now it rests on it
   pb['Spine'].rotation_euler[0]=.10*f
-  # Rolled onto its flank the body's width becomes its height, and the lowest thing is a hind
-  # toe 193 mm under the floor (v6_ground_calib.py). Lifting the root that much puts the
-  # pelvis at 270 mm against ~370 mm standing - which is where a cat on its side belongs.
-  if name=='SideLie':
-   S=SIDELIE;pb['Root'].rotation_euler[2]=S['roll']*f;pb['Root'].location.y=S['lift']*f
-   pb['Spine'].rotation_euler[0]=S['spine']*f
+  if name=='LieDown':
+   L=LIEDOWN;pb['Root'].location.y=-L['drop']*f;pb['Spine'].rotation_euler[0]=L['spine']*f
+   pb['Neck'].rotation_euler[0]=L['neck']*f;pb['Head'].rotation_euler[0]=L['head']*f
+   for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=L['tail']*f;pb[tb].rotation_euler[2]=L['tail_side']*f   # round along the flank on the floor, on the camera's side
+  # Rolled onto its flank the body's width becomes its height: SIDELIE / SLEEP lift the root by about half of it.
+  if name in ('SideLie','Sleep'):
+   S=SIDELIE if name=='SideLie' else SLEEP
+   pb['Root'].rotation_euler[2]=S['roll']*f;pb['Root'].location.y=S['lift']*f
+   pb['Pelvis'].rotation_euler[0]=S['yaw']*f   # rolled a quarter turn, the pelvis's pitch is a turn on the floor (Root's own y would be applied before the roll)
+   pb['Spine'].rotation_euler[0]=S['spine']*f;pb['Spine'].rotation_euler[2]=S['spine_side']*f
    pb['Neck'].rotation_euler[0]=S['neck']*f;pb['Neck'].rotation_euler[2]=S['neck_side']*f
    pb['Head'].rotation_euler[0]=S['head']*f;pb['Head'].rotation_euler[2]=S['head_side']*f
-   pb['Tail1'].rotation_euler[0]=S['tail']*f;pb['Tail2'].rotation_euler[0]=S['tail']*f
+   for i,tb in enumerate(('Tail0','Tail1','Tail2','Tail3','Tail4')):k_=1-S['tail_k']*i;pb[tb].rotation_euler[0]=S['tail']*k_*f;pb[tb].rotation_euler[2]=S['tail_side']*k_*f
    pb['Ear.L'].rotation_euler[0]=S['ear_x']*f;pb['Ear.L'].rotation_euler[2]=S['ear_z']*f
-  if name=='Sleep':
-   # A real sleep pose lies on the flank, with a relaxed head and closed lids.
-   pb['Root'].rotation_euler[2]=1.15;pb['Root'].location.y=.127   # +152 mm: lands the lowest hind toe at -2 mm
-   blink=1;pb['Head'].rotation_euler[0]=.20
+   if name=='Sleep':blink=1
  if name=='Stretch':
   # A real stretch: the forelegs reach out along the floor, the chest drops between the
   # shoulders and the hips stay up - the bow a cat makes on waking. It used to share the
@@ -1832,10 +1859,10 @@ def pose(name,u):
    # the legs follow their targets through place_legs().
    # Sitting, the tail has to come round beside the haunch. Left alone it hung straight down
    # through the floor: -86 mm, the lowest thing in the whole clip.
-   pb['Tail1'].rotation_euler[0]=-.27*hold;pb['Tail2'].rotation_euler[0]=1.15*hold   # round J: -.40 -> -.27, the re-solved sit pitches 0.4 deg more and the tip went 7.5 mm under
-   pb['Tail3'].rotation_euler[0]=1.10*hold;pb['Tail4'].rotation_euler[0]=1.05*hold   # swept on the built rig: this set lands the tip at +0.2 mm
+   for i,tb in enumerate(('Tail1','Tail2','Tail3','Tail4')):pb[tb].rotation_euler[0]=LICK_TAIL[i]*hold;pb[tb].rotation_euler[2]=LICK_TAIL_SIDE[i]*hold
    for bn,rv in {**SIT[0],**LICK_UPPER}.items():pb[bn].rotation_euler=tuple(c*hold for c in rv)
    for bn,lc in SIT[1].items():pb[bn].location=tuple(c*hold for c in lc)
+   pb['Root'].location.y+=LICK_HIND[3]*hold
    for i in range(4):pb[f'FrontToe{i}.R'].rotation_euler[0]=.45*hold
    fac*=hold
    pb['Jaw'].rotation_euler[0]=JAW_OPEN['Lick']*fac;pb['LipUpper'].location=LIP_AX@(Vector(LIP_LIFT['Lick'])*fac)
