@@ -272,8 +272,8 @@ PAD_C={(pre,s):(s*x,y-.026) for pre,y,x in (('Front',-.17,.108),('Rear',.26,.12)
 # Now the lobes keep G2's height, sit 4 mm deeper and lean on a gentler arc (outer toes ~2 mm back):
 # every cleft is a groove behind both of its crowns. 22 mm apart on 32 mm toes (10 mm overlap): pressed
 # together, the clefts are lines, not the gaps between four eggs (24 mm, round-i-test s2).
-TOE_DX=.022;TOE_R=(.016,.020,.022*_v6('V6_TOE_H',.82));TOE_Z=.001+TOE_R[2];   # round L: .82 high (44 -> 36 mm), bottoms where they were - taller than wide they read as four fingers; the reference's toes are low round bumps (round-l-test t3/t4)
-#TOE_IN=.012*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.15)
+TOE_DX=.022;TOE_R=(.016,.020,.022*_v6('V6_TOE_H',.82));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.15)
+# round L: .82 high (44 -> 36 mm), bottoms where they were - taller than wide they read as four fingers; the reference's toes are low round bumps (round-l-test t3/t4)
 def toe_xy(pre,s,i):
  (cx,cy,cz),(rx,ry,rz)=PAW[pre];dx=(i-1.5)*TOE_DX;h=((TOE_Z-cz)/rz)**2
  yc=cy-ry*math.sqrt(max(1-h,.05));yi=cy-ry*math.sqrt(max(1-(dx/rx)**2-h,.05))
