@@ -246,32 +246,33 @@ const CSS = `
   transform-origin: 50% 100%;
 }
 /* The tail. A rotated square rather than a triangle so it inherits the same border and
-   background as the body and always joins it cleanly, whatever the shape. */
+   background as the body and always joins it cleanly, whatever the shape. Its centre sits
+   on the body's border midline. Offset by half the 15px square plus its border so thinning
+   the body's outline cannot pull the tail into the text. */
 .lingxi-fx-bubble::after {
   content: "";
   position: absolute;
   left: var(--bubble-tail-x, 50%);
-  bottom: calc(var(--bubble-border-width) * -3.6);
+  bottom: calc(-7.5px - var(--bubble-border-width));
   width: 15px;
   height: 15px;
-  margin-left: -7px;
   background: var(--bubble-bg);
   border-right: var(--bubble-border-width) solid var(--bubble-border);
   border-bottom: var(--bubble-border-width) solid var(--bubble-border);
   border-bottom-right-radius: 3px;
-  transform: rotate(45deg);
+  transform: translateX(-50%) rotate(45deg);
 }
 .lingxi-fx-bubble.below {
   --bubble-y: 0%;
 }
 .lingxi-fx-bubble.below::after {
-  top: calc(var(--bubble-border-width) * -3.6);
+  top: calc(-7.5px - var(--bubble-border-width));
   bottom: auto;
   border-right: 0;
   border-bottom: 0;
   border-left: var(--bubble-border-width) solid var(--bubble-border);
   border-top: var(--bubble-border-width) solid var(--bubble-border);
-  transform: rotate(45deg);
+  transform: translateX(-50%) rotate(45deg);
 }
 /* A thought bubble trails little puffs instead of a pointer. */
 .lingxi-fx-bubble.shape-cloud::after {
