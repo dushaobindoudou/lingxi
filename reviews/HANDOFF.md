@@ -564,3 +564,40 @@ V6_PAW_LOW .024（爪球顶下来，底不动）、V6_PAW_RYK .90（爪球缩短
 其余回归：15 个动作最低点不变（LieDown +0.8、SideLie +0.6、Sleep +0.2、Lick −6.4、Stretch +1.0）；走 / 跑滑移 ≤ 0.5 mm；闭眼不变。
 **已知**：舔爪时加宽的舌头和头皮有 13 对三角面相交（嘴角擦边，渲染里看不到）；左眼瞳孔里能看到一点角膜反射的纹理。
 v6_part_audit 的 lick.gap_mm 在爪球形状变化时可能取到爪球背面、符号判错（中间一版给过 −61.8），以三角面相交和渲染为准。
+
+---
+
+## Round P（Claude 主会话，2026-10-09 下午）——鼻周白圈 / 闭嘴 / 舌头 / 爪与袜子 / 躺姿骨骼
+
+用户（本会话）：「1. 鼻子四周有个明显的白色区域，像是没有被毛覆盖住 2. 嘴巴效果在闭上的时候不是很明显，另外舌头有点短颜色也不对，
+你需要调用 codex 生成素材 3. 爪子的指头有点大，爪子的肉垫有点小，爪子的毛覆盖的范围不太对，另外躺下去的动作太僵硬了，是不是骨骼的问题？
+4. 帮我清理一下没有用的资源」。问「毛的覆盖范围」指哪种，答「两个都要改」：毛连续盖过趾头 + 腿改虎斑、白色只做袜子（按 codex 爪部参考图，
+不按 turnaround-v1 的白前腿）。之后又说：「需要记住一条优先使用 codex 生成图片，尽量使用 codex 生成」——凡是能用图解决的先派 codex。
+**渲染**：`assets/characters/lingxi/v6/round-p/`（run.sh 同 round-o，只换 OUT）。审阅页：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW
+**codex 素材**：`v5-imagegen-sources/tongue_v3.png`（REF-BATCH3）、`reference/lingxi-ref-mouth-closed.png`（REF-BATCH3）、
+`v5-imagegen-sources/muzzle_detail.png`（REF-BATCH4，对位模板 `templates/muzzle_template.png`）。staging 用 `stage_imagegen_textures.py --only <name>`。
+
+| 项 | Round O | Round P | 原因 / 旋钮 |
+|---|---|---|---|
+| 鼻周光皮（鼻头外 1.0–1.6 倍一圈「亮且平滑」像素） | 8.1% | **0.9%** | 剃毛窗口是鼻头的外接椭圆，鼻头是倒三角：下半部两侧各多剃 5–6 mm，且毛从鼻子往外长、盖不回来。窗口改成鼻头真实轮廓（V6_NOSE_BALD .94 = 轮廓内 6%）+ 贴鼻头一圈 7.7k 根短绒毛（LX_Fur_under_LX_NoseVelvet，V6_NOSE_VELVET_N/_VELVET） |
+| 闭嘴 ω | 浅粉细线，几乎看不见 | 深玫瑰灰 ω + 人中 + 粉下唇 | 嘴线色 (.76,.54,.55) -> (.50,.33,.36)、粗 .9 -> 1.2 mm（V6_LIP_TONE/_BEVEL）；codex 口鼻细节贴花按 multiply 叠到头部颜色（皮肤 + 毛根，muzzle_detail()，V6_MUZZLE_DETAIL）；程序化褶 lip_crease 在有贴花时降到 .20 |
+| 舌色（渲染，哈欠舌面均值） | (199,141,144) | 暖玫瑰粉 | tongue_v3（codex）+ 材质里 Hue/Sat 1.18 / Value .86、Specular .40（V6_TONGUE_SAT/_VAL/_SPEC；1.45 试过，偏玫红） |
+| 舌长 | 51 mm | 60 mm（x1.18，V6_TONGUE_L） | **舌尖静止位置不变，加长的部分在喉咙里**；Out 多滑同样长度（TONGUE_OUT .058 -> .067）。第一次往前加长，Rest 舌尖穿出下巴（开口 2.0 -> 4.5 mm，舌头 12 条射线），已改 |
+| 舔爪舌头伸出唇外 | 16.6 mm | 24.7 mm | 舌–爪间隙 0.99 -> 1.33 mm；舌–头皮相交 13 -> 16 对（嘴角擦边，原有） |
+| 哈欠 tongue_share / fur_in_mouth | .204 / .122 | .240 / .120 | 开口 .186 -> .187；犬齿不变 |
+| Rest | 开口 2.0，舌 0 | 开口 2.0，舌 0（口腔袋 1 条射线） | |
+| 腿色 | 白腿（painted side map 的白一直到肘） | 虎斑腿 + 白袜子 | leg_socks()：骨段 6 cm 内、z < .215 渐入；袜口 V6_SOCK_Z .088，前面高 16 mm；环纹用 coat grade 的焦糖 / 深棕 |
+| 爪背毛 / 趾毛 | 7.3 / 6.3 mm，卷 | 4.3 / 6.3 mm，顺 | PAW_ZONE（z < 65 mm 全、95 mm 起无）：方向朝前下梳向趾头（原来是「往下」，在爪背上投影成朝后）、lift −35%、wave −65%、frizz −60%（V6_PAW_FLAT/_SLEEK）；V6_PAW_COAT .14 -> .12；趾护毛 7 -> 9 mm、700 -> 1100 根 |
+| 趾头 | 28.8 x 25.2 x 27.3 mm | 25.6 x 23.0 x 24.6 mm | V6_TOE_W/L/H .90/.70/.62 -> .80/.64/.56；趾缝 2.0/2.4 -> 1.8/2.2 mm |
+| 肉垫 / 豆豆 | 主垫 53 x 62 mm | 62 x 73 mm；豆豆椭圆 x1.2 | V6_PAD_S 1.2 -> 1.4（舔爪求解里的主垫也用 PAD_S 了，原来写死 1.0）、V6_BEAN_S 1.2；爪底毛 / 趾绒避让区随之放大 |
+| 背部关节 | Pelvis > Spine（一个关节） | Pelvis > **Loin** > Spine | 新骨 Loin (0,.08,.33)->(0,-.04,.345)，与 Spine 共线，蒙皮把原 Spine 的权重在 y −.04 处分开。_back() 只对躺姿把弯曲按 BACK_CURVE .5 分给两节；其他动作 0 = 全在 Loin = **旧骨架完全等价**（15 个动作最低点除躺姿外与 round-o 逐一相同）。_fk 遇到只有 Spine 的 rots 自动映射到 Loin，所以 sit / lick 求解不变 |
+| 躺姿动画 | 线性 1/3 段到位后静止 | 缓入缓出 .40（V6_LIE_T），头颈晚 .06、尾晚 .10 落定；躺着时背随呼吸 ±.03、尾尖摆（V6_LIE_BREATH/_TAIL） | |
+| 侧躺 | 脸贴地、两眼上下叠、上侧腿竖向镜头 | 背弯 .35、头抬起并转回竖直（neck_side −.25、head_roll −1.0）、耳不折；前腿从胸、后腿从骨盆定位（V6_SL_FRAME）；add .45 | round-p-test s1–s6 |
+| 最低点 | SideLie +0.6 / Sleep +0.2 | −0.3 / −0.6 mm | 都在毛里 |
+
+**注意 / 下一步**：
+- 胡须垫不够鼓，ω 的褶没有参考深；codex 贴花上的毛囊点被毛盖住看不到（毛根色只在根部），需要更短的口鼻毛或把点画到毛上。
+- 侧躺四只爪子仍有点堆在胸前；Sleep 没重调（只是背改成两节弧）。
+- `v6_gait_audit` 的 neck_fold_mm 用的是 Spine 的头部位置，Loin 拆出后这个数会变（Spine 头从 y .08 移到 −.04），不是姿态变化。
+- 清理：删掉 250 个 .blend/.blend1（约 30 GB：lingxi-v5fix 31G -> 1.9G 等）。还剩 Rust target 11 GB 和 lingxi-lookdev 工作树 2.3 GB，等用户决定。
+- 工作区里 `scripts/lookdev-v6/v6_part_audit.py` 的改动不是我的，没有提交。

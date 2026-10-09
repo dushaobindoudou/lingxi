@@ -46,6 +46,12 @@ AI_MAPS = {
     'pad_skin_v2': (1024, 1024),
     'paw_fur_tile': (1024, 1024),
     'pad_main_mask': (1024, 1024),   # the main pad's three-lobed shape, alpha on its oval
+    # round P (2026-10-09, codex image_gen - REF-BATCH3-PROMPTS.md; user: 「舌头……颜色也不对」): v2 was pale and grey,
+    # read as plastic; v3 is the reference kittens' warm saturated coral-rose, deeper at the root and the sides
+    'tongue_v3': (1024, 1024),
+    # round P (REF-BATCH4-PROMPTS.md): the closed mouth's omega crease, philtrum, lower lip and whisker dots as a multiply
+    # map over the muzzle's front (templates/muzzle_template.png: x -60..60 mm, z 415..505 mm, authored head space)
+    'muzzle_detail': (1024, 768),
 }
 
 
@@ -55,7 +61,7 @@ def derived_bumps(out):
     plus the albedo's fine papilla speckle; pad: the fine skin speckle only. Mid-grey = flat."""
     from PIL import ImageFilter
     made = []
-    for name, groove in (('tongue_v2', True), ('pad_skin_v2', False)):
+    for name, groove in (('tongue_v2', True), ('tongue_v3', True), ('pad_skin_v2', False)):
         f = out / f'{name}.png'
         if not f.exists():
             continue
