@@ -1,6 +1,6 @@
 {
   "name": "lingxi-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "灵犀 Lingxi desktop cat for coding agents: an MCP server and a shell client that let Codex, Cursor, WorkBuddy, Claude or any MCP host drive the cat - and install the macOS app from GitHub when it is missing.",
   "keywords": [

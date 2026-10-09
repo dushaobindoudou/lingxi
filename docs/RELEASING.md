@@ -28,6 +28,10 @@ git tag v0.2.0 && git push origin main v0.2.0     # .github/workflows/release.ym
 
 `packages/mcp-server` 的版本**单独管理**：它跟正在运行的那个应用说话，协议不会因为应用发版而变。
 
+宿主插件也独立升版本：Claude／Codex 各改自己的 `plugin.json`；WorkBuddy 还要同步
+`.codebuddy-plugin/marketplace.json` 的条目版本。豆包、Cursor 的安装脚本与 skill 没有独立的
+包版本，通过默认分支提交更新；不为它们新增宿主不认识的版本配置。
+
 ## 2. 打包：`scripts/release.sh`
 
 | 用法 | 做什么 |
@@ -192,6 +196,10 @@ npm test && npm pack --dry-run                  # 看清楚要发哪些文件
 npm login --registry https://registry.npmjs.org/   # 本机 registry 若是镜像，发布必须显式指定官方源
 npm publish                                       # publishConfig 已指向官方源、access public
 ```
+
+升 npm 版本时同步 `src/version.mjs`，再将修改的 MCP 模块复制到 Claude 和 Codex 插件的
+`mcp/` 目录。握手版本测试和插件副本测试必须通过。建议先 `npm pack`，在临时目录解包检查
+握手与工具列表，最后发布这个已验证的 `.tgz`；发布后核对 npm 的版本、latest 和 integrity。
 
 包里的 `scripts/`、`bin/lingxi`、`LICENSE.md` 是副本，`npm test`（根目录）的 `shared-copies` 测试守着它们
 和源头一致——测试不过不要发。

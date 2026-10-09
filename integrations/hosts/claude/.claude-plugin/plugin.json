@@ -1,7 +1,7 @@
 {
   "name": "lingxi",
   "displayName": "灵犀 Lingxi",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "让灵犀桌面猫陪你用 Claude Code：会话开始时检查并自动安装、打开应用（配置和数据跨重装保留），等你授权时提醒你、回合结束有反应，并教 Claude 在合适的时候报告心情、让猫说话、记住你的事和定提醒。命令：/lingxi:setup、/lingxi:status。",
   "author": {
     "name": "dushaobin",

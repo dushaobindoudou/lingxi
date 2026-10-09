@@ -9,7 +9,7 @@
       "name": "lingxi",
       "source": "./integrations/hosts/workbuddy/plugin",
       "description": "灵犀桌面猫：没装就自动从 GitHub 安装并打开；桌宠对每轮对话自动反应（hooks），模型可上报任务与心情（skill），可选接 MCP 全量工具。",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "keywords": [
         "lingxi",
         "desktop-pet",

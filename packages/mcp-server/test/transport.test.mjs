@@ -8,8 +8,17 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.mjs');
+
+test('initialize reports the published package version rather than a stale protocol label', async () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const { code, frames } = await converse([JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })]);
+  assert.equal(code, 0);
+  const initialized = frames.find((frame) => frame.id === 1);
+  assert.equal(initialized.result.serverInfo.version, pkg.version);
+});
 
 /** Feed raw lines to a fresh server process and collect every JSON frame it writes back. */
 function converse(lines) {

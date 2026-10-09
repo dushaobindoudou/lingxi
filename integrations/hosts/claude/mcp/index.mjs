@@ -12,6 +12,7 @@ import { appendFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { toolsByName, tools } from './tools.mjs';
 import { BridgeError, bridge, warmUp } from './bridge.mjs';
+import { MCP_VERSION } from './version.mjs';
 
 // Minimal access log to a FILE (never stdout - that would corrupt the stdio framing).
 // Lets a host integration be verified: whether the runtime actually spawns this server and
@@ -61,7 +62,7 @@ async function handle(request) {
       return reply(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: 'lingxi', version: '0.1.0' },
+        serverInfo: { name: 'lingxi', version: MCP_VERSION },
         instructions:
           'Drives the 灵犀 desktop cat. Call lingxi_capabilities first - the action and ' +
           'expression libraries are user-editable, so ids vary between installs. Prefer small, ' +
