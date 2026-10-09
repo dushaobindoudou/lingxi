@@ -438,7 +438,7 @@ floor=sphere('LX_MouthFloor',(0,-.394,_v6('V6_FLOOR_Z',.4455)+LIP_DZ),(.026,.028
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
 # actually laps and how it scoops a paw.
-tongue=sphere('LX_Tongue',(0,0,0),(.0135*_v6('V6_TONGUE_W',1.6),.0255,.0042),mouthmat)   # round L: x1.2 wide - the reference kitten's tongue is broad, ours a thin strip
+tongue=sphere('LX_Tongue',(0,0,0),(.0135*_v6('V6_TONGUE_W',2.1),.0255,.0042),mouthmat)   # round L: x1.2 wide - the reference kitten's tongue is broad, ours a thin strip
 TONGUE_Z=.4465   # round J: 2.5 mm up from .444 - at rest the blade's underside poked 1.5 mm out through the chin skin
 for v in tongue.data.vertices:v.co=(v.co.x,v.co.y-.3975,v.co.z+TONGUE_Z+LIP_DZ)
 for v in tongue.data.vertices:
@@ -462,11 +462,15 @@ for s in [-1,1]:
  # The lower canine's tip stays 1mm under the lip line AT ITS x (round G2): once the arcs sagged
  # (round G) the line dropped 3mm there and the tips showed through the closed mouth as two white dots.
  # Round G3: both pairs 4mm further back - at V6_LIP .98 the muzzle's skin had receded behind the fangs.
- for up,(x,y,z,region) in [(True,(s*.015*MW_K,-.432,.458+LIP_DZ,'HeadRigid')),(False,(s*.012*MW_K,-.430,min(.452+LIP_DZ,float(lip_z(s*.012*MW_K))-.0052),'Jaw'))]:
-  tt=sphere('LX_Tooth',(0,0,0),(.0021,.0021,.0055 if up else .0042),toothmat)
+ # Round O (user/WorkBuddy: 「舌头和牙齿也不对」): the reference shows two long upper fangs and almost no lower teeth.
+ # Same roots; the upper fang grows down x1.55 (exposed in a yawn 7.6 -> ~10.5 mm), the lower one is cut to .6.
+ _UF,_LF=_v6('V6_UPPER_FANG',1.55),_v6('V6_LOWER_FANG',.6)
+ for up,(x,y,z,region) in [(True,(s*.015*MW_K,-.432,.458+.0055-.0055*_UF+LIP_DZ,'HeadRigid')),(False,(s*.012*MW_K,-.430,min(.452+LIP_DZ,float(lip_z(s*.012*MW_K))-.0052)-.0042+.0042*_LF,'Jaw'))]:
+  _rz=.0055*_UF if up else .0042*_LF
+  tt=sphere('LX_Tooth',(0,0,0),(.0021,.0021,_rz),toothmat)
   for v in tt.data.vertices:v.co=(v.co.x+x,v.co.y+y,v.co.z+z)
   for v in tt.data.vertices:                                                # taper to a point
-   f=(z-v.co.z)/.0055 if up else (v.co.z-z)/.0042
+   f=(z-v.co.z)/_rz if up else (v.co.z-z)/_rz
    if f>0:v.co.x=x+(v.co.x-x)*(1-.8*min(f,1));v.co.y=y+(v.co.y-y)*(1-.8*min(f,1))
   teeth.append((tt,region))
 # Nose: a rounded inverted-triangle leather with a flat front, comma nostrils on the lower
@@ -1244,6 +1248,14 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # The muzzle (nose, whisker pads) stays short and dense so the features read inside the
   # longer head coat; it grows to full length ~6cm out from the nose.
   dmz=np.hypot(root[:,0],(root[:,2]-(.466+_v6('V6_NOSE_DZ',0.0)))*1.25)
+  # Round O (user: 「嘴周围的毛都贴到嘴里了」): the coat thins out toward the mouth's cut, above AND below it and out past
+  # the corners - 10% of its length on the line itself, full 8 mm above / 10 mm below. In a yawn the upper-lip fringe
+  # hung into the opening like a row of teeth, the whisker-pad coat curtained the corners and the lower-lip tips stood
+  # up as a comb along the bottom.
+  _dl=root[:,2]-lip_z(root[:,0]);_cw=GAPE_W+.012
+  _fl=np.where(_dl>=0,np.clip(_dl/_v6('V6_LIP_CLEAR_UP',.008),.10,1),np.clip(-_dl/_v6('V6_LIP_CLEAR_DN',.010),.10,1))
+  _sd=np.clip((_cw-np.abs(root[:,0]))/.008,0,1)
+  ln*=np.where(root[:,1]<-.395,1-(1-_fl)*_sd,1)[:,None,None]
   _MC=_v6('V6_MUZZLE_COAT',.58);ln*=np.where(root[:,1]<-.39,np.clip(_MC+(1-_MC)*(dmz-.018)/.055,_MC,1),1)[:,None,None]   # round O: .42 -> .58
   # The face that looks at you is short and smooth (stripes and features stay crisp); the long
   # fluff grows where the head turns away - cheeks' outer edge, crown, back of the head. A single
@@ -1994,8 +2006,8 @@ def pose(name,u):
    # Round J: the tongue lies 9 mm under the lip line, and with the jaw dropped the floor's red was all the
    # yawn showed. The reference's yawn is a pink tongue filling the lower half of the open mouth: it comes up
    # over the lower teeth and a little forward.
-   _yt=_v6('V6_YAWN_TONGUE',1.0);kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(2.5,_v6('V6_YT_UP',1.3)*_yt)*fac;kb['Out'].value=_v6('V6_YT_OUT',.50)*_yt*fac
-   pb['Tongue'].rotation_euler[0]=_v6('V6_YT_PITCH',.25)*_yt*fac   # + tips it up, against the jaw's drop
+   _yt=_v6('V6_YAWN_TONGUE',1.0);kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(2.5,_v6('V6_YT_UP',1.15)*_yt)*fac;kb['Out'].value=_v6('V6_YT_OUT',.40)*_yt*fac
+   pb['Tongue'].rotation_euler[0]=_v6('V6_YT_PITCH',.10)*_yt*fac   # + tips it up, against the jaw's drop
    blink=.85*fac;pb['Head'].rotation_euler[0]+=-.48*fac   # a cat tips its head back to yawn
    pb['Spine'].rotation_euler[0]+=.14*fac;pb['Root'].location.y+=-.030*fac   # and drops its chest as the jaw opens
    pb['Tail1'].rotation_euler[0]+=-.30*fac;pb['Tail2'].rotation_euler[0]+=.22*fac
