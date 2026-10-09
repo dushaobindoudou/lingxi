@@ -204,7 +204,11 @@ def paint_bean(m):
  if base.links:nt.links.new(base.links[0].from_socket,mx.inputs[1])
  else:mx.inputs[1].default_value=base.default_value[:]
  nt.links.new(col,mx.inputs[2]);nt.links.new(mx.outputs['Color'],base)
- rm=nt.nodes.new('ShaderNodeMapRange');rm.inputs['To Min'].default_value=p.inputs['Roughness'].default_value;rm.inputs['To Max'].default_value=.45;nt.links.new(mk.outputs[0],rm.inputs['Value']);nt.links.new(rm.outputs['Result'],p.inputs['Roughness'])
+ # Round O: the bean swells a little out of the toe (its mask is its height), like the reference's puffy beans.
+ bb=nt.nodes.new('ShaderNodeBump');bb.inputs['Strength'].default_value=_v6('V6_PAD_PUFF',.8);bb.inputs['Distance'].default_value=.003;nt.links.new(mk.outputs[0],bb.inputs['Height'])
+ if p.inputs['Normal'].links:nt.links.new(p.inputs['Normal'].links[0].from_socket,bb.inputs['Normal'])
+ nt.links.new(bb.outputs['Normal'],p.inputs['Normal'])
+ rm=nt.nodes.new('ShaderNodeMapRange');rm.inputs['To Min'].default_value=p.inputs['Roughness'].default_value;rm.inputs['To Max'].default_value=_v6('V6_PAD_ROUGH',.30);nt.links.new(mk.outputs[0],rm.inputs['Value']);nt.links.new(rm.outputs['Result'],p.inputs['Roughness'])
  return m
 if _v6('V6_BEAN_PAINT',1)>0:paint_bean(toemat)
 
@@ -245,7 +249,8 @@ CHEST=((0,-.17,.315-CHEST_DROP/2),(.145,.17,.160+CHEST_DROP/2))
 RUFF_DROP=_v6('V6_RUFF_DROP',.04)
 RUFF=((0,-.205,.405-RUFF_DROP/2),(.155,.14,.115-RUFF_DROP/2))   # top comes down RUFF_DROP, bottom stays
 parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',*RUFF),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',*CHEST),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
-PAW_LOW=_v6('V6_PAW_LOW',.024)   # round N: the paw ball's top comes down this much, bottom (ground contact) stays
+PAW_LOW=_v6('V6_PAW_LOW',.010)   # round O: .024 -> .010 - lowered 24 mm the ball read as a box over the toes; the reference's paw is a round mitten
+#   # round N: the paw ball's top comes down this much, bottom (ground contact) stays
 PAW_RYK=_v6('V6_PAW_RYK',.90)    # ...and it is 10% shorter: lowered, its low front bulged 6.5 mm further out and dipped through the floor when the paw pitched (LieDown / Stretch)
 for s in [-1,1]:
  parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.040-PAW_LOW/2),(.054,.064*PAW_RYK,.038-PAW_LOW/2)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.040-PAW_LOW/2),(.053,.062*PAW_RYK,.037-PAW_LOW/2))]
@@ -274,7 +279,9 @@ PAD_C={(pre,s):(s*x,y-.026) for pre,y,x in (('Front',-.17,.108),('Rear',.26,.12)
 # Now the lobes keep G2's height, sit 4 mm deeper and lean on a gentler arc (outer toes ~2 mm back):
 # every cleft is a groove behind both of its crowns. 22 mm apart on 32 mm toes (10 mm overlap): pressed
 # together, the clefts are lines, not the gaps between four eggs (24 mm, round-i-test s2).
-TOE_DX=_v6('V6_TOE_DX',.027);TOE_R=(.016*_v6('V6_TOE_W',1.06),.020,.022*_v6('V6_TOE_H',.95));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',.6);TOE_ARC=_v6('V6_TOE_ARC',.04)
+TOE_DX=_v6('V6_TOE_DX',.021);TOE_R=(.016*_v6('V6_TOE_W',.70),.020*_v6('V6_TOE_L',.70),.022*_v6('V6_TOE_H',.62));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',1.0);TOE_ARC=_v6('V6_TOE_ARC',.04)
+# Round O (user: 「脚趾太大了，其实脚趾的骨骼比较小，就是猫毛多一些」): the toe bones are small - 22 x 28 x 27 mm, 21 mm
+# apart, 5 mm proud of the ball - and the paw's rounded front is its coat; the creases stay as shading. (Round N below.)
 # round N (codex paw refs lingxi-ref-paw-front/-side): the four toes ARE the front of the foot - creases .29 of the
 # foot's width apart, lobes .40 of it tall. Was 22 mm apart on a 98 mm row under a 108 mm, 78 mm tall paw ball: four
 # beads under a club. Now 27 mm apart (row 115 mm = the ball), 34 x 42 mm, 7 mm deeper forward, ball 24 mm lower
@@ -319,7 +326,7 @@ LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather
 LIP_DZ=LIP0-.4575   # the mouth assembly MUST ride with the lip line - cavity/floor/tongue/teeth/jaw - or pink skin peeks above the new lip (v6 lesson)
 MOUTH_W=.024*_v6('V6_MOUTH_W',1.0);MW_K=MOUTH_W/.024;MW2=MOUTH_W*(.016/.024)   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
 LIP_SAG=.0035*_v6('V6_LIP_SAG',1.0)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m")
-GAPE_W=.036*_v6('V6_GAPE_W',1.2)   # round L: 1.2 - the yawn's corners open to ~70 mm; past 1.2 the cut does not get wider (round-l-test y3)
+GAPE_W=.036*_v6('V6_GAPE_W',1.45)   # round L: 1.2 - the yawn's corners open to ~70 mm; past 1.2 the cut does not get wider (round-l-test y3)
 #    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
                # yawn opens the corners back to here - a cat's gape runs well past its visible lips
 def lip_z(x):
@@ -336,7 +343,10 @@ def jaw_share(x,y,z,below):
  # The chin only: the whisker pads belong to the UPPER jaw. Giving their lower halves to the jaw bone
  # (width .056) tore the skin between them vertically on every open mouth - white bars beside the nose.
  wmax=GAPE_W+.8*np.clip(LIP0-.004-z,0,.05)            # the lower lip out to the gape corners, the full chin lower down
- return below*np.clip((-.345-y)/.045,0,1)*np.clip((wmax-np.abs(x))/.016,0,1)   # soft edge: stretches, never tears
+ # round O (user: 「嘴巴效果不太好」): the share across the mouth is ELLIPTICAL, not a linear ramp - nearly the whole width
+ # drops with the jaw and only the last part rounds off into the corner, so a yawn opens as the reference's U, wider
+ # than tall. (A 16 mm ramp opened a box; a 32 mm one a V.)
+ return below*np.clip((-.345-y)/.045,0,1)*np.sqrt(np.clip(1-(np.abs(x)/np.maximum(wmax,1e-6))**2,0,1))   # soft edge: stretches, never tears
 # Round J: the upper lip lifts off the teeth when the mouth gapes (the reference yawn's tall arch with the
 # canines hanging in its top corners). It stayed with the skull and only the jaw moved, which read as a
 # dropped jaw under a fixed muzzle. The LipUpper bone carries the lip line fully, fading out up the whisker
@@ -344,7 +354,7 @@ def jaw_share(x,y,z,below):
 LIP_RET_W=GAPE_W+.006
 def lip_share(x,y,z,above):
  h=np.clip(1-(z-lip_z(x))/.020,0,1)
- return above*h*h*np.clip((-.400-y)/.020,0,1)*np.clip((LIP_RET_W-np.abs(x))/.014,0,1)
+ return above*h*h*np.clip((-.400-y)/.020,0,1)*np.sqrt(np.clip(1-(np.abs(x)/LIP_RET_W)**2,0,1))   # round O: elliptical across the mouth - the lifted upper lip arches
 def eye_frame(s,lx,ly,lz):
  """Eye-local (x across, y into the head, z up) to world, for the eye on side s."""
  cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12)
@@ -396,10 +406,12 @@ jaw=merge([sphere('JawL',(-.022,-.398,.424+LIP_DZ),(.030,.034,.008)),sphere('Jaw
 jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True   # chin skin is the head's now
 # The mouth bag: big enough to fill the whole gap when the jaw drops (otherwise the gap shows the
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
-_ML=_v6('V6_MOUTH_LIGHT',1.6)   # round L: x1.6 - with the bag open the whole yawn showed it, a deep red where the reference is rosy
+_ML=_v6('V6_MOUTH_LIGHT',1.2)   # round O: 1.6 -> 1.2, a deeper rose behind the (now big) pale tongue, as in the reference
+#   # round L: x1.6 - with the bag open the whole yawn showed it, a deep red where the reference is rosy
 mouthpink=mat('LX_MouthPink',(.30*_ML,.07*_ML,.08*_ML),.5)   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
-cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.458),CAV_Z),(.042,_v6('V6_CAV_RY',.040),_v6('V6_CAV_RZ',.020)),mouthpink)   # round M: -.392 -> -.458, 66 mm forward (WorkBuddy round-l-cav sweep): yawn leak 0, gape .218 / bite .180   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
+cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.430),CAV_Z),(max(.042,GAPE_W+.006),   # round O: as wide as the cut (+6 mm) - the wider yawn showed black past the bag's sides
+ _v6('V6_CAV_RY',.065),_v6('V6_CAV_RZ',.020)),mouthpink)   # round O: -.458 / .040 put the cup's back wall at y -.418, IN FRONT of the tongue (-.372..-.423): a yawn showed only its tip poking through. -.430 / .065 opens in front of the tip and closes behind the root (round-l-test c1: tongue rays 1280 -> 2677, Rest 73 rays of pink in the lip slit)   # round M: -.392 -> -.458, 66 mm forward (WorkBuddy round-l-cav sweep): yawn leak 0, gape .218 / bite .180   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
 # Round J: the bag is a CUP, open at the front. Closed, it held the tongue, the floor and the lower canines
 # inside it, so a yawn showed the bag's own front wall - red, with the tongue's tip poking out under it.
 _cut=_v6('V6_CAV_CUT',0.0)   # the front half goes: shut, nothing showed (round-j-test z3: no cavity rays at rest)
@@ -426,7 +438,7 @@ floor=sphere('LX_MouthFloor',(0,-.394,_v6('V6_FLOOR_Z',.4455)+LIP_DZ),(.026,.028
 # Tongue: a flat blade with a centre groove, root at y=-.380, tip at -.431. Its "Out" key is the
 # lick: it slides forward 32mm, dips, and the last third curls up into a spoon - how a cat
 # actually laps and how it scoops a paw.
-tongue=sphere('LX_Tongue',(0,0,0),(.0135*_v6('V6_TONGUE_W',1.20),.0255,.0042),mouthmat)   # round L: x1.2 wide - the reference kitten's tongue is broad, ours a thin strip
+tongue=sphere('LX_Tongue',(0,0,0),(.0135*_v6('V6_TONGUE_W',1.6),.0255,.0042),mouthmat)   # round L: x1.2 wide - the reference kitten's tongue is broad, ours a thin strip
 TONGUE_Z=.4465   # round J: 2.5 mm up from .444 - at rest the blade's underside poked 1.5 mm out through the chin skin
 for v in tongue.data.vertices:v.co=(v.co.x,v.co.y-.3975,v.co.z+TONGUE_Z+LIP_DZ)
 for v in tongue.data.vertices:
@@ -437,7 +449,7 @@ planar_uv(tongue,0,1,flip_v=True)  # tip at v=1
 # so the lick pushed the tongue out through the chin skin (179 polygon pairs with LX_Head, REPORT A4).
 # Up lifts the blade (not the root) over the lower canines and lip; Out then slides it 58 mm forward,
 # widening a little, the free end drooping toward the paw. pose() eases Up in ahead of Out.
-tongue.shape_key_add(name='Basis');tu=tongue.shape_key_add(name='Up');tk=tongue.shape_key_add(name='Out')
+tongue.shape_key_add(name='Basis');tu=tongue.shape_key_add(name='Up');tk=tongue.shape_key_add(name='Out');tu.slider_max=2.5   # round O: the yawn lifts it past 1 (V6_YT_UP)
 TONGUE_CURL=_v6('V6_TONGUE_CURL',.007)   # the free end (past the lips) curls down onto the paw, like the reference's tongue on the pad
 TONGUE_UP=.017   # tongue bottom .4331 -> .4501 (authored, V6_LIP .98): over the lip line .4484 and the lower canines' tips .4421
 for v,u_,k in zip(tongue.data.vertices,tu.data,tk.data):
@@ -918,6 +930,12 @@ if (TEXDIR/'pad_main_mask.png').exists() and _v6('V6_PAD_SHAPE',1)>0:
  padmat=pink.copy();padmat.name='LX_PadMain';_pn=padmat.node_tree;_pp=_pn.nodes.get('Principled BSDF')
  _mk=_pn.nodes.new('ShaderNodeTexImage');_mk.image=bpy.data.images.load(str(TEXDIR/'pad_main_mask.png'),check_existing=True);_mk.image.colorspace_settings.name='Non-Color';_mk.extension='EXTEND'
  _pn.links.new(_pn.nodes.new('ShaderNodeUVMap').outputs['UV'],_mk.inputs['Vector']);_pn.links.new(_mk.outputs['Color'],_pp.inputs['Alpha'])
+ # Round O (user: 「脚掌的贴图也不对」): the pad was a flat pink sticker. The mask's feathered edge is its height (bump): the
+ # three lobes swell up out of the coat; and it is a little glossy, as the reference's pads are.
+ _pb=_pn.nodes.new('ShaderNodeBump');_pb.inputs['Strength'].default_value=_v6('V6_PAD_PUFF',.8);_pb.inputs['Distance'].default_value=.004
+ _pn.links.new(_mk.outputs['Color'],_pb.inputs['Height'])
+ if _pp.inputs['Normal'].links:_pn.links.new(_pp.inputs['Normal'].links[0].from_socket,_pb.inputs['Normal'])
+ _pn.links.new(_pb.outputs['Normal'],_pp.inputs['Normal']);_pp.inputs['Roughness'].default_value=_v6('V6_PAD_ROUGH',.30)
 claws=[]
 for s in [-1,1]:
  suf='L' if s<0 else 'R'
@@ -927,7 +945,8 @@ for s in [-1,1]:
    tx,ty=toe_xy(pre,s,i)
    toe=sphere('LX_'+pre+f'Toe{i}.'+suf,(tx,ty,TOE_Z),TOE_R,toemat);bind(toe,pre+f'Toe{i}.'+suf)
    p=sphere('LX_'+pre+f'Bean{i}.'+suf,(tx,ty+.002,.0045),(.008,.010,.003),pink);planar_uv(p,0,1);bind(p,pre+f'Toe{i}.'+suf)   # under the sole: seen only when the paw is raised (round F; it showed from the front)
-   c=sphere('LX_'+pre+f'Claw{i}.'+suf,(tx,ty-.006,.018),(.003,.012,.003),toothmat);bind(c,pre+f'Toe{i}.'+suf);c.shape_key_add(name='Basis');k=c.shape_key_add(name='Extend')
+   _ck=TOE_R[2]/.022;c=sphere('LX_'+pre+f'Claw{i}.'+suf,(tx,ty-.006*_ck,TOE_Z-.005*_ck),(.003*_ck,.012*_ck,.003*_ck),toothmat);   # round O: inside the toe whatever its size (the small toes let the fixed claws poke out as white dots)
+   bind(c,pre+f'Toe{i}.'+suf);c.shape_key_add(name='Basis');k=c.shape_key_add(name='Extend')
    for v in k.data:v.co.y-=.045
    claws.append(c)
 # Tail tubular mesh, smoothly weighted over five bones.
@@ -1201,7 +1220,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   keep=np.ones(n,dtype=bool)
   for s in (-1,1):
    for pre,px in (('Front',s*.108),('Rear',s*.12)):
-    keep&=~((np.abs(root[:,0]-px)<1.5*TOE_DX+.017)&(root[:,2]<TOE_Z+TOE_R[2]-.008)&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN)&(root[:,1]>PAW_FRONT_Y[pre]-.06))   # round N: x follows the toe row; and a y floor - the Rear test (y<.21) also bared the whole lower FRONT paw ball   # round I: up to 8 mm under the toes' tops (G3: z<.034); the paw's coat above combs down over them   # round G3: .046 -> .034, the taller toes cover the rest; above them the bare band showed   # the toe row's back edge moves in with TOE_IN (round G)
+    keep&=~((np.abs(root[:,0]-px)<1.5*TOE_DX+.017)&(root[:,2]<TOE_Z+TOE_R[2]*_v6('V6_TOE_WIN',0.0)-.008*(_v6('V6_TOE_WIN',0.0)>0))&(root[:,1]<PAW_FRONT_Y[pre]+.022+TOE_IN)&(root[:,1]>PAW_FRONT_Y[pre]-.06))   # round N: x follows the toe row; and a y floor - the Rear test (y<.21) also bared the whole lower FRONT paw ball   # round I: up to 8 mm under the toes' tops (G3: z<.034); the paw's coat above combs down over them   # round G3: .046 -> .034, the taller toes cover the rest; above them the bare band showed   # the toe row's back edge moves in with TOE_IN (round G)
   root=root[keep];normal=normal[keep];n=len(root)
  if root_filter is not None:
   m=root_filter(root);root=root[m];normal=normal[m];n=len(root)
@@ -1218,14 +1237,14 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   ed=np.min([np.hypot(root[:,0]-s*EYE_X,root[:,2]-EYE_Z) for s in (-1,1)],axis=0)/EYE_R
   ln*=np.where(root[:,1]<-.37,np.clip(.70+.30*(ed-1)/.7,.70,1),1)[:,None,None]
   # ...and short around the mouth, so the upper-lip coat does not hang over an open mouth.
-  dm=np.hypot(root[:,0],(root[:,2]-LIP0)*1.4)
+  dm=np.hypot(root[:,0],(root[:,2]-LIP0)*1.4);_LC=_v6('V6_LIP_COAT',.45)
   # Upper lip only: below the lip the coat is the chin's and hangs away from the mouth anyway;
   # shortening it too left a bare white plate under the mouth.
-  ln*=np.where((root[:,1]<-.40)&(root[:,2]>=lip_z(root[:,0])),np.clip(.20+.80*(dm-.016)/.050,.20,1),1)[:,None,None]   # .20 (round C): .12 left a bald flat patch around the mouth; with a soft lip colour a little overlap reads as fur, not stitches
+  ln*=np.where((root[:,1]<-.40)&(root[:,2]>=lip_z(root[:,0])),np.clip(_LC+(1-_LC)*(dm-.016)/.050,_LC,1),1)[:,None,None]   # round O: .20 -> V6_LIP_COAT .45 (user: 「鼻子四周有个长方形」 - 2.5 mm of coat between nose and lip read as a bald plate); .20 (round C): .12 left a bald flat patch around the mouth; with a soft lip colour a little overlap reads as fur, not stitches
   # The muzzle (nose, whisker pads) stays short and dense so the features read inside the
   # longer head coat; it grows to full length ~6cm out from the nose.
   dmz=np.hypot(root[:,0],(root[:,2]-(.466+_v6('V6_NOSE_DZ',0.0)))*1.25)
-  ln*=np.where(root[:,1]<-.39,np.clip(.42+.58*(dmz-.018)/.055,.42,1),1)[:,None,None]
+  _MC=_v6('V6_MUZZLE_COAT',.58);ln*=np.where(root[:,1]<-.39,np.clip(_MC+(1-_MC)*(dmz-.018)/.055,_MC,1),1)[:,None,None]   # round O: .42 -> .58
   # The face that looks at you is short and smooth (stripes and features stay crisp); the long
   # fluff grows where the head turns away - cheeks' outer edge, crown, back of the head. A single
   # length everywhere turned the head into a featureless puffball.
@@ -1975,8 +1994,8 @@ def pose(name,u):
    # Round J: the tongue lies 9 mm under the lip line, and with the jaw dropped the floor's red was all the
    # yawn showed. The reference's yawn is a pink tongue filling the lower half of the open mouth: it comes up
    # over the lower teeth and a little forward.
-   _yt=_v6('V6_YAWN_TONGUE',1.0);kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(1,_v6('V6_YT_UP',.8)*_yt)*fac;kb['Out'].value=_v6('V6_YT_OUT',.18)*_yt*fac
-   pb['Tongue'].rotation_euler[0]=_v6('V6_YT_PITCH',0)*_yt*fac   # + tips it up, against the jaw's drop
+   _yt=_v6('V6_YAWN_TONGUE',1.0);kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(2.5,_v6('V6_YT_UP',1.3)*_yt)*fac;kb['Out'].value=_v6('V6_YT_OUT',.50)*_yt*fac
+   pb['Tongue'].rotation_euler[0]=_v6('V6_YT_PITCH',.25)*_yt*fac   # + tips it up, against the jaw's drop
    blink=.85*fac;pb['Head'].rotation_euler[0]+=-.48*fac   # a cat tips its head back to yawn
    pb['Spine'].rotation_euler[0]+=.14*fac;pb['Root'].location.y+=-.030*fac   # and drops its chest as the jaw opens
    pb['Tail1'].rotation_euler[0]+=-.30*fac;pb['Tail2'].rotation_euler[0]+=.22*fac
