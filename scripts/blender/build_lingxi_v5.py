@@ -1403,6 +1403,11 @@ if _v6('V6_SOLE_FUR',1)>0:
  def _off_pad(r):
   ok=np.ones(len(r),dtype=bool)
   for (pre,s),(cx,cy) in PAD_C.items():ok&=~((((r[:,0]-cx)/(.026*_v6('V6_PAD_S',1.2)))**2+((r[:,1]-cy)/(.030*_v6('V6_PAD_S',1.2)))**2<1))
+  # Round O: and round each bean - with the toes pulled back into the ball (TOE_IN 2.0) the sole's coat grew over them
+  for pre in ('Front','Rear'):
+   for s in (-1,1):
+    for i in range(4):
+     bx,by=toe_xy(pre,s,i);ok&=~((((r[:,0]-bx)/.012)**2+((r[:,1]-by-.002)/.013)**2<1))
   return ok
  groom(_so,max(1,int(_v6('V6_SOLE_FUR_N',9000)*SCALE)),_v6('V6_SOLE_LEN',.011),'sole','under',root_filter=_off_pad,bind_as='body')
  bpy.data.objects.remove(_so,do_unlink=True)   # round I: 2.2 mm (was 3.3), under the paw's own coat; G3: the UNDERCOAT's thin strands - guard hairs even at 3.2mm (G2) read as bristles; the reference's toes are velvet
@@ -1665,6 +1670,7 @@ def _ell_sd(q,c,r):
  d=q-c;k0=np.linalg.norm(d/r,axis=1);k1=np.maximum(np.linalg.norm(d/(r*r),axis=1),1e-9);return k0*(k0-1)/k1
 def solve_lick(sit):
  rots0,locs,T0=sit;k='FR'
+ locs=dict(locs);locs.update({f'FrontToe{i}.R':(0,LICK_TOE_OUT,0) for i in range(4)})   # round O: the raised paw's toes come out of the ball (see pose)
  # Round J: the paw that meets the tongue is solved against the paw's own parts, not a point. It is a
  # 108 x 110 x 76 mm ball (the coat's volume) with the main pad flush on its underside and the four toes
  # and their beans in front - a point-and-plane "palm" let the tongue reach the pad's plane through the
@@ -1723,7 +1729,7 @@ def solve_lick(sit):
   f=_fk(r,locs);H=f('Head');tip=H@lick_l
   wrist=tip+Vector((0,wy,wz));pa=_ang(tip-wrist)+dpa
   lr,off,over=leg_ik(r,locs,k,wrist,pa);r.update(lr)
-  for i in range(4):r[f'FrontToe{i}.R']=(.45,0,0)
+  for i in range(4):r[f'FrontToe{i}.R']=(LICK_TOE,0,0)
   r['Jaw']=(JAW_OPEN['Lick'],0,0);r['Tongue']=TONGUE_LICK
   return r,tip,off,over
  def sds(f,pts,parts):
@@ -1771,6 +1777,9 @@ def solve_lick(sit):
   'pad_below_mouth_mm':round((mouth.z-palm.z)*1000,1),'terms':{a:round(b,3) for a,b in cost(v,True).items()},'tip':[round(1000*c,1) for c in tip],'palm':[round(1000*c,1) for c in palm],
   'paw_head':[round(1000*c,1) for c in f('FrontPaw.R').translation],'scap':[round(c,3) for c in r['Scap.R']],'rots':{n:[round(c,3) for c in r[n]] for n in ('FrontUpper.R','FrontLower.R','FrontPaw.R')}}))
  return {n:r[n] for n in ('Scap.R','Neck','Head')},tuple(float(x) for x in v[6:9])
+LICK_TOE_OUT=_v6('V6_LICK_TOE_OUT',.014)   # round O: standing, the toes sit back in the paw ball (TOE_IN 2.0); raised to the mouth they reach out
+# along their bones this far - a grooming cat spreads its toes - or the beans hid behind the tongue and chin
+LICK_TOE=_v6('V6_LICK_TOE',.45)   # the raised paw's toes: + curls them (round O: with the toes set back in the ball, .45 turned the beans away)
 LICK_WRIST_MAX=_v6('V6_LICK_WRIST',1.0)   # rad: the paw's turn off its rest angle beyond which the solve pays heavily
 # Round L (Lick, REPORT P1-1): the sitting haunch. The hind targets' hock 30 mm higher takes the thigh's skin out of the
 # floor (LX_Body -16.6 -> the belly crease between the thighs, -9.4), and the root 3 mm up takes 3 more off that; any
@@ -2024,7 +2033,7 @@ def pose(name,u):
    for bn,rv in {**SIT[0],**LICK_UPPER}.items():pb[bn].rotation_euler=tuple(c*hold for c in rv)
    for bn,lc in SIT[1].items():pb[bn].location=tuple(c*hold for c in lc)
    pb['Root'].location.y+=LICK_HIND[3]*hold
-   for i in range(4):pb[f'FrontToe{i}.R'].rotation_euler[0]=.45*hold
+   for i in range(4):pb[f'FrontToe{i}.R'].rotation_euler[0]=LICK_TOE*hold;pb[f'FrontToe{i}.R'].location=(0,LICK_TOE_OUT*hold,0)
    fac*=hold
    pb['Jaw'].rotation_euler[0]=JAW_OPEN['Lick']*fac;pb['LipUpper'].location=LIP_AX@(Vector(LIP_LIFT['Lick'])*fac)
    pb['Tongue'].rotation_euler=tuple(c*fac for c in TONGUE_LICK)
