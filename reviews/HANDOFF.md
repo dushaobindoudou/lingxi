@@ -601,3 +601,31 @@ v6_part_audit 的 lick.gap_mm 在爪球形状变化时可能取到爪球背面�
 - `v6_gait_audit` 的 neck_fold_mm 用的是 Spine 的头部位置，Loin 拆出后这个数会变（Spine 头从 y .08 移到 −.04），不是姿态变化。
 - 清理：删掉 250 个 .blend/.blend1（约 30 GB：lingxi-v5fix 31G -> 1.9G 等）。还剩 Rust target 11 GB 和 lingxi-lookdev 工作树 2.3 GB，等用户决定。
 - 工作区里 `scripts/lookdev-v6/v6_part_audit.py` 的改动不是我的，没有提交。
+
+---
+
+## Round Q（Claude 主会话，2026-10-09 晚）——腿与爪的比例 / 骨架 / 躺姿
+
+用户：「爪子是当前最严重的问题，并且侧躺和躺着姿势不对……每个爪子的大小比例不对可能是骨骼的问题？看起来有点分裂，突兀，不协调」；
+又：「1. 查一下猫科动物的身材比例，骨骼特征，以及联动关系 2. 用 codex 生成对应的关键姿势，然后对比验证」。
+**codex**：`reference/lingxi-ref-pose-{stand-side,stand-app,liedown-app,liedown-side,sidelie-app,sleep-app}.png`（REF-BATCH5；正侧面长焦 / app 机位 = 正前方俯 20°）。
+**解剖数据**：Day & Jayne 2007（J Exp Biol 210:642）家猫：前肢 肱 / 桡 / 掌 / 指 = 36.8 / 34.2 / 14.6 / 14.1%，后肢 股 / 胫 / 跖 / 趾 = 34.7 / 32.4 / 22.1 / 10.5%；
+站立中期 肘 127°、腕 176°、膝 115°、踝 114°、MTP 112°；肩高 ≈ 73% 前肢长、髋高 ≈ 76% 后肢长。
+**渲染**：`v6/round-q/`。探针：`v6/round-q-test/probe.sh <dir> <frames>`（俯视 / 动作图相机 / app 机位三张，报各部件最低点）、`lie3.sh`、`q.sh`（preview 无毛构建）。
+
+| 项 | Round P | Round Q | 说明 / 旋钮 |
+|---|---|---|---|
+| 胸底离地（中线） | 120 mm | 165 mm | V6_LEG_SHOW .045：Belly / Chest / Torso / Rump(.8) / Haunch(.7) 底部上收，顶不动；肘（.175）回到胸底 |
+| 可见前腿 / 身长 | .168 | .231 | v6_gait_audit proportions.foreleg_midline_body |
+| 腿粗 / 爪大 | — | 前臂 / 胫 x1.25（上臂 x√1.25），爪球、趾距、趾、豆豆、肉垫 x1.18 | V6_LEG_K、V6_PAW_SC；PAW 字典先定义、各处引用 |
+| 爪球皮肤挂在躯干骨上的权重（max） | 19%（前爪前半，原本就有 22%） | **0.4%** | weights(): Paw 段核心不再受 y 窗口限制；核心半径 x LEG_K / x1.35·PAW_SC |
+| 后腿关节角（站） | 膝 96° / 踝 72° | 膝 115° / 踝 114° | 实测比例反算（V6_HIND_ANAT），踝前移 39 mm，RearHock 跟着 |
+| 袜口 | 18 mm 直线 | 30 mm 软边 ±6 mm 起伏；腿虎斑阈值随 LEG_K | |
+| 肚下毛 | — | 朝下的皮肤毛长 −35% | V6_BELLY_TRIM |
+| LieDown | drop .105 | .125 | 胸贴地；最低 −2.8 mm（尾 / 身体，在毛里） |
+| SideLie | 整只侧翻 90°，从正面看像肚皮朝天 | 侧卧休息：髋转 1.5、胸 90% 摆正、yaw −.8、左后腿在下（−.2）右后腿搭下（.7） | SL_MODE=2 / SIDELOUNGE（V6_SG_*）；旧模式 V6_SL_MODE=1；最低 −7.1 mm（身体，在毛里） |
+| Sleep | 脸朝下 | head_roll −1.4、neck_side −.25、head_side −.1 | 脸朝外闭眼 |
+| 其他 12 个动作 | — | 最低点 / 滑移与 round-p 逐一相同；Lick 屁股 −6.4 -> +4.9 mm；舔爪求解 cost .41 -> .81、touch 2.2 -> 3.5 mm | |
+
+**下一步 / 没做**：前肢按实测要「肘 127°、桡骨近竖直、爪在肩下」，前爪会后移 ~5 cm，牵动舔爪 / 坐姿 / 胸前毛的校准，未做；腿毛不如参考蓬、前腿白袜子可更高；
+Sleep 爪子外露、尾巴没绕到前面；SideLie 身体陷进毛里 7 mm（可把 V6_SG_DROP .11 -> .103）。

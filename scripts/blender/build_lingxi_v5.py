@@ -257,25 +257,38 @@ CHEST_DROP=_v6('V6_CHEST_DROP',.035)
 CHEST=((0,-.17,.315-CHEST_DROP/2),(.145,.17,.160+CHEST_DROP/2))
 RUFF_DROP=_v6('V6_RUFF_DROP',.04)
 RUFF=((0,-.205,.405-RUFF_DROP/2),(.155,.14,.115-RUFF_DROP/2))   # top comes down RUFF_DROP, bottom stays
-parts=[sphere('Belly',(0,.045,.235),(.13,.28,.125)),sphere('NeckRuff',*RUFF),sphere('Torso',(0,.075,.305),(.135,.325,.150)),sphere('Chest',*CHEST),sphere('Rump',(0,.28,.312),(.145,.17,.155))]
+# Round Q (user: 「爪子是当前最严重的问题…每个爪子的大小比例不对可能是骨骼的问题？看起来有点分裂，突兀，不协调」): the trunk
+# hung to 110-120 mm off the floor on legs whose joints are at 300 mm, so the belly's coat came down onto the paws and a
+# standing cat showed ~12% of its shoulder height as leg (side view) against the turnaround's ~29% - four white balls
+# stuck under a barrel. The trunk's UNDERSIDE comes up LEG_SHOW (tops, joints and bones stay): a shallower trunk on legs
+# you can see, the forearm running down into the paw.
+LEG_SHOW=_v6('V6_LEG_SHOW',.045)
+def _lift(c,r,k=1.0):return (c[0],c[1],c[2]+LEG_SHOW*k/2),(r[0],r[1],r[2]-LEG_SHOW*k/2)   # bottom up by LEG_SHOW*k, top fixed
+CHEST=_lift(*CHEST)
+parts=[sphere('Belly',*_lift((0,.045,.235),(.13,.28,.125))),sphere('NeckRuff',*RUFF),sphere('Torso',*_lift((0,.075,.305),(.135,.325,.150))),sphere('Chest',*CHEST),sphere('Rump',*_lift((0,.28,.312),(.145,.17,.155),.8))]
 PAW_LOW=_v6('V6_PAW_LOW',.010)   # round O: .024 -> .010 - lowered 24 mm the ball read as a box over the toes; the reference's paw is a round mitten
 #   # round N: the paw ball's top comes down this much, bottom (ground contact) stays
 PAW_RYK=_v6('V6_PAW_RYK',.90)    # ...and it is 10% shorter: lowered, its low front bulged 6.5 mm further out and dipped through the floor when the paw pitched (LieDown / Stretch)
+# Round Q: ...and thicker legs on bigger paws. Side-on, scaled to the cat's height, the turnaround's foreleg is ~.12 thick and
+# its paw ~.155 long; ours were .07 and .11 - thin sticks ending in small balls. The forearm / shank x LEG_K across (the
+# upper arm, mostly inside the chest, x sqrt), the paw ball x PAW_SC across and along (not up), and with it everything built
+# on the paw - toe spacing and size, beans, pads (the toes stay the same share of the paw: 「脚趾太大」 was about that share).
+LEG_K=_v6('V6_LEG_K',1.25);PAW_SC=_v6('V6_PAW_SC',1.18)
+PAW={'Front':((.108,-.215,.040-PAW_LOW/2),(.054*PAW_SC,.064*PAW_RYK*PAW_SC,.038-PAW_LOW/2)),'Rear':((.12,.245,.040-PAW_LOW/2),(.053*PAW_SC,.062*PAW_RYK*PAW_SC,.037-PAW_LOW/2))}   # == the FrontPaw/RearPaw spheres
 for s in [-1,1]:
- parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062,.066,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046,.046,.095)),sphere('FrontPaw',(s*.108,-.215,.040-PAW_LOW/2),(.054,.064*PAW_RYK,.038-PAW_LOW/2)),sphere('Haunch',(s*.12,.24,.24),(.082,.105,.14)),sphere('RearHock',(s*.12,.30,.12),(.044,.06,.095)),sphere('RearPaw',(s*.12,.245,.040-PAW_LOW/2),(.053,.062*PAW_RYK,.037-PAW_LOW/2))]
+ parts += [sphere('FrontUpper',(s*.105,-.17,.25),(.062*LEG_K**.5,.066*LEG_K**.5,.16)),sphere('FrontLower',(s*.108,-.19,.12),(.046*LEG_K,.046*LEG_K,.095)),sphere('FrontPaw',(s*PAW['Front'][0][0],)+PAW['Front'][0][1:],PAW['Front'][1]),sphere('Haunch',*_lift((s*.12,.24,.24),(.082,.105,.14),.7)),sphere('RearHock',(s*.12,.265 if _v6('V6_HIND_ANAT',1)>0 else .30,.125),(.044*LEG_K,.06*LEG_K,.095)),sphere('RearPaw',(s*PAW['Rear'][0][0],)+PAW['Rear'][0][1:],PAW['Rear'][1])]
 body=merge(parts,'LX_Body',.007);body.data.materials.clear();body.data.materials.append(bodycoat)
 MG=_v6('V6_MUZZLE_GROW',0.0)   # muzzle volume grows DOWN, top edge fixed (.472+.032=.504); only needed if the lip line moves below the muzzle's reach
 # Toes sit AT the front of the paw ball (round E, 2026-09-30). They used to be placed 2cm ahead of
 # the paw's centre inside a ball 17.6cm deep - buried, so the foot read as a pom-pom however the
 # coat was set. The ball is shorter now (ry .088 -> .072 front, .085 -> .070 rear) and each toe's
 # centre is 6mm proud of its front surface.
-PAW_FRONT_Y={'Front':-.215-.064*PAW_RYK,'Rear':.245-.062*PAW_RYK}
+PAW_FRONT_Y={'Front':-.215-PAW['Front'][1][1],'Rear':.245-PAW['Rear'][1][1]}
 # Round G (review b4 + round F audit): F's toes sat in one straight row 3mm AHEAD of the ball -
 # 25-33mm proud, and 42mm wide at 22mm spacing, so neighbours overlapped by 20mm and no cleft
 # showed: four cotton balls glued on the front. Now each toe sits ON the paw ellipsoid where it
 # is (the outer toes follow the round front back ~16mm), TOE_IN inside it, so the front edge
 # stands ~12mm proud; narrower toes at 24mm spacing leave a ~6mm-deep cleft between them.
-PAW={'Front':((.108,-.215,.040-PAW_LOW/2),(.054,.064*PAW_RYK,.038-PAW_LOW/2)),'Rear':((.12,.245,.040-PAW_LOW/2),(.053,.062*PAW_RYK,.037-PAW_LOW/2))}   # == the FrontPaw/RearPaw spheres
 PAD_C={(pre,s):(s*x,y-.026) for pre,y,x in (('Front',-.17,.108),('Rear',.26,.12)) for s in (-1,1)}   # main pad centres (x, y), as the pads are built below   # == the FrontPaw/RearPaw spheres above
 # Round G2: G's toes read as four small pom-poms along the bottom edge (36mm tall on a 78mm paw);
 # the reference's toes ARE the front half of the paw - taller now (42mm). And the outer toes follow
@@ -288,7 +301,7 @@ PAD_C={(pre,s):(s*x,y-.026) for pre,y,x in (('Front',-.17,.108),('Rear',.26,.12)
 # Now the lobes keep G2's height, sit 4 mm deeper and lean on a gentler arc (outer toes ~2 mm back):
 # every cleft is a groove behind both of its crowns. 22 mm apart on 32 mm toes (10 mm overlap): pressed
 # together, the clefts are lines, not the gaps between four eggs (24 mm, round-i-test s2).
-TOE_DX=_v6('V6_TOE_DX',.019);TOE_R=(.016*_v6('V6_TOE_W',.80),.020*_v6('V6_TOE_L',.64),.022*_v6('V6_TOE_H',.56));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',2.0);TOE_ARC=_v6('V6_TOE_ARC',.04)
+TOE_DX=_v6('V6_TOE_DX',.019)*PAW_SC;TOE_R=(.016*_v6('V6_TOE_W',.80)*PAW_SC,.020*_v6('V6_TOE_L',.64)*PAW_SC,.022*_v6('V6_TOE_H',.56));TOE_Z=.001+TOE_R[2];TOE_IN=.012*_v6('V6_TOE_IN',2.0);TOE_ARC=_v6('V6_TOE_ARC',.04)
 # Round P (user: 「爪子的指头有点大，爪子的肉垫有点小」): smaller again, .90/.70/.62 -> .80/.64/.56 (26 x 23 x 25 mm), the beans
 # on them larger (BEAN_S) and the main pad x1.4 (PAD_S).
 # Round O (user: 「脚趾太大了，其实脚趾的骨骼比较小，就是猫毛多一些」): the toe bones are small - 22 x 28 x 27 mm, 21 mm
@@ -561,7 +574,12 @@ for s in [-1,1]:
    bone('Scap.'+suf,(s*.078,-.105,.425),(x,-.185,.300),'Spine')
    chain=[(x,-.185,.300),(x,-.145,.175),(x,-.190,.065),(x,-.250,.035)];par='Scap.'+suf
   else:
-   chain=[(x,.225,.305),(x,.172,.195),(x,.300,.115),(x,.205,.036)];par='Pelvis'
+   # Round Q (user: 「查一下猫科动物的身材比例，骨骼特征，以及联动关系」): the hind leg on a cat's measured skeleton - Day &
+   # Jayne 2007 (J Exp Biol 210:642), domestic cat at midstance: femur / tibia / metatarsal 34.7 / 32.4 / 22.1% of the
+   # limb, knee 115 deg, ankle 114 deg, MTP 112 deg. Hip and ground height kept, the chain solved from the floor up: the
+   # hock comes 39 mm forward and the metatarsus stands at 68 deg. Ours had the hock at 72 deg - a Z-folded leg with the
+   # shank sloping far back (the old chain is V6_HIND_ANAT=0).
+   chain=[(x,.225,.305),(x,.181,.191),(x,.261,.108),(x,.231,.036)] if _v6('V6_HIND_ANAT',1)>0 else [(x,.225,.305),(x,.172,.195),(x,.300,.115),(x,.205,.036)];par='Pelvis'
   bone(pre+'Upper.'+suf,chain[0],chain[1],par);bone(pre+'Lower.'+suf,chain[1],chain[2],pre+'Upper.'+suf);bone(pre+'Paw.'+suf,chain[2],chain[3],pre+'Lower.'+suf)
   for i in range(4):tx,ty=toe_xy(pre,s,i);bone(pre+f'Toe{i}.'+suf,(tx,ty+.024,.026),(tx,ty-.014,.021),pre+'Paw.'+suf)
  bone('Ear.'+suf,(s*.100,-.250,.604),(s*(.100+.066*EAR_S),-.250+.010*EAR_S,.604+.156*EAR_S),'Head')  # matches the new ear shell
@@ -630,8 +648,12 @@ def weights(points,region):
    # shoulder and the hip, where leg and trunk really do share the skin.
    core=_v6('V6_LEG_CORE',.075)   # 75 mm from the forearm / shank and paw bones: the skin over them, not the chest between the legs (round-l-test w.050-.075)
    if core>0:
-    near=np.max([np.exp(-(_segd(points,*_bseg(pre+nm+'.'+suf))/core)**8) for nm in ('Lower','Paw')],axis=0)
-    mask=np.maximum(mask,near*np.exp(-((y-cy)/.13)**6)*np.clip((s*x)/.02,0,1))
+    near=np.exp(-(_segd(points,*_bseg(pre+'Lower.'+suf))/(core*LEG_K))**8)   # round Q: the core grows with the leg (LEG_K) - at 75 mm the thicker forearm's skin was 11% on the trunk
+    # Round Q: the PAW's core is the paw's outright, whatever its y. Under the y window below, the front of the front paw
+    # ball (45 mm ahead of the leg's centre line) was 22% on the Spine (28% once PAW_SC lengthened it): the toes' half of
+    # the paw was dragged along by the body in every pose - smeared under a lying chest, stretched on the lick.
+    nearp=np.exp(-(_segd(points,*_bseg(pre+'Paw.'+suf))/(core*1.35*PAW_SC))**8)   # the ball's surface is up to 76 mm off its bone
+    mask=np.maximum(mask,np.maximum(near*np.exp(-((y-cy)/.13)**6),nearp)*np.clip((s*x)/.02,0,1))
    for k in list(w):w[k]*=(1-mask)
    # Inside the leg, each point follows the bones it is nearest to (by distance to the bone
    # SEGMENT, softly blended) - a height band cannot follow a knee that points forward.
@@ -946,7 +968,7 @@ for s in [-1,1]:
 # Paws: four toes, retractable claws, pink pads; miniature teeth have separate geometry.
 # Round L: the MAIN pad takes the shape of codex's pad_main_mask.png (a kitten's rounded three-lobed pad, lobes to
 # the heel, round edge to the toes) as alpha on its oval - outside the shape the paw's furry skin shows through. The beans keep the oval.
-PAD_S=_v6('V6_PAD_S',1.4)   # round P: 1.2 -> 1.4 (user: 「肉垫有点小」); round L: the main pad x1.2 across - the reference's pad fills the middle of the sole
+PAD_S=_v6('V6_PAD_S',1.4)*PAW_SC   # round Q: x PAW_SC with the paw; round P: 1.2 -> 1.4 (user: 「肉垫有点小」); round L: the main pad x1.2 across - the reference's pad fills the middle of the sole
 padmat=pink
 if (TEXDIR/'pad_main_mask.png').exists() and _v6('V6_PAD_SHAPE',1)>0:
  padmat=pink.copy();padmat.name='LX_PadMain';_pn=padmat.node_tree;_pp=_pn.nodes.get('Principled BSDF')
@@ -1083,9 +1105,10 @@ def leg_socks(p,col):
   suf='L' if s<0 else 'R'
   for pre in ('Front','Rear'):
    d=np.min([_segd(p,*_bseg(pre+nm+'.'+suf)) for nm in ('Upper','Lower','Paw')],axis=0)
-   m=np.clip((.062-d)/.016,0,1)*np.clip((s*x-.040)/.025,0,1)
+   m=np.clip((.062*LEG_K-d)/.016,0,1)*np.clip((s*x-.040)/.025,0,1)   # round Q: the skin of the thicker leg (LEG_K)
    a,b=_bseg(pre+'Paw.'+suf);fwd=np.clip((a[1]-y)/.05,0,1) if pre=='Front' else 0   # the white climbs the front of the wrist
-   sock=np.where(m>leg,np.clip((SOCK_Z+.016*fwd-z)/.018,0,1),sock);leg=np.maximum(leg,m)
+   # round Q: a soft, uneven cuff (30 mm, +-6 mm wobble round the leg) - the straight 18 mm cut read as a white tube slid onto the leg
+   sock=np.where(m>leg,np.clip((SOCK_Z+.016*fwd+.006*np.sin(x*170+y*130)-z)/.030+.5,0,1),sock);leg=np.maximum(leg,m)
  leg*=np.clip((.215-z)/.05,0,1)
  # rings round the leg, slanting a little, in the coat grade's ramp (light caramel / dark brown)
  band=((np.sin(z*98+np.sin(y*40+x*25)*.9)+1)/2)**1.7
@@ -1363,6 +1386,9 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # length; above it the coat grows smoothly from the wrist to the body's.
   legs=np.interp(root[:,2],[.070,.100,.150,.220,.300],[_v6('V6_PAW_COAT',.12),.24,.48,.80,1.0])   # round P: .14 -> .12, sleek   # round L: .10 -> .14 at the paw - the reference's paws are fluffy; at .10 (4.4 mm median) the paw read as a smooth glove
   ln*=(bib*legs)[:,None,None]
+  # Round Q: the belly's underside coat hung 50+ mm straight down over the legs; a third shorter where the skin faces the floor
+  _uz=np.clip(-normal[:,2],0,1)**2*np.clip((.27-root[:,2])/.08,0,1)*np.clip((root[:,2]-.09)/.03,0,1)
+  ln*=(1-_v6('V6_BELLY_TRIM',.35)*_uz)[:,None,None]
  # Fluff physics: the strand hugs the skin at the root, lifts away through the middle,
  # and the tip drifts along the coat direction - then two wave frequencies (a slow
  # bend plus a faster kink) give the micro-curl a long-haired kitten actually has.
@@ -1474,7 +1500,7 @@ if _v6('V6_SOLE_FUR',1)>0:
  import bmesh as _bm_
  _sb=_bm_.new();_sb.from_mesh(body.data)
  def _on_sole(c):
-  for pre,px,cy,(rx,ry) in (('Front',.108,PAW['Front'][0][1],(.060,.072)),('Rear',.12,PAW['Rear'][0][1],(.059,.070))):
+  for pre,px,cy,(rx,ry) in (('Front',.108,PAW['Front'][0][1],(.060*PAW_SC,.072*PAW_SC)),('Rear',.12,PAW['Rear'][0][1],(.059*PAW_SC,.070*PAW_SC))):
    if c.z<.026 and ((abs(c.x)-px)/rx)**2+((c.y-cy)/ry)**2<1:return True
   return False
  _bm_.ops.delete(_sb,geom=[f for f in _sb.faces if not _on_sole(f.calc_center_median())],context='FACES')
@@ -1934,7 +1960,7 @@ def _gait(g,u,k):
 # f_z up, the paw at f_pa deg - flat, toes down), the chest settles between them, the hocks fold under the
 # haunches, the back keeps its line (spine .06 -> ~4.5 deg), the head comes a little up off a lowered neck and
 # the tail comes round the flank on the floor. drop/f_z/h_z are set on the built rig: chest 0-1 mm, toes ~3 mm.
-LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.105,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-.45,
+LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-.45,
  f_dy=.15,f_z=.073,f_pa=-145,h_dy=.05,h_z=.09,h_pa=-178).items()}
 # Round L SideLie (user: 「躺下去的效果不好」): on its flank for real. It was rolled 1.25 rad - belly half up, the four
 # legs pointing up at 45 deg (paws 264-277 mm), the torso 27 mm off the floor on a hind toe and the head upright.
@@ -1955,8 +1981,22 @@ SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2047,
 # hind legs drawn forward, the forepaws tucked, the tail wrapped round the rump, the nose down by the paws. The
 # pelvis's pitch (yaw) turns the curl on the floor so the pose camera sees the closed eyes and the C, not the crown,
 # and the head turns back up off its cheek a little (head_roll), chin on the paws.
-SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2055,spine=.8,spine_side=0,neck=.6,neck_side=.2,head=.6,head_side=.2,head_roll=-.6,tail=-.5,tail_side=.25,tail_k=0,ear_x=0,ear_z=-.60,
+# Round Q (codex lingxi-ref-pose-sleep-app.png): the face turned back up toward the camera (head_roll -.6 -> -1.4, neck_side .2 -> -.25,
+# head_side .2 -> -.1) - curled with the face rolled down, the camera saw the crown and the back of the ears (round-q-test z1/z2).
+SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2055,spine=.8,spine_side=0,neck=.6,neck_side=-.25,head=.6,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=.25,tail_k=0,ear_x=0,ear_z=-.60,
  f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.18,h_dz=.12,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
+# Round Q (user: 「侧躺和躺着姿势不对」): SideLie is the reference's side LOUNGE (lingxi-ref-sidelie.png), not a cat rolled
+# over: the hips go down onto their side with both hind legs laid out beside them, the chest stays nearly upright on its
+# forearms as in LieDown, the back twisting between the two, and the head up with a little tilt. Rolled whole onto its flank
+# (round P, V6_SL_MODE=1) the cat read belly-up from the front camera - legs sticking out at the viewer, the head craned back
+# upright - in every variant (round-q-test l1-l5).
+SL_MODE=int(_v6('V6_SL_MODE',2))
+# Matched to codex's lingxi-ref-pose-sidelie-app.png (round-q-test g1-g9): the hips a full quarter turn over (at 1.2 the folded
+# legs' plane stood tilted and the upper hind leg stuck up beside the back), the chest kept 90% upright so both forepaws lie
+# side by side in front, the body turned .8 rad off the camera; with the hips rolled +, the LEFT hind leg is underneath -
+# it swings .2 clear of the floor - and the right one drapes .7 down onto it.
+SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.11,yaw=-.8,hip_roll=1.5,chest_keep=.9,spine=.05,neck=.10,head=-.12,head_tilt=.22,head_turn=0,
+ tail=.35,tail_side=.55,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0).items()}
 # Round P: a lying pose's back bend is shared between the loin and the thoracic joint (_back; 0 = all at the loin, the
 # old one-hinge back, .5 = an even curve). The other clips keep their solved / tuned single bend.
 BACK_CURVE={'LieDown':_v6('V6_BACK_LD',.5),'SideLie':_v6('V6_BACK_SL',.5),'Sleep':_v6('V6_BACK_SP',.5)}
@@ -1992,16 +2032,23 @@ def place_legs(name,u,pb,hold=0.0):
    lift=math.sin(math.pi*u)**2
    tg=foot+(Vector((0,-.09*lift,.30*lift)) if k[0]=='F' else Vector((0,.11*lift,.27*lift)));pa+=lift*(.9 if k[0]=='F' else 1.2)
   elif name in ('LieDown','SideLie','Sleep'):
-   fr=1.0 if name=='Sleep' else _settle(u);lt,la=lie[k]
-   if name in ('SideLie','Sleep'):
+   fr=1.0 if name=='Sleep' else _settle(u);lt,la=lie[k];D_=RD
+   if name=='SideLie' and SL_MODE==2:
+    # the forearms as in LieDown, from the (yawed) root; the hind legs folded in the PELVIS's plane, which the hip roll lays down
+    K=SIDELOUNGE
+    if k[0]=='F':lt,la=Vector((LREST[k]['x'],ad.bones[LEGS[k][1]].head_local.y-K['f_dy'],K['f_z']+K['drop'])),math.radians(K['f_pa']);D_=RD
+    else:lt,la=foot+Vector((0,K['h_dy'],K['h_dz'])),pa+K['h_pa'];D_=f('Pelvis')@ad.bones['Pelvis'].matrix_local.inverted()
+    tg=D_@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
+    if k[0]=='H':pa=pa+_ang(D_.to_3x3()@Vector((0,1,0)))
+   elif name in ('SideLie','Sleep'):
     S=SIDELIE if name=='SideLie' else SLEEP;lt=foot+(Vector((0,-S['f_dy'],S['f_dz'])) if k[0]=='F' else Vector((0,S['h_dy'],S['h_dz'])));la=pa+(S['f_pa'] if k[0]=='F' else S['h_pa'])
    # Round P: on its side each pair is placed from the part it hangs from - the forelegs from the chest, the hind legs
    # from the pelvis. From the root, the back's new curve (Loin + Spine) swung the chest away from its forelegs' targets
    # and folded them up against it (round-p-test s2).
-   D_=RD
-   if name=='SideLie' and _v6('V6_SL_FRAME',1)>0:_bn='Spine' if k[0]=='F' else 'Pelvis';D_=f(_bn)@ad.bones[_bn].matrix_local.inverted()
-   tg=D_@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
-   if name in ('SideLie','Sleep'):pa=pa+_ang(D_.to_3x3()@Vector((0,1,0)))
+    if name=='SideLie' and _v6('V6_SL_FRAME',1)>0:_bn='Spine' if k[0]=='F' else 'Pelvis';D_=f(_bn)@ad.bones[_bn].matrix_local.inverted()
+   if not (name=='SideLie' and SL_MODE==2):
+    tg=D_@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
+    if name in ('SideLie','Sleep'):pa=pa+_ang(D_.to_3x3()@Vector((0,1,0)))
   elif name=='Bite':
    fac=.5-.5*math.cos(u*math.tau*2)      # the same envelope pose() drives the head with
    # The paws pin it down. Bite's four paws travelled 0.1 mm over the whole clip - the ears
@@ -2032,7 +2079,7 @@ def place_legs(name,u,pb,hold=0.0):
     pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
   lr,_,_=leg_ik(rots,locs,k,tg,pa)
   for n,rv in lr.items():pb[n].rotation_euler=rv
-  if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]=(SIDELIE['add_'+k]*_settle(u) if name=='SideLie' else SLEEP['add_'+k])   # out of the leg's plane: the upper pair drapes onto the lower
+  if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]=((SIDELOUNGE if SL_MODE==2 else SIDELIE)['add_'+k]*_settle(u) if name=='SideLie' else SLEEP['add_'+k])   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
  for p in rig.pose.bones:p.location=(0,0,0);p.rotation_euler=(0,0,0);p.scale=(1,1,1)
  for o in shapeobs:
@@ -2078,8 +2125,16 @@ def pose(name,u):
    L=LIEDOWN;pb['Root'].location.y=-L['drop']*f;pb['Spine'].rotation_euler[0]=L['spine']*f
    pb['Neck'].rotation_euler[0]=L['neck']*fh;pb['Head'].rotation_euler[0]=L['head']*fh
    for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=L['tail']*ft;pb[tb].rotation_euler[2]=L['tail_side']*ft   # round along the flank on the floor, on the camera's side
+  if name=='SideLie' and SL_MODE==2:
+   K=SIDELOUNGE
+   pb['Root'].location.y=-K['drop']*f;pb['Root'].rotation_euler[1]=K['yaw']*f   # Root's own y is world up: a turn on the floor
+   pb['Pelvis'].rotation_euler[1]=K['hip_roll']*f                               # about its own length: the hips go over onto their side
+   pb['Spine'].rotation_euler[0]=K['spine']*f;pb['Spine'].rotation_euler[1]=-K['hip_roll']*K['chest_keep']*f   # the back twists the chest back up (_back shares it, Loin + Spine)
+   pb['Neck'].rotation_euler[0]=K['neck']*fh;pb['Head'].rotation_euler[0]=K['head']*fh
+   pb['Head'].rotation_euler[1]+=K['head_tilt']*fh;pb['Head'].rotation_euler[2]=K['head_turn']*fh
+   for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=K['tail']*ft;pb[tb].rotation_euler[2]=K['tail_side']*ft
   # Rolled onto its flank the body's width becomes its height: SIDELIE / SLEEP lift the root by about half of it.
-  if name in ('SideLie','Sleep'):
+  elif name in ('SideLie','Sleep'):
    S=SIDELIE if name=='SideLie' else SLEEP
    pb['Root'].rotation_euler[2]=S['roll']*f;pb['Root'].location.y=S['lift']*f
    pb['Pelvis'].rotation_euler[0]=S['yaw']*f   # rolled a quarter turn, the pelvis's pitch is a turn on the floor (Root's own y would be applied before the roll)
