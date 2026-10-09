@@ -9,6 +9,14 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "origin": {
+      "description": "Lifecycle adapters set hook; model-authored reports omit this. Hooks carry lifecycle facts and never imply the user's underlying task succeeded.",
+      "enum": ["hook"]
+    },
+    "echo": {
+      "description": "A hook's repeated notification of an existing wait. Suppressed while that session is still in the same waiting state; does not renew its age or unread reminder.",
+      "type": "boolean"
+    },
     "state": {
       "description": "Where the work has got to. The only required field. `needs_input` and `needs_approval` are deliberately separate: a question can wait until the user looks up, an approval is blocking a tool call right now, and a notification outlet needs to be able to treat them differently.",
       "enum": [

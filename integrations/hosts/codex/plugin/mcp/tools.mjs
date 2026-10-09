@@ -348,18 +348,20 @@ export const tools = [
             'steadiness. Only the good moods are joined.',
         },
         taskId: { type: 'string', minLength: 1, description: 'Stable internal id; reuse it from running through terminal state. Never show it to the user.' },
+        session: { type: 'string', maxLength: 128, description: 'Actual host session/thread id, when known. Matches lifecycle hooks to this report; omit when unknown and never borrow another session id.' },
         summary: { type: 'string', maxLength: 140, description: 'Concrete task and result or exact question, in the user\'s language. Up to 140 characters; do not pre-truncate to a slogan.' },
         agent: { type: 'string', description: 'Override who this is reported as. Defaults to the id this server is configured with - only set it to speak as someone else.' },
       },
       required: ['state', 'taskId', 'summary'],
     },
-    async run({ state, kind, mood, taskId, summary, agent }) {
+    async run({ state, kind, mood, taskId, session, summary, agent }) {
       const who = agent ?? bridge.agentId();
       const result = await bridge.taskEvent({
         state,
         kind,
         mood,
         taskId,
+        session,
         summary,
         agent,
         provider: who ?? 'mcp',

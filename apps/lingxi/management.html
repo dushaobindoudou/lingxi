@@ -82,12 +82,12 @@
           <p class="home-footer">安静地待着，也算一起度过一段时间。</p>
         </section>
 
-        <!-- 6.2 Agent 接入：手风琴，Claude Code 首发、真实一键接入 -->
+        <!-- Agent 接入：展示全部已提供适配器的宿主，各用自己的安装入口 -->
         <section class="page" id="page-agent">
           <h2>已支持的工具</h2>
           <p class="hint">
-            接上之后，它们在忙什么、要你授权或回答时，猫都会告诉你。Claude Code 和 Codex 可以一键接入；
-            其它工具可以通过本地接口接入（见「设置 → 能力开放」）。
+            支持 Claude Code、Codex、WorkBuddy、豆包、Cursor 和 DeepSeek Harness。
+            展开对应工具查看接入方式；接入后，最近任务会出现在首页。
           </p>
 
           <div class="accordion" id="agent-accordion">
@@ -171,6 +171,62 @@ args = ["&lt;repo&gt;/packages/mcp-server/src/index.mjs"]
 [mcp_servers.lingxi.env]
 LINGXI_AGENT = "codex"
 LINGXI_AGENT_NAME = "Codex"</pre>
+              </div>
+            </div>
+
+            <div class="accordion-item" data-agent-panel="workbuddy">
+              <button class="accordion-header">
+                <span class="accordion-title"><span class="accordion-mark" data-agent-mark="workbuddy" aria-hidden="true"></span>WorkBuddy / CodeBuddy</span>
+                <span class="accordion-side">
+                  <span class="badge badge-muted" id="workbuddy-status-badge">读取中…</span>
+                  <span class="accordion-chevron" data-icon="chevron-down" aria-hidden="true"></span>
+                </span>
+              </button>
+              <div class="accordion-body">
+                <p class="cat-card-line">推荐在 WorkBuddy 会话里安装灵犀插件，自动报告对话开始、结束、授权和提问；skill 补充具体任务结果与心情。</p>
+                <pre class="hint">/plugin marketplace add dushaobindoudou/lingxi
+/plugin install lingxi@lingxi</pre>
+                <p class="hint">需要 MCP 工具或手动接入时，下载仓库后在终端运行（将 <code>&lt;repo&gt;</code> 换成仓库路径）：</p>
+                <pre class="hint">bash &lt;repo&gt;/integrations/hosts/workbuddy/install.sh</pre>
+                <p class="hint">MCP 工具未出现时，在 WorkBuddy 的连接器管理里信任 lingxi；CLI 也可以报告任务。接入状态依据实际收到的报告或身份登记显示。</p>
+                <div class="accordion-actions"><button class="wide-button secondary" data-agent-guide="workbuddy">查看接入说明</button></div>
+                <p class="hint" data-guide-result hidden></p>
+              </div>
+            </div>
+
+            <div class="accordion-item" data-agent-panel="doubao">
+              <button class="accordion-header">
+                <span class="accordion-title"><span class="accordion-mark" data-agent-mark="doubao" aria-hidden="true"></span>豆包</span>
+                <span class="accordion-side">
+                  <span class="badge badge-muted" id="doubao-status-badge">读取中…</span>
+                  <span class="accordion-chevron" data-icon="chevron-down" aria-hidden="true"></span>
+                </span>
+              </button>
+              <div class="accordion-body">
+                <p class="cat-card-line">通过 skill、CLI 和回合监听接入。监听报告开始、结束和等待回答，具体任务结果与心情由模型补充。</p>
+                <p class="hint">先安装并运行一次豆包，下载灵犀仓库后在终端运行（将 <code>&lt;repo&gt;</code> 换成仓库路径）：</p>
+                <pre class="hint">bash &lt;repo&gt;/integrations/hosts/doubao/install.sh</pre>
+                <p class="hint">装好后在豆包新开工作任务。当前接入使用 CLI；豆包里的灵犀 MCP 连接器默认不提供工具。</p>
+                <div class="accordion-actions"><button class="wide-button secondary" data-agent-guide="doubao">查看接入说明与向导</button></div>
+                <p class="hint" data-guide-result hidden></p>
+              </div>
+            </div>
+
+            <div class="accordion-item" data-agent-panel="cursor">
+              <button class="accordion-header">
+                <span class="accordion-title"><span class="accordion-mark" data-agent-mark="cursor" aria-hidden="true"></span>Cursor</span>
+                <span class="accordion-side">
+                  <span class="badge badge-muted" id="cursor-status-badge">读取中…</span>
+                  <span class="accordion-chevron" data-icon="chevron-down" aria-hidden="true"></span>
+                </span>
+              </button>
+              <div class="accordion-body">
+                <p class="cat-card-line">安装用户级 hooks、skill 和 MCP；hooks 报告会话和回合变化，模型报告具体任务结果。</p>
+                <p class="hint">下载灵犀仓库后在终端运行（将 <code>&lt;repo&gt;</code> 换成仓库路径）：</p>
+                <pre class="hint">bash &lt;repo&gt;/integrations/hosts/cursor/install.sh</pre>
+                <p class="hint">装好后新开 Agent 会话；Cursor 第一次启动 lingxi MCP 时需要允许信任。</p>
+                <div class="accordion-actions"><button class="wide-button secondary" data-agent-guide="cursor">查看接入说明</button></div>
+                <p class="hint" data-guide-result hidden></p>
               </div>
             </div>
 

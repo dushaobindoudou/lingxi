@@ -10,8 +10,8 @@ description: Codex-only rules for the 灵犀 desktop cat - the identity to speak
 
 ## 一、身份：每条命令都带 `LINGXI_AGENT=codex`
 
-Codex 的 shell 里没有替你固定身份的包装器。不带这个变量，CLI 会退回 `~/.lingxi/agent.json`——那是
-机器级文件，常常写着别的宿主，猫就会顶着别人的头像替你说话。
+原生插件的 `bin/lingxi` 会固定 Codex 身份；共享 CLI 也能识别 `CODEX_THREAD_ID`。
+显式带 `LINGXI_AGENT=codex` 对两种入口都成立，也能避免宿主未传环境时退回机器级身份。
 
 ```bash
 LINGXI_AGENT=codex LINGXI_TASK_ID=fix-login lingxi task running test focused "修复登录测试，并检查失败原因"
@@ -38,6 +38,9 @@ MCP server 的配置里已经写了 `LINGXI_AGENT=codex`，走 MCP 不用再带�
 - 你已经用 `lingxi task` 报过这一轮的结果，就不再重复念——CLI 会自动带上 `CODEX_THREAD_ID`，
   应用据此认出这是同一个会话。
 
+MCP 的 `lingxi_task` 已知真实线程 id 时传可选 `session`，不知道时省略，不要借用别的线程 id。
+无回复内容的回合结束只更新状态，不播固定结束句。
+
 所以你负责的是自动上报给不了的：任务开始和结束、**心情**、卡住、失败，以及一句写清任务名、结果和
 下一步的 `summary`。截的那一句只是你没报时的兜底，所以回复第一句也点名任务和结论，需要用户
 回答时把问题放在最后一行。
@@ -46,7 +49,7 @@ MCP server 的配置里已经写了 `LINGXI_AGENT=codex`，走 MCP 不用再带�
 
 | | CLI（`lingxi task …`） | MCP（`lingxi_task` 等 13 个工具） |
 |---|---|---|
-| 会话 | 自动带上 `CODEX_THREAD_ID`，和 notify 落在主界面同一行，不会被念两遍 | 不知道会话；notify 可能在你之后再念一句 |
+| 会话 | 自动带上 `CODEX_THREAD_ID`，和 notify 落在主界面同一行，不会被念两遍 | 可传真实 `session`；省略时只能按最近报告兜底匹配 |
 | 授权 | 跟普通 shell 命令一样 | 宿主按工具授权 |
 | 能力 | 超集（还有 `activity`、`events`、`unremind`、`raw`） | 13 个带 schema 的工具 |
 

@@ -8,6 +8,7 @@
 import './management.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { TaskStore } from '../../../packages/contracts/src/index.mjs';
 // The renderer owns the viewing-angle catalogue and skins.json owns the theme catalogue;
 // importing both here rather than re-listing them keeps this window from drifting out of sync
@@ -18,6 +19,7 @@ import actionCatalogue from './data/actions.json';
 import { BUILT_IN_EXPRESSIONS } from './rig/art.ts';
 import { ASSETS_README } from './rig/custom-assets.ts';
 import { agentChip, agentLook, agentMark, uiIcon, type AgentLook, type IconName } from './ui/icons.ts';
+import { resolveAgentHost } from './ui/agent-hosts.ts';
 import homeSceneUrl from '../../../assets/tray-menu/v1/window-desk-scene.png';
 import homeCatUrl from '../../../assets/tray-menu/v1/lingxi-resting-cat.png';
 // The MCP tool table is rendered from the server package's own catalogue rather than typed into
@@ -178,6 +180,7 @@ function setupNav() {
     });
     const title = document.getElementById('page-title');
     if (title) title.textContent = titles[pageName] ?? '灵犀';
+    window.dispatchEvent(new Event('lingxi-page-change'));
   }
   navButtons.forEach((btn) => {
     btn.addEventListener('click', () => showPage(btn.dataset.page ?? 'home'));
@@ -232,9 +235,24 @@ function setupAccordion() {
       header.closest('.accordion-item')?.classList.toggle('open');
     });
   });
-  // Claude is the one real adapter - open its panel by default so "一键接入" is visible
+  // Open Claude's panel by default so "一键接入" is visible
   // without an extra click, matching docs/18 §6.2's own mockup ("默认全部折叠、展开一个").
   document.querySelector('[data-agent-panel="claude"]')?.classList.add('open');
+  document.querySelectorAll<HTMLButtonElement>('[data-agent-guide]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const host = resolveAgentHost(button.dataset.agentGuide ?? '');
+      if (!host) return;
+      try {
+        await openUrl(`https://github.com/dushaobindoudou/lingxi/tree/main/integrations/hosts/${host}`);
+      } catch (error) {
+        const result = button.closest('.accordion-body')?.querySelector<HTMLElement>('[data-guide-result]');
+        if (result) {
+          result.textContent = `打开接入说明失败：${String(error)}`;
+          result.hidden = false;
+        }
+      }
+    });
+  });
 }
 
 // Two separate button groups show the same "current size" - the global top bar (every
@@ -694,6 +712,9 @@ interface AgentCall {
 }
 
 interface HomeActivity {
+  key: string;
+  attention: boolean;
+  revision: number;
   provider: string;
   agent?: string;
   taskId: string;
@@ -737,11 +758,7 @@ function relativeTime(at: number): string {
 }
 
 function agentTarget(id: string): string | undefined {
-  const normalized = id.toLowerCase();
-  if (normalized.includes('dsh') || normalized.includes('deepseek')) return 'dsh';
-  if (normalized.includes('claude')) return 'claude';
-  if (normalized.includes('codex')) return 'codex';
-  return undefined;
+  return resolveAgentHost(id);
 }
 
 function activityStateLabel(activity: HomeActivity): string {
@@ -757,24 +774,29 @@ function activityStateLabel(activity: HomeActivity): string {
   return state;
 }
 
-function renderHomeAgents(data: AgentActivity) {
+function renderHomeAgents(data: AgentActivity): { key: string; revision: number }[] {
   const container = document.getElementById('home-agent-summary');
-  if (!container) return;
+  if (!container) return [];
   container.replaceChildren();
-  const activities = [...(data.activity ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
-  const registered = data.agents.filter((agent) => agent.seen);
-  const dshBadge = document.getElementById('dsh-status-badge');
-  const dshActivity = (data.activity ?? []).find((activity) =>
-    agentTarget(activity.agent || activity.provider) === 'dsh',
+  // Put unread waits before recent completions, so opening the tray reminder actually shows it.
+  const recent = [...(data.activity ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
+  const activities = [...recent].sort((a, b) =>
+    Number(b.attention) - Number(a.attention) || b.updatedAt - a.updatedAt,
   );
-  const dshRegistered = registered.some((agent) => agentTarget(agent.id) === 'dsh');
-  if (dshBadge) {
-    dshBadge.textContent = dshActivity ? `最近报告 · ${relativeTime(dshActivity.updatedAt)}` : dshRegistered ? '已登记 · 暂无任务' : '尚无报告';
-    dshBadge.classList.toggle('badge-muted', !dshActivity);
+  const registered = data.agents.filter((agent) => agent.seen);
+  for (const host of ['dsh', 'workbuddy', 'doubao', 'cursor']) {
+    const badge = document.getElementById(`${host}-status-badge`);
+    const activity = recent.find((row) => agentTarget(row.agent || row.provider) === host);
+    const seen = registered.some((agent) => agentTarget(agent.id) === host);
+    if (badge) {
+      badge.textContent = activity ? `最近报告 · ${relativeTime(activity.updatedAt)}` : seen ? '已登记 · 暂无任务' : '尚无报告';
+      badge.classList.toggle('badge-muted', !activity);
+    }
   }
   const represented = new Set<string>();
-  const rows: { id: string; look: AgentLook; title: string; label?: string; detail: string }[] = [];
-  for (const activity of activities) {
+  const rows: { id: string; look: AgentLook; title: string; label?: string; detail: string; attention?: boolean }[] = [];
+  const shown = activities.slice(0, 6);
+  for (const activity of shown) {
     const id = activity.agent || activity.provider;
     represented.add(id);
     const registeredAgent = registered.find((agent) => agent.id === id || agent.id === activity.provider);
@@ -794,6 +816,7 @@ function renderHomeAgents(data: AgentActivity) {
       label: activity.label,
       title: activity.label ? `${look.name} · ${activity.label}` : look.name,
       detail: `${activityStateLabel(activity)} · ${relativeTime(activity.updatedAt)}`,
+      attention: activity.attention,
     });
   }
   for (const agent of registered) {
@@ -806,7 +829,7 @@ function renderHomeAgents(data: AgentActivity) {
     empty.className = 'home-empty';
     empty.textContent = '还没有 Agent 接入；接入后，最近任务会出现在这里。';
     container.append(empty);
-    return;
+    return [];
   }
   for (const row of rows.slice(0, 6)) {
     const button = document.createElement('button');
@@ -818,7 +841,7 @@ function renderHomeAgents(data: AgentActivity) {
     const copy = document.createElement('span');
     copy.className = 'home-agent-copy';
     const name = document.createElement('strong');
-    name.textContent = row.label ?? row.look.name;
+    name.textContent = `${row.attention ? '● ' : ''}${row.label ?? row.look.name}`;
     const detail = document.createElement('span');
     detail.className = 'home-agent-detail';
     detail.textContent = row.detail;
@@ -830,6 +853,7 @@ function renderHomeAgents(data: AgentActivity) {
     button.append(badge, copy, arrow);
     container.append(button);
   }
+  return shown.filter((row) => row.attention).map(({ key, revision }) => ({ key, revision }));
 }
 
 /**
@@ -964,7 +988,13 @@ async function initAgentPermissions(): Promise<void> {
       const data = await invoke<AgentActivity>('get_agent_activity');
       renderAgents(data);
       renderLog(data);
-      renderHomeAgents(data);
+      const receipts = renderHomeAgents(data);
+      // Only acknowledge the snapshot the user can see. A background window or another page
+      // must not silently consume reminders; the revision also protects arrivals during fetch.
+      if (receipts.length && document.hasFocus() && !document.hidden
+          && document.getElementById('page-home')?.classList.contains('active')) {
+        await invoke('acknowledge_activity', { receipts });
+      }
       if (fieldsLabel) fieldsLabel.textContent = data.settingsFields.join(' / ');
       if (logNote) {
         logNote.textContent =
@@ -987,6 +1017,11 @@ async function initAgentPermissions(): Promise<void> {
   // The log is the live half of this page: a user who just granted a tier is watching for the
   // next call to land.
   window.setInterval(() => void refresh(), 4000);
+  window.addEventListener('focus', () => void refresh());
+  window.addEventListener('lingxi-page-change', () => void refresh());
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void refresh();
+  });
 }
 
 interface Reminder {

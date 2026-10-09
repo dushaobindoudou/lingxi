@@ -98,7 +98,7 @@ const MODE_FREE: &str = "free";
 /// The AI coding agents this build knows how to name/select in the "Agent 接入" page.
 /// "none" means no agent is treated as actively connected. This is a *label* today - see
 /// the doc comment on `set_active_agent` for what it does and, honestly, doesn't yet do.
-const KNOWN_AGENTS: [&str; 4] = ["none", "dsh", "codex", "claude"];
+const KNOWN_AGENTS: [&str; 7] = ["none", "dsh", "codex", "claude", "workbuddy", "doubao", "cursor"];
 const DEFAULT_CAT_NAME: &str = "灵犀";
 
 /// Visual themes ("主题"). Ids must match apps/lingxi/src/data/skins.json - that file is the
@@ -327,6 +327,7 @@ struct TrayState {
     /// What `status_summary` currently says, so the menu is only touched when that changes.
     status_text: Mutex<String>,
     attention_summary: MenuItem<tauri::Wry>,
+    attention_count: Mutex<usize>,
     visible: AtomicBool,
     current_scale: Mutex<f64>,
     cat_name: Mutex<String>,
@@ -615,8 +616,8 @@ struct PerceptionState {
 #[tauri::command]
 fn report_perception(app: tauri::AppHandle, state: State<PerceptionState>, snapshot: serde_json::Value) {
     *state.latest_snapshot.lock().unwrap() = snapshot;
-    if let Some(tray) = app.try_state::<TrayState>() {
-        tray.refresh_status(&app);
+    if app.try_state::<TrayState>().is_some() {
+        update_tray_attention(&app);
     }
 }
 
@@ -947,7 +948,8 @@ fn normalize_generic_task_event(raw: &serde_json::Value, sequence: u64) -> Optio
         session: bounded_str(raw.get("session"), 128),
         label: bounded_str(raw.get("label"), SESSION_LABEL_MAX_CHARS),
         result: question.or_else(|| result_text.and_then(turn_line)),
-        echo: false,
+        echo: from_hook && (raw.get("echo").and_then(|v| v.as_bool()) == Some(true)
+            || raw.get("hook_event_name").and_then(|v| v.as_str()) == Some("Notification")),
         label_is_folder: false,
         from_hook,
         turn_end,
@@ -2091,6 +2093,9 @@ fn codex_uninstall_from(text: &str) -> Result<(String, Vec<&'static str>), Strin
 /// and what they have actually been doing.
 #[tauri::command]
 fn get_agent_activity(app: tauri::AppHandle) -> serde_json::Value {
+    // Opening the task list also expires old reminders when the companion's perception timer
+    // was paused (hidden window or screen asleep).
+    update_tray_attention(&app);
     let registry = app.state::<AgentRegistry>();
     let mut agents: Vec<serde_json::Value> = registry
         .agents
@@ -2129,11 +2134,15 @@ fn get_agent_activity(app: tauri::AppHandle) -> serde_json::Value {
         .by_provider
         .lock()
         .unwrap()
-        .values()
-        .map(|row| {
+        .iter()
+        .map(|(key, row)| {
             let identity = row.agent.as_ref().and_then(|id| registered.get(id))
                 .or_else(|| registered.get(&row.provider));
             let mut value = serde_json::to_value(row).unwrap_or(serde_json::Value::Null);
+            if let Some(object) = value.as_object_mut() {
+                object.insert("key".into(), serde_json::json!(key));
+                object.insert("attention".into(), serde_json::json!(activity_needs_attention(row, now_millis())));
+            }
             if let (Some(object), Some(identity)) = (value.as_object_mut(), identity) {
                 object.insert("name".into(), serde_json::json!(identity.name));
                 object.insert("badge".into(), serde_json::json!(identity.badge));
@@ -5365,6 +5374,47 @@ fn agent_task_report_line(event: &TaskEvent) -> Option<&str> {
         .filter(|summary| !summary.is_empty() && *summary != placeholder && !is_lifecycle_summary(summary))
 }
 
+/// Hooks know lifecycle; only actual reply/tool content can report a result.
+fn hook_attention_line(event: &TaskEvent) -> Option<String> {
+    let host = host_display_name(&event.provider);
+    let next = match event.state.as_str() {
+        "needs_input" => "有问题等你回答，请查看会话",
+        "needs_approval" => "需要授权，请查看会话中的请求",
+        "failed" => "本轮出错了，请查看错误详情",
+        "blocked" => "卡住了，请查看原因",
+        _ => return None,
+    };
+    Some(format!("{host} {next}"))
+}
+
+fn task_report_line(event: &TaskEvent, line: Option<&str>) -> Option<String> {
+    let from_result = event.result.is_some()
+        && matches!(event.state.as_str(), "completed" | "failed" | "needs_approval" | "needs_input");
+    if let Some(summary) = agent_task_report_line(event) {
+        Some(summary.to_string())
+    } else if from_result {
+        event.result.clone()
+    } else if event.from_hook {
+        hook_attention_line(event)
+    } else if event.state == "completed" {
+        let summary = event.summary.trim();
+        // Older clients may omit origin; content-free chat completions still stay silent.
+        let lead = line.unwrap_or("已完成");
+        let default_summary = format!("{}: completed", event.kind);
+        if event.kind == "chat" && is_lifecycle_summary(summary) {
+            None
+        } else if summary.is_empty() || summary == default_summary.as_str() || is_lifecycle_summary(summary) {
+            Some(bubble_line(lead))
+        } else if event.kind == "chat" {
+            Some(bubble_line(summary))
+        } else {
+            Some(bubble_line(&format!("{lead} · {summary}")))
+        }
+    } else {
+        line.map(str::to_string)
+    }
+}
+
 fn is_lifecycle_summary(summary: &str) -> bool {
     let summary = summary.trim();
     summary.is_empty()
@@ -5457,17 +5507,12 @@ fn forget_session(app: &tauri::AppHandle, event: &TaskEvent) {
     update_tray_attention(app);
 }
 
-/// How long an echo of a wait counts as the same wait. Claude's permission echo comes 6s after
-/// the dialog and its idle echo 60s after the turn; past this, the user plainly did not see the
-/// first one, and saying it again is the point.
-const WAIT_ECHO_WINDOW_MS: u64 = 10 * 60 * 1000;
-
 /// True when `event` only restates the wait its session's row already shows - see TaskEvent::echo.
+/// A wait stays the same until real work resumes or a new question/dialog is reported. Timer
+/// echoes must not resurrect a read reminder or keep an abandoned session fresh forever.
 fn is_repeat_wait(previous: Option<&AgentActivity>, event: &TaskEvent) -> bool {
     event.echo
-        && previous.is_some_and(|row| {
-            row.state == event.state && event.observed_at.saturating_sub(row.updated_at) < WAIT_ECHO_WINDOW_MS
-        })
+        && previous.is_some_and(|row| row.state == event.state)
 }
 
 /// The activity-map row an event belongs to: its identity, split per session when the host has
@@ -5598,7 +5643,9 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent, report_on_row: boo
             summary,
             label,
             updated_at: event.observed_at,
+            revision: event.sequence,
             busy: state_is_busy(&event.state),
+            attention_seen: false,
             report,
         },
     );
@@ -5607,21 +5654,26 @@ fn record_activity(app: &tauri::AppHandle, event: &TaskEvent, report_on_row: boo
 }
 
 /// Keep the native tray's read-only task summary in sync with the same latest-per-agent snapshot
-/// used by the home surface. Only actionable waits and failures need an attention count.
+/// used by the home surface. The number means unread attention, not unresolved work.
 fn update_tray_attention(app: &tauri::AppHandle) {
     let attention_count = app.state::<ActivityState>().by_provider.lock().unwrap().values()
-        .filter(|activity| matches!(activity.state.as_str(), "failed" | "needs_input" | "needs_approval"))
+        .filter(|activity| activity_needs_attention(activity, now_millis()))
         .count();
     let tray = app.state::<TrayState>();
+    tray.refresh_status(app);
+    let mut previous_count = tray.attention_count.lock().unwrap();
+    if *previous_count == attention_count {
+        return;
+    }
+    *previous_count = attention_count;
     let text = if attention_count == 0 {
-        "目前没有需要留意的任务".to_string()
+        "目前没有未读提醒".to_string()
     } else {
-        format!("有 {attention_count} 个任务需要留意")
+        format!("有 {attention_count} 个未读提醒 · 点击查看")
     };
     let _ = tray.attention_summary.set_text(&text);
-    tray.refresh_status(app);
     // The count next to the menu-bar icon: visible without opening anything, and it stays until
-    // the wait is answered - the one place a missed bubble is still findable.
+    // read. The task's actual waiting/failed state stays visible in the home surface.
     if let Some(icon) = app.tray_by_id("main-tray") {
         let _ = icon.set_title(if attention_count == 0 { None } else { Some(attention_count.to_string()) });
     }
@@ -5688,9 +5740,13 @@ struct AgentActivity {
     /// Unix millis of the last event from this source.
     #[serde(rename = "updatedAt")]
     updated_at: u64,
+    /// Distinguishes events even if two arrivals share a millisecond timestamp.
+    revision: u64,
     /// True while the work is still going. Derived here so a caller does not have to know which
     /// states are terminal.
     busy: bool,
+    #[serde(skip)]
+    attention_seen: bool,
     /// The agent's own report of how its work landed, until the host's turn-end hook that
     /// follows it arrives - see take_pending_report. Never serialized.
     #[serde(skip)]
@@ -5709,6 +5765,37 @@ struct ActivityState {
     /// TOOL rather than per task, because "what is Codex doing" has one answer and the newest
     /// event is the one that answers it.
     by_provider: Mutex<HashMap<String, AgentActivity>>,
+}
+
+const ATTENTION_TTL_MS: u64 = 24 * 60 * 60 * 1000;
+
+fn activity_needs_attention(activity: &AgentActivity, now: u64) -> bool {
+    !activity.attention_seen
+        && now.saturating_sub(activity.updated_at) < ATTENTION_TTL_MS
+        && matches!(activity.state.as_str(), "failed" | "needs_input" | "needs_approval" | "blocked")
+}
+
+#[derive(Deserialize)]
+struct ActivityReceipt {
+    key: String,
+    revision: u64,
+}
+
+fn acknowledge_activity_rows(rows: &mut HashMap<String, AgentActivity>, receipts: &[ActivityReceipt]) {
+    for receipt in receipts {
+        if let Some(row) = rows.get_mut(&receipt.key) {
+            // A new event arriving after the UI fetched its snapshot has not been read yet.
+            if row.revision == receipt.revision {
+                row.attention_seen = true;
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn acknowledge_activity(app: tauri::AppHandle, receipts: Vec<ActivityReceipt>) {
+    acknowledge_activity_rows(&mut app.state::<ActivityState>().by_provider.lock().unwrap(), &receipts);
+    update_tray_attention(&app);
 }
 
 /// Which states mean work is still in flight.
@@ -5801,41 +5888,7 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
     // The host's own words about this turn beat every template: they are about the task.
     let from_result = event.result.is_some()
         && matches!(event.state.as_str(), "completed" | "failed" | "needs_approval" | "needs_input");
-    let report_line = if let Some(summary) = agent_task_report_line(event) {
-        Some(summary.to_string())
-    } else if from_result {
-        event.result.clone()
-    } else if event.state == "completed" {
-        let summary = event.summary.trim();
-        // A host notify says only that its chat turn ended. It is not evidence that the
-        // user's underlying task succeeded, so never announce this kind as “搞定啦”.
-        // A real one-line result — what this turn just did — is the line itself. A lifecycle
-        // placeholder stays “本轮回复结束”, and is skipped when that result is already on file.
-        // Name the host: "本轮回复结束" left the user guessing which of several agents had just
-        // stopped, and it is the one line they asked never to see again.
-        let chat_lead = format!("{} 回复结束，请查看结果", host_display_name(&event.provider));
-        let lead = if event.kind == "chat" { chat_lead.as_str() } else { line.unwrap_or("已完成") };
-        let default_summary = format!("{}: completed", event.kind);
-        if event.kind == "chat" && is_lifecycle_summary(summary) {
-            let activity = app.state::<ActivityState>();
-            let kept = activity.by_provider.lock().unwrap();
-            let already_said = kept.get(&activity_key(event)).is_some_and(|row| row.summary.trim() != summary.trim() && !is_lifecycle_summary(&row.summary));
-            drop(kept);
-            if already_said {
-                None
-            } else {
-                Some(bubble_line(lead))
-            }
-        } else if summary.is_empty() || summary == default_summary.as_str() || is_lifecycle_summary(summary) {
-            Some(bubble_line(lead))
-        } else if event.kind == "chat" {
-            Some(bubble_line(summary))
-        } else {
-            Some(bubble_line(&format!("{lead} · {summary}")))
-        }
-    } else {
-        line.map(str::to_string)
-    };
+    let report_line = task_report_line(event, line);
     let suppressed = report_line.is_none()
         && event.state == "completed"
         && event.kind == "chat"
@@ -6209,7 +6262,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     let initial_status = tray_status_text(DEFAULT_CAT_NAME, true, &[]);
     let status_summary = MenuItem::with_id(app, "status-summary", &initial_status, false, None::<&str>)?;
     // Clickable: "有 2 个任务需要留意" is only useful if it takes you to them.
-    let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有需要留意的任务", true, None::<&str>)?;
+    let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有未读提醒", true, None::<&str>)?;
     // Every toy and every effect, by name - the tray used to offer one fixed toy ("逗一逗") and
     // no effect at all, so switching either meant opening the main window.
     let toy_items = TRAY_TOYS
@@ -6270,7 +6323,8 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
                 "size-small" => state.apply_scale(app, SCALE_SMALL),
                 "size-medium" => state.apply_scale(app, SCALE_MEDIUM),
                 "size-large" => state.apply_scale(app, SCALE_LARGE),
-                "main-window" | "attention-summary" => open_or_focus_management_window(app),
+                "main-window" => open_or_focus_management_window(app),
+                "attention-summary" => open_management_at(app, Some("home".into())),
                 "clear-toy" => { let _ = app.emit("clear-toy", ()); }
                 id if id.starts_with("toy:") => {
                     let kind = &id["toy:".len()..];
@@ -6302,6 +6356,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         status_summary,
         status_text: Mutex::new(initial_status),
         attention_summary,
+        attention_count: Mutex::new(0),
         visible: AtomicBool::new(true),
         current_scale: Mutex::new(SCALE_LARGE),
         skin: Mutex::new(DEFAULT_SKIN.to_string()),
@@ -6652,6 +6707,7 @@ pub fn run() {
             uninstall_claude_hooks,
             claude_hooks_installed,
             get_agent_activity,
+            acknowledge_activity,
             set_agent_permission,
             codex_integration_status,
             install_codex_skill,
@@ -6930,6 +6986,71 @@ mod tests {
             "summary": "登录测试已修复",
         }), 1).unwrap();
         assert!(!report.from_hook && !report.turn_end);
+    }
+
+    #[test]
+    fn tray_attention_clears_when_a_wait_has_been_read() {
+        let mut row = AgentActivity {
+            provider: "workbuddy".into(), agent: Some("workbuddy".into()), task_id: "s".into(),
+            state: "needs_input".into(), kind: "chat".into(), mood: "focused".into(), progress: None,
+            summary: "请选择方案".into(), label: None, updated_at: 1_000, revision: 1,
+            busy: true, attention_seen: false, report: None,
+        };
+        assert!(activity_needs_attention(&row, 2_000));
+        row.attention_seen = true;
+        assert!(!activity_needs_attention(&row, 2_000), "reading the task must clear the tray number");
+        assert_eq!(row.state, "needs_input", "reading does not resolve the question");
+        row.attention_seen = false;
+        assert!(!activity_needs_attention(&row, 1_000 + ATTENTION_TTL_MS), "old waits leave the badge without deleting the task");
+        for state in ["failed", "needs_approval", "blocked"] {
+            row.state = state.into();
+            assert!(activity_needs_attention(&row, 2_000), "{state}");
+        }
+        for state in ["running", "completed", "cancelled"] {
+            row.state = state.into();
+            assert!(!activity_needs_attention(&row, 2_000), "{state}");
+        }
+    }
+
+    #[test]
+    fn reading_one_session_never_consumes_another_or_a_new_arrival() {
+        let row = |revision| AgentActivity {
+            provider: "workbuddy".into(), agent: Some("workbuddy".into()), task_id: "task".into(),
+            state: "needs_approval".into(), kind: "chat".into(), mood: "focused".into(), progress: None,
+            summary: "需要授权".into(), label: None, updated_at: 1_000, revision,
+            busy: true, attention_seen: false, report: None,
+        };
+        let mut rows = HashMap::from([("workbuddy#a".into(), row(1)), ("workbuddy#b".into(), row(2))]);
+        acknowledge_activity_rows(&mut rows, &[ActivityReceipt { key: "workbuddy#a".into(), revision: 1 }]);
+        assert!(!activity_needs_attention(&rows["workbuddy#a"], 2_000));
+        assert!(activity_needs_attention(&rows["workbuddy#b"], 2_000));
+        rows.insert("workbuddy#a".into(), row(3)); // new request, same task and millisecond
+        acknowledge_activity_rows(&mut rows, &[ActivityReceipt { key: "workbuddy#a".into(), revision: 1 }]);
+        assert!(activity_needs_attention(&rows["workbuddy#a"], 2_000), "an old UI snapshot cannot read a new request");
+        acknowledge_activity_rows(&mut rows, &[ActivityReceipt { key: "workbuddy#a".into(), revision: 3 }]);
+        assert!(!activity_needs_attention(&rows["workbuddy#a"], 2_000));
+        assert_eq!(rows["workbuddy#a"].state, "needs_approval");
+    }
+
+    #[test]
+    fn lifecycle_hooks_speak_only_useful_content_or_actionable_fallbacks() {
+        for host in ["codex", "claude", "workbuddy", "cursor", "doubao", "dsh"] {
+            let event = |state: &str, result: Option<&str>| normalize_generic_task_event(&serde_json::json!({
+                "provider": host, "agent": host, "kind": "chat", "state": state,
+                "taskId": "s", "session": "s", "origin": "hook", "summary": "本轮回复结束", "result": result,
+            }), 1).unwrap();
+            assert_eq!(task_report_line(&event("completed", None), Some("搞定啦～")), None, "{host}");
+            assert_eq!(task_report_line(&event("completed", Some("登录测试已修复。")), None).as_deref(), Some("登录测试已修复"));
+            assert_eq!(task_report_line(&event("completed", Some("你希望使用方案 A 还是 B？")), None).as_deref(), Some("你希望使用方案 A 还是 B？"));
+            for state in ["failed", "needs_input", "needs_approval", "blocked"] {
+                let line = task_report_line(&event(state, None), Some("在等你哦")).unwrap();
+                assert!(line.starts_with(host_display_name(host)) && line.contains("请查看"), "{line}");
+            }
+            let echo = normalize_generic_task_event(&serde_json::json!({
+                "provider": host, "state": "needs_input", "kind": "chat", "origin": "hook", "echo": true,
+            }), 1).unwrap();
+            assert!(echo.echo, "{host} adapter echoes must reach the shared dedup path");
+        }
     }
 
     #[test]
@@ -7266,7 +7387,7 @@ mod tests {
         let row = |state: &str, updated_at: u64| AgentActivity {
             provider: "claude".into(), agent: Some("claude".into()), task_id: "s".into(),
             state: state.into(), kind: "chat".into(), mood: "focused".into(), progress: None,
-            summary: String::new(), label: None, updated_at, busy: true, report: None,
+            summary: String::new(), label: None, updated_at, revision: 1, busy: true, attention_seen: false, report: None,
         };
         let mut echo = claude("Notification", serde_json::json!({
             "notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash",
@@ -7276,8 +7397,8 @@ mod tests {
         assert!(is_repeat_wait(Some(&row("needs_approval", 4_000)), &echo), "6s after the dialog");
         assert!(!is_repeat_wait(Some(&row("running", 4_000)), &echo), "the dialog was answered");
         assert!(!is_repeat_wait(None, &echo));
-        echo.observed_at = 4_000 + WAIT_ECHO_WINDOW_MS + 1;
-        assert!(!is_repeat_wait(Some(&row("needs_approval", 4_000)), &echo), "long unseen: say it again");
+        echo.observed_at = 4_000 + ATTENTION_TTL_MS + 1;
+        assert!(is_repeat_wait(Some(&row("needs_approval", 4_000)), &echo), "timer echoes never renew an old wait");
         // The first report of a wait is never an echo.
         let mut first = claude("PermissionRequest", serde_json::json!({ "tool_name": "Bash" }));
         first.observed_at = 10_000;

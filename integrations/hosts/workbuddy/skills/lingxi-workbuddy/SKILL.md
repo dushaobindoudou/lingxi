@@ -25,7 +25,9 @@ description: WorkBuddy-only rules for the 灵犀 desktop cat - the trust gate th
 所以你**不用**自己去报"开始了""结束了"，也不用替弹窗播报——那部分已经有人在做了。
 （弹窗这两条是后加的：以前只装生命周期，WorkBuddy 弹权限框时猫完全没反应。）
 
-hook 报不出的是**心情**。所以你真正要给的还是那两样：`mood`，和这一轮到底做成了什么。
+hook 报不出的是**心情**和完整任务结果。结束前用稳定 `taskId` 报终态和具体 `summary`；
+回复内容能取到时会兜底，取不到时只更新状态，不播固定结束句。
+同一等待的 Notification 是重复提示，不会反复念或重新挂起已读数字。
 
 ## 二、额度守卫也在自己跑
 
@@ -37,9 +39,11 @@ hook 报不出的是**心情**。所以你真正要给的还是那两样：`mood
 ## 三、用 CLI，不要用 MCP
 
 ```bash
-"$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi" state
+LINGXI_AGENT=workbuddy "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi" state
 ```
 
+- 每条 CLI 命令显式带 `LINGXI_AGENT=workbuddy`，避免机器级身份被其它宿主覆盖。
+- 已知真实会话 id 时用 `LINGXI_SESSION`（CLI）或 `session`（MCP）；不知道时省略，不要猜最新会话。
 - CLI **不在 PATH 上**，应用每次启动会把它写到上面那个固定位置。
 - MCP 在 WorkBuddy 上每个工具都要单独授权，一轮里改三次表情就过三次；shell 只有一次。
 - MCP 还多一道闸门（见下）。CLI 不需要通过它。

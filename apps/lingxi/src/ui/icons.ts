@@ -28,6 +28,8 @@ import codexMarkUrl from '../../../../integrations/hosts/codex/codex-mark.svg';
 import cursorMarkUrl from '../../../../integrations/hosts/cursor/cursor-mark.svg';
 import dshMarkUrl from '../../../../integrations/hosts/dsh/dsh-mark.svg';
 import workbuddyMarkUrl from '../../../../integrations/hosts/workbuddy/workbuddy-mark.svg';
+import doubaoMarkData from '../../../../integrations/hosts/doubao/doubao-logo?raw';
+import { resolveAgentHost } from './agent-hosts.ts';
 
 export type IconName =
   | 'house'
@@ -73,16 +75,13 @@ const AGENT_MARKS: AgentMark[] = [
   { key: 'dsh', label: 'DeepSeek Harness', chip: '#E7ECFF', url: dshMarkUrl },
   { key: 'cursor', label: 'Cursor', chip: '#2F2A33', url: cursorMarkUrl },
   { key: 'workbuddy', label: 'WorkBuddy', chip: '#0AC89F', url: workbuddyMarkUrl },
+  { key: 'doubao', label: '豆包', chip: '#E6EEFF', url: doubaoMarkData.trim() },
 ];
 
 /** The mark for a known host agent, or undefined - callers keep their letter-badge fallback. */
 export function agentMark(id: string): AgentMark | undefined {
-  const normalized = id.toLowerCase();
-  return AGENT_MARKS.find(
-    (mark) =>
-      normalized.includes(mark.key) ||
-      (mark.key === 'dsh' && (normalized.includes('deepseek') || normalized.includes('harness'))),
-  );
+  const host = resolveAgentHost(id);
+  return AGENT_MARKS.find((mark) => mark.key === host);
 }
 
 /** What an agent is shown as, anywhere - the bubble on the cat and every row in 主界面. */

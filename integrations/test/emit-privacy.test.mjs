@@ -37,11 +37,25 @@ test('a Cursor prompt is reported as "a turn started", never as what was typed',
   assert.equal(bodies.length, 1, 'the event should still be delivered');
   assert.ok(!bodies[0].includes('hunter2'), `prompt text leaked: ${bodies[0]}`);
   assert.match(bodies[0], /新一轮对话开始/);
+  assert.equal(JSON.parse(bodies[0]).session, 's', 'parallel Cursor conversations must keep separate activity rows');
 });
 
 test('neither does Claude\'s', async () => {
   const bodies = await emit('claude', { hook_event_name: 'UserPromptSubmit', session_id: 's', prompt: SECRET });
   for (const body of bodies) assert.ok(!body.includes('hunter2'), `prompt text leaked: ${body}`);
+});
+
+test('hook notification preserves echo semantics and the actual tool request', async () => {
+  const bodies = await emit('claude', {
+    hook_event_name: 'Notification', session_id: 's', notification_type: 'permission_prompt',
+    message: 'CodeBuddy needs your permission to use Bash',
+  });
+  const event = JSON.parse(bodies[0]);
+  assert.equal(event.origin, 'hook');
+  assert.equal(event.echo, true);
+  assert.equal(event.session, 's');
+  assert.equal(event.state, 'needs_approval');
+  assert.equal(event.result, '想用 Bash，等你批一下');
 });
 
 test('Codex turn end carries the result without displaying an id or directory', async () => {

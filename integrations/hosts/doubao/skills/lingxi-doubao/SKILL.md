@@ -1,6 +1,6 @@
 ---
 name: lingxi-doubao
-description: 豆包 (Doubao)-only rules for the 灵犀 desktop cat - Doubao has no hooks, a turn watcher reports only that a turn started or ended, so the result is yours to report; the lingxi command on PATH always speaks as 豆包; MCP offers no tools here. Read alongside the lingxi skill whenever you drive the cat from 豆包. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
+description: 豆包 (Doubao)-only rules for the 灵犀 desktop cat - Doubao has no hooks, a turn watcher reports lifecycle and an optional local reply fallback, so a full result is yours to report; the lingxi command on PATH always speaks as 豆包; MCP offers no tools here. Read alongside the lingxi skill whenever you drive the cat from 豆包. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
 ---
 
 # 灵犀 · 只在豆包上成立的事
@@ -29,11 +29,11 @@ LINGXI_TASK_ID=weekly-report lingxi task completed write proud "周报已整理�
 |---|---|
 | 你收到用户的一条消息 | 这个会话开始了一轮（气泡上用用户这句话当会话名） |
 | 你用提问工具问用户 | 在等用户回答 |
-| 这一轮结束 | 豆包回复结束——**不知道你做成了什么** |
+| 这一轮结束 | 尝试从本机回复截一句结果；取不到时只更新状态 |
 
 所以**这一轮做成了什么只有你报了猫才知道**：任务开始报 `running`，结束报终态，点名任务、结果、
 还要不要用户继续；需要回答时把问题原样写进 `summary`。你报过，这一轮结束时监听就不再重复念；
-你没报，猫只能说一句「豆包回复结束，请查看结果」。失败、被挡住时报 `failed` / `blocked`，写清卡在哪。
+你没报时用能读到的回复兜底；取不到内容时保持安静。失败、被挡住时报 `failed` / `blocked`，写清卡在哪。
 
 ## 三、应用的安装和启动
 

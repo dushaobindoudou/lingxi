@@ -157,7 +157,9 @@ function fromClaude(raw) {
         state,
         kind: 'chat',
         taskId: session,
+        echo: true,
         summary: state === 'needs_approval' && tool ? `想用 ${tool}，等你批一下` : message,
+        result: state === 'needs_approval' && tool ? `想用 ${tool}，等你批一下` : undefined,
       };
     }
     case 'Stop':
@@ -280,20 +282,20 @@ function fromCursor(raw) {
   const session = raw.session_id ?? raw.conversation_id ?? 'cursor-session';
   switch (event) {
     case 'sessionStart':
-      return { state: 'queued', kind: 'chat', taskId: session, summary: '会话开始' };
+      return { state: 'queued', kind: 'chat', taskId: session, session, summary: '会话开始' };
     // Never the prompt itself: what the user typed is theirs, and "不采集任务正文" (docs/09) holds
     // for every host. The event says a turn started, which is all the cat needs.
     case 'beforeSubmitPrompt':
-      return { state: 'running', kind: 'chat', taskId: session, summary: '新一轮对话开始' };
+      return { state: 'running', kind: 'chat', taskId: session, session, summary: '新一轮对话开始' };
     case 'stop': {
       const status = raw.status ?? 'completed';
       if (status === 'error') {
-        return { state: 'failed', kind: 'chat', taskId: session, summary: '本轮因错误终止' };
+        return { state: 'failed', kind: 'chat', taskId: session, session, summary: '本轮因错误终止' };
       }
       if (status === 'aborted') {
-        return { state: 'cancelled', kind: 'chat', taskId: session, summary: '本轮已中止' };
+        return { state: 'cancelled', kind: 'chat', taskId: session, session, summary: '本轮已中止' };
       }
-      return { state: 'completed', kind: 'chat', taskId: session, summary: '本轮回复结束' };
+      return { state: 'completed', kind: 'chat', taskId: session, session, summary: '本轮回复结束' };
     }
     default:
       return null;
@@ -313,6 +315,7 @@ function clean(event, provider) {
     out.summary = event.summary.trim().slice(0, 240);
   }
   if (typeof event.taskId === 'string') out.taskId = event.taskId.slice(0, 128);
+  if (event.echo === true) out.echo = true;
   // Display only: which session this is, and its name - see TaskEvent::session/label in the app.
   if (typeof event.session === 'string' && event.session) out.session = event.session.slice(0, 128);
   if (typeof event.label === 'string' && event.label.trim()) out.label = event.label.trim().slice(0, SESSION_LABEL_MAX);
