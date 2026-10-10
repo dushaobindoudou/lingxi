@@ -629,3 +629,37 @@ v6_part_audit 的 lick.gap_mm 在爪球形状变化时可能取到爪球背面�
 
 **下一步 / 没做**：前肢按实测要「肘 127°、桡骨近竖直、爪在肩下」，前爪会后移 ~5 cm，牵动舔爪 / 坐姿 / 胸前毛的校准，未做；腿毛不如参考蓬、前腿白袜子可更高；
 Sleep 爪子外露、尾巴没绕到前面；SideLie 身体陷进毛里 7 mm（可把 V6_SG_DROP .11 -> .103）。
+
+---
+
+## Round R（Claude 主会话，2026-10-10）——爪子改成一整块 / 空间腿 IK / 嘴型 / 清理
+
+用户：「1. 从正面看爪子 N 轮效果更好…现在爪子和爪子上面的关节过渡非常不自然，肉垫的贴合也不好，N 轮的侧面非常不好，O 轮侧面也不好
+2. 嘴巴…现在是形状是规则的形状似乎不太符合直觉 3. 躺下的姿势差的很多…整个骨架的轮廓可能真的有问题 4. 爪子的肉垫没有贴合进去，脚趾有点独立
+5. 下次直接给我最新的结果」；要求查资料、参考别人的做法、清理没用的资源；之后转来 WorkBuddy 的 `round-q-wb/AUDIT-DEEP-QUANTIFIED.md`。
+**渲染**：`v6/round-r/`。**审阅页只放 Round Q vs Round R**（用户要求，见记忆 report-latest-vs-previous）。
+**参考了**：Blender 自带 Rigify 猫元骨架（`addons_core/rigify/metarigs/Animals/cat.py`：前臂下到离地 ~10% 肩高，爪 = 腿柱下前方一小段、
+趾成弧）；建模社区对有机爪子的共识（一整块连续拓扑，不要布尔拼件）；猫爪解剖（掌垫三瓣心形、四个指垫成弧、肉垫是无毛的皮）。
+
+| 项 | Round Q | Round R | 说明 / 旋钮 |
+|---|---|---|---|
+| 爪子几何 | 腿椭球 + 爪球椭球 + 4 个独立趾头物体（各自长毛）+ 贴上去的肉垫椭球 | 小腿 + 爪 + 4 趾 = 一个元球（metaball，部件之间平滑圆角），并入身体网格 | V6_PAW_META（0 = 旧）、MPAW / MTOE_*（round-r-test/pawmeta.py 原型 m1-m3 / n1-n3）；身体体素 7 -> 4.5 mm、平滑 5 -> 3（V6_BODY_VOXEL / _SMOOTH），否则趾褶被抹平 |
+| 腕部 | 腿椭球收细 + 爪球鼓出 = 一圈细腰和环棱 | 胶囊腿柱平滑流进爪 | |
+| 爪宽 / 腿柱 | ~1.0 | 1.27 | 参考 ~1.1-1.15；趾瓣 23x31x32 mm、间距 35 mm、刚度 5.5 |
+| 肉垫 / 豆豆 | 椭球插进爪底，边缘一圈台阶 | skin_shell：下半个扁椭圆收缩包裹到爪底皮肤上，离皮 0.6 mm、中心鼓 1.3 mm、边缘贴平 | V6_PAD_LIFT / _DOME；豆豆在趾底后移 8 mm（正面看不到粉边） |
+| 趾头动 | 趾头物体绑趾骨 | 身体蒙皮里趾瓣部分按距离分给趾骨 | 舔爪不再外伸 / 卷趾（V6_LICK_TOE_OUT / _TOE = 0；外伸 14 mm 会把爪皮拉进口鼻） |
+| 趾缝 | — | 皮肤 + 毛根在趾缝处压暗（只在爪前下方） | paw_crease、V6_PAW_CREASE .25 |
+| 爪底毛 | 爪底 26 mm 以下全算 | 只取朝下的面、12 mm 以下 | 圆爪上 26 mm 带包到侧面，往外梳的毛画出一圈沿 |
+| 腿 IK | 平面 2 骨链，离面残差丢弃；躺姿靠 add_* 在 IK 之后硬甩 | leg_ik(abduct=True)：先绕身体前后轴外展到目标所在平面，再平面求解，外展角合成进上腿骨 | WorkBuddy 审计 #4；目前只用于 SideLie（SL_MODE 2 + PAW_META） |
+| SideLie 落爪 | add_HL -.2 / add_HR .7（Q 审计：HL -109.7 mm…） | 世界坐标放爪：下后爪 z >= 45 mm、上后爪叠在下后爪上 +65 mm（后移 20 mm）、前爪腕 88 mm；add_* 归零 | h_floor / h_stack_dy / h_stack_dz / f_floor |
+| 躺姿最低点（held，v6_lying_audit） | SideLie 身体 -7.1 | Idle -0.5、LieDown 2.2/2.2/24.7/24.7、SideLie 2.6/4.7/13.8/30.7、Sleep 13.5/132.6/12.6/129.6（后两只收起托下巴） | SideLie drop .11 -> .10；Sleep lift .2055 -> .2175 |
+| 嘴（闭） | 人中 22 mm、嘴宽 .69 鼻宽、等粗 ω | 人中 ~15 mm（V6_LIP .98 -> .995，嘴的整套跟着动；codex 贴花跟着嘴线平移）、嘴宽 = 鼻宽（V6_MOUTH_W 1.0）、ω 往嘴角渐细（V6_LIP_TAPER .7）、粉下唇宽保持 .011（V6_LOWER_LIP_W） | run.sh 的 env 也改了 |
+| 嘴（哈欠） | 宽方口（上沿直线） | 上唇抬起改成双拱（中间人中凹口），GAPE_W 1.45 -> 1.0、JAW_YAWN .62 -> .72 | V6_LIP_ARCH .35；round-r-test mo0-mo3 |
+| 舔爪 | 举到嘴边 | 低头舔举在胸前的爪（新爪更宽，举到嘴边撞口鼻；cost 3.5，touch 1.0 mm，主要是 wrist 项） | 下一轮可放宽 wrist 限制或让求解器偏好抬头 |
+| 其他 | 走 / 跑滑移、比例与 Q 相同；站立最低点 -0.5 mm（豆豆着地） | | v6_gait_audit 的比例尺改为没有趾头物体时用身体最低点 |
+
+**清理**：lingxi 主仓库 13G -> 5.8G（`apps/lingxi/src-tauri/target/debug` 7.1G，可重建；release 保留）；lingxi-v5fix 5.6G -> 2.8G
+（历轮 *-test 目录与 round-l/n/o/p 的 .blend，渲染图保留；各 test 目录的脚本收在 `round-r-test/tools/`）；lingxi-lookdev 只删 .blend1
+（该工作树有未提交改动，没动）。WorkBuddy 的 round-q-wb / round-r-wb 没动。
+**WorkBuddy 审计对照**：#1-#3（add_HL / add_HR / f_z）在 Q 的旧爪上量的，新爪改成世界坐标放爪后这三个旋钮不再决定落点；#4 已按「彻底改」做；
+#5 确认；#6 爪高宽比：新爪 33 mm 高的爪体 + 32 mm 高的趾瓣，宽 148 mm（含趾），待用 paw_only 口径复测。

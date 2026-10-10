@@ -153,7 +153,9 @@ def gait(clip):
 def proportions():
     """proportions.py, verbatim ruler: frame 1, real vertices of LX_Body / LX_Head / LX_Tail / LX_FrontToe0.L."""
     s.frame_set(1)
-    b, h, t, toe = (eval_points(n) for n in ('LX_Body', 'LX_Head', 'LX_Tail', 'LX_FrontToe0.L'))
+    b, h, t = (eval_points(n) for n in ('LX_Body', 'LX_Head', 'LX_Tail'))
+    # round R: the toes are lobes of the body mesh now (no LX_FrontToe0.L): the sole is the body's lowest point
+    toe = eval_points('LX_FrontToe0.L') if s.objects.get('LX_FrontToe0.L') else b
     sec = b[(b[:, 1] > -.19) & (b[:, 1] < -.12) & (np.abs(b[:, 0]) < .06)]
     shoulder, sole = sec[:, 2].max(), toe[:, 2].min()
     chest = sec[sec[:, 2] > .15][:, 2].min() if (sec[:, 2] > .15).any() else None
