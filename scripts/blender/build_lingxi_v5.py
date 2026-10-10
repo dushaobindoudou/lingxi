@@ -635,7 +635,7 @@ for s in [-1,1]:
  for nm,Rr in (('LidUpper.'+suf,LID_R+.0008),('LidLower.'+suf,LID_R)):
   bone(nm,eye_frame(s,0,LID_YC,0),eye_frame(s,0,LID_YC-.03,0),'Head')
  bone('Whisker.'+suf,(s*.048,-.43,.477),(s*.21,-.43,.48),'Head')
-tailpoints=[(0,.36,.33),(.02,.44,.29),(.03,.51,.24),(.04,.57,.20),(.05,.63,.17),(.05,.69,.16)]
+tailpoints=[(0,.36,.33),(.02,.44,.29),(.03,.51,.24),(.04,.57,.20),(.05,.63,.17),(.05,.69,.16)] if _v6('V6_TAIL_PLUME',1)<=0 else [(0,.36,.33),(.015,.44,.285),(.025,.51,.25),(.03,.57,.235),(.03,.625,.245),(.03,.67,.275)]   # round V: codex lingxi-ref-pose-stand-side.png - the tail falls from the rump, then lifts into a plume (was a straight droop to 160 mm)
 for i in range(5):bone('Tail'+str(i),tailpoints[i],tailpoints[i+1],'Pelvis' if i==0 else 'Tail'+str(i-1))
 bpy.ops.object.mode_set(mode='OBJECT');rig.show_in_front=True
 for p in rig.pose.bones:p.rotation_mode='XYZ'
@@ -1904,12 +1904,12 @@ def _sit_targets(f):
 def solve_sit():
  def cost(v):
   rots,locs=_sit_rots(v);f=_fk(rots,locs);c=0.0
-  hip=f('RearUpper.L').translation;c+=25*abs(hip.z-.170)
+  hip=f('RearUpper.L').translation;c+=25*abs(hip.z-_v6('V6_SIT_HIP',.135))   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
   for k,(tg,pa) in _sit_targets(f).items():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
-  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',41)))   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
+  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',52)))   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
   mz=(f('Head')@mouth_l).z;c+=60*max(0,.49-mz)   # round J: .49 on the REAL mouth = .50 on the old authored-space point; 60 (was 15): the real mouth sits closer to the neck, so at 15 the solve dropped it 53 mm and bent the head 42 deg onto the chest
   hd0=f('Head').translation;hd1=_tip(f,'Head');c+=3*abs(math.atan2(hd1.z-hd0.z,-(hd1.y-hd0.y))-math.radians(12))
@@ -2074,6 +2074,12 @@ if os.environ.get('V6_LICK_FROM'):   # scratch iterations on the face only: reus
  _lj=json.loads(Path(os.environ['V6_LICK_FROM']).read_text());LICK_UPPER={k:tuple(v) for k,v in _lj['upper'].items()};LICK_WRIST=tuple(_lj['wrist'])
 else:
  LICK_UPPER,LICK_WRIST=solve_lick(SIT)   # LICK_WRIST: the wrist's offset from the tongue tip (y, z) and the paw's turn
+ if _v6('V6_LICK_REACH',1)>0 and _v6('V6_LICK_HEAD_UP',1)>0:
+  # round V: with the arm reaching the mouth by itself (_lick_reach), the head no longer bows to a paw held low (codex
+  # lingxi-ref-lick-paw.png: sitting tall, head up and tipped a little toward the raised paw). The sit's neck / head,
+  # a slight dip, a turn and a tilt toward the right paw; the shoulder blade as solved.
+  LICK_UPPER={'Scap.R':LICK_UPPER['Scap.R'],'Neck':(SIT[0]['Neck'][0]+_v6('V6_LICK_NOD',.06),0,-_v6('V6_LICK_TURN',.10)*.4),
+              'Head':(SIT[0]['Head'][0],_v6('V6_LICK_TILT',.22),-_v6('V6_LICK_TURN',.10)*.6)}
 (OUT/'lick-solve.json').write_text(json.dumps({'upper':{k:list(v) for k,v in LICK_UPPER.items()},'wrist':list(LICK_WRIST)}))
 # Round J gaits (REPORT B1-B3). Walk: a cat's lateral-sequence walk, LF -> RH -> RF -> LH, each foot a
 # quarter cycle after the last. It used to run RH -> LF -> LH -> RF at duty .62: every swing overlapped
@@ -2101,7 +2107,7 @@ def _gait(g,u,k):
 # f_z up, the paw at f_pa deg - flat, toes down), the chest settles between them, the hocks fold under the
 # haunches, the back keeps its line (spine .06 -> ~4.5 deg), the head comes a little up off a lowered neck and
 # the tail comes round the flank on the floor. drop/f_z/h_z are set on the built rig: chest 0-1 mm, toes ~3 mm.
-LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-.45,
+LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-1.2,
  f_dy=.15,f_z=.073,f_pa=-145,h_dy=.05,h_z=.09,h_pa=-178).items()}
 # Round L SideLie (user: 「躺下去的效果不好」): on its flank for real. It was rolled 1.25 rad - belly half up, the four
 # legs pointing up at 45 deg (paws 264-277 mm), the torso 27 mm off the floor on a hind toe and the head upright.
@@ -2124,8 +2130,11 @@ SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2047,
 # and the head turns back up off its cheek a little (head_roll), chin on the paws.
 # Round Q (codex lingxi-ref-pose-sleep-app.png): the face turned back up toward the camera (head_roll -.6 -> -1.4, neck_side .2 -> -.25,
 # head_side .2 -> -.1) - curled with the face rolled down, the camera saw the crown and the back of the ears (round-q-test z1/z2).
-SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2175,spine=.8,spine_side=0,neck=.6,neck_side=-.25,head=.6,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=.25,tail_k=0,ear_x=0,ear_z=-.60,
- f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.18,h_dz=.12,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
+# Round V (codex lingxi-ref-pose-sleep-app.png: a ring - back round the outside, face in it looking out, tail across the front): the
+# back curls 1.4 (was .8) and the neck .9, the hind legs tuck in under the belly, the tail sweeps round the front, and the face is
+# set upright toward the camera in the world (_face_world) rather than left at the end of the curl (round-v-test q1-q8).
+SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2175,spine=1.4,spine_side=0,neck=.9,neck_side=-.25,head=.5,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=1.2,tail_k=-.15,ear_x=0,ear_z=-.60,
+ f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.14,h_dz=.20,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
 # Round Q (user: 「侧躺和躺着姿势不对」): SideLie is the reference's side LOUNGE (lingxi-ref-sidelie.png), not a cat rolled
 # over: the hips go down onto their side with both hind legs laid out beside them, the chest stays nearly upright on its
 # forearms as in LieDown, the back twisting between the two, and the head up with a little tilt. Rolled whole onto its flank
@@ -2137,7 +2146,7 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # side by side in front, the body turned .8 rad off the camera; with the hips rolled +, the LEFT hind leg is underneath -
 # it swings .2 clear of the floor - and the right one drapes .7 down onto it.
 SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-.8,hip_roll=1.5,chest_keep=.9,spine=.05,neck=.10,head=-.12,head_tilt=.22,head_turn=0,
- tail=.35,tail_side=.55,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
+ tail=.35,tail_side=.55,f_dy=.22,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
  h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088).items()}
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
  for _k in ('add_HL','add_HR','add_FL','add_FR'):SIDELOUNGE[_k]=_v6('V6_SG_'+_k.upper(),0.0)
@@ -2193,6 +2202,79 @@ def _paw_low(k,rots,locs):
  co,W=_paw_sample(k);f=_fk(rots,locs);z=np.zeros(len(co))
  for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
  return float(z.min())
+# Round V: the lick's paw by a SPATIAL arm solve with the paw's full orientation - ported from codex's Round S post-pass
+# (repair_lingxi_contacts.py), into the generator. The planar leg solve can turn the paw only in the leg's plane, so the pad
+# could never face a tongue on the midline: the solve bowed the head onto a paw held at the chest instead. Here the shoulder
+# blade comes forward and down, the forearm reaches the mouth, and the pad turns square to the tongue's tip, toes up; then the
+# pad's centre is walked onto a point 3 mm in front of the tip. All of it eases in / out with the clip's hold.
+def _set_world_rot(n,R,rots,locs):
+ b=ad.bones[n];f=_fk(rots,locs);base=(f(b.parent.name)@(b.parent.matrix_local.inverted()@b.matrix_local)) if b.parent else b.matrix_local
+ rots[n]=tuple((base.to_3x3().inverted()@R).to_euler('XYZ'))
+def _arm_solve(up,lo,pw,target,orient,rots,locs):
+ f=_fk(rots,locs);h=f(up).translation;d=Vector(target)-h;L1,L2=ad.bones[up].length,ad.bones[lo].length
+ dist=min(max(d.length,abs(L1-L2)+.0005),L1+L2-.0005);v=d.normalized();elbow=f(lo).translation-h;pole=elbow-v*elbow.dot(v)
+ if pole.length<1e-5:pole=v.cross(Vector((1,0,0)))
+ pole.normalize();a=(L1*L1-L2*L2+dist*dist)/(2*dist);b=math.sqrt(max(0,L1*L1-a*a));knee=h+v*a+pole*b;end=h+v*dist
+ for n,dr in ((up,knee-h),(lo,end-knee)):
+  f=_fk(rots,locs);base=f(n).to_3x3();_set_world_rot(n,(base@Vector((0,1,0))).rotation_difference(dr.normalized()).to_matrix()@base,rots,locs)
+ # the paw turns only part of the way from where the forearm carries it to the full pad-to-tongue orientation: all the way,
+ # the wrist's twist collapsed the paw skin into a stretched sock (linear skinning, round-v-test l3/l4)
+ f=_fk(rots,locs);nat=(f(lo)@(ad.bones[lo].matrix_local.inverted()@ad.bones[pw].matrix_local)).to_3x3()
+ _set_world_rot(pw,nat.to_quaternion().slerp(Matrix(orient).to_quaternion(),_v6('V6_LICK_PAW_TURN',.55)).to_matrix(),rots,locs)
+_PADL=None
+def _lick_reach(pb,hold):
+ global _PADL
+ if hold<1e-3:return   # not lifting yet: leave the planar solve's leg exactly as it is
+ up,lo,pw='FrontUpper.R','FrontLower.R','FrontPaw.R'
+ if _PADL is None:
+  P=np.array([v.co[:] for v in bpy.data.objects['LX_FrontPad.R'].data.vertices]).mean(0);_PADL=ad.bones[pw].matrix_local.inverted()@Vector(P)
+ names=[b.name for b in ad.bones];rots={n:tuple(pb[n].rotation_euler) for n in names};locs={n:tuple(pb[n].location) for n in names}
+ f=_fk(rots,locs);H=f('Head');tip=H@lick_l;tdir=(H.to_3x3()@lick_d).normalized();goal=tip+tdir*_v6('V6_LICK_PAD_GAP',.003)
+ orig=f(pw).translation.copy();origR=f(pw).to_3x3()
+ # the pad square to the tongue (sole normal = -tongue direction), the toes as near straight up as that allows
+ Rr=ad.bones[pw].matrix_local.to_3x3();n0=Vector((0,0,-1));a0=(Rr@Vector((0,1,0)));a0=(a0-n0*a0.dot(n0)).normalized()
+ n1=-tdir;a1=Vector((0,0,1))-n1*n1.z;a1=a1.normalized() if a1.length>1e-4 else Vector((0,1,0))
+ F0=Matrix((a0,n0,a0.cross(n0))).transposed();F1=Matrix((a1,n1,a1.cross(n1))).transposed();orient=F1@F0.transposed()@Rr
+ b=ad.bones['Scap.R'];base=(f(b.parent.name)@(b.parent.matrix_local.inverted()@b.matrix_local)).to_3x3()
+ locs['Scap.R']=tuple(base.inverted()@Vector((0,-_v6('V6_LICK_SCAP_FWD',.065)*hold,-_v6('V6_LICK_SCAP_DN',.020)*hold)))
+ target=orig.copy()
+ for _ in range(10):
+  _arm_solve(up,lo,pw,target,orient,rots,locs);pad=_fk(rots,locs)(pw)@_PADL;sh=goal-pad
+  if sh.length<.0008:break
+  target+=sh
+ _arm_solve(up,lo,pw,orig.lerp(target,hold),origR.to_quaternion().slerp(orient.to_quaternion(),hold).to_matrix(),rots,locs)
+ for n in (up,lo,pw):pb[n].rotation_euler=rots[n]
+ if hold>.99 and _v6('V6_LICK_DEBUG',0)>0:
+  f=_fk(rots,locs);print('LICK_REACH',json.dumps({'pad_goal_mm':round(1000*(f(pw)@_PADL-goal).length,1),'shoulder_goal_mm':round(1000*(f(up).translation-goal).length,1),
+   'arm_mm':round(1000*(ad.bones[up].length+ad.bones[lo].length),1),'goal':[round(1000*c) for c in goal],'pad':[round(1000*c) for c in f(pw)@_PADL]}))
+ pb['Scap.R'].location=locs['Scap.R']
+def _face_world(pb,yaw,pitch,roll,k=1.0):
+ """Round V: set the head's WORLD orientation - the standing face turned by yaw (about up), pitched (+ = nose down) and
+  tilted (about the view axis) - blended in by k over what the neck chain gave it. Curled up, the head's orientation was
+  the sum of every bend down the back and the face ended up turned away from the camera (round-v-test q4-q6)."""
+ names=[b.name for b in ad.bones];rots={n:tuple(pb[n].rotation_euler) for n in names};locs={n:tuple(pb[n].location) for n in names}
+ f=_fk(rots,locs);cur=f('Head').to_3x3()
+ want=Matrix.Rotation(yaw,3,'Z')@Matrix.Rotation(pitch,3,'X')@Matrix.Rotation(roll,3,'Y')@ad.bones['Head'].matrix_local.to_3x3()
+ _set_world_rot('Head',cur.to_quaternion().slerp(want.to_quaternion(),k).to_matrix(),rots,locs);pb['Head'].rotation_euler=rots['Head']
+_TAILS=None
+def _tail_off_floor(pb,margin=.004):
+ """Round V: the tail's real skin stays on / above the floor - lifted at its root (Tail1 up) when a pose (a straighter sit,
+  a lie-down) puts its tip through it. The sitting lick's tail went 31.5 mm under once the hips came down."""
+ global _TAILS
+ if _TAILS is None:
+  me=tail.data;gn={g.index:g.name for g in tail.vertex_groups};rows=[]
+  for vi in range(0,len(me.vertices),2):
+   v=me.vertices[vi];ws={gn[g.group]:g.weight for g in v.groups if g.weight>1e-4 and gn[g.group] in ad.bones}
+   if ws:rows.append((v.co[:],ws))
+  co=np.array([c for c,_ in rows]);names=sorted({n for _,ws in rows for n in ws})
+  W={n:np.array([ws.get(n,0) for _,ws in rows]) for n in names};tot=sum(W.values());_TAILS=(co,{n:w/np.maximum(tot,1e-9) for n,w in W.items()})
+ co,W=_TAILS;names=[b.name for b in ad.bones]
+ for _ in range(12):
+  rots={n:tuple(pb[n].rotation_euler) for n in names};f=_fk(rots,{'Root':tuple(pb['Root'].location)});z=np.zeros(len(co))
+  for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
+  low=float(z.min())
+  if low>=margin:break
+  pb['Tail1'].rotation_euler[0]+=min(.25,max(.03,(margin-low)*4))
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
  names=['Root','Pelvis','Loin','Spine','Neck','Head','Scap.L','Scap.R']
@@ -2449,6 +2531,9 @@ def pose(name,u):
  _back(pb,name)
  if name in ('LieDown','SideLie','Sleep') and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else 0.0)
+ if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
+ if name in ('Lick','LieDown','SideLie','Sleep') and _v6('V6_TAIL_FLOOR',1)>0:_tail_off_floor(pb)
+ if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint
  # or the lid overshoots through the eye.
  squint=max(squint,.14)     # the upper lid rests just over the iris rim: soft, not a stare (.16 with smaller eyes read as sad)
