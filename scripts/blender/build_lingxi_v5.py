@@ -1736,6 +1736,43 @@ for eb in ad.edit_bones:
  else:eb.head=body_xf(eb.head);eb.tail=body_xf(eb.tail)
 tailpoints=[body_xf(p) for p in tailpoints]
 bpy.ops.object.mode_set(mode='OBJECT')
+# --- Round S look, ported into the generator (2026-10-10) -----------------------------------------------------------------
+# codex's Round S (reviews/ROUND-S-CONTACT-REPAIR.md, scripts/blender/repair_lingxi_contacts.py) warped a BUILT .blend; the
+# user liked the result, so the same two local warps now run here, on the final (posed-space) skin, every shape key and every
+# strand root, so a build reproduces it. Paws: up to 8.5% narrower and 13% lower over the paw, its coat 35% shorter. Muzzle:
+# the whisker pads 3.5 mm forward / 1.5 mm out, the philtrum's crease 1.5 mm back, the lower jaw's middle 6 mm fuller, the
+# muzzle's coat 30% shorter. (Its re-posed clips are NOT ported - see HANDOFF Round U.)
+def _paw_warp(p):
+ q=p.copy();z=p[:,2]
+ for sx in (-1,1):
+  for pre in ('Front','Rear'):
+   cx,cy,_=body_xf((sx*MPAW[pre]['x'],MPAW[pre]['c'][0],0)) if PAW_META else ((sx*.108,-.188,0) if pre=='Front' else (sx*.12,.2265,0))
+   w=np.clip((.14-z)/.07,0,1)*np.exp(-((p[:,1]-cy)/.090)**6)*np.exp(-((p[:,0]-cx)/.105)**6)
+   q[:,0]-=_v6('V6_PAW_NARROW',.085)*w*(p[:,0]-cx);q[:,2]-=_v6('V6_PAW_FLATTEN',.13)*w*np.maximum(0,z-.001)
+ return q
+def _muzzle_warp(p):
+ q=p.copy();x,y,z=p.T;front=np.clip((-.375-y)/.035,0,1)
+ lobes=np.exp(-((np.abs(x)-.034)/.026)**2-((z-.471)/.021)**2)*front;crease=np.exp(-(x/.006)**2-((z-.459)/.012)**2)*front
+ q[:,1]-=.0035*lobes-.0015*crease;q[:,0]+=.0015*np.sign(x)*lobes
+ chin=np.exp(-(x/.055)**4-((z-.442)/.013)**2)*front;q[:,2]-=.006*chin
+ return q
+def _warp_mesh(ob,fn):
+ for data in ([k.data for k in ob.data.shape_keys.key_blocks] if ob.data.shape_keys else [ob.data.vertices]):
+  co=np.empty(len(data)*3,dtype='f');data.foreach_get('co',co);data.foreach_set('co',fn(co.reshape(-1,3).astype(float)).astype('f').ravel())
+ ob.data.update()
+if _v6('V6_ROUND_S_LOOK',1)>0:
+ for ob in list(scene.objects):
+  if ob.type!='MESH':continue
+  if ob.name=='LX_Body' or ob.name.startswith(('LX_FrontPad','LX_FrontBean','LX_RearPad','LX_RearBean','LX_FrontClaw','LX_RearClaw')):_warp_mesh(ob,_paw_warp)
+  elif ob.name=='LX_Head' or ob.name.startswith('LX_Lip'):_warp_mesh(ob,_muzzle_warp)
+  elif ob.name.startswith('LX_Fur_'):
+   P=int(ob.get('strand_points',NP));ishead=('Head' in ob.name or 'Lip' in ob.name or 'NoseVelvet' in ob.name);fn=_muzzle_warp if ishead else _paw_warp
+   for data in ([k.data for k in ob.data.shape_keys.key_blocks] if ob.data.shape_keys else [ob.data.vertices]):
+    co=np.empty(len(data)*3,dtype='f');data.foreach_get('co',co);co=co.reshape(-1,P,3).astype(float);root=co[:,0,:].copy();co+=(fn(root)-root)[:,None,:]
+    if ishead:w=np.exp(-((np.abs(root[:,0])-.034)/.028)**2-((root[:,2]-.471)/.024)**2)*np.clip((-.375-root[:,1])/.035,0,1);k_=.30
+    else:w=np.clip((.105-root[:,2])/.050,0,1)*(np.abs(root[:,0])>.04)*(np.abs(root[:,0])<.24);k_=.35
+    co=co[:,:1,:]+(co-co[:,:1,:])*(1-k_*w[:,None,None]);data.foreach_set('co',co.astype('f').ravel())
+   ob.data.update()
 # Named actions with synchronized shape key actions. One timeline demonstrates all clips.
 clips=[('Idle',72),('Walk',48),('Run',32),('Jump',48),('LieDown',48),('SideLie',48),('Sleep',72),('Curious',48),('Happy',48),('Yawn',60),('Lick',48),('Bite',48),('Knead',48),('Stretch',60),('PawPlay',48)]
 eyelids=[o for o in eyelids if o.data.shape_keys];eye_shapes=[o for o in eye_shapes if o.data.shape_keys];claws=[o for o in claws if o.data.shape_keys];breathers=[o for o in breathers if o.data.shape_keys]
@@ -1987,7 +2024,7 @@ def solve_lick(sit):
   # The wrist stays in a cat's range: folded 163 deg (an unbounded solve) the skinned paw ball stretched
   # into a flat white paddle in front of the face (round-j-test n6).
   terms=dict(touch=300*abs(touch_d-LICK_GAP),pen=400*pen,muzzle=200*mpen,off=200*off,over=60*over,wrist=6*max(0,wrist-LICK_WRIST_MAX),
-             below=15*max(0,palm.z-(mouth.z-.004)),sink=60*sink,reg=.04*(srx*srx+srz*srz)+.25*(dn*dn+dh*dh)+.15*yaw*yaw+.10*roll*roll)
+             below=15*max(0,palm.z-(mouth.z-.004)),sink=60*sink,reg=.04*(srx*srx+srz*srz)+_v6('V6_LICK_HEADUP',.25)*max(0,dn)**2+.25*min(0,dn)**2+.25*dh*dh+.15*yaw*yaw+.10*roll*roll)   # round U: HEADUP - bringing the head DOWN to the paw costs more than the paw coming up (round R bowed the head 16 deg onto a paw held at the chest)
   if _dbg:terms.update(touch_mm=1000*touch_d,pen_mm=1000*pen,muzzle_mm=1000*mpen,facing=-n_.dot((tip-Hm@Vector(lick_l-lick_d*.012)).normalized()))
   return terms if _dbg else sum(terms.values())
  c_,v=_search(cost,[-.3,.2,.1,.1,0,.1,0,-.04,0],[-1.2,-.9,-.3,-.3,-.25,-.25,-.12,-.12,-1.6],[.6,.9,.4,.5,.25,.25,.12,.12,1.6],8000,7)   # yaw .25: the head turns to the paw a little, the face stays visible
@@ -2116,6 +2153,46 @@ def _back(pb,name):
 LIE_T=_v6('V6_LIE_T',.40)
 def _settle(u,t0=0.0,t1=None):
  e=min(1,max(0,(u-t0)/((LIE_T if t1 is None else t1)-t0)));return e*e*(3-2*e)
+# Round U (codex Round S found it: R's SideLie sank 41 mm through the floor at frame 259, mid lie-down - the held frames were
+# calibrated, the transition was not): while a lying clip moves, the trunk's real skin is kept off the floor - a sample of the
+# body's trunk vertices, skinned with their own weights, and the whole body lifted by any shortfall before the legs solve.
+_TRUNK=None
+def _trunk_sample():
+ global _TRUNK
+ if _TRUNK is None:
+  me=body.data;gn={g.index:g.name for g in body.vertex_groups};trunk=('Root','Pelvis','Loin','Spine','Neck','Head')
+  idx=[];W={}
+  for vi in range(0,len(me.vertices),max(1,len(me.vertices)//6000)):
+   v=me.vertices[vi]
+   ws={gn[g.group]:g.weight for g in v.groups if g.weight>1e-4 and gn[g.group] in ad.bones}
+   if ws and sum(w for n,w in ws.items() if n in trunk)>.7*sum(ws.values()):idx.append((v.co[:],ws))
+  co=np.array([c for c,_ in idx]);names=sorted({n for _,ws in idx for n in ws})
+  W={n:np.array([ws.get(n,0) for _,ws in idx]) for n in names};tot=sum(W.values());W={n:w/np.maximum(tot,1e-9) for n,w in W.items()}
+  _TRUNK=(co,W)
+ return _TRUNK
+def _lift_off_floor(pb,margin=.002):
+ co,W=_trunk_sample();rots={n:tuple(pb[n].rotation_euler) for n in W};f=_fk(rots,{'Root':tuple(pb['Root'].location)})
+ z=np.zeros(len(co))
+ for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
+ low=float(z.min())
+ if low<margin:pb['Root'].location.y+=margin-low
+_PAWS={}
+def _paw_sample(k):
+ """The skin of one leg's paw (body vertices mostly on its Paw / Toe bones), with their weights - for keeping the real paw
+  surface, not its bone, above the floor (round U)."""
+ if k not in _PAWS:
+  me=body.data;gn={g.index:g.name for g in body.vertex_groups};pw=LEGS[k][3];suf=pw[-1];pre=pw[:-6]
+  own={pw}|{pre+f'Toe{i}.'+suf for i in range(4)};rows=[]
+  for vi in range(0,len(me.vertices),3):
+   v=me.vertices[vi];ws={gn[g.group]:g.weight for g in v.groups if g.weight>1e-4 and gn[g.group] in ad.bones}
+   if ws and sum(w for n,w in ws.items() if n in own)>.5*sum(ws.values()):rows.append((v.co[:],ws))
+  co=np.array([c for c,_ in rows]);names=sorted({n for _,ws in rows for n in ws})
+  W={n:np.array([ws.get(n,0) for _,ws in rows]) for n in names};tot=sum(W.values());_PAWS[k]=(co,{n:w/np.maximum(tot,1e-9) for n,w in W.items()})
+ return _PAWS[k]
+def _paw_low(k,rots,locs):
+ co,W=_paw_sample(k);f=_fk(rots,locs);z=np.zeros(len(co))
+ for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
+ return float(z.min())
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
  names=['Root','Pelvis','Loin','Spine','Neck','Head','Scap.L','Scap.R']
@@ -2192,7 +2269,14 @@ def place_legs(name,u,pb,hold=0.0):
     # re-derived here from the old mouth point, so the pad never met the tongue)
     tip=f('Head')@lick_l;wr=tip+Vector((0,LICK_WRIST[0],LICK_WRIST[1]));tg=tg.lerp(wr,hold)
     pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
-  lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=(name=='SideLie' and SL_MODE==2 and PAW_META))
+  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META);lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab)
+  if name in ('LieDown','SideLie','Sleep') and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:
+   # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
+   # through it at frame 259 while its angle blended from standing to lying)
+   for _ in range(3):
+    rr=dict(rots);rr.update(lr);lw=_paw_low(k,rr,locs)
+    if lw>=.0005:break
+    tg=tg+Vector((0,0,.0015-lw));lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab)
   for n,rv in lr.items():pb[n].rotation_euler=rv
   if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]+=((SIDELOUNGE if SL_MODE==2 else SIDELIE)['add_'+k]*_settle(u) if name=='SideLie' else SLEEP['add_'+k])   # round R: += (on top of the solve's own plane swing)   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
@@ -2239,7 +2323,8 @@ def pose(name,u):
   if name=='LieDown':
    L=LIEDOWN;pb['Root'].location.y=-L['drop']*f;pb['Spine'].rotation_euler[0]=L['spine']*f
    pb['Neck'].rotation_euler[0]=L['neck']*fh;pb['Head'].rotation_euler[0]=L['head']*fh
-   for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=L['tail']*ft;pb[tb].rotation_euler[2]=L['tail_side']*ft   # round along the flank on the floor, on the camera's side
+   for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=L['tail']*ft;pb[tb].rotation_euler[2]=L['tail_side']*ft
+   pb['Tail1'].rotation_euler[0]+=_v6('V6_LD_TAIL_LIFT',.6)*max(0,f-ft)   # round U: while the body is down ahead of its tail, the tail is carried up - lagging, it swept 12 mm through the floor (frames 217-225)   # round along the flank on the floor, on the camera's side
   if name=='SideLie' and SL_MODE==2:
    K=SIDELOUNGE
    pb['Root'].location.y=-K['drop']*f;pb['Root'].rotation_euler[1]=K['yaw']*f   # Root's own y is world up: a turn on the floor
@@ -2362,6 +2447,7 @@ def pose(name,u):
    for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=.18*bow   # pricked forward at the target
    pb['Tail1'].rotation_euler[0]=-.40;pb['Tail2'].rotation_euler[2]=.55*math.sin(phase*3)
  _back(pb,name)
+ if name in ('LieDown','SideLie','Sleep') and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else 0.0)
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint
  # or the lid overshoots through the eye.
