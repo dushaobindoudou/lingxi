@@ -839,3 +839,47 @@ codex 做了两轮后处理（都改的是已构建的 .blend，不是 build_lin
 - 肩外展、前臂旋前旋后（codex P1）未做。
 
 审阅页（目标 | Round X2，26 组）：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW（v15）。
+
+---
+
+## Round Y（Claude 主会话，2026-10-12）——骨架 v1 定稿实施（冻结）
+
+用户：「先一次性把骨骼足够后，我们再进行后续，否则一直补不完」→ 同意先盘点方块猫的动作和表情定需求，再一次实现、冻结；「面部我觉得很重要…我们会有很多表情动作」；确认清单后「继续按照这个干」。
+
+- 需求与规格：`reviews/RIG-REQUIREMENTS-v1-DRAFT.md`；页面 https://claude.ai/artifact/CpnEaXru5fvyKmrQW5J6QE（含 v1 规格）。依据：主仓 `apps/lingxi/src/data/actions.json`（49 个动作）、`rig/art.ts`（五层表情：眼 13 / 眉 5 / 嘴 6 / 耳 4 / 符号 7，内置 30 种，可叠加在任何动作上）、`fx/performances.ts`、`anim/interactions.ts`、`anim/gait.ts`（应用内实时步态）。
+- codex 批次 8：`reviews/FELINE-FACE-AND-DOF-FOR-CLAUDE.md`（CatFACS 动作单元 ↔ 五层表情；耳 / 瞳孔 / 胡须 / 舌的范围；实时脸部绑定与分层；新动作关节试值；three.js r186 的骨纹理与 morph 数组纹理机制——没有「最多 8 个」限制）；13 张参考图 `reference/lingxi-ref-face-{eyes-a,eyes-b,mouth,ears-brows}.png`、`lingxi-ref-act-{scratch-ear,wash-face,groom-side,loaf,belly-up,rear-up,hiss-arch,pant-sit,turn}.png`。
+
+### 实施（`V6_FACE_V1`，默认开）
+
+| 项 | 做法 |
+|---|---|
+| 耳 | Ear 骨从中间分出 EarTip；耳壳、耳内饰毛、耳毛按沿耳高度从根到尖渐变权重。控制：EarForward（绕 X，尖朝前）/ EarFlatten（绕 Y 向外压平）/ EarSwivel（绕耳轴，耳口外转）/ EarTipBend，四者在 `v6_face_apply.py` 里合成一次转动 |
+| 舌 | Tongue 分三节（Tongue / TongueMid / TongueTip），权重沿舌长渐变；新形态 `Curl`（前 45% 向上回卷到 ~75°，codex：舔和喝水是 J 形，不是深勺） |
+| 脸部控制骨（14） | BrowIn / BrowOut / MouthCorner / LipUp / NoseSide / Nostril 各左右 + LipLow（挂 Jaw）。权重 = 高斯场（`face_fields`：只在脸前面，眉避开眼睑缘，上唇只在嘴线以上、下唇只在以下，总和 ≤ .95），从 Head / Jaw / LipUpper 的份额里分出；脸上的毛按毛根自动跟随。**没用形态键**：头部毛条约 130 万点，18 个形态键要多占 ~300 MB |
+| 眼睑 | 新形态键（眼睑 + 眼睑毛，同一套 `lid_turn` 精确旋转）：上睑 `Wide`（-.25，超开）/ `Smile`（.80）；下睑 `Lift`（.45）/ `Smile`（1.25，推过汇合线藏到上睑后，闭眼线成为更高的拱——^ ^） |
+| 瞳孔 | 每只眼一份虹膜材质 `LX_IrisLayer.L/R`，节点 `LX_PupilW` / `LX_PupilH`（UV 半宽 / 半高，虹膜半径 .5）：竖缝 .05×.44、平常 .31×.34、放大 .37。**应用侧注意**：材质名从 `LX_IrisLayer` 变成了带 `.L/.R` |
+| 高光 | 角膜高光节点命名 `LX_Catch*`，`Sparkle` 控制按倍数放大 |
+| 前臂扭转 | `ForearmTwist.L/R`（前臂中点→腕，挂 FrontLower），前臂下半皮肤 30%→85% 渐变给它；`_forearm_twist` 每帧取爪子绕前臂轴的扭转（swing-twist）的一半给它。舔爪掌心转向 .55 → .85 |
+| 三维腿 | `leg_ik(..., paw_dir=)`：掌 / 跖骨按世界方向，随外展平面一起换算（外展时用竖直平面里的角度会把脚尖指向内下） |
+| 新动作 7 个 | Sit / Loaf / BellyUp / ScratchEar / WashFace / GroomSide / Turn（帧 777–1172，接在 PawPlay 后，原 15 个帧号不变）。坐姿类复用舔爪的坐解；香箱 = 趴下 + 前爪折到胸下（`_LOAF`）；翻肚 = 根骨滚 2.7 rad、胸反扭、四爪在躯干坐标里收起、脸用世界朝向、`_rest_on_floor`（双向贴地）+ `_head_off_floor`；挠耳 = 头向左下侧歪并上仰（**骨盆不翻**：骨盆是躯干根，翻它会把整只猫放倒）、左后脚**脚尖**到耳后（跗目标沿髋→耳退回一个跖 + 爪长、`paw_dir` 指向耳）；洗脸 = 舔爪的空间臂解 + 头部坐标里耳后→脸颊→嘴边两遍；转身 = 根骨偏航 90°、身体 C 弯、四爪按 FL→HR→FR→HL 依次抬起落到转后的位置 |
+| 防穿地 | 躯干采样加入大腿（RearUpper）皮肤；坐姿类与舔爪开躯干防穿地，坐姿类开爪防穿地 |
+| 接口导出 | 构建写 `face-controls.json`（语义控制 → 骨位移 / 骨转动 / 形态键 / 材质参数；五层每个状态的控制值；art.ts 的 30 种表情）；`scripts/lookdev-v6/v6_rig_export.py` 写 `rig-v1.json`（每根骨：父、静止头尾、长度、是否变形、分组；每个网格的顶点数、组数、形态键）；`v6_face_apply.py` 在 Blender 里套任意表情并出图，`v6_face_sheet.py` 拼表 |
+
+骨数 86（预算 ≤128）：躯干 6、颈头 4、耳 4、眼 6、脸部控制 17、舌 3、前腿 20、后腿 16、尾 10。
+
+### 量测（`v6/round-y/`，带毛）
+
+- 22 个动作最低点（mm）：Idle -0.4、Walk -1.1、Run 31.6（腾空帧）、LieDown -2.7、SideLie +6.1、Sleep +2.1、Curious -0.4、Happy -0.4、Yawn -0.7、Lick **-7.9**、Bite -0.4、Knead -0.7、Stretch -0.4、PawPlay -4.4（旧）、Sit -0.9、Loaf -2.7、BellyUp +3.9、ScratchEar -1.3、WashFace -1.3、GroomSide -1.3、Turn +4.1。SideLie / Sleep 比 X2 高 2–6 mm：躯干防穿地采样加了大腿皮肤。
+- 第一稿新动作穿地：BellyUp 头 -24.8（加 `_head_off_floor`）、GroomSide -37.1、ScratchEar -11.8、坐姿 -8.1（坐姿类开躯干 / 爪防穿地、采样加大腿）——都已修。
+- 走 / 跑打滑与 X2 相同。原有 15 个动作回归通过。
+- GLB（`export_lingxi_v5_glb.py`）：24.8 MB，1 个蒙皮 86 关节，22 个动作，身体 4 个形态键、眼睑 / 爪尖 / 舌各自的形态键。
+- 表情：`face-expr/sheet.jpg`（30 种）、`face-layers/sheet.jpg`（28 个单层状态），带毛渲染；审阅页 v16。
+
+### 冻结
+
+- 冻结接口：`reviews/rig-v1/rig-v1.json`（`v6_rig_export.py`）与 `reviews/rig-v1/face-controls.json`（构建写出）。
+- 规则：之后只调姿势和外观（幅度、关键帧、修正形态）；需要新骨 / 新控制时，先评估、改需求文档、出 v2，不随手加。
+- 后续（不需要新骨）：立起来够、哈气弓背炸毛、坐着喘气这三个方块猫动作；眉和嘴角 ω 幅度；舔爪臀底 -7.9 mm（右肩胛下滑，舔爪求解之后再抬会破坏舌—肉垫接触）；挠耳和侧身理毛的头部朝向。
+- **应用对接要点**：虹膜材质名变为 `LX_IrisLayer.L/.R`；表情按 `face-controls.json` 在动画混合之后叠加（身体片段里的脸部通道要么清零，要么按通道合成规则处理）；应用内实时步态要换成新的腿链（爪多了 Foot 节、背和颈各节拆成两段，转角对半分）。
+
+审阅页：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW（v16）；规格页：https://claude.ai/artifact/CpnEaXru5fvyKmrQW5J6QE（v3）。

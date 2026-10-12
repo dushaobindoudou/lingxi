@@ -285,6 +285,7 @@ PAW={'Front':((.108,-.215,.040-PAW_LOW/2),(.054*PAW_SC,.064*PAW_RYK*PAW_SC,.038-
 # (skin_shell). V6_PAW_META=0 builds the old paw.
 PAW_META=_v6('V6_PAW_META',1)>0
 FOOT=_v6('V6_FOOT',1)>0   # round X2: a knuckle (MCP / MTP) joint, the Foot bone
+FACE_V1=_v6('V6_FACE_V1',1)>0   # rig v1 (reviews/RIG-REQUIREMENTS-v1-DRAFT.md, codex FELINE-FACE-AND-DOF): ear tips, a 3-bone tongue, face control bones, lid / pupil controls
 MPAW={'Front':dict(x=.108,col=((-.165,.21),(-.196,.06)),col_r=.058,c=(-.220,.040),r=(.074,.070,.031),front=-.294,padc=-.196,padr=(.031,.025)),
       'Rear':dict(x=.12,col=((.272,.19),(.262,.062)),col_r=.055,c=(.241,.040),r=(.071,.066,.030),front=.171,padc=.258,padr=(.029,.024))}
 MTOE_R=(.023,.031,.032);MTOE_DX=.035;MTOE_Z=.035;MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
@@ -525,6 +526,13 @@ for v,u_,k in zip(tongue.data.vertices,tu.data,tk.data):
  t=min(1,max(0,(_TR-v.co.y)/(2*_TH)))
  u_.co=(v.co.x,v.co.y,v.co.z+TONGUE_UP*min(1,t/.40)**.7)
  k.co=(v.co.x*(1+_v6('V6_TONGUE_SPREAD',.05)*t),v.co.y-TONGUE_OUT*t,v.co.z-TONGUE_CURL*max(0,(t-.70)/.30)**2)   # round L: spreads a touch as it comes out (was x(1-.08t), narrowing: widened (x1.25) it scraped the lip's corners, where the skin only half follows the jaw
+if FACE_V1:
+ # rig v1 (codex: the lick and the lap are a J - the tip turned up and back, not a deep scoop): Curl bends the front 45% of the blade up
+ # about a line across it, more toward the tip (up to ~75 deg)
+ tc=tongue.shape_key_add(name='Curl')
+ for v,c_ in zip(tongue.data.vertices,tc.data):
+  t=min(1,max(0,(_TR-v.co.y)/(2*_TH)))
+  if t>.55:yc=_TR-.55*2*_TH;f=yc-v.co.y;th=1.3*((t-.55)/.45)**1.5;c_.co=(v.co.x,yc-f*math.cos(th),v.co.z+f*math.sin(th))
 # Canines: two up, two down, only seen when the mouth opens.
 teeth=[]
 for s in [-1,1]:
@@ -672,6 +680,32 @@ for _a,_b in SPLIT.items():
  _e=ad.edit_bones[_a];_m=(_e.head+_e.tail)/2;_n=ad.edit_bones.new(_b);_n.head=_m;_n.tail=_e.tail.copy();_n.roll=_e.roll
  for _c in [c for c in _e.children]:_c.parent=_n
  _e.tail=_m;_n.parent=_e
+# Rig v1, face (user: 「面部我觉得很重要…我们会有很多表情动作」; the block cat's five expression layers, codex CatFACS mapping):
+#  - each ear gets a tip bone (its upper half bends, codex EAD103/106 - a flattened or pinned-back ear is not a rigid card);
+#  - the tongue is three bones down its blade (root / mid / tip: curl, side, the lick's J);
+#  - small CONTROL bones carry the brows, the mouth corners, the upper lip's two sides, the lower lip, the nose's sides and the
+#    nostrils: each moves the skin within a soft radius (their weights, faceFields below), so the head's fur - bound by weight to
+#    its roots - goes with it and the app drives a face by bone positions. Shape keys on the head would have to be copied onto
+#    ~1.3 million strand points (~300 MB). Parented to the Head (the lower lip to the Jaw). They only translate.
+FACE_SPLIT={'Ear.L':[('EarTip.L',.5)],'Ear.R':[('EarTip.R',.5)],'Tongue':[('TongueMid',.207),('TongueTip',.397)]} if FACE_V1 else {}
+for _a,_parts in FACE_SPLIT.items():
+ _e=ad.edit_bones[_a];_h,_t=_e.head.copy(),_e.tail.copy();_prev=_e;_cuts=[f for _,f in _parts]+[1.0];_e.tail=_h+(_t-_h)*_cuts[0]
+ for (_nm,_f),_f2 in zip(_parts,_cuts[1:]):
+  _n=ad.edit_bones.new(_nm);_n.head=_h+(_t-_h)*_f;_n.tail=_h+(_t-_h)*_f2;_n.roll=_e.roll;_n.parent=_prev;_prev=_n
+FACE_BONES={}
+if FACE_V1:
+ _LZC=float(lip_z(MOUTH_W))
+ for _s,_sf in ((-1,'L'),(1,'R')):
+  FACE_BONES.update({'BrowIn.'+_sf:(_s*(EYE_X-.016),EYE_Z+.034,'Head'),'BrowOut.'+_sf:(_s*(EYE_X+.018),EYE_Z+.030,'Head'),
+   'MouthCorner.'+_sf:(_s*MOUTH_W,_LZC,'Head'),'LipUp.'+_sf:(_s*.013,LIP0+.006,'Head'),'NoseSide.'+_sf:(_s*.016,NC[2]+.007,'Head'),
+   'Nostril.'+_sf:(_s*.012,NC[2]-.003,'Head')})
+ FACE_BONES['LipLow']=(0,LIP0-.008,'Jaw')
+ for _nm,(_x,_z,_par) in FACE_BONES.items():bone(_nm,(_x,-.44,_z),(_x,-.44,_z+.010),_par)
+ # Rig v1, body: a forearm twist bone each side - the forearm's lower half on it, and it takes half of whatever the paw turns about
+ # the forearm's axis (_forearm_twist), so a paw turned palm-to-face no longer wrings the forearm's skin into a sock (codex [FORE]:
+ # the lick's paw could only turn 55%).
+ for _sf in 'LR':
+  _lo=ad.edit_bones['FrontLower.'+_sf];_n=ad.edit_bones.new('ForearmTwist.'+_sf);_n.head=_lo.head.lerp(_lo.tail,.5);_n.tail=_lo.tail.copy();_n.roll=_lo.roll;_n.parent=_lo
 bpy.ops.object.mode_set(mode='OBJECT');rig.show_in_front=True
 for p in rig.pose.bones:p.rotation_mode='XYZ'
 
@@ -680,7 +714,35 @@ def _bseg(name):
  b=ad.bones[name];return np.array(b.head_local[:]),np.array(b.tail_local[:])
 def _segd(p,a,b):
  ab=b-a;t=np.clip(((p-a)@ab)/(ab@ab),0,1);return np.linalg.norm(p-(a+t[:,None]*ab),axis=1)
+def face_fields(P,below=None,only=None):
+ """Rig v1: the face control bones' weights at points P (authored space) - a soft gaussian round each control, the brows kept
+  off the eye's rim (so a raised brow does not drag the lid over the eye), the upper lip's sides only above the lip line and the
+  lower lip only below it (`below`: 1 under the line), all of it only on the front of the face. Summed at most .95."""
+ if not FACE_V1:return {}
+ x,y,z=P[:,0],P[:,1],P[:,2]
+ if below is None:below=(z<lip_z(x)-.0005).astype(float)
+ G=lambda cx,cz,rx,rz:np.exp(-((x-cx)/rx)**2-((z-cz)/rz)**2);fr=lambda y0:np.clip((y0-y)/.03,0,1);out={}
+ for s_,sf in ((-1,'L'),(1,'R')):
+  eg=np.clip((np.hypot(x-s_*EYE_X,z-EYE_Z)-1.05*EYE_R)/(.25*EYE_R),0,1)
+  for nm in ('BrowIn.','BrowOut.'):bx,bz,_=FACE_BONES[nm+sf];out[nm+sf]=G(bx,bz,.014,.012)*fr(-.30)*eg
+  if only!='brow':
+   bx,bz,_=FACE_BONES['MouthCorner.'+sf];out['MouthCorner.'+sf]=G(bx,bz,.013,.009)*fr(-.37)
+   bx,bz,_=FACE_BONES['LipUp.'+sf];out['LipUp.'+sf]=G(bx,bz,.014,.009)*fr(-.37)*(1-below)
+   bx,bz,_=FACE_BONES['NoseSide.'+sf];out['NoseSide.'+sf]=G(bx,bz,.012,.010)*fr(-.40)
+   bx,bz,_=FACE_BONES['Nostril.'+sf];out['Nostril.'+sf]=G(bx,bz,.008,.006)*fr(-.40)
+ if only!='brow':bx,bz,_=FACE_BONES['LipLow'];out['LipLow']=G(bx,bz,.018,.009)*fr(-.37)*below
+ tot=sum(out.values());k=np.where(tot>.95,.95/np.maximum(tot,1e-9),1.0)
+ return {nm:v*k for nm,v in out.items() if v.max()>1e-4}
+def _with_face(w,P,below=None,only=None):
+ fw=face_fields(P,below,only)
+ if not fw:return w
+ tot=sum(fw.values());w={k:v*(1-tot) for k,v in w.items()};w.update(fw);return w
 def weights(points,region):
+ if FACE_V1 and not region.endswith('#') and (region in ('Head','Lip','Nose','JawSkin') or region.startswith('Lid:')):
+  # rig v1: the face control bones take their share of the skin (and of the coat rooted on it)
+  base=weights(points,'Jaw' if region=='JawSkin' else region+'#')
+  return _with_face(base,points,np.ones(len(points)) if region=='JawSkin' else None,'brow' if region.startswith('Lid:') else None)
+ region=region[:-1] if region.endswith('#') else region
  n=len(points);w={}
  def add(k,v):w[k]=np.asarray(v if np.ndim(v) else np.full(n,v),dtype=float)
  if region.startswith('Lid:'):
@@ -706,6 +768,15 @@ def weights(points,region):
   add('Head',1-j-l)
   if (j>0).any():add('Jaw',j)
   if (l>0).any():add('LipUpper',l)
+  return w
+ if region.startswith('Ear:'):
+  # rig v1: from the ear's root to its tip bone over its middle (codex EAD103 / 106: the ear bends as it flattens or lies back)
+  sf=region[4:];h=np.array(ad.bones['Ear.'+sf].head_local[:]);t=np.array(ad.bones['EarTip.'+sf].tail_local[:]);d=t-h
+  tt=np.clip(((points-h)@d)/(d@d),0,1);wt=np.clip((tt-.30)/.45,0,1);wt=wt*wt*(3-2*wt);add('EarTip.'+sf,wt);add('Ear.'+sf,1-wt);return w
+ if region=='TongueChain':
+  tb=['Tongue','TongueMid','TongueTip'];mid=np.array([(ad.bones[k].head_local.y+ad.bones[k].tail_local.y)/2 for k in tb])
+  H=np.array([np.interp(-points[:,1],-mid,np.eye(3)[i]) for i in range(3)])
+  for i,k in enumerate(tb):add(k,H[i])
   return w
  if region not in ['body','tail']:
   add(region,1);return w
@@ -776,6 +847,13 @@ def weights(points,region):
   sc=np.clip((s*x-.02)/.05,0,1)*np.exp(-(_segd(points,*_bseg('Scap.'+suf))/.050)**2)
   for k in list(w):w[k]*=(1-sc)
   add('Scap.'+suf,sc)
+ if FACE_V1:
+  # rig v1: the forearm's lower half (from 30% to 85% down it, smoothly) goes to its twist bone
+  for s in (-1,1):
+   suf='L' if s<0 else 'R';lw=w.get('FrontLower.'+suf)
+   if lw is None:continue
+   a_,b_=_bseg('FrontLower.'+suf);tt=np.clip(((points-a_)@(b_-a_))/((b_-a_)@(b_-a_)),0,1);ft=np.clip((tt-.30)/.55,0,1);ft=ft*ft*(3-2*ft)
+   w['ForearmTwist.'+suf]=lw*ft;w['FrontLower.'+suf]=lw*(1-ft)
  if FOOT:
   # round X2: the mitten in front of the knuckle (1 cm either side, along the foot) is the Foot's; the pastern behind it the Paw's
   for s in (-1,1):
@@ -827,13 +905,19 @@ bind(body,'body');bind(head,'Head')
 # the two lips apart; weight the head by which side of the mouth each vertex's faces are on.
 _hp=np.array([v.co[:] for v in head.data.vertices]);_hj=jaw_share(_hp[:,0],_hp[:,1],_hp[:,2],HEAD_BELOW);_hl=lip_share(_hp[:,0],_hp[:,1],_hp[:,2],1-HEAD_BELOW)
 _gh=head.vertex_groups['Head'];_gj=head.vertex_groups.get('Jaw') or head.vertex_groups.new(name='Jaw');_gl=head.vertex_groups.get('LipUpper') or head.vertex_groups.new(name='LipUpper')
+_hk=np.ones(len(_hp));_hf={}
+if FACE_V1:_hf=face_fields(_hp,HEAD_BELOW);_hk=1-(sum(_hf.values()) if _hf else 0)   # rig v1: the face bones' share, by which side of the mouth each vertex is
 for i,(j,l) in enumerate(zip(_hj,_hl)):
- _gh.add([i],1-float(j)-float(l),'REPLACE')
- if j>0:_gj.add([i],float(j),'REPLACE')
+ k=float(_hk[i]) if np.ndim(_hk) else 1.0
+ _gh.add([i],(1-float(j)-float(l))*k,'REPLACE')
+ if j>0:_gj.add([i],float(j)*k,'REPLACE')
  else:_gj.remove([i])
- if l>0:_gl.add([i],float(l),'REPLACE')
+ if l>0:_gl.add([i],float(l)*k,'REPLACE')
  else:_gl.remove([i])
-for o,r in [(jaw,'Jaw'),(cavity,'Cavity'),(floor,'Jaw'),(tongue,'Tongue'),(nose,'Nose')]+teeth+lips:bind(o,r)
+for _nm,_v in _hf.items():
+ _g=head.vertex_groups.get(_nm) or head.vertex_groups.new(name=_nm);_g.remove(list(range(len(_hp))));_q=np.round(_v*1000).astype(int)   # the bind's by-position values out first
+ for _qv in np.unique(_q[_q>0]):_g.add(np.nonzero(_q==_qv)[0].tolist(),float(_qv)/1000,'REPLACE')
+for o,r in [(jaw,'JawSkin' if FACE_V1 else 'Jaw'),(cavity,'Cavity'),(floor,'Jaw'),(tongue,'TongueChain' if FACE_V1 else 'Tongue'),(nose,'Nose')]+teeth+[(o,'JawSkin' if (FACE_V1 and r=='Jaw') else r) for o,r in lips]:bind(o,r)
 # Lip lines lie ON the skin (they floated as dark wings in front of the muzzle): move each lip
 # vertex to just in front of the nearest skin point, matched in the front (x,z) projection.
 _sk=np.array([v.co[:] for v in head.data.vertices]);_sk=_sk[_sk[:,1]<-.40]
@@ -883,14 +967,14 @@ for s in [-1,1]:
  mod=o.modifiers.new('Ear shell','SOLIDIFY');mod.thickness=.0065
  mod.offset=-1 if ny<0 else 1          # always grow toward the back of the head (+y)
  mod.material_offset=1;mod.material_offset_rim=1
- bind(o,'Ear.'+suf);ears.append(o)
+ _er=('Ear:' if FACE_V1 else 'Ear.')+suf;bind(o,_er);ears.append(o)
  # The groom needs the BACK surface to root on; the shell's back only exists after the
  # modifier, so a hidden copy sits exactly there and carries the ear's short tabby coat.
  back_mesh=me.copy();back=bpy.data.objects.new('LX_EarOuter.'+suf,back_mesh);scene.collection.objects.link(back)
  for v in back_mesh.vertices:v.co.y+=.0065
  # Blender 5 keeps vertex-group names on the mesh, so the copy arrives with the shell's
  # 'Ear.X' group already; binding again would add an orphan 'Ear.X.001'.
- back.vertex_groups.clear();back.hide_render=True;bind(back,'Ear.'+suf);ear_outers.append((back,'Ear.'+suf))
+ back.vertex_groups.clear();back.hide_render=True;bind(back,_er);ear_outers.append((back,_er))
  # Furnishings: white hairs rooted ON the inner ear surface in its lower half, flaring out
  # and up past the outer rim, the way a long-haired kitten's ear tufts spill out sideways.
  # Round C: 320 long white furnishings rooted up to 70% of the ear, reaching well past its rim -
@@ -909,7 +993,7 @@ for s in [-1,1]:
    p.co=(rx+s*fl*.75*f+side,ry-fl*.25*f+.4*side,rz+fl*(.45*f+.20*f*f),1);p.radius=1-.88*f
  furnish=bpy.data.objects.new('LX_EarFurnish.'+suf,cu);scene.collection.objects.link(furnish);cu.materials.append(cream)
  bpy.ops.object.select_all(action='DESELECT');furnish.select_set(True);bpy.context.view_layer.objects.active=furnish
- bpy.ops.object.convert(target='MESH');bind(furnish,'Ear.'+suf)
+ bpy.ops.object.convert(target='MESH');bind(furnish,_er)
 # Eyes: photo-derived iris mapped on front disk, shallow corneal cap, actual eyelid shape keys.
 eyelids=[];eye_shapes=[]
 def add_eye_blink(obj,center_z):
@@ -964,13 +1048,30 @@ def iris_material():
  limbal=nt.nodes.new('ShaderNodeMixRGB');limbal.inputs[2].default_value=(.10,.085,.04,1)   # a soft olive rim, not a black outline
  nt.links.new(ramp(.48,.50),limbal.inputs['Fac']);nt.links.new(src,limbal.inputs[1])
  pupil=nt.nodes.new('ShaderNodeMixRGB');pupil.inputs[1].default_value=(.003,.003,.004,1)
- nt.links.new(ramp(PUPIL-.010,PUPIL+.008),pupil.inputs['Fac']);nt.links.new(limbal.outputs['Color'],pupil.inputs[2])
+ if FACE_V1:
+  # rig v1 (codex AD68 / AD69, material not skin): the pupil an ellipse of half-width LX_PupilW and half-height LX_PupilH in the iris's
+  # UV (the iris radius is .5) - a slit .04 x .45, the resting .33 round, dilated .38. Keyed per eye (each eye has its own copy).
+  pv={}
+  for nm in ('LX_PupilW','LX_PupilH'):pv[nm]=nt.nodes.new('ShaderNodeValue');pv[nm].name=pv[nm].label=nm;pv[nm].outputs[0].default_value=PUPIL
+  sep=nt.nodes.new('ShaderNodeSeparateXYZ');nt.links.new(uvn.outputs['UV'],sep.inputs[0]);axes=[]
+  for comp,nm in (('X','LX_PupilW'),('Y','LX_PupilH')):
+   a=nt.nodes.new('ShaderNodeMath');a.operation='SUBTRACT';a.inputs[1].default_value=.5;nt.links.new(sep.outputs[comp],a.inputs[0])
+   b=nt.nodes.new('ShaderNodeMath');b.operation='DIVIDE';nt.links.new(a.outputs[0],b.inputs[0]);nt.links.new(pv[nm].outputs[0],b.inputs[1]);axes.append(b)
+  cmb=nt.nodes.new('ShaderNodeCombineXYZ');nt.links.new(axes[0].outputs[0],cmb.inputs[0]);nt.links.new(axes[1].outputs[0],cmb.inputs[1])
+  ln=nt.nodes.new('ShaderNodeVectorMath');ln.operation='LENGTH';nt.links.new(cmb.outputs[0],ln.inputs[0])
+  mr=nt.nodes.new('ShaderNodeMapRange');mr.inputs['From Min'].default_value=.97;mr.inputs['From Max'].default_value=1.025;nt.links.new(ln.outputs['Value'],mr.inputs['Value'])
+  nt.links.new(mr.outputs['Result'],pupil.inputs['Fac'])
+ else:nt.links.new(ramp(PUPIL-.010,PUPIL+.008),pupil.inputs['Fac'])
+ nt.links.new(limbal.outputs['Color'],pupil.inputs[2])
  nt.links.new(pupil.outputs['Color'],p.inputs['Base Color'])
  p.inputs['Roughness'].default_value=.45;p.inputs['Subsurface Weight'].default_value=0;p.inputs['Specular IOR Level'].default_value=.04   # was .15: its sheen laid the studio over the pupil as a grey veil
  # No bump under a cornea: it speckled the pupil, and the two eyes caught the light differently.
  for l in list(p.inputs['Normal'].links):nt.links.remove(l)
  return m
 irismat=iris_material()
+IRISMATS={}
+if FACE_V1:
+ for _sf in 'LR':IRISMATS[_sf]=irismat.copy();IRISMATS[_sf].name='LX_IrisLayer.'+_sf   # one per eye: each pupil keyed on its own
 # Cornea: a clear bulging dome that REFLECTS the studio lights with the cornea's Fresnel
 # (IOR 1.376) but does not refract. Those reflections are where believable catchlights come
 # from - the white stickers they replace read as cartoon. Real refraction was tried: the dome's
@@ -992,7 +1093,7 @@ _acc=co_mix.outputs[0];_uvc=cn.new('ShaderNodeUVMap')
 for _hu,_hv,_hr in ((.80,.63,.085),(.62,.51,.028)):
  _d=cn.new('ShaderNodeVectorMath');_d.operation='DISTANCE';cl.new(_uvc.outputs['UV'],_d.inputs[0]);_d.inputs[1].default_value=(_hu,_hv,0)
  _mr=cn.new('ShaderNodeMapRange');_mr.interpolation_type='SMOOTHERSTEP';_mr.inputs['From Min'].default_value=_hr;_mr.inputs['From Max'].default_value=_hr*.45;cl.new(_d.outputs['Value'],_mr.inputs['Value'])
- _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=_v6('V6_CATCH',3.5);cl.new(_mr.outputs['Result'],_ms.inputs[0])
+ _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=_v6('V6_CATCH',3.5);_ms.name='LX_Catch%d'%len([n for n in cn if n.name.startswith('LX_Catch')]);cl.new(_mr.outputs['Result'],_ms.inputs[0])
  _em=cn.new('ShaderNodeEmission');_em.inputs['Color'].default_value=(1,.99,.97,1);cl.new(_ms.outputs[0],_em.inputs['Strength'])
  _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_em.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
 cl.new(_acc,co_out.inputs['Surface'])
@@ -1015,6 +1116,10 @@ LID_RING={'U':(.93,.37),'L':(.97,.33)}     # inner-rim radius and band width, in
 # The dark margin (t<.2, see "lid colour") turns with the rim as one piece: spread by arc length
 # it would stretch with the band (x3.2) into a 7mm dark stripe across the closed eye.
 LID_MARGIN=.20*_v6('V6_LID_MARGIN',1.0)
+# Rig v1 lid keys, the same exact turn at other fractions: Wide opens the upper lid past rest (codex AU5, the startled / wide eye),
+# Lift raises the lower lid (soft / squinting), and Smile pairs an upper lid .80 shut with a lower lid pushed past the meeting
+# line (1.25): it tucks behind the upper, and the closed eye is the upper rim's higher arch - the ^ ^ eye.
+LID_V1={'U':(('Wide',-.25),('Smile',.80)),'L':(('Lift',.45),('Smile',1.25))}
 def lid_local(P,s):
  """World points (N,3) to the eye-local frame of eye_frame(): x across, y into the head, z up."""
  cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
@@ -1056,7 +1161,7 @@ for s in [-1,1]:
     v=loc[me.loops[li].vertex_index];uv.data[li].uv=(v[0]/r/2+.5,v[2]/r/2+.5)
   for i,v in enumerate(me.vertices):v.co=W(loc[i][0],loc[i][1]+back,loc[i][2])
   bind(o,'Eye.'+suf);add_eye_blink(o,cz);return o
- dome('LX_Eye.'+suf,r,.0045,.0040,irismat)          # iris: flush with the face
+ dome('LX_Eye.'+suf,r,.0045,.0040,IRISMATS.get(suf,irismat))          # iris: flush with the face
  dome('LX_Cornea.'+suf,r*1.01,.0065,.0040,corneamat) # cornea: apex 2.5mm proud
  for upper in [True,False]:
   vs=[];fs=[];blink=[];squint=[]
@@ -1083,7 +1188,7 @@ for s in [-1,1]:
   # The keys close the lid (see lid_turn above); the lid bones stay at rest. Squint is the same
   # turn at 55% - what the pose code used to give the bones for a full squint.
   o.shape_key_add(name='Basis');P=np.array([v.co[:] for v in me.vertices])
-  for kn,f in (('Blink',1.0),('Squint',.55)):
+  for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1['U' if upper else 'L'] if FACE_V1 else ()):
    o.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s,'U' if upper else 'L',f).astype('f').ravel())
   eyelids.append(o)
  # Tear duct at the inner corner: the small pink caruncle every cat has. Without it the
@@ -1734,7 +1839,7 @@ for lid in [o for o in eyelids if o.name.startswith('LX_Lid')]:
        color_at=(lambda r,s_=s_:lid_turn(r,s_,'L',1.0)) if ul=='L' else None)
  fo=furs[-1];P=np.empty(len(fo.data.vertices)*3,dtype='f');fo.data.vertices.foreach_get('co',P);P=P.reshape(-1,3).astype(float)
  fo.shape_key_add(name='Basis')
- for kn,f in (('Blink',1.0),('Squint',.55)):
+ for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1[ul] if FACE_V1 else ()):
   fo.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s_,ul,f,roots=np.repeat(P[::NP],NP,axis=0)).astype('f').ravel())
  eyelids.append(fo)
 # Round I: a denser coat on the legs, so the leg reads as a furry limb continuing the body's fluff
@@ -1861,7 +1966,7 @@ for o in scene.objects:
  elif o.type=='MESH' and o.name.startswith('LX_'):
   body_xf_obj(o)
 bpy.context.view_layer.objects.active=rig;bpy.ops.object.mode_set(mode='EDIT')
-HEAD_BONES=['Head','Jaw','Tongue','Nose','LipUpper','Ear.L','Ear.R','Eye.L','Eye.R','Whisker.L','Whisker.R','LidUpper.L','LidUpper.R','LidLower.L','LidLower.R']
+HEAD_BONES=['Head','Jaw','Tongue','Nose','LipUpper','Ear.L','Ear.R','Eye.L','Eye.R','Whisker.L','Whisker.R','LidUpper.L','LidUpper.R','LidLower.L','LidLower.R','EarTip.L','EarTip.R','TongueMid','TongueTip']+list(FACE_BONES)
 for eb in ad.edit_bones:
  if eb.name in HEAD_BONES:eb.head=head_xf(eb.head);eb.tail=head_xf(eb.tail)
  else:eb.head=body_xf(eb.head);eb.tail=body_xf(eb.tail)
@@ -1906,6 +2011,7 @@ if _v6('V6_ROUND_S_LOOK',1)>0:
    ob.data.update()
 # Named actions with synchronized shape key actions. One timeline demonstrates all clips.
 clips=[('Idle',72),('Walk',48),('Run',32),('Jump',48),('LieDown',48),('SideLie',48),('Sleep',72),('Curious',48),('Happy',48),('Yawn',60),('Lick',48),('Bite',48),('Knead',48),('Stretch',60),('PawPlay',48)]
+if FACE_V1:clips+=[('Sit',48),('Loaf',60),('BellyUp',60),('ScratchEar',60),('WashFace',60),('GroomSide',60),('Turn',48)]   # rig v1: the block cat's sit / loaf / belly-up / scratch-ear / wash-face / groom-side / turn
 eyelids=[o for o in eyelids if o.data.shape_keys];eye_shapes=[o for o in eye_shapes if o.data.shape_keys];claws=[o for o in claws if o.data.shape_keys];breathers=[o for o in breathers if o.data.shape_keys]
 tongues=[tongue];shapeobs=eyelids+eye_shapes+claws+breathers+tongues;offset=1;manifest=[]
 # --- Paw-lick solve -------------------------------------------------------------------------
@@ -1974,7 +2080,7 @@ for k,(par,up,lo,pw,bend) in LEGS.items():
  for n in chain_:                       # which way a +X local rotation turns the bone in the plane
   f=_fk({n:(.1,0,0)});v=_tip(f,n)-f(n).translation;sg[n]=1.0 if _wrap(_ang(v)-r[n])>0 else -1.0
  LREST[k]=dict(ang=r,sign=sg,L1=ad.bones[up].length,L2=ad.bones[lo].length,foot=Vector(ad.bones[pw].head_local),x=ad.bones[up].head_local.x)
-def leg_ik(rots,locs,key,target,paw_ang,abduct=False,foot_ang=None):
+def leg_ik(rots,locs,key,target,paw_ang,abduct=False,foot_ang=None,paw_dir=None):
  """Solve one leg to put its wrist/hock at `target` (world) with the paw at world angle
   `paw_ang` in its plane. Returns (rotations, off-plane distance, over-reach).
   abduct (round R, WorkBuddy AUDIT-DEEP-QUANTIFIED #4): the solve was planar - a target off the leg's plane was simply
@@ -1987,6 +2093,12 @@ def leg_ik(rots,locs,key,target,paw_ang,abduct=False,foot_ang=None):
  if abduct:
   r=t-h;r.x-=R['x']-h.x;phi=math.atan2(r.x,-r.z);c_,s_=math.cos(phi),math.sin(phi)
   t=h+Vector((R['x']-h.x+r.x*c_+r.z*s_,r.y,-r.x*s_+r.z*c_))   # rotated about +Y by phi: now in the leg's plane
+ if paw_dir is not None:
+  # rig v1: the paw (metacarpus / metatarsus) along a WORLD direction - carried into the leg's swung plane like the target, so it holds
+  # however far the leg is abducted (an angle in the vertical plane pointed the scratching toes in and down)
+  pd=D.inverted().to_3x3()@Vector(paw_dir)
+  if abduct:pd=Vector((pd.x*c_+pd.z*s_,pd.y,-pd.x*s_+pd.z*c_))
+  paw_ang=_ang(pd)+_ang(D.to_3x3()@Vector((0,1,0)))
  d=Vector((0,t.y-h.y,t.z-h.z));L1,L2=R['L1'],R['L2']
  over=max(0,d.length-(L1+L2)*.995);dist=min(max(d.length,abs(L1-L2)+1e-3),(L1+L2)*.995)
  A=math.acos(max(-1,min(1,(L1*L1+dist*dist-L2*L2)/(2*L1*dist))))
@@ -2382,7 +2494,7 @@ _TRUNK=None
 def _trunk_sample():
  global _TRUNK
  if _TRUNK is None:
-  me=body.data;gn={g.index:g.name for g in body.vertex_groups};trunk=('Root','Pelvis','Loin','Spine','Neck','Head','LoinB','Chest','NeckB')
+  me=body.data;gn={g.index:g.name for g in body.vertex_groups};trunk=('Root','Pelvis','Loin','Spine','Neck','Head','LoinB','Chest','NeckB')+(('RearUpper.L','RearUpper.R') if FACE_V1 else ())   # rig v1: the thigh's flesh rides the femur now - a sitting haunch went 8 mm under unseen
   idx=[];W={}
   for vi in range(0,len(me.vertices),max(1,len(me.vertices)//6000)):
    v=me.vertices[vi]
@@ -2423,7 +2535,7 @@ def _paw_low(k,rots,locs):
 def _set_world_rot(n,R,rots,locs):
  b=ad.bones[n];f=_fk(rots,locs);base=(f(b.parent.name)@(b.parent.matrix_local.inverted()@b.matrix_local)) if b.parent else b.matrix_local
  rots[n]=tuple((base.to_3x3().inverted()@R).to_euler('XYZ'))
-def _arm_solve(up,lo,pw,target,orient,rots,locs):
+def _arm_solve(up,lo,pw,target,orient,rots,locs,turn=None):
  f=_fk(rots,locs);h=f(up).translation;d=Vector(target)-h;L1,L2=ad.bones[up].length,ad.bones[lo].length
  dist=min(max(d.length,abs(L1-L2)+.0005),L1+L2-.0005);v=d.normalized();elbow=f(lo).translation-h;pole=elbow-v*elbow.dot(v)
  if pole.length<1e-5:pole=v.cross(Vector((1,0,0)))
@@ -2433,7 +2545,15 @@ def _arm_solve(up,lo,pw,target,orient,rots,locs):
  # the paw turns only part of the way from where the forearm carries it to the full pad-to-tongue orientation: all the way,
  # the wrist's twist collapsed the paw skin into a stretched sock (linear skinning, round-v-test l3/l4)
  f=_fk(rots,locs);nat=(f(lo)@(ad.bones[lo].matrix_local.inverted()@ad.bones[pw].matrix_local)).to_3x3()
- _set_world_rot(pw,nat.to_quaternion().slerp(Matrix(orient).to_quaternion(),_v6('V6_LICK_PAW_TURN',.55)).to_matrix(),rots,locs)
+ _set_world_rot(pw,nat.to_quaternion().slerp(Matrix(orient).to_quaternion(),_v6('V6_LICK_PAW_TURN',.85 if FACE_V1 else .55) if turn is None else turn).to_matrix(),rots,locs)
+def _forearm_twist(pb):
+ """Rig v1: each forearm twist bone takes half the paw's turn about the forearm's axis (swing-twist of the paw's local rotation)."""
+ if not FACE_V1:return
+ for sf in 'LR':
+  pw=pb['FrontPaw.'+sf];q=pw.rotation_euler.to_quaternion()
+  ax=(ad.bones['FrontPaw.'+sf].matrix_local.to_3x3().inverted()@ad.bones['FrontLower.'+sf].matrix_local.to_3x3()@Vector((0,1,0))).normalized()
+  d=Vector((q.x,q.y,q.z)).dot(ax);tw=2*math.atan2(d,q.w);tw=_wrap(tw)
+  pb['ForearmTwist.'+sf].rotation_euler=(0,.5*tw,0)
 _PADL=None
 def _lick_reach(pb,hold):
  global _PADL
@@ -2550,6 +2670,60 @@ def _tail_off_floor(pb,margin=.004):
   low=float(z.min())
   if low>=margin:break
   pb['Tail1'].rotation_euler[0]+=min(.25,max(.03,(margin-low)*4))
+# ---- Rig v1 test clips (the block cat's actions the 3D cat lacked; codex lingxi-ref-act-*.png) ----
+SIT_LIKE=('Sit','ScratchEar','WashFace','GroomSide')
+def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
+# scratch-ear (round-v-test f2-f7): the head swings down and over to the LEFT side (+ here) and tilts up, the trunk stays upright - a
+# pelvis roll laid the whole cat on its side (the pelvis is the trunk's root), the head bent forward-down left the ear 480 mm from the hip
+SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=0,neck=.25,neck_side=1.2,head=-.35,head_roll=1.0,foot_dy=.02,foot_dz=-.02,foot_pa=.6).items()}
+GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65).items()}   # groom-side
+WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
+BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
+LF={k:_v6('V6_LF_'+k.upper(),d) for k,d in dict(dx=-.015,dy=.03,z=.050,pa=-20,fpa=.35).items()}   # loaf: forepaws folded under the chest
+TURN=_v6('V6_TURN',math.pi/2);TURN_STEPS={'FL':(.08,.34),'HR':(.24,.50),'FR':(.42,.68),'HL':(.58,.84)}
+_LOAF=False
+def _rest_on_floor(pb,margin=.004):
+ """The trunk set down so its lowest skin is just `margin` off the floor - raised or LOWERED (a rolled-over body floats otherwise)."""
+ co,W=_trunk_sample();rots={b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones};f=_fk(rots,{'Root':tuple(pb['Root'].location)})
+ z=np.zeros(len(co))
+ for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
+ pb['Root'].location.y+=margin-float(z.min())
+_HEADS2=None
+def _head_off_floor(pb,margin=.004):
+ """The whole cat lifted until the head's skin clears the floor (a face turned up from a body on its back went 25 mm under)."""
+ global _HEADS2
+ if _HEADS2 is None:hv=np.array([v.co[:] for v in head.data.vertices]);_HEADS2=hv[::max(1,len(hv)//2000)]
+ rots={b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones};locs={b.name:tuple(pb[b.name].location) for b in ad.bones}
+ M=np.array(_fk(rots,locs)('Head')@ad.bones['Head'].matrix_local.inverted());low=float((_HEADS2@M[2,:3]+M[2,3]).min())
+ if low<margin:pb['Root'].location.y+=margin-low
+_WASHP=None
+def _wash_reach(pb,hold,u):
+ """The right forepaw strokes the face: twice, from behind the ear down the cheek to the muzzle's side, the pad turned to the face
+  (the lick's spatial arm solve with the forearm twist taking its share of the turn)."""
+ global _WASHP,_PADL
+ if hold<1e-3:return
+ up,lo,pw='FrontUpper.R','FrontLower.R','FrontPaw.R'
+ if _PADL is None:
+  P=np.array([v.co[:] for v in bpy.data.objects['LX_FrontPad.R'].data.vertices]).mean(0);_PADL=ad.bones[pw].matrix_local.inverted()@Vector(P)
+ if _WASHP is None:_WASHP=[ad.bones['Head'].matrix_local.inverted()@Vector(head_xf(p)) for p in ((.115,-.24,.56),(.10,-.34,.50),(.06,-.42,.47))]
+ names=[b.name for b in ad.bones];rots={n:tuple(pb[n].rotation_euler) for n in names};locs={n:tuple(pb[n].location) for n in names}
+ f=_fk(rots,locs);H=f('Head');ph=(u*2.2)%1;ph=ph*ph*(3-2*ph)
+ a,b=(_WASHP[0],_WASHP[1]) if ph<.5 else (_WASHP[1],_WASHP[2]);t=ph*2 if ph<.5 else ph*2-1
+ goal=H@(a.lerp(b,t));cen=H@(ad.bones['Head'].matrix_local.inverted()@Vector(head_xf((0,-.33,.50))));tdir=(goal-cen).normalized()
+ orig=f(pw).translation.copy();origR=f(pw).to_3x3()
+ Rr=ad.bones[pw].matrix_local.to_3x3();n0=Vector((0,0,-1));a0=(Rr@Vector((0,1,0)));a0=(a0-n0*a0.dot(n0)).normalized()
+ n1=-tdir;a1=Vector((0,0,1))-n1*n1.z;a1=a1.normalized() if a1.length>1e-4 else Vector((0,1,0))
+ F0=Matrix((a0,n0,a0.cross(n0))).transposed();F1=Matrix((a1,n1,a1.cross(n1))).transposed();orient=F1@F0.transposed()@Rr
+ b_=ad.bones['Scap.R'];base=(f(b_.parent.name)@(b_.parent.matrix_local.inverted()@b_.matrix_local)).to_3x3()
+ locs['Scap.R']=tuple(base.inverted()@Vector((0,-.05*hold,-.015*hold)))
+ target=orig.copy()
+ for _ in range(10):
+  _arm_solve(up,lo,pw,target,orient,rots,locs,turn=WF['turn']);pad=_fk(rots,locs)(pw)@_PADL;sh=goal-pad
+  if sh.length<.0008:break
+  target+=sh
+ _arm_solve(up,lo,pw,orig.lerp(target,hold),origR.to_quaternion().slerp(orient.to_quaternion(),hold).to_matrix(),rots,locs,turn=WF['turn'])
+ for n in (up,lo,pw):pb[n].rotation_euler=rots[n]
+ pb['Scap.R'].location=locs['Scap.R']
 def _knee_out(k,lr,rots,locs,ang):
  """Round X2 (codex FELINE-SOFT-TISSUE-AND-FOOT §3: hip abduction + external rotation, the knee off the leg's vertical plane): the
   thigh turns `ang` about the hip-to-hock line, knee outward - the hock stays put (it is on the axis) and the paw keeps its world
@@ -2597,7 +2771,7 @@ def place_legs(name,u,pb,hold=0.0):
   L=LIEDOWN;lie[k]=(Vector((LREST[k]['x'],hy-L['f_dy'],L['f_z']+L['drop'])),math.radians(L['f_pa'])) if k[0]=='F' else (Vector((LREST[k]['x']+math.copysign(L['h_dx'],LREST[k]['x']),hy+L['h_dy'],L['h_z']+L['drop'])),math.radians(L['h_pa']))
  placed={}   # round R: the world targets already given out this frame (the upper hind paw lies on the under one)
  for k in LEGS:
-  foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot;fa=None
+  foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot;fa=None;pdir=None
   if name in ('Walk','Run'):
    g=WALK if name=='Walk' else RUN;dy,dz,flex=_gait(g,u,k)
    if k[0]=='H':dz*=1.25   # the hind paw clears its longer swing a little higher (round J: no stride multiplier - the planted paws must all move at the body's speed)
@@ -2669,6 +2843,24 @@ def place_legs(name,u,pb,hold=0.0):
    a=.5+.5*math.sin(u*math.tau*2+(0 if k=='FL' else math.pi));tg=foot+Vector((0,-.028*a,.050*a));pa+=.6*a   # was (-.012,.035): too small to read at desktop size
   elif name=='PawPlay' and k=='FL':
    a=max(0,math.sin(u*math.tau*1.5-.6))**1.5;tg=foot+Vector((0,-.13*a,.16*a));pa+=1.1*a   # a quick swat out of the bow, not a slow wave
+  elif name in SIT_LIKE:
+   st,sa=SIT[2][k]
+   if k[0]=='H':st=st+Vector((0,LICK_HIND[0],LICK_HIND[1]));sa=sa+LICK_HIND[2]
+   tg=foot.lerp(st,hold);pa=pa+(sa-pa)*hold
+   if name=='ScratchEar' and k=='HL':
+    # the left hind foot behind the left ear, scratching (6 strokes)
+    ph=math.sin(u*math.tau*6);et=f('Ear.L').translation+Vector((-.01,SE['foot_dy']+.012*ph,SE['foot_dz']+.008*ph))
+    hip=f(LEGS[k][1]).translation;Lf=ad.bones[LEGS[k][3]].length+(ad.bones[FOOT_OF[k]].length if FOOT else 0)
+    dirn=(et-hip).normalized();et=et-dirn*Lf   # the HOCK target: the toes, not the heel, at the ear
+    tg=tg.lerp(et,hold);pdir=(Vector((0,math.cos(pa),math.sin(pa))).lerp(dirn,hold)).normalized()   # and the metatarsus reaching on along the same line
+  elif name=='BellyUp':
+   par=LEGS[k][0];Dp=f(par)@ad.bones[par].matrix_local.inverted()
+   bn='Chest' if k[0]=='F' else 'Pelvis';D=f(bn)@ad.bones[bn].matrix_local.inverted()
+   off=Vector((0,BU['f_dy'],BU['f_dz'])) if k[0]=='F' else Vector((0,BU['h_dy'],BU['h_dz']))
+   tg=foot.lerp(D@(foot+off),hold);pa=_paw_rest(k)+(BU['f_pa'] if k[0]=='F' else BU['h_pa'])*hold+_ang(Dp.to_3x3()@Vector((0,1,0)))*hold
+  elif name=='Turn':
+   a,b=TURN_STEPS[k];e=min(1,max(0,(u-a)/(b-a)));e=e*e*(3-2*e);th=TURN*e
+   tg=Matrix.Rotation(th,3,'Z')@foot+Vector((0,0,.035*math.sin(math.pi*e)))
   elif name=='Lick':
    st,sa=SIT[2][k]
    if k[0]=='H':st=st+Vector((0,LICK_HIND[0],LICK_HIND[1]));sa=sa+LICK_HIND[2]
@@ -2678,14 +2870,20 @@ def place_legs(name,u,pb,hold=0.0):
     # re-derived here from the old mouth point, so the pad never met the tongue)
     tip=f('Head')@lick_l;wr=tip+Vector((0,LICK_WRIST[0],LICK_WRIST[1]));tg=tg.lerp(wr,hold)
     pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
-  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META) or (name=='LieDown' and k[0]=='H' and LIEDOWN['h_dx']!=0)
+  if _LOAF and name=='LieDown' and k[0]=='F':
+   # rig v1, the loaf: the forearms fold back under the chest, the paws turned under (codex lingxi-ref-act-loaf.png)
+   fo=min(1,max(0,(u-.30)/.35));fo=fo*fo*(3-2*fo);L=LIEDOWN;hy=ad.bones[LEGS[k][1]].head_local.y
+   lt=RD@Vector((LREST[k]['x']-math.copysign(LF['dx'],LREST[k]['x']),hy+LF['dy'],LF['z']+L['drop']))
+   tg=tg.lerp(lt,fo);pa=pa+(math.radians(LF['pa'])-pa)*fo
+   if FOOT:R_=LREST[k]['ang'];ft=FOOT_OF[k];fa=pa+(R_[ft]-R_[LEGS[k][3]])+LF['fpa']*fo
+  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META) or (name=='LieDown' and k[0]=='H' and LIEDOWN['h_dx']!=0) or name in ('Turn','BellyUp') or (name=='ScratchEar' and k=='HL')
   if k[0]=='F' and RIG_X:_scap_follow(k,tg,rots,locs);pb['Scap.'+k[1]].rotation_euler=rots['Scap.'+k[1]];pb['Scap.'+k[1]].location=locs['Scap.'+k[1]]
-  if fa is None and FOOT and (name=='LieDown' or (name=='Lick' and k!='FR')):
+  if fa is None and FOOT and (name=='LieDown' or (name=='Lick' and k!='FR') or (name in SIT_LIKE and not (name=='ScratchEar' and k=='HL') and not (name=='WashFace' and k=='FR'))):
    # round X2: the foot lies flat on the floor (its rest angle) whatever the metatarsus does - blended in with the pose
    R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);wf=_settle(u) if name=='LieDown' else hold
    fa=rig_+_wrap(R_[ft]-rig_)*wf
-  lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa)
-  if name in ('LieDown','SideLie','Sleep','Stretch') and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:
+  lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa,paw_dir=pdir)
+  if (name in ('LieDown','SideLie','Sleep','Stretch') or (FACE_V1 and name in SIT_LIKE)) and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:
    # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
    # through it at frame 259 while its angle blended from standing to lying)
    for _ in range(3):
@@ -2693,11 +2891,13 @@ def place_legs(name,u,pb,hold=0.0):
     if lw>=.0005:break
     tg=tg+Vector((0,0,.0015-lw));lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa)
   if RIG_X and k[0]=='H':
-   ko={'LieDown':LIEDOWN['knee_out']*_settle(u),'Lick':_v6('V6_SIT_KNEE_OUT',.5)*hold}.get(name,0.0)
+   ko={'LieDown':LIEDOWN['knee_out']*_settle(u),'Lick':_v6('V6_SIT_KNEE_OUT',.5)*hold}.get(name,_v6('V6_SIT_KNEE_OUT',.5)*hold if (name in SIT_LIKE and not (name=='ScratchEar' and k=='HL')) else 0.0)
    if ko>1e-3:lr=_knee_out(k,lr,rots,locs,ko)
   for n,rv in lr.items():pb[n].rotation_euler=rv
   if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]+=((SIDELOUNGE if SL_MODE==2 else SIDELIE)['add_'+k]*_settle(u) if name=='SideLie' else SLEEP['add_'+k])   # round R: += (on top of the solve's own plane swing)   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
+ global _LOAF
+ _LOAF=(name=='Loaf');name='LieDown' if _LOAF else name   # rig v1: the loaf is the lie-down with the forepaws folded under (place_legs)
  for p in rig.pose.bones:p.location=(0,0,0);p.rotation_euler=(0,0,0);p.scale=(1,1,1)
  for o in shapeobs:
   for k in o.data.shape_keys.key_blocks[1:]:k.value=0
@@ -2873,6 +3073,38 @@ def pose(name,u):
    # (Sign: in this rig rotation_euler[0] < 0 tips UP - Yawn's head-back is -.48 - so down is +.)
    pb['Neck'].rotation_euler[0]+=.24*fac;pb['Head'].rotation_euler[0]+=.12*fac;pb['Head'].rotation_euler[2]+=.14*fac
    pb['Spine'].rotation_euler[0]+=.10*fac;pb['Root'].location.y+=-.028*fac
+ if name in SIT_LIKE:
+  # rig v1 test clips on the lick's solved sit: 乖乖坐下 / 挠挠耳朵 / 抹脸洗脸 / 侧身理毛 (codex lingxi-ref-act-*.png)
+  hold=_ease(u)
+  for i,tb in enumerate(('Tail1','Tail2','Tail3','Tail4')):pb[tb].rotation_euler[0]=LICK_TAIL[i]*hold;pb[tb].rotation_euler[2]=LICK_TAIL_SIDE[i]*hold
+  for bn,rv in SIT[0].items():pb[bn].rotation_euler=tuple(c*hold for c in rv)
+  for bn,lc in SIT[1].items():pb[bn].location=tuple(c*hold for c in lc)
+  pb['Root'].location.y+=LICK_HIND[3]*hold
+  if name=='ScratchEar':
+   # the head comes down and over to the raised hind foot: the back bends to that side, the hip on it lifts
+   pb['Spine'].rotation_euler[2]+=SE['spine_side']*hold;pb['Pelvis'].rotation_euler[1]+=SE['hip_roll']*hold
+   pb['Neck'].rotation_euler[0]+=SE['neck']*hold;pb['Neck'].rotation_euler[2]+=SE['neck_side']*hold
+   pb['Head'].rotation_euler[1]+=SE['head_roll']*hold;pb['Head'].rotation_euler[0]+=SE['head']*hold;blink=.7*hold
+  if name=='GroomSide':
+   # the back bends and twists toward the right flank, the head turns back to it, the tongue laps
+   pb['Spine'].rotation_euler[2]+=GS['spine_side']*hold;pb['Spine'].rotation_euler[1]+=GS['twist']*hold
+   pb['Neck'].rotation_euler[2]+=GS['neck_side']*hold;pb['Neck'].rotation_euler[0]+=GS['neck']*hold
+   pb['Head'].rotation_euler[2]+=GS['head_yaw']*hold;pb['Head'].rotation_euler[0]+=GS['head']*hold
+   lk=hold*(.5+.5*math.sin(u*math.tau*4));kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=lk;kb['Out'].value=.4*lk;pb['Jaw'].rotation_euler[0]=.12*hold;blink=.5*hold
+  if name=='WashFace':pb['Head'].rotation_euler[1]+=WF['head_roll']*hold;pb['Head'].rotation_euler[0]+=WF['head']*hold;blink=hold
+ if name=='BellyUp':
+  # rig v1: rolled onto its back (codex lingxi-ref-act-belly-up.png) - the root turns ~155 deg about the long axis, the chest a little
+  # less (a twist down the back), the paws up and folded, the face turned to the camera; a small wiggle once over
+  r=min(1,u/.35);r=r*r*(3-2*r);wig=max(0,(u-.45)/.55)
+  pb['Root'].rotation_euler[2]=BU['roll']*r+BU['wiggle']*math.sin(u*math.tau*2)*wig*r
+  pb['Spine'].rotation_euler[1]=BU['twist']*r;pb['Spine'].rotation_euler[0]=BU['spine']*r;pb['Neck'].rotation_euler[0]=BU['neck']*r
+  for i,tb in enumerate(('Tail0','Tail1','Tail2')):pb[tb].rotation_euler[2]=.35*r
+ if name=='Turn':
+  # rig v1: a quarter turn on the spot (codex lingxi-ref-act-turn.png) - the body yaws through it bending into a C, the head leads,
+  # the paws step round in turn (place_legs) and stand where they land
+  e=u*u*(3-2*u);bend=math.sin(math.pi*u)
+  pb['Root'].rotation_euler[1]=TURN*e;pb['Spine'].rotation_euler[2]=.30*bend;pb['Neck'].rotation_euler[2]=.25*bend;pb['Head'].rotation_euler[2]=.20*bend
+  pb['Tail1'].rotation_euler[2]=-.35*bend
  if name in ['Knead','PawPlay']:
   for suf,ph in [('L',0),('R',math.pi)]:
    a=.5+.5*math.sin(phase*2+ph)
@@ -2896,8 +3128,11 @@ def pose(name,u):
    for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=.18*bow   # pricked forward at the target
    pb['Tail1'].rotation_euler[0]=-.40;pb['Tail2'].rotation_euler[2]=.55*math.sin(phase*3)
  _back(pb,name);_spread(pb)
- if name in ('LieDown','SideLie','Sleep') and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
- place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else 0.0)
+ if (name in ('LieDown','SideLie','Sleep') or (FACE_V1 and name in SIT_LIKE+('Lick',))) and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
+ if name=='BellyUp':_rest_on_floor(pb)
+ place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else _ease(u) if name in SIT_LIKE else min(1,u/.35)**2*(3-2*min(1,u/.35)) if name=='BellyUp' else 0.0)
+ if name=='BellyUp':_face_world(pb,0,BU['face_pitch'],BU['face_roll'],k=min(1,u/.35));_head_off_floor(pb)
+ if name=='WashFace':_wash_reach(pb,_ease(u),u)
  if name=='SideLie' and SL_MODE==2 and _v6('V6_SG_FACE',1)>0:_face_world(pb,_v6('V6_SG_FACE_YAW',0),_v6('V6_SG_FACE_PITCH',.05),_v6('V6_SG_FACE_ROLL',-.22),k=_settle(u,.06,LIE_T+.10))   # round W: the face to the camera, upright with a tilt, however far the chest leans over
  if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
  if RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep'):
@@ -2909,6 +3144,7 @@ def pose(name,u):
    _tail_wrap(pb,None,(_ch.x,_ch.y),k=1.0,lead=_v6('V6_SP_TAIL_LEAD',.5))
  if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb)   # a laid tail is already on its path, clear of the floor
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
+ _forearm_twist(pb)
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint
  # or the lid overshoots through the eye.
  squint=max(squint,.14)     # the upper lid rests just over the iris rim: soft, not a stare (.16 with smaller eyes read as sad)
@@ -2986,6 +3222,59 @@ for im in bpy.data.images:
  if im.source=='FILE':im.pack()
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'lingxi-short-fur-rig-v5.blend'),compress=True)
 (OUT/'animations.json').write_text(json.dumps(manifest,indent=2,ensure_ascii=False))
+if FACE_V1:
+ # Rig v1 face interface (reviews/RIG-REQUIREMENTS-v1-DRAFT.md): semantic controls -> what moves; the block cat's five layers
+ # (apps/lingxi/src/rig/art.ts) -> control values; its 30 built-in expressions. One table for the app and for Blender
+ # (scripts/lookdev-v6/v6_face_apply.py). Vectors are metres in the armature's space, per unit of the control; L/R are the rig's
+ # sides (.L at -x, the viewer's left). Controls add; ears compose fwd / flat / swivel / tip into one turn per bone.
+ _HS=[float(v) for v in HEAD_SCALE];_mm=lambda x,y,z:[round(x*.001*_HS[0],6),round(y*.001*_HS[1],6),round(z*.001*_HS[2],6)]
+ C={}
+ for s_,sf in ((-1,'L'),(1,'R')):
+  C['Blink.'+sf]=[['key','LidUpper.'+sf,'Blink'],['key','LidLower.'+sf,'Blink']]
+  C['Squint.'+sf]=[['key','LidUpper.'+sf,'Squint'],['key','LidLower.'+sf,'Squint']]
+  C['UpperWide.'+sf]=[['key','LidUpper.'+sf,'Wide']]
+  C['LowerLift.'+sf]=[['key','LidLower.'+sf,'Lift']]
+  C['SmileArc.'+sf]=[['key','LidUpper.'+sf,'Smile'],['key','LidLower.'+sf,'Smile']]
+  C['PupilW.'+sf]=[['mat','LX_IrisLayer.'+sf,'LX_PupilW']];C['PupilH.'+sf]=[['mat','LX_IrisLayer.'+sf,'LX_PupilH']]
+  # round-v-test f1 (face sheet on the furred preview): at 5 mm the brows did not read through the coat - x1.5
+  C['BrowInnerUp.'+sf]=[['loc','BrowIn.'+sf,_mm(0,.75,8.2)]];C['BrowOuterUp.'+sf]=[['loc','BrowOut.'+sf,_mm(s_*.7,0,7.2)]]
+  C['BrowInnerDown.'+sf]=[['loc','BrowIn.'+sf,_mm(-s_*1.45,-2.2,-6.5)]]
+  C['MouthCornerUp.'+sf]=[['loc','MouthCorner.'+sf,_mm(s_*1.1,2,6)]];C['MouthCornerDown.'+sf]=[['loc','MouthCorner.'+sf,_mm(0,-.7,-6)]]
+  C['UpperLipRaise.'+sf]=[['loc','LipUp.'+sf,_mm(0,2,5.5)]]
+  C['NoseWrinkle.'+sf]=[['loc','NoseSide.'+sf,_mm(-s_*.8,1.5,3)],['loc','Nose',_mm(0,0,.6)]]
+  C['NostrilFlare.'+sf]=[['loc','Nostril.'+sf,_mm(s_*1.5,0,0)]]
+  C['EarForward.'+sf]=[['ear',sf,'fwd',1.0]];C['EarFlatten.'+sf]=[['ear',sf,'flat',1.0]];C['EarSwivel.'+sf]=[['ear',sf,'swivel',1.0]];C['EarTipBend.'+sf]=[['ear',sf,'tip',1.0]]
+  C['WhiskerForward.'+sf]=[['rotarm','Whisker.'+sf,[0,0,1],-s_*.35]];C['WhiskerUp.'+sf]=[['rotarm','Whisker.'+sf,[0,1,0],-s_*.25]]
+  C['GazeYaw.'+sf]=[['rotarm','Eye.'+sf,[0,0,1],1.0]];C['GazePitch.'+sf]=[['rotarm','Eye.'+sf,[1,0,0],1.0]]
+ C['LowerLipDown']=[['loc','LipLow',_mm(0,-1,-4.5)]]
+ C['MouthO']=[['loc','MouthCorner.L',_mm(6,-3,0)],['loc','MouthCorner.R',_mm(-6,-3,0)],['loc','LipUp.L',_mm(0,-1.5,0)],['loc','LipUp.R',_mm(0,-1.5,0)],['loc','LipLow',_mm(0,-1.5,0)]]
+ C['JawOpen']=[['rot','Jaw',[1.0,0,0]],['loc_local','LipUpper',[round(float(c),6) for c in LIP_AX@(Vector(LIP_LIFT['Yawn'])*(1/JAW_OPEN['Yawn']))]]]
+ C['TongueOut']=[['key','LX_Tongue','Up',2.0],['key','LX_Tongue','Out',1.0]];C['TongueCurl']=[['key','LX_Tongue','Curl',1.0]]
+ C['Sniff']=[['loc','Nose',_mm(0,0,1.2)],['loc','Nostril.L',_mm(-1,0,0)],['loc','Nostril.R',_mm(1,0,0)]]
+ C['Sparkle']=[['catch','LX_Cornea',1.7]]
+ both=lambda **kw:{k+'.'+sf:v for k,v in kw.items() for sf in 'LR'}
+ LAYERS={'eye':{'slit':both(Squint=.45,PupilW=.05,PupilH=.44),'round':both(PupilW=.31,PupilH=.34),'wide':both(UpperWide=1,PupilW=.37,PupilH=.37),
+   'side':both(GazeYaw=.35,Squint=.2),'half':both(Blink=.45),'happy':both(SmileArc=1),'closed':both(Blink=1),'heart':{**both(PupilW=.36,PupilH=.36),'Sparkle':1},
+   'soft':both(Squint=.25,LowerLift=.4),'wink-left':{'Blink.L':1,'SmileArc.R':.25},'wink-right':{'Blink.R':1,'SmileArc.L':.25},
+   'sparkle':{**both(PupilW=.37,PupilH=.37),'Sparkle':1},'tearful':both(LowerLift=.3,Squint=.1,PupilW=.36,PupilH=.36)},
+  'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1),'raise':both(BrowInnerUp=.6,BrowOuterUp=.9),'sad':both(BrowInnerUp=1,BrowOuterUp=-.3)},
+  'mouth':{'flat':{},'cat':both(MouthCornerUp=.7),'open':{'JawOpen':.30,'MouthO':.3},'frown':both(MouthCornerDown=1),
+   'hiss':{'JawOpen':.45,'LowerLipDown':.6,**both(UpperLipRaise=1,NoseWrinkle=.8)},'tongue':{'JawOpen':.10,'TongueOut':.25,**both(MouthCornerUp=.3)}},
+  'ear':{'neutral':{},'forward':both(EarForward=.30),'airplane':both(EarFlatten=.85,EarSwivel=.6,EarForward=-.1,EarTipBend=-.2),
+   'back':both(EarForward=-.55,EarFlatten=.35,EarSwivel=.7,EarTipBend=.35)}}
+ # apps/lingxi/src/rig/art.ts BUILT_IN_EXPRESSIONS (symbol: a screen effect, carried through for the app)
+ EXPR={'安然':'slit none cat neutral none','好奇':'round raise flat forward question','满足':'happy none cat neutral none','警觉':'wide raise flat forward exclaim',
+  '不爽':'side furrow frown airplane none','惊吓':'wide raise open back sweat','困困':'half sad flat neutral sleep','玩心':'round raise tongue forward none',
+  '生气':'slit furrow hiss back anger','撒娇':'heart raise cat forward heart','闭眼休息':'closed none cat neutral sleep','开心':'happy raise cat forward none',
+  '放松':'soft none cat neutral none','认真':'slit flat flat forward none','陶醉':'closed none cat neutral heart','期待':'sparkle raise cat forward none',
+  '喵喵':'round none cat neutral none','清醒':'round flat flat forward none','安心':'soft none cat neutral heart','温柔':'soft raise cat forward none',
+  '委屈':'tearful sad frown back none','害羞':'half sad cat neutral heart','求抱抱':'round sad cat forward heart','困惑':'round raise frown neutral question',
+  '警惕':'side raise flat forward exclaim','嫌弃':'half furrow frown airplane none','得意':'half raise cat forward none','左眼眨':'wink-left raise cat neutral none',
+  '右眼眨':'wink-right raise cat neutral none','闪亮':'sparkle none cat forward heart'}
+ EXPR={k:dict(zip(('eye','brow','mouth','ear','symbol'),v.split())) for k,v in EXPR.items()}
+ FACE_SPEC={'version':1,'controls':C,'layers':LAYERS,'expressions':EXPR,'ear':{'fwd_rad':1.0,'flat_rad':1.0,'swivel_rad':1.0,'tip_rad':1.0},
+  'notes':'heart / tearful iris looks are material variants for the app (not built in Blender v1); symbol is a screen effect.'}
+ (OUT/'face-controls.json').write_text(json.dumps(FACE_SPEC,indent=1,ensure_ascii=False))
 import resource
 PEAK_GB=round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/(1024**3 if sys.platform=='darwin' else 1024**2),2)
 result={'file':str(OUT/'lingxi-short-fur-rig-v5.blend'),'bones':len(ad.bones),'actions':len(bpy.data.actions),'clips':len(clips),'hairs':sum(o['strand_count'] for o in furs),'frames':scene.frame_end,'quality':QUALITY,'peak_rss_gb':PEAK_GB}

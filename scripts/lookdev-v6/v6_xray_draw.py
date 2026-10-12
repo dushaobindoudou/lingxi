@@ -20,7 +20,7 @@ def col(n):
  return (180,180,180)
 C=np.array([col(n) for n in names])
 S=360
-try:font=ImageFont.truetype('/System/Library/Fonts/PingFang.ttc',16)   # labels may be Chinese
+try:font=ImageFont.truetype('/System/Library/Fonts/Hiragino Sans GB.ttc',16)   # labels may be Chinese
 except Exception:font=ImageFont.load_default()
 def panel(fr,view):
  im=Image.new('RGB',(S,S),(250,248,246));dr=ImageDraw.Draw(im)
