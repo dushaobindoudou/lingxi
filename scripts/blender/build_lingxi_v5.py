@@ -284,6 +284,7 @@ PAW={'Front':((.108,-.215,.040-PAW_LOW/2),(.054*PAW_SC,.064*PAW_RYK*PAW_SC,.038-
 # lobes in an arc under the column's front edge (round-r-test pawmeta.py, m1-m3). The pads become patches of the skin
 # (skin_shell). V6_PAW_META=0 builds the old paw.
 PAW_META=_v6('V6_PAW_META',1)>0
+FOOT=_v6('V6_FOOT',1)>0   # round X2: a knuckle (MCP / MTP) joint, the Foot bone
 MPAW={'Front':dict(x=.108,col=((-.165,.21),(-.196,.06)),col_r=.058,c=(-.220,.040),r=(.074,.070,.031),front=-.294,padc=-.196,padr=(.031,.025)),
       'Rear':dict(x=.12,col=((.272,.19),(.262,.062)),col_r=.055,c=(.241,.040),r=(.071,.066,.030),front=.171,padc=.258,padr=(.029,.024))}
 MTOE_R=(.023,.031,.032);MTOE_DX=.035;MTOE_Z=.035;MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
@@ -632,8 +633,17 @@ for s in [-1,1]:
     a_=(L1*L1-L2*L2+dd*dd)/(2*dd);h_=math.sqrt(max(0,L1*L1-a_*a_));nrm=np.array([-u_[1],u_[0]]);kn=hp+a_*u_+h_*nrm
     if kn[0]>hp[0]+a_*u_[0]:kn=hp+a_*u_-h_*nrm   # the knee forward (-y)
     chain[1]=(x,float(kn[0]),float(kn[1]))
-  bone(pre+'Upper.'+suf,chain[0],chain[1],par);bone(pre+'Lower.'+suf,chain[1],chain[2],pre+'Upper.'+suf);bone(pre+'Paw.'+suf,chain[2],chain[3],pre+'Lower.'+suf)
-  for i in range(4):tx,ty=toe_xy(pre,s,i);bone(pre+f'Toe{i}.'+suf,(tx,ty+.024,.026),(tx,ty-.014,.021),pre+'Paw.'+suf)
+  bone(pre+'Upper.'+suf,chain[0],chain[1],par);bone(pre+'Lower.'+suf,chain[1],chain[2],pre+'Upper.'+suf)
+  if FOOT:
+   # Round X2 (user: 「腿部不够灵活」; codex FELINE-ANATOMY guide 3): the Paw bone was the metacarpus / metatarsus AND the whole mitten, so
+   # there was no knuckle joint (MCP / MTP) - a lying or sitting cat's flat metatarsus tipped its sole 55 deg up off the floor. The
+   # Paw now ends at the knuckle (front: 55% down the old bone, on the same line; hind: where it ended) and a Foot bone carries the
+   # mitten, the toes and the main pad forward from it.
+   mcp=tuple(np.array(chain[2])+.55*(np.array(chain[3])-np.array(chain[2]))) if front else chain[3]
+   tip=(x,-.268,.030) if front else (x,.193,.028)
+   bone(pre+'Paw.'+suf,chain[2],mcp,pre+'Lower.'+suf);bone(pre+'Foot.'+suf,mcp,tip,pre+'Paw.'+suf)
+  else:bone(pre+'Paw.'+suf,chain[2],chain[3],pre+'Lower.'+suf)
+  for i in range(4):tx,ty=toe_xy(pre,s,i);bone(pre+f'Toe{i}.'+suf,(tx,ty+.024,.026),(tx,ty-.014,.021),pre+('Foot.' if FOOT else 'Paw.')+suf)
  bone('Ear.'+suf,(s*.100,-.250,.604),(s*(.100+.066*EAR_S),-.250+.010*EAR_S,.604+.156*EAR_S),'Head')  # matches the new ear shell
  ey=cranium_front(s*EYE_X,EYE_Z);bone('Eye.'+suf,(s*EYE_X,ey+.012,EYE_Z),(s*EYE_X,ey-.020,EYE_Z),'Head')
  # --- Face rig: eyelid bones ---------------------------------------------------------------------
@@ -741,7 +751,9 @@ def weights(points,region):
     # Round Q: the PAW's core is the paw's outright, whatever its y. Under the y window below, the front of the front paw
     # ball (45 mm ahead of the leg's centre line) was 22% on the Spine (28% once PAW_SC lengthened it): the toes' half of
     # the paw was dragged along by the body in every pose - smeared under a lying chest, stretched on the lick.
-    nearp=np.exp(-(_segd(points,*_bseg(pre+'Paw.'+suf))/(core*1.35*PAW_SC))**8)   # the ball's surface is up to 76 mm off its bone
+    _dp=_segd(points,*_bseg(pre+'Paw.'+suf))
+    if FOOT:_dp=np.minimum(_dp,_segd(points,*_bseg(pre+'Foot.'+suf)))
+    nearp=np.exp(-(_dp/(core*1.35*PAW_SC))**8)   # the ball's surface is up to 76 mm off its bone
     mask=np.maximum(mask,np.maximum(near*np.exp(-((y-cy)/.13)**6),nearp)*np.clip((s*x)/.02,0,1))
    for k in list(w):w[k]*=(1-mask)
    # Inside the leg, each point follows the bones it is nearest to (by distance to the bone
@@ -755,24 +767,37 @@ def weights(points,region):
     # ball. Now the skin round the femur / humerus, on the outside, below the hip / shoulder top, rides with it.
     ua,ub=_bseg(pre+'Upper.'+suf);R=_v6('V6_THIGH_R',.075) if pre=='Rear' else _v6('V6_ARM_R',.060)
     gd=np.exp(-(_segd(points,ua,ub)/R)**4)*np.clip((s*x-.02)/.05,0,1)*np.clip((ua[2]+.04-z)/.06,0,1)*(1-mask)
+    # round X2: fading out toward the knee / elbow - at full strength there it took the shank's top onto the femur, and the deep fold
+    # of a lying knee pulled that skin out into a white fin round the hock (round-v-test L1 / y1 / y3)
+    tt=np.clip(((points-ua)@(ub-ua))/((ub-ua)@(ub-ua)),0,1);gd*=np.clip((_v6('V6_GIRDLE_END',.75)-tt)/.35,0,1)
     for k in list(w):w[k]*=(1-gd)
     w[pre+'Upper.'+suf]=w.get(pre+'Upper.'+suf,0)+gd
   # Shoulder blade: the flank over the shoulder, above the leg.
   sc=np.clip((s*x-.02)/.05,0,1)*np.exp(-(_segd(points,*_bseg('Scap.'+suf))/.050)**2)
   for k in list(w):w[k]*=(1-sc)
   add('Scap.'+suf,sc)
- if PAW_META:
-  # round R: the toe lobes are body skin now - each follows its toe bone (Knead, the lick's spread toes), blending into the paw
+ if FOOT:
+  # round X2: the mitten in front of the knuckle (1 cm either side, along the foot) is the Foot's; the pastern behind it the Paw's
   for s in (-1,1):
    suf='L' if s<0 else 'R'
    for pre in ('Front','Rear'):
     pw=w.get(pre+'Paw.'+suf)
     if pw is None:continue
+    c_,d_=_bseg(pre+'Foot.'+suf);u_=(d_-c_)/np.linalg.norm(d_-c_);fs=np.clip(((points-c_)@u_+.010)/.020,0,1)
+    fs=np.maximum(fs,np.clip((.050-z)/.020,0,1))   # and the whole sole: left on a metatarsus laid flat, the heel half of the mitten swung up into a white blade (round-v-test z2/z3 sit)
+    w[pre+'Foot.'+suf]=pw*fs;w[pre+'Paw.'+suf]=pw*(1-fs)
+ if PAW_META:
+  # round R: the toe lobes are body skin now - each follows its toe bone (Knead, the lick's spread toes), blending into the paw
+  for s in (-1,1):
+   suf='L' if s<0 else 'R'
+   for pre in ('Front','Rear'):
+    pk=pre+('Foot.' if FOOT else 'Paw.')+suf;pw=w.get(pk)
+    if pw is None:continue
     for i in range(4):
      tx,ty=toe_xy(pre,s,i);q=np.sqrt(((x-tx)/TOE_R[0])**2+((y-ty)/TOE_R[1])**2+((z-TOE_Z)/TOE_R[2])**2)
      wt=np.clip((1.3-q)/.5,0,1)*(z<.075);tk=pre+f'Toe{i}.'+suf
      w[tk]=w.get(tk,0)+pw*wt;pw=pw*(1-wt)
-    w[pre+'Paw.'+suf]=pw
+    w[pk]=pw
  total=sum(w.values());return {k:v/total for k,v in w.items()}
 
 def bind(o,region,wpts=None):
@@ -1109,7 +1134,7 @@ for s in [-1,1]:
  suf='L' if s<0 else 'R'
  for pre,y,x in [('Front',-.17,s*.108),('Rear',.26,s*.12)]:
   if PAW_META:
-   m=MPAW[pre];skin_shell('LX_'+pre+'Pad.'+suf,PAD_C[(pre,s)],m['padr'],padmat,pre+'Paw.'+suf)
+   m=MPAW[pre];skin_shell('LX_'+pre+'Pad.'+suf,PAD_C[(pre,s)],m['padr'],padmat,pre+('Foot.' if FOOT else 'Paw.')+suf)
    for i in range(4):
     tx,ty=toe_xy(pre,s,i)
     skin_shell('LX_'+pre+f'Bean{i}.'+suf,(tx,ty+.008),(.0105*BEAN_S/1.2,.0115*BEAN_S/1.2),pink,pre+f'Toe{i}.'+suf)   # under the toe's sole, behind its front curve: from the front you see the toe, not the bean
@@ -1129,11 +1154,28 @@ for s in [-1,1]:
    claws.append(c)
 # Tail tubular mesh, smoothly weighted over five bones.
 vs=[];fs=[]
-for j in range(41):
- t=j/40*5;idx=min(int(t),4);f=t-idx;c=np.array(tailpoints[idx])*(1-f)+np.array(tailpoints[idx+1])*f;rad=.042*(1-j/70)
- for i in range(20):a=i*math.tau/20;vs.append(c+np.array([math.cos(a)*rad,0,math.sin(a)*rad]))
-for j in range(40):
- for i in range(20):a=j*20+i;b=j*20+(i+1)%20;fs.append((a,b,b+20,a+20))
+if _v6('V6_TAIL_CAP',1)>0:
+ # Round X2 (user: 「似乎尾巴被截断了？」): the tube ended in an open ring 36 mm across, its coat standing straight out of the sides,
+ # so every view showed the tail cut square. Now each ring stands square to the tail's own line (they were all upright x-z rings,
+ # sheared where the plume rises) and the end closes in a half-dome whose coat runs on past the tip (fur_direction).
+ cs=[];rs=[]
+ for j in range(41):
+  t=j/40*5;idx=min(int(t),4);f=t-idx;cs.append(np.array(tailpoints[idx])*(1-f)+np.array(tailpoints[idx+1])*f);rs.append(.042*(1-j/70))
+ cs=np.array(cs);tg_=np.gradient(cs,axis=0);tg_/=np.linalg.norm(tg_,axis=1)[:,None];e_=tg_[-1];R_=rs[-1]
+ for k in range(1,6):ph=k/6*math.pi/2;cs=np.vstack([cs,cs[40]+e_*R_*math.sin(ph)]);tg_=np.vstack([tg_,e_]);rs.append(R_*math.cos(ph))
+ for c,t_,rad in zip(cs,tg_,rs):
+  u_=np.array([1.0,0,0]);u_-=t_*(t_@u_);u_/=np.linalg.norm(u_);w_=np.cross(u_,t_)
+  for i in range(20):a=i*math.tau/20;vs.append(c+math.cos(a)*rad*u_+math.sin(a)*rad*w_)
+ nr=len(cs);vs.append(cs[40]+e_*R_)
+ for j in range(nr-1):
+  for i in range(20):a=j*20+i;b=j*20+(i+1)%20;fs.append((a,b,b+20,a+20))
+ for i in range(20):fs.append(((nr-1)*20+i,(nr-1)*20+(i+1)%20,len(vs)-1))
+else:
+ for j in range(41):
+  t=j/40*5;idx=min(int(t),4);f=t-idx;c=np.array(tailpoints[idx])*(1-f)+np.array(tailpoints[idx+1])*f;rad=.042*(1-j/70)
+  for i in range(20):a=i*math.tau/20;vs.append(c+np.array([math.cos(a)*rad,0,math.sin(a)*rad]))
+ for j in range(40):
+  for i in range(20):a=j*20+i;b=j*20+(i+1)%20;fs.append((a,b,b+20,a+20))
 me=bpy.data.meshes.new('Tail');me.from_pydata(vs,[],fs);me.update();tail=bpy.data.objects.new('LX_Tail',me);scene.collection.objects.link(tail);me.materials.append(coat)
 for p in me.polygons:p.use_smooth=True
 bind(tail,'tail')
@@ -1405,6 +1447,12 @@ def fur_direction(root,reg):
   pz=PAW_ZONE(z)[:,None];d=d*(1-pz)+np.array([[0,-.75,-.65]])*pz
  elif reg=='tail':
   d=np.tile([0,1,-.12],(n,1))
+  if _v6('V6_TAIL_CAP',1)>0:
+   # round X2: along the tail's own line toward the tip (it was +y everywhere: across the rising plume, and sideways off the end)
+   P_=np.array(tailpoints);best=np.full(n,1e9);d=np.zeros((n,3))
+   for a_,b_ in zip(P_[:-1],P_[1:]):
+    ab=b_-a_;t=np.clip(((root-a_)@ab)/(ab@ab),0,1);dist=np.linalg.norm(root-(a_+t[:,None]*ab),axis=1);m=dist<best;best[m]=dist[m];d[m]=ab/np.linalg.norm(ab)
+   d+=np.array([0,0,-.12])
  elif reg.startswith('Ear'):
   d=np.tile([.45*np.sign(root[0,0]),.15,1],(n,1))
  elif reg=='Head':
@@ -1711,6 +1759,34 @@ for o in breathers:
  o.shape_key_add(name='Basis');k=o.shape_key_add(name='Breath')
  for v in k.data:
   p=v.co;fac=math.exp(-((p.y-.06)/.22)**4)*max(0,min(1,(p.z-.13)/.15));p.x*=1+.022*fac;p.z+=.003*fac
+# Round X2 (user: 「卧的相关效果还不好」; codex lingxi-ref-pose-liedown-top.png: lying, the cat is .82 as wide as long, ours .57): a lying
+# cat's trunk settles - lower and wider, the belly flat on the floor - and linear skinning can only bend a tube. LieSpread lowers the
+# trunk above the belly line by SPREAD_Z and widens it by SPREAD_X (the belly line itself stays, so the floor contact does not move);
+# keyed with the lie-down. Same rest-space map on the skin and every strand of its coat, like Breath.
+SPREAD_X,SPREAD_Z,SPREAD_Y=_v6('V6_SPREAD_X',.30),_v6('V6_SPREAD_Z',.20),_v6('V6_SPREAD_Y',.08)   # round-v-test y1-y4: top-view width / length .57 -> .68 (codex .78)   # SPREAD_Y: the trunk shortens about y .06 as it settles
+if SPREAD_X>0 or SPREAD_Z>0:
+ _LEGB=('Upper.','Lower.','Paw.','Foot.','Toe')
+ for o in breathers:
+  k=o.shape_key_add(name='LieSpread',from_mix=False);gn={g.index:g.name for g in o.vertex_groups}
+  # the leg's own skin is left out (its weights on leg bones): pushed out with the haunch while its bones stayed, the folded hind
+  # leg's skin was drawn into a white fin round the hock (round-v-test y3 / f1-f3)
+  lw=[sum(g.weight for g in v.groups if any(t in gn[g.group] for t in _LEGB)) for v in o.data.vertices]
+  for v,lw_ in zip(k.data,lw):
+   p=v.co;w=math.exp(-((p.y-.06)/.26)**4)*max(0,min(1,(p.z-.10)/.08))*max(0,1-1.5*lw_)
+   p.x*=1+SPREAD_X*w;p.y=.06+(p.y-.06)*(1-SPREAD_Y*w)
+   if p.z>.21:p.z=.21+(p.z-.21)*(1-SPREAD_Z*w)
+# Round X2 (codex FELINE-SOFT-TISSUE-AND-FOOT §1, lingxi-ref-lie-back / -lie-front-low / -sit-front / -sit-back): two more corrective
+# shapes. FlankThigh - the thigh's flesh (its RearUpper weight) pushed out sideways, the haunch that stands out beside a lying or sitting
+# cat's hips; it rides the femur, so it stays at the side however the leg folds. SitHaunch - the rump's underside spreads on the floor.
+# All three are driven from the posed bones each frame (_correctives), not from the clip or the frame.
+THIGH_DX,HAUNCH_X=_v6('V6_THIGH_DX',.065),_v6('V6_HAUNCH_X',.25)
+for o in breathers:
+ gn={g.index:g.name for g in o.vertex_groups};kt=o.shape_key_add(name='FlankThigh',from_mix=False);kh=o.shape_key_add(name='SitHaunch',from_mix=False)
+ for v,a,b in zip(o.data.vertices,kt.data,kh.data):
+  wt=sum(g.weight for g in v.groups if gn[g.group].startswith('RearUpper.'));wp=sum(g.weight for g in v.groups if gn[g.group]=='Pelvis')
+  a.co.x+=math.copysign(THIGH_DX*wt,a.co.x)
+  # a bulge through the haunch's middle (z .10-.34, most at .22), its bottom edge left in: widest at the bottom, it flared into a skirt
+  q=b.co;h=wp*max(0,min(1,(q.z-.10)/.08))*max(0,min(1,(.34-q.z)/.08))*max(0,min(1,(q.y-.10)/.08));q.x*=1+HAUNCH_X*h
 # Whiskers as skinned bevelled curves converted to mesh.
 #
 # Eight a side in three rows, leaving the pad nearly level and DROOPING along their length.
@@ -1889,15 +1965,16 @@ LEGS={}
 for _s in 'LR':
  LEGS['F'+_s]=('Scap.'+_s,'FrontUpper.'+_s,'FrontLower.'+_s,'FrontPaw.'+_s,+1)   # elbow points back
  LEGS['H'+_s]=('Pelvis','RearUpper.'+_s,'RearLower.'+_s,'RearPaw.'+_s,-1)          # knee points forward
+FOOT_OF={k:LEGS[k][3].replace('Paw.','Foot.') for k in LEGS} if FOOT else {}
 LREST={}
 for k,(par,up,lo,pw,bend) in LEGS.items():
- r={}
- for n in (up,lo,pw):r[n]=_ang(Vector(ad.bones[n].tail_local)-Vector(ad.bones[n].head_local))
+ r={};chain_=(up,lo,pw)+((FOOT_OF[k],) if FOOT else ())
+ for n in chain_:r[n]=_ang(Vector(ad.bones[n].tail_local)-Vector(ad.bones[n].head_local))
  sg={}
- for n in (up,lo,pw):                       # which way a +X local rotation turns the bone in the plane
+ for n in chain_:                       # which way a +X local rotation turns the bone in the plane
   f=_fk({n:(.1,0,0)});v=_tip(f,n)-f(n).translation;sg[n]=1.0 if _wrap(_ang(v)-r[n])>0 else -1.0
  LREST[k]=dict(ang=r,sign=sg,L1=ad.bones[up].length,L2=ad.bones[lo].length,foot=Vector(ad.bones[pw].head_local),x=ad.bones[up].head_local.x)
-def leg_ik(rots,locs,key,target,paw_ang,abduct=False):
+def leg_ik(rots,locs,key,target,paw_ang,abduct=False,foot_ang=None):
  """Solve one leg to put its wrist/hock at `target` (world) with the paw at world angle
   `paw_ang` in its plane. Returns (rotations, off-plane distance, over-reach).
   abduct (round R, WorkBuddy AUDIT-DEEP-QUANTIFIED #4): the solve was planar - a target off the leg's plane was simply
@@ -1917,6 +1994,8 @@ def leg_ik(rots,locs,key,target,paw_ang,abduct=False):
  la=_ang(t-knee);pitch=_ang(D.to_3x3()@Vector((0,1,0)))
  du=_wrap(ua-R['ang'][up]);dl=_wrap(la-(R['ang'][lo]+du));dp=_wrap((paw_ang-pitch)-(R['ang'][pw]+du+dl))
  rv={up:(du*R['sign'][up],0,0),lo:(dl*R['sign'][lo],0,0),pw:(dp*R['sign'][pw],0,0)}
+ if FOOT:   # round X2: the Foot at world angle foot_ang in the leg's plane; None = rigid on the Paw (the old one-piece paw)
+  ft=FOOT_OF[key];rv[ft]=(0,0,0) if foot_ang is None else (_wrap((foot_ang-pitch)-(R['ang'][ft]+du+dl+dp))*R['sign'][ft],0,0)
  if abs(phi)>1e-6:   # the plane swing (-phi about the rest Y axis through the joint), composed onto the upper bone's flexion
   A=ad.bones[up].matrix_local.to_3x3().inverted()@Vector((0,1,0))
   rv[up]=tuple((Quaternion(A,-phi).to_matrix()@Euler(rv[up],'XYZ').to_matrix()).to_euler('XYZ'))
@@ -1980,7 +2059,10 @@ def _sit_rots(v):
 def _sit_targets(f):
  T={}
  for k in LEGS:
-  if k[0]=='H':hip=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],hip.y+.035,.046)),math.radians(-176))
+  # Round X2: the hock IN FRONT of the hip (V6_SIT_HOCK_DY), on the floor - a sitting cat's femur runs forward beside the belly, the
+  # shank drops back to the hock, the metatarsus lies forward. 35 mm behind the hip, the two-bone solve could only fold the knee down
+  # onto the floor and stand the hock and the paw up in the air (round-v-test z4, the white 'blade' at the sitting hind paw).
+  if k[0]=='H':hip=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],hip.y+(_v6('V6_SIT_HOCK_DY',-.05) if FOOT else .035),.046)),math.radians(-176))
   else:sh=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],sh.y-.012,.066)),_paw_rest(k))
  return T
 # Two targets in this cost are really one: the hip's height and the spine's pitch. The hip
@@ -2128,7 +2210,7 @@ LICK_WRIST_MAX=_v6('V6_LICK_WRIST',1.0)   # rad: the paw's turn off its rest ang
 # Round L (Lick, REPORT P1-1): the sitting haunch. The hind targets' hock 30 mm higher takes the thigh's skin out of the
 # floor (LX_Body -16.6 -> the belly crease between the thighs, -9.4), and the root 3 mm up takes 3 more off that; any
 # higher and the planted forepaw leaves the floor with it (the sit is at the foreleg's full reach): it is ~5 mm up.
-LICK_HIND=(_v6('V6_LH_DY',0),_v6('V6_LH_DZ',.03),_v6('V6_LH_PA',0),_v6('V6_LH_LIFT',.003))   # hock dy, dz, paw turn; root lift
+LICK_HIND=(_v6('V6_LH_DY',0),_v6('V6_LH_DZ',0 if FOOT else .03),_v6('V6_LH_PA',0),_v6('V6_LH_LIFT',.003))   # hock dy, dz, paw turn; root lift
 # ...and the tail: curled up behind the rump (tail_deg 204) it was never in the picture. Tail1-4 x / z searched on the
 # built rig (round-l-act/tailopt.py: on the floor, round the right haunch toward the front, out of the body): it lies
 # along the floor beside the right haunch, tip 163 mm out to the camera's side, 24 mm up.
@@ -2235,7 +2317,7 @@ def _gait(g,u,k):
 # Round X (codex lingxi-ref-pose-liedown-top.png: a compact cat): the back rounds (spine .06 -> .15), the neck draws back up (.12 -> -.05,
 # head -.12 -> .05), the forepaws come in (f_dy .24 -> .18) and the hind feet forward (h_dy .05 -> -.03).
 LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.15,neck=-.05,head=.05,tail=-.25,tail_side=-1.3,
- f_dy=.18,f_z=.073,f_pa=-145,h_dy=-.03,h_z=.09,h_pa=-178).items()}
+ f_dy=.18,f_z=.073,f_pa=-145,h_dy=.02,h_z=.04,h_pa=-178,h_dx=.06,knee_out=.75).items()}   # round X2: h_dx - the hind feet out, knees out (abducted)
 # Round L SideLie (user: 「躺下去的效果不好」): on its flank for real. It was rolled 1.25 rad - belly half up, the four
 # legs pointing up at 45 deg (paws 264-277 mm), the torso 27 mm off the floor on a hind toe and the head upright.
 # Now a quarter turn, the root lifted by the body's half-width, the neck bent down to lay the cheek on the
@@ -2322,7 +2404,7 @@ def _paw_sample(k):
   surface, not its bone, above the floor (round U)."""
  if k not in _PAWS:
   me=body.data;gn={g.index:g.name for g in body.vertex_groups};pw=LEGS[k][3];suf=pw[-1];pre=pw[:-6]
-  own={pw}|{pre+f'Toe{i}.'+suf for i in range(4)};rows=[]
+  own={pw}|{pre+f'Toe{i}.'+suf for i in range(4)}|({FOOT_OF[k]} if FOOT else set());rows=[]
   for vi in range(0,len(me.vertices),3):
    v=me.vertices[vi];ws={gn[g.group]:g.weight for g in v.groups if g.weight>1e-4 and gn[g.group] in ad.bones}
    if ws and sum(w for n,w in ws.items() if n in own)>.5*sum(ws.values()):rows.append((v.co[:],ws))
@@ -2468,6 +2550,37 @@ def _tail_off_floor(pb,margin=.004):
   low=float(z.min())
   if low>=margin:break
   pb['Tail1'].rotation_euler[0]+=min(.25,max(.03,(margin-low)*4))
+def _knee_out(k,lr,rots,locs,ang):
+ """Round X2 (codex FELINE-SOFT-TISSUE-AND-FOOT §3: hip abduction + external rotation, the knee off the leg's vertical plane): the
+  thigh turns `ang` about the hip-to-hock line, knee outward - the hock stays put (it is on the axis) and the paw keeps its world
+  orientation, so only the knee swings out. A lying / sitting cat's thighs then stand out beside the body."""
+ par,up,lo,pw,bend=LEGS[k];rr=dict(rots);rr.update(lr);f=_fk(rr,locs)
+ hip=f(up).translation;hk=f(pw).translation;ax=(hk-hip).normalized();kn=f(lo).translation;side=1 if LREST[k]['x']>0 else -1;Rpw=f(pw).to_3x3()
+ for sg in (1,-1):
+  R=Matrix.Rotation(sg*ang,3,ax)
+  if ((hip+R@(kn-hip)).x-kn.x)*side>0:break
+ _set_world_rot(up,R@f(up).to_3x3(),rr,locs);_set_world_rot(pw,Rpw,rr,locs)
+ return {n:rr[n] for n in lr}
+_REST_Z=None
+def _correctives(pb):
+ """Round X2: the corrective shapes' weights from the posed skeleton (codex FELINE-SOFT-TISSUE-AND-FOOT §1: pose-space, not frame):
+  LieSpread - chest AND pelvis down near the floor, the forearms lying flat, the trunk upright (not rolled: on its side the rest-space
+  widening would point up); a jump's crouch has upright forearms and gets none. FlankThigh - both hips folded and the pelvis low.
+  SitHaunch - the trunk stood up (chest well above the pelvis) on a low pelvis."""
+ global _REST_Z
+ names=[b.name for b in ad.bones];f=_fk({n:tuple(pb[n].rotation_euler) for n in names},{n:tuple(pb[n].location) for n in names})
+ if _REST_Z is None:_REST_Z={n:ad.bones[n].head_local.z for n in ('Pelvis','Chest' if RIG_X else 'Spine')}
+ cn='Chest' if RIG_X else 'Spine';zp,zc=f('Pelvis').translation.z,f(cn).translation.z
+ lp=min(1,max(0,(_REST_Z['Pelvis']-zp-.03)/.07));lc=min(1,max(0,(_REST_Z[cn]-zc-.03)/.07))
+ up=(f('Pelvis').to_3x3()@Vector((0,0,1))).z;upright=min(1,max(0,(abs(up)-.7)/.2))
+ fl=min(1,max(0,(.6-max(abs((f('FrontLower.'+s_).to_3x3()@Vector((0,1,0))).z) for s_ in 'LR'))/.3))
+ hipf=[]
+ for s_ in 'LR':
+  P=f('Pelvis').to_3x3()@Vector((0,1,0));F=f('RearUpper.'+s_).to_3x3()@Vector((0,1,0));P0=ad.bones['Pelvis'].matrix_local.to_3x3()@Vector((0,1,0));F0=ad.bones['RearUpper.'+s_].matrix_local.to_3x3()@Vector((0,1,0))
+  hipf.append(min(1,max(0,(P0.angle(F0)-P.angle(F)-.15)/.6)))   # the femur folded toward the pelvis's forward line
+ d=f(cn).translation-f('Pelvis').translation;pitch=math.atan2(d.z,math.hypot(d.x,d.y))
+ sit=min(1,max(0,(math.degrees(pitch)-25)/20))*min(1,max(0,(_REST_Z['Pelvis']-zp-.08)/.06))
+ return {'LieSpread':lc*lp*upright*fl,'FlankThigh':min(hipf)*max(lp*upright,sit),'SitHaunch':sit}
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
  names=['Root','Pelvis','Loin','Spine','Neck','Head','Scap.L','Scap.R']+list(SPLIT.values())
@@ -2481,22 +2594,30 @@ def place_legs(name,u,pb,hold=0.0):
   # .045 was the folded ankle's height, and it put the folded paw 63 mm BELOW the floor
   # (v6_ground_calib.py). Raise the target rather than the root: the silhouette still has
   # to lose its height when the cat lies down.
-  L=LIEDOWN;lie[k]=(Vector((LREST[k]['x'],hy-L['f_dy'],L['f_z']+L['drop'])),math.radians(L['f_pa'])) if k[0]=='F' else (Vector((LREST[k]['x'],hy+L['h_dy'],L['h_z']+L['drop'])),math.radians(L['h_pa']))
+  L=LIEDOWN;lie[k]=(Vector((LREST[k]['x'],hy-L['f_dy'],L['f_z']+L['drop'])),math.radians(L['f_pa'])) if k[0]=='F' else (Vector((LREST[k]['x']+math.copysign(L['h_dx'],LREST[k]['x']),hy+L['h_dy'],L['h_z']+L['drop'])),math.radians(L['h_pa']))
  placed={}   # round R: the world targets already given out this frame (the upper hind paw lies on the under one)
  for k in LEGS:
-  foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot
+  foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot;fa=None
   if name in ('Walk','Run'):
    g=WALK if name=='Walk' else RUN;dy,dz,flex=_gait(g,u,k)
    if k[0]=='H':dz*=1.25   # the hind paw clears its longer swing a little higher (round J: no stride multiplier - the planted paws must all move at the body's speed)
    tg=foot+Vector((0,dy-ROOT_TRAVEL(g)*u,dz))   # the ground under a travelling body: a planted paw's target stays fixed in the world
   elif name=='Jump' and JUMP_PHASED:
    off_,on_=(JUMP_T[0],JUMP_T[2]) if k[0]=='F' else (JUMP_T[1],JUMP_T[3])
+   push=0.0;base=foot;flat=0.0
+   if k[0]=='H' and .20<=u<on_:
+    # the hind feet push off: the metatarsus tips up .6 rad - round X2 (codex lingxi-ref-hindfoot-pushoff-closeup.png): on its toes,
+    # the knuckle (MTP) held on the floor and the foot flat, so the hock rises and the leg pushes out longer (was the whole paw
+    # tipping onto its front edge round the hock)
+    push=.6*((min(u,off_)-.20)/(off_-.20))**2
+    if FOOT:mtp=Vector(ad.bones[FOOT_OF[k]].head_local);Lp=ad.bones[LEGS[k][3]].length;base=mtp-Lp*Vector((0,math.cos(pa+push),math.sin(pa+push)));flat=1.0
    if off_<u<on_:
     keys=JUMP_LEGS[k[0]];bn='Chest' if k[0]=='F' else 'Pelvis';D=f(bn)@ad.bones[bn].matrix_local.inverted()
     tb=D@(foot+Vector((0,_jump_key(u,[(c[0],c[1]) for c in keys]),_jump_key(u,[(c[0],c[2]) for c in keys]))))
     w_=min(1,(u-off_)/.05,(on_-u)/.05);w_=w_*w_*(3-2*w_)   # into / out of the floor mark
-    tg=foot.lerp(tb,w_);tg.z=max(tg.z,0.0);pa+=_jump_key(u,[(c[0],c[3]) for c in keys])*w_+_ang(D.to_3x3()@Vector((0,1,0)))*w_
-   elif k[0]=='H' and .20<=u<=off_:pa+=.6*((u-.20)/(off_-.20))**2   # the hind toes push off
+    tg=base.lerp(tb,w_);tg.z=max(tg.z,0.0);pa+=push*(1-w_)+_jump_key(u,[(c[0],c[3]) for c in keys])*w_+_ang(D.to_3x3()@Vector((0,1,0)))*w_;flat*=1-w_
+   elif u<=off_:tg=base;pa+=push
+   if FOOT and flat>0:R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);fa=rig_+_wrap(R_[ft]-rig_)*flat
   elif name=='Jump':
    lift=math.sin(math.pi*u)**2
    tg=foot+(Vector((0,-.09*lift,.30*lift)) if k[0]=='F' else Vector((0,.11*lift,.27*lift)));pa+=lift*(.9 if k[0]=='F' else 1.2)
@@ -2535,6 +2656,11 @@ def place_legs(name,u,pb,hold=0.0):
    # A yawn is a stretch: the forelegs push out in front. The clip moved the jaw 76 deg and
    # the body not at all (root travel 0, nose-to-tail +13.6 mm).
    if k[0]=='F':tg=foot+Vector((0,-.075*fac,.016*fac));pa+=.30*fac
+  elif name=='Stretch' and _v6('V6_STRETCH_BOW',1)>0:
+   b=math.sin(math.pi*u);b=b*b*(3-2*b)
+   if k[0]=='F':
+    tg=foot+Vector((0,-_v6('V6_BOW_REACH',.20)*b,0))   # the forearms laid forward along the floor (the wrist at its standing height: lowered 25 mm, the flat paw went 25 mm under)
+    if FOOT:R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);fa=rig_+_wrap(R_[ft]-rig_)*b
   elif name=='Stretch':
    s_=math.sin(math.pi*u)
    if k[0]=='F':tg=foot+Vector((0,-.11*s_,.018*s_));pa+=.35*s_
@@ -2552,16 +2678,23 @@ def place_legs(name,u,pb,hold=0.0):
     # re-derived here from the old mouth point, so the pad never met the tongue)
     tip=f('Head')@lick_l;wr=tip+Vector((0,LICK_WRIST[0],LICK_WRIST[1]));tg=tg.lerp(wr,hold)
     pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
-  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META)
+  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META) or (name=='LieDown' and k[0]=='H' and LIEDOWN['h_dx']!=0)
   if k[0]=='F' and RIG_X:_scap_follow(k,tg,rots,locs);pb['Scap.'+k[1]].rotation_euler=rots['Scap.'+k[1]];pb['Scap.'+k[1]].location=locs['Scap.'+k[1]]
-  lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab)
-  if name in ('LieDown','SideLie','Sleep') and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:
+  if fa is None and FOOT and (name=='LieDown' or (name=='Lick' and k!='FR')):
+   # round X2: the foot lies flat on the floor (its rest angle) whatever the metatarsus does - blended in with the pose
+   R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);wf=_settle(u) if name=='LieDown' else hold
+   fa=rig_+_wrap(R_[ft]-rig_)*wf
+  lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa)
+  if name in ('LieDown','SideLie','Sleep','Stretch') and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:
    # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
    # through it at frame 259 while its angle blended from standing to lying)
    for _ in range(3):
     rr=dict(rots);rr.update(lr);lw=_paw_low(k,rr,locs)
     if lw>=.0005:break
-    tg=tg+Vector((0,0,.0015-lw));lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab)
+    tg=tg+Vector((0,0,.0015-lw));lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa)
+  if RIG_X and k[0]=='H':
+   ko={'LieDown':LIEDOWN['knee_out']*_settle(u),'Lick':_v6('V6_SIT_KNEE_OUT',.5)*hold}.get(name,0.0)
+   if ko>1e-3:lr=_knee_out(k,lr,rots,locs,ko)
   for n,rv in lr.items():pb[n].rotation_euler=rv
   if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]+=((SIDELOUNGE if SL_MODE==2 else SIDELIE)['add_'+k]*_settle(u) if name=='SideLie' else SLEEP['add_'+k])   # round R: += (on top of the solve's own plane swing)   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
@@ -2656,7 +2789,15 @@ def pose(name,u):
   br=math.sin(phase) if name=='Sleep' else math.sin(phase*2)
   pb['Spine'].rotation_euler[0]+=_v6('V6_LIE_BREATH',.03)*br*f
   pb['Tail4'].rotation_euler[2]+=_v6('V6_LIE_TAIL',.30)*math.sin(phase*(1 if name=='Sleep' else 2)+.9)*ft
- if name=='Stretch':
+ if name=='Stretch' and _v6('V6_STRETCH_BOW',1)>0:
+  # Round X2 (codex lingxi-ref-stretch-side.png): the bow - the trunk pitches nose-down about the hips (Pelvis +), the chest comes down
+  # near the floor between forelegs laid out flat in front, the hind legs stand, the head comes up to look ahead, the tail goes up.
+  # Before, the root dropped 4 cm and the forepaws slid 11 cm: a standing cat leaning a little.
+  b=math.sin(math.pi*u);b=b*b*(3-2*b)
+  pb['Pelvis'].rotation_euler[0]=_v6('V6_BOW_PITCH',.42)*b;pb['Spine'].rotation_euler[0]=-.10*b
+  pb['Neck'].rotation_euler[0]=-.35*b;pb['Head'].rotation_euler[0]=-.15*b
+  pb['Tail0'].rotation_euler[0]=.5*b;pb['Tail1'].rotation_euler[0]=.4*b;pb['Tail2'].rotation_euler[0]=.25*b
+ if name=='Stretch' and _v6('V6_STRETCH_BOW',1)<=0:
   # A real stretch: the forelegs reach out along the floor, the chest drops between the
   # shoulders and the hips stay up - the bow a cat makes on waking. It used to share the
   # lie-down targets, so its frame was LieDown again (root -110 mm, nose-to-tail +3.9 mm
@@ -2779,6 +2920,9 @@ def pose(name,u):
  for o in eyelids:o.data.shape_keys.key_blocks['Squint'].value=squint
  for o in eye_shapes:o.data.shape_keys.key_blocks['Squint'].value=squint
  for o in breathers:o.data.shape_keys.key_blocks['Breath'].value=.5+.5*math.sin(phase*2)
+ for kn,val in _correctives(pb).items():
+  if kn in body.data.shape_keys.key_blocks:
+   for o in breathers:o.data.shape_keys.key_blocks[kn].value=val
  for o in claws:o.data.shape_keys.key_blocks['Extend'].value=.7*(.5+.5*math.sin(phase*2)) if name=='Knead' else 0
 
 for name,duration in clips:

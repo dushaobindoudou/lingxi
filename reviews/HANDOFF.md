@@ -792,3 +792,50 @@ codex 做了两轮后处理（都改的是已构建的 .blend，不是 build_lin
 - 交付里没改的：爪、嘴、哈欠（Round W 状态）。
 
 审阅页（目标 | Round X，含骨架透视）：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW（v14）。
+
+---
+
+## Round X2（Claude 主会话，2026-10-12）——尾尖、爪关节、卧/坐的软组织与腿的自由度
+
+用户：「似乎尾巴被截断了？」「卧的相关效果还不好是不是需要再继续增加骨骼？腿部不够灵活也是这个原因吗？」「让 codex 给我们提供这些是对的，继续按照这个模型」。
+
+回答（写在这里备查）：尾巴截断是网格问题（开口管子，毛垂直于侧面长，末端一刀切），不是骨骼。卧姿不好主要不是骨数（背 5 节、颈 2 节已够弯），而是躯干不会贴地压扁外摊、后腿只能在竖直平面折、脊柱骨线深；腿不灵活一半是缺关节（爪骨 = 掌/跖骨 + 整只爪，没有掌指/跖趾关节），一半是求解自由度（没有髋外展外旋）。
+
+### codex 批次 7
+
+- `reviews/FELINE-SOFT-TISSUE-AND-FOOT-FOR-CLAUDE.md`：修正形变的做法（PSD / 形态键 + 由骨变换驱动、毛根跟随最终皮肤、Corrective Smooth / Preserve Volume 的局限）、MTP 实测（Gregor 2006：步行落足 214°、支撑最大伸展 245°，论文自己的角度口径）、髋外展 / 旋转步行范围 ~13–15°（单只代表猫）、前臂旋前旋后（定义不一，不可相加）；卧 / 坐的关节角与截面变化「未查到」。优先级：P0 爪关节、髋外展 + 外旋、LieBellySpread / LieFlankThigh；P1 肩外展、前臂扭转、SitHaunch。
+- 9 张参考图：`lingxi-ref-lie-{hind-closeup-side,front-low,back}.png`、`lingxi-ref-sit-{front,back,hindfoot-closeup}.png`、`lingxi-ref-hindfoot-pushoff-closeup.png`、`lingxi-ref-stretch-side.png`、`lingxi-ref-tail-tip-closeup.png`。
+
+### 改动
+
+| 项 | 做法 | 旋钮 |
+|---|---|---|
+| 尾尖 | 末端半球封口（5 圈 + 顶点），每圈垂直于尾巴自身走向（原来都是竖直 x-z 圈，上翘处被斜切）；尾毛顺尾巴折线的切向梳（原来全局 +y），封口处的毛继续伸出成圆尖 | V6_TAIL_CAP |
+| 爪关节 | 每条腿加 Foot 骨（MCP / MTP）：前爪在原爪骨 55% 处分开、共线，后爪在原爪骨末端；趾、主垫挂 Foot。权重：沿足向过关节 ±1 cm 渐变，**整个爪底（z<5 cm）全给 Foot**（否则跖骨放平时爪跟半团甩成白刃）。`leg_ik(..., foot_ang)`：给定世界角时 Foot 单独转，None 时刚性（与旧版一致） | V6_FOOT |
+| 平脚 | 趴下四爪、舔爪着地三爪、伸懒腰前爪：Foot 保持静止时的世界角（平贴地面），随姿势进度渐入 | — |
+| 蹬地 | 起跳 .20 → 离地：跖骨上翻 .6 rad，跖趾关节钉在地面、爪平，跗部抬起（codex 蹬地特写）；离地后从这个落点淡出到空中目标 | — |
+| 修正形变 | 三个形态键，身体 + 所有身体毛条同一静止空间映射（同 Breath）：LieSpread（腹线以上压低 20%、加宽 30%、沿身长收 8%，排除腿上的皮肤——不排除时折叠后腿被扯出白膜）、FlankThigh（股骨权重的皮肤外推 65 mm）、SitHaunch（臀中段 z .10–.34 鼓 25%，底边不动——底边最大时外翻成裙边）。权重由 `_correctives()` 每帧从骨架算：LieSpread = 胸低 × 骨盆低 × 躯干未侧翻 × 前臂平放（跳跃下蹲前臂竖直，不触发）；FlankThigh = 双髋屈 × max(骨盆低, 坐)；SitHaunch = 躯干竖起 25–45° × 骨盆低 | V6_SPREAD_X/Z/Y、V6_THIGH_DX、V6_HAUNCH_X |
+| 膝外撇 | `_knee_out`：股骨绕「髋→跗」轴向外转（跗不动、爪保持世界朝向），趴下 .75、舔爪坐 .5；趴下后爪横向外放 6 cm（abduct） | V6_LD_KNEE_OUT、V6_SIT_KNEE_OUT、V6_LD_H_DX |
+| 趴下后腿 | 跗高 .09 → .04、跗在髋后 2 cm：.09 是一体爪时代为不穿地垫高的，结果爪悬空、膝被抬到髋高、大腿翻上去把臀侧扯出棱 | V6_LD_H_Z、V6_LD_H_DY |
+| 坐姿后腿 | 跗放到髋前 5 cm（原来髋后 3.5 cm：两段腿只能把膝折到地上、跗和爪翘起）；舔爪的跗额外抬高 .03 取消 | V6_SIT_HOCK_DY、V6_LH_DZ |
+| 大腿肉 | Round X 的股骨 / 肱骨随动权重沿骨向膝 / 肘渐弱（t>.4 起，.75 处为 0） | V6_GIRDLE_END |
+| 伸懒腰 | 改成弓背前伸：骨盆绕髋前倾 .42、胸口近地、前臂沿地面前伸 20 cm 平爪、后腿站、抬头、尾巴上翘（原来只是根骨降 4 cm、前爪滑 11 cm） | V6_STRETCH_BOW、V6_BOW_PITCH、V6_BOW_REACH |
+| 对照工具 | `render_target.py` 新增 VIEW=front / back（平视）和 FOCUS=<骨> SPAN SHIFT 特写；`cv7.sh` 渲 codex 批次 7 的机位 | — |
+
+注意：身体和身体毛条现在有 4 个形态键（Breath、LieSpread、FlankThigh、SitHaunch）。导出 GLB 时每个都是全顶点的变形目标，接入应用前要看体积，必要时只导出身体、不导出毛条上的这三个。
+
+### 量测（`v6/round-x2/`，带毛）
+
+- 最低点（mm）：Idle -0.4、Walk -1.1、Run 31.6（腾空帧）、LieDown **-2.7**（228 帧，躯干皮肤在毛里，过渡中）、SideLie -0.1、Sleep +2.5、Lick **-8.1**（坐的臀底，在毛里）、Stretch -0.4（第一稿前爪目标下压 25 mm、平爪穿地 -24.8，已改）、PawPlay -4.4（旧）。
+- 步态打滑与 Round X 相同（走 前 .80/.61、后 1.04/1.05 mm/帧；跑 前 .75/1.12、后 0）——Foot 在走跑里是刚性的，不影响。
+- 宽 / 长（俯视，带毛）：趴下明显变宽（Round X .57，目标 .78–.82），见审阅页 x2-liedown-top。
+
+### 还差
+
+- 无毛看：深屈的跗关节附近仍有线性蒙皮扯出的白膜（趴下后腿外侧、坐着的臀底边缘一圈皮边）；毛基本盖住。正解是 codex 说的局部修正形状 / 只在关节附近的 Corrective Smooth，下一轮做。
+- 趴下正面两肩外侧的鼓包（肩胛折叠上滑 + 上臂随动），同上。
+- 蜷睡尾巴未横到下巴正前方；趴下尾巴未绕到前爪旁。
+- 坐姿只有舔爪里的坐（爪举着），目标端坐（两前腿并拢）没有对应动作；坐姿臀底 -8 mm。
+- 肩外展、前臂旋前旋后（codex P1）未做。
+
+审阅页（目标 | Round X2，26 组）：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW（v15）。
