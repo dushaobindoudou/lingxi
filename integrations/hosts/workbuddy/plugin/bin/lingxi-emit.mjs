@@ -25,6 +25,7 @@
 //   lingxi-emit.mjs --host claude          # Claude Code hook JSON on stdin
 //   lingxi-emit.mjs --host codex           # Codex notify JSON, on argv or stdin
 //   lingxi-emit.mjs --host cursor          # Cursor hook JSON; hook_event_name selects the arm
+//   lingxi-emit.mjs --host workbuddy --event Stop # WorkBuddy stdin; installed event is authoritative
 //   lingxi-emit.mjs --host generic         # already a task event; validated and forwarded
 //   echo '{"state":"completed"}' | lingxi-emit.mjs
 //
@@ -200,6 +201,86 @@ function fromClaude(raw) {
   }
 }
 
+/** WorkBuddy stores native message/output_text records, not Claude's assistant/message shape.
+ * Read only a bounded tail of the hook's transcript; never forward prompts, reasoning or tools.
+ * A generation id, when available, prevents an older turn's answer being used as this result.
+ */
+function workbuddyReply(raw) {
+  if (typeof raw.last_assistant_message === 'string' && raw.last_assistant_message.trim()) {
+    return raw.last_assistant_message;
+  }
+  const path = raw.transcript_path;
+  if (typeof path !== 'string' || !isAbsolute(path) || extname(path) !== '.jsonl') return null;
+  let fd;
+  try {
+    fd = openSync(path, 'r');
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const { size } = stat;
+    const length = Math.min(size, TRANSCRIPT_TAIL_BYTES);
+    const buffer = Buffer.alloc(length);
+    readSync(fd, buffer, 0, length, size - length);
+    const lines = buffer.toString('utf8').split('\n');
+    if (size > length) lines.shift(); // never parse a partial first record
+    for (const line of lines.reverse()) {
+      let record;
+      try { record = JSON.parse(line); } catch { continue; }
+      if (!record || typeof record !== 'object') continue;
+      if (raw.session_id && record.sessionId !== raw.session_id) continue;
+      if (record.type !== 'message') continue;
+      if (record.role === 'user') return null; // no final assistant reply in this turn
+      if (record.role !== 'assistant') continue;
+      // Do not fall back to an earlier assistant message when the latest one is unfinished.
+      if (record.status !== 'completed') return null;
+      if (raw.generation_id && record.providerData?.conversationRequestId !== raw.generation_id) return null;
+      if (!Array.isArray(record.content)) return null;
+      const text = record.content.filter((block) => block?.type === 'output_text' && typeof block.text === 'string')
+        .map((block) => block.text).join('\n');
+      return text.trim() ? text : null;
+    }
+  } catch {
+    // A missing, rotating or unreadable transcript is a normal degraded host event.
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+  return null;
+}
+
+function fromWorkbuddy(raw) {
+  const session = typeof raw.session_id === 'string' && raw.session_id ? raw.session_id : undefined;
+  const base = { kind: 'chat', taskId: session ?? 'workbuddy-session', session };
+  switch (raw.hook_event_name) {
+    case 'SessionStart': return { ...base, state: 'queued', summary: 'WorkBuddy 会话开始' };
+    case 'UserPromptSubmit': return { ...base, state: 'running', summary: 'WorkBuddy 新一轮对话开始' };
+    case 'Stop': {
+      const reply = workbuddyReply(raw);
+      return { ...base, state: 'completed',
+        summary: reply ? 'WorkBuddy 回复结束（hook 兜底）' : 'WorkBuddy 回复结束（hook 兜底，无可用回复文本）',
+        result: reply ?? '这一轮结束了' };
+    }
+    case 'StopFailure': return { ...base, state: 'failed', summary: 'WorkBuddy 本轮因错误终止', result: '这一轮出错了，请查看 WorkBuddy 会话中的错误详情' };
+    case 'PermissionRequest': {
+      // Tool names are optional: the event itself establishes that an approval is waiting.
+      const question = raw.tool_input?.questions?.[0]?.question;
+      if (raw.tool_name === 'AskUserQuestion' || (typeof question === 'string' && question.trim())) {
+        return { ...base, state: 'needs_input', summary: 'WorkBuddy 有问题等你回答', result: question || 'WorkBuddy 有问题等你回答，请查看会话' };
+      }
+      return { ...base, state: 'needs_approval', summary: 'WorkBuddy 等待授权', result: 'WorkBuddy 需要你确认，请查看会话中的请求' };
+    }
+    case 'Notification': {
+      const type = raw.notification_type;
+      if (['auth_success', 'computer_use_enter', 'computer_use_exit'].includes(type)) return null;
+      const message = typeof raw.message === 'string' ? raw.message.trim() : '';
+      const approval = ['permission_prompt', 'worker_permission_prompt'].includes(type)
+        || /permission|approve|allow|授权|批准|允许/i.test(message);
+      return { ...base, state: approval ? 'needs_approval' : 'needs_input', echo: true,
+        summary: approval ? 'WorkBuddy 等待授权（hook 提示）' : 'WorkBuddy 等待用户（hook 提示）',
+        result: message || (approval ? 'WorkBuddy 需要你确认，请查看会话中的请求' : 'WorkBuddy 有问题等你回答，请查看会话') };
+    }
+    default: return null;
+  }
+}
+
 /**
  * Whether this "turn" is Codex naming a task rather than talking to the user.
  *
@@ -287,6 +368,10 @@ function fromCursor(raw) {
     // for every host. The event says a turn started, which is all the cat needs.
     case 'beforeSubmitPrompt':
       return { state: 'running', kind: 'chat', taskId: session, session, summary: '新一轮对话开始' };
+    case 'afterAgentResponse':
+      // Cursor's stop has status only; the response hook carries the completed assistant text.
+      // A later content-free stop is silent in the app and preserves this live result.
+      return { state: 'completed', kind: 'chat', taskId: session, session, summary: '本轮回复结束', result: raw.text };
     case 'stop': {
       const status = raw.status ?? 'completed';
       if (status === 'error') {
@@ -295,6 +380,9 @@ function fromCursor(raw) {
       if (status === 'aborted') {
         return { state: 'cancelled', kind: 'chat', taskId: session, session, summary: '本轮已中止' };
       }
+      // New installations get the reply from afterAgentResponse. A later empty stop must not
+      // overwrite a question from that reply with completed. Legacy stop-only installs still work.
+      if (raw.response_hook_enabled === true) return null;
       return { state: 'completed', kind: 'chat', taskId: session, session, summary: '本轮回复结束' };
     }
     default:
@@ -303,7 +391,7 @@ function fromCursor(raw) {
 }
 
 /** Validate against the schema's vocabularies. Unknown values are dropped, not corrected. */
-function clean(event, provider) {
+function clean(event, provider, identity) {
   if (!event || !STATES.has(event.state)) return null;
   const out = { state: event.state, provider };
   if (KINDS.has(event.kind)) out.kind = event.kind;
@@ -319,8 +407,13 @@ function clean(event, provider) {
   // Display only: which session this is, and its name - see TaskEvent::session/label in the app.
   if (typeof event.session === 'string' && event.session) out.session = event.session.slice(0, 128);
   if (typeof event.label === 'string' && event.label.trim()) out.label = event.label.trim().slice(0, SESSION_LABEL_MAX);
-  if (typeof event.result === 'string' && event.result.trim()) out.result = event.result.slice(0, 4000);
-  const agent = configuredAgent() || event.agent;
+  if (typeof event.result === 'string' && event.result.trim()) {
+    // Keep the conclusion AND the closing question; dropping the tail turns a long request
+    // for user input into a misleading completed event at the application boundary.
+    out.result = event.result.length <= 4000 ? event.result
+      : `${event.result.slice(0, 3000)}\n\n…\n\n${event.result.slice(-995)}`;
+  }
+  const agent = identity || configuredAgent() || event.agent;
   if (agent) out.agent = String(agent).slice(0, 64);
   return out;
 }
@@ -349,16 +442,39 @@ async function main() {
   } catch {
     return; // not our payload; say nothing
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+  const eventIndex = args.indexOf('--event');
+  if (host === 'workbuddy' && eventIndex >= 0) raw.hook_event_name = args[eventIndex + 1];
+  if (host === 'workbuddy' && args.includes('--skip-if-installed')) {
+    try {
+      const settings = JSON.parse(readFileSync(join(homedir(), '.workbuddy', 'settings.json'), 'utf8'));
+      const commands = (settings.hooks?.[raw.hook_event_name] ?? []).flatMap((g) => g.hooks ?? []);
+      if (commands.some((h) => typeof h.command === 'string' && h.command.includes('lingxi-emit.mjs')
+        && h.command.includes('--host workbuddy') && h.command.includes(`--event ${raw.hook_event_name}`)
+        && !h.command.includes('--skip-if-installed'))) return;
+    } catch { /* no configured counterpart: the plugin must deliver */ }
+  }
 
   const mapped = host === 'claude' ? withClaudeSession(fromClaude(raw), raw)
+    : host === 'workbuddy' ? fromWorkbuddy(raw)
     : host === 'codex' ? fromCodex(raw)
     : host === 'cursor' ? fromCursor(raw)
     : raw;
   // The configured identity is the better provider name when there is one: it is what the CLI and
   // the MCP server both report, so all three paths describe the same tool by the same name rather
   // than appearing as separate sources.
-  const provider = configuredAgent() ?? (host === 'generic' ? (raw.provider ?? 'generic') : host);
-  const event = clean(mapped, provider);
+  const identity = host === 'workbuddy' ? (process.env.LINGXI_AGENT?.trim() || 'workbuddy') : undefined;
+  const provider = identity ?? configuredAgent() ?? (host === 'generic' ? (raw.provider ?? 'generic') : host);
+  const event = clean(mapped, provider, identity);
+  if (host === 'workbuddy' && process.env.LINGXI_WORKBUDDY_DEBUG === '1') {
+    // Shape only: unknown payloads must never spill prompt/tool/reply text into host logs.
+    process.stderr.write(`[lingxi:workbuddy] ${JSON.stringify({ keys: Object.keys(raw),
+      event: typeof raw.hook_event_name === 'string' ? raw.hook_event_name : null,
+      mapped: Boolean(event), hasSession: Boolean(event?.session),
+      hasReply: typeof raw.last_assistant_message === 'string' && Boolean(raw.last_assistant_message.trim()),
+      hasTranscript: typeof raw.transcript_path === 'string',
+      fallback: event?.summary?.includes('无可用回复文本') ?? false })}\n`);
+  }
   if (!event) return; // a lifecycle event with no meaning for a cat
   // A host's own lifecycle event, not an agent's report: the app never reads its summary aloud
   // as a task result, and lets it stand down when the agent already reported the turn itself.
