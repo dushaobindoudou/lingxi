@@ -110,7 +110,13 @@ write_fanout() {
     if [ -n "$prev_cmd" ]; then
       echo "$prev_cmd \"\$PAYLOAD\" &   # 你原来的通知器"
     fi
-    echo "LINGXI_AGENT=codex node $(printf '%q' "$EMIT") --host codex \"\$PAYLOAD\" &"
+    echo '('
+    echo 'for N in "${LINGXI_NODE:-}" "$(command -v node 2>/dev/null)" /opt/homebrew/bin/node /usr/local/bin/node "$HOME"/.nvm/versions/node/*/bin/node /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node; do'
+    echo '  [ -n "$N" ] && [ -x "$N" ] || continue'
+    echo "  printf '%s' \"\$PAYLOAD\" | LINGXI_AGENT=codex \"\$N\" $(printf '%q' "$EMIT") --host codex"
+    echo '  exit 0'
+    echo 'done'
+    echo ') &'
     echo 'wait'
     echo 'exit 0'
   } > "$fanout"
@@ -130,7 +136,7 @@ previous_from_fanout() {
 
 FANOUT="$CODEX_DIR/notify-fanout.sh"
 FANOUT_NEEDED=0
-if [ ! -f "$FANOUT" ] || ! grep -q "lingxi-emit.mjs" "$FANOUT"; then
+if [ ! -f "$FANOUT" ] || ! grep -q "lingxi-emit.mjs" "$FANOUT" || ! grep -q 'LINGXI_NODE' "$FANOUT"; then
   FANOUT_NEEDED=1
 fi
 

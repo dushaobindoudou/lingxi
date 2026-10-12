@@ -249,11 +249,24 @@ test('a compaction is not a new session', async () => {
 
 test('with the app\'s own "一键接入" hooks installed, the plugin does not post a second copy', async () => {
   const box = machine({ oneClick: true });
+  // Both of the events used below have real counterparts in settings.
+  const settings = join(box.home, '.claude/settings.json');
+  const config = json(settings);
+  config.hooks.SessionStart = config.hooks.Stop;
+  writeFileSync(settings, JSON.stringify(config));
   run('session-start.sh', box, payload('SessionStart', { source: 'startup' }));
   assert.ok(await until(() => box.opened().length === 1), 'it still makes sure the app is running');
   run('event.sh', box, payload('Stop'));
   await settle(600);
   assert.deepEqual(box.posts(), [], 'the settings.json hooks already report these');
+});
+
+test('a partial Claude settings install must not silence plugin events that have no counterpart', () => {
+  const box = machine({ up: true, oneClick: true }); // settings covers Stop only
+  run('event.sh', box, payload('UserPromptSubmit'));
+  run('event.sh', box, payload('PermissionRequest', { tool_name: 'Bash' }));
+  run('event.sh', box, payload('Stop'));
+  assert.deepEqual(box.posts().map((body) => JSON.parse(body).hook_event_name), ['UserPromptSubmit', 'PermissionRequest']);
 });
 
 // --- the rest of the lifecycle ----------------------------------------------------------------

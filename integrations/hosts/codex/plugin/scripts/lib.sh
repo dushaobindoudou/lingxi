@@ -132,16 +132,22 @@ lx_post() { # path
 #
 # Codex has the same pair: the app's one-click (or integrations/hosts/codex/install.sh) points
 # `notify` at the cat - directly with curl, or through notify-fanout.sh - and that already reports
-# every turn end. The Codex plugin then leaves the turn events to it.
+# every turn end. The Codex plugin then leaves only turn ends to it.
 lx_oneclick_hooks_installed() {
   case "$LX_HOST" in
-    claude) grep -q '127.0.0.1:47811/task-event' "$HOME/.claude/settings.json" 2>/dev/null ;;
+    claude)
+      # A partial/old install may cover Stop but no permission events. Parse ONLY this event's
+      # groups with macOS's built-in plutil; no optional Node/Python runtime is needed. If the
+      # config cannot be inspected, deliver from the plugin instead of silently dropping it.
+      [ -n "${1:-}" ] && [ -x /usr/bin/plutil ] || return 1
+      /usr/bin/plutil -extract "hooks.$1" xml1 -o - "$HOME/.claude/settings.json" 2>/dev/null \
+        | grep '127.0.0.1:47811/task-event' >/dev/null ;;
     codex)
       local dir="${CODEX_HOME:-$HOME/.codex}" notify
       notify="$(grep -E '^[[:space:]]*notify[[:space:]]*=' "$dir/config.toml" 2>/dev/null | tail -1)"
       case "$notify" in
-        *47811*|*lingxi*) return 0 ;;
         *notify-fanout.sh*) grep -q 'lingxi-emit' "$dir/notify-fanout.sh" 2>/dev/null ;;
+        *lingxi-emit.mjs*|*127.0.0.1:47811/task-event*) return 0 ;;
         *) return 1 ;;
       esac ;;
     *) return 1 ;;

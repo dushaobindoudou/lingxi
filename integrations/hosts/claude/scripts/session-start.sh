@@ -39,7 +39,7 @@ emit() {
 
 # The "一键接入" hooks in settings.json post this same event; do not make the cat hear it twice.
 POST=1
-lx_oneclick_hooks_installed && POST=0
+lx_oneclick_hooks_installed SessionStart && POST=0
 reactions="$(lx_option reactions all)"
 [ "$reactions" = off ] && POST=0
 

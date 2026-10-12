@@ -17,8 +17,8 @@
 # Codex writes one compact line, so the rename only ever matches the real key - inside a string
 # value the quotes around that name would be escaped.
 #
-# The per-turn events (prompt, turn end) are left to `notify` when the app's one-click or
-# integrations/hosts/codex/install.sh already reports them, so the cat hears each turn once.
+# Turn ends are left to `notify` when it is installed. Notify does not report prompts, so
+# UserPromptSubmit must always report running.
 # Delivery only: a closed app stays closed (ensure-app.sh starts it, at session start). Always
 # exits 0. The post is a loopback round trip with a 3-second cap, made before returning: Codex has
 # no async hooks, and a post left running in the background could be killed with the hook.
@@ -34,7 +34,7 @@ LABEL="$(basename "${CWD:-codex}")"
 
 case "$EVENT" in
   SessionStart) STATE=queued; SUMMARY="会话开始" ;;
-  UserPromptSubmit) lx_oneclick_hooks_installed && exit 0; STATE=running; SUMMARY="新一轮对话开始" ;;
+  UserPromptSubmit) STATE=running; SUMMARY="新一轮对话开始" ;;
   PermissionRequest)
     TOOL="$(field tool_name)"
     STATE=needs_approval; SUMMARY="Codex 想用 ${TOOL:-一个工具}，等你批准" ;;
@@ -45,7 +45,7 @@ lx_bridge_up || exit 0
 
 HEAD="$(printf '"provider":"codex","agent":"codex","origin":"hook","kind":"chat","state":"%s","taskId":"%s","session":"%s","label":"%s","summary":"%s"' \
   "$STATE" "${SESSION:-codex-session}" "${SESSION:-codex-session}" "$(lx_json_escape "$LABEL")" "$(lx_json_escape "$SUMMARY")")"
-REST="$(sed -e 's/^[[:space:]]*{//' -e 's/"last_assistant_message":/"result":/' <<<"$PAYLOAD")"
+REST="$(sed -e 's/^[[:space:]]*{//' -e 's/"last_assistant_message"[[:space:]]*:/"result":/' <<<"$PAYLOAD")"
 case "$REST" in
   "}"*|"") BODY="{${HEAD}}" ;;
   *) BODY="{${HEAD},${REST}" ;;

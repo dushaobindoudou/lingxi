@@ -20,7 +20,8 @@ case "$(lx_option reactions all)" in
   off) exit 0 ;;
   important) grep -Eq '"hook_event_name" *: *"(UserPromptSubmit|TaskCompleted)"' <<<"$PAYLOAD" && exit 0 ;;
 esac
-lx_oneclick_hooks_installed && exit 0
+EVENT="$(sed -n 's/.*"hook_event_name" *: *"\([A-Za-z]*\)".*/\1/p' <<<"$PAYLOAD" | sed -n 1p)"
+lx_oneclick_hooks_installed "$EVENT" && exit 0
 lx_bridge_up || exit 0
 printf '%s' "$PAYLOAD" | lx_post /task-event >/dev/null
 exit 0

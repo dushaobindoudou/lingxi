@@ -134,7 +134,21 @@ test('every event reaches the cat as Codex, in the shape the bridge maps for Cod
 test('with notify already reporting turns, the plugin reports only what notify cannot', () => {
   const box = machine({ notify: '#!/bin/sh\nnode /x/integrations/adapters/lingxi-emit.mjs --host codex "$1" &\nwait\n' });
   for (const event of ['UserPromptSubmit', 'Stop', 'PermissionRequest']) run(box, 'event.sh', payload(event));
-  assert.deepEqual(box.posts().map((p) => p.state), ['needs_approval'], 'notify already reports the prompt and the turn end');
+  assert.deepEqual(box.posts().map((p) => p.state), ['running', 'needs_approval'], 'notify reports only turn ends; prompt hooks must still report running');
+});
+
+test('Codex reply rename accepts JSON whitespace before the field colon', () => {
+  const box = machine();
+  const input = payload('Stop', { last_assistant_message: '通知解析修好了。' }).replace('"last_assistant_message":', '"last_assistant_message" : ');
+  run(box, 'event.sh', input);
+  assert.equal(box.posts()[0].result, '通知解析修好了。');
+});
+
+test('a notifier with lingxi in its name is not proof that Codex turn ends already reach the cat', () => {
+  const box = machine();
+  writeFileSync(join(box.env.CODEX_HOME, 'config.toml'), 'notify = ["/usr/bin/lingxi-display-helper"]\n');
+  run(box, 'event.sh', payload('Stop', { last_assistant_message: '结束通知可用。' }));
+  assert.equal(box.posts().length, 1);
 });
 
 test('a closed app is left closed by turn events, and nothing fails', () => {

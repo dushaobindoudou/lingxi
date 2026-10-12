@@ -10,8 +10,14 @@ Codex 有两条接入路径，**选一条**：
 | 要不要仓库 | 不要，插件自包含 | 要，配置指向仓库路径 |
 | 首次使用 | Codex 会提示审核插件 hooks（"hooks need review"），批准一次 | 无 |
 
-两条都装了也不会重复：插件发现 `notify` 已经指向灵犀，就把回合事件让给它，只报 notify 报不了的
-（会话开始、等授权）。
+两条都装了也不会重复：插件发现 `notify` 已经指向灵犀，就把回合结束让给它，仍报告
+会话开始、用户提交（running）和等授权。notify 只报结束，不报开始。
+
+Hook 公共字段为 `hook_event_name` / `session_id` / `cwd`；Stop 的
+`last_assistant_message` 映射到只用于显示的 `result`，合法 JSON 空格不会打断重命名。
+notify 使用 `type` / `thread-id` / `last-assistant-message`，由独立 codex 适配臂处理。
+安装生成的 fanout 在运行时查找 Node（`LINGXI_NODE`、PATH、Homebrew、nvm），
+从 Dock 启动也可工作；重跑安装器会升级旧 fanout 并保留原通知程序。
 
 ## 原生插件 `plugin/`
 
