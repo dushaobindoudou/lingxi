@@ -85,6 +85,20 @@
   依赖 `/bin/ps` 的测试（如 `claude-plugin.test.mjs:375`）在这里必然失败，属环境级，不是回归。
 - **版本判据不能看 HTTP `/activity`**：那个端点不输出 `attention` / `attention_seen` / `key`——
   这些是 tauri command `get_agents` 给主界面加的。可靠办法是搜二进制符号（如 `acknowledge_activity`）。
+- **二进制大小也不能当版本判据**：0.3.0 与 0.4.0 的 `灵犀.app/Contents/MacOS/lingxi` 都是 9544688 B，
+  改用 md5 或 plist 的 `CFBundleShortVersionString`。
+- **文档链接一律写仓库内相对路径**：`npm run check` 对指向 git-ignored 目标的链接是容忍的（只提示），
+  但只要有**绝对路径/越界路径**混进批量 `git check-ignore --stdin`，它就以 status 128 退出，
+  check 收到空集便把**所有** missing 误报成 broken。踩过：ANALYSIS.md 里 5 个 `/Users/<别人>/...`
+  让本来正常的 2 个也一起报错。
+
+- **注册表是纯内存的**：app 一重启 `lingxi agents` 就清空，四个宿主都要重新 register，
+  否则徽标退化成两字母。
+- **mark svg 必须以 `<svg` 开头**：顶部留注释会被 logo 校验判成 "not an SVG"（workbuddy 先踩，
+  codex-mark/dsh-mark 同款，已把注释移进开标签内）。
+- 接入是否真的通，看 `lingxi events` 里的 provider：codex→`notify-fanout.sh`、
+  claude→`lingxi-emit.mjs --host claude`、dsh→`LINGXI_AGENT=dsh lingxi task`、
+  workbuddy→settings.json 的 UserPromptSubmit hook。
 
 ## 托盘未读数字
 
