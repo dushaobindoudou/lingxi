@@ -1,0 +1,290 @@
+{
+  "file": "/Users/liepin/workspace/lingxi-v5fix/assets/characters/lingxi/v6/round-r/lingxi-short-fur-rig-v5.blend",
+  "bones": 55,
+  "paw_selection": "Body vertices with bind-space z < 0.075 m and total Paw+Toe weight > 0.45; excludes shank; pads and beans measured separately",
+  "frames": {
+    "Idle": {
+      "frame": 19,
+      "body_ground_clearance_mm": 6.079999923706055,
+      "paws": {
+        "Front.L": {
+          "skin_min_z_mm": 1.0800000429153442,
+          "pads_min_z_mm": -0.5299999713897705,
+          "skin_span_mm": [
+            155.19000244140625,
+            127.77999877929688,
+            73.81999969482422
+          ]
+        },
+        "Front.R": {
+          "skin_min_z_mm": 1.090000033378601,
+          "pads_min_z_mm": -0.550000011920929,
+          "skin_span_mm": [
+            155.19000244140625,
+            127.77999877929688,
+            73.76000213623047
+          ]
+        },
+        "Rear.L": {
+          "skin_min_z_mm": 1.090000033378601,
+          "pads_min_z_mm": -0.41999998688697815,
+          "skin_span_mm": [
+            154.74000549316406,
+            119.33999633789062,
+            73.47000122070312
+          ]
+        },
+        "Rear.R": {
+          "skin_min_z_mm": 1.090000033378601,
+          "pads_min_z_mm": -0.41999998688697815,
+          "skin_span_mm": [
+            154.74000549316406,
+            119.33999633789062,
+            73.61000061035156
+          ]
+        }
+      }
+    },
+    "LieDown": {
+      "frame": 236,
+      "body_ground_clearance_mm": 8.430000305175781,
+      "paws": {
+        "Front.L": {
+          "skin_min_z_mm": 3.430000066757202,
+          "pads_min_z_mm": 2.240000009536743,
+          "skin_span_mm": [
+            155.19000244140625,
+            100.47000122070312,
+            83.54000091552734
+          ]
+        },
+        "Front.R": {
+          "skin_min_z_mm": 3.440000057220459,
+          "pads_min_z_mm": 2.2200000286102295,
+          "skin_span_mm": [
+            155.19000244140625,
+            100.47000122070312,
+            83.55999755859375
+          ]
+        },
+        "Rear.L": {
+          "skin_min_z_mm": 24.739999771118164,
+          "pads_min_z_mm": 36.779998779296875,
+          "skin_span_mm": [
+            154.74000549316406,
+            130.9199981689453,
+            108.81999969482422
+          ]
+        },
+        "Rear.R": {
+          "skin_min_z_mm": 24.739999771118164,
+          "pads_min_z_mm": 36.779998779296875,
+          "skin_span_mm": [
+            154.74000549316406,
+            130.94000244140625,
+            108.81999969482422
+          ]
+        }
+      }
+    },
+    "SideLie": {
+      "frame": 284,
+      "body_ground_clearance_mm": 5.570000171661377,
+      "paws": {
+        "Front.L": {
+          "skin_min_z_mm": 2.369999885559082,
+          "pads_min_z_mm": 2.619999885559082,
+          "skin_span_mm": [
+            141.6199951171875,
+            122.12999725341797,
+            116.33000183105469
+          ]
+        },
+        "Front.R": {
+          "skin_min_z_mm": 5.239999771118164,
+          "pads_min_z_mm": 4.71999979019165,
+          "skin_span_mm": [
+            141.47000122070312,
+            126.91999816894531,
+            110.29000091552734
+          ]
+        },
+        "Rear.L": {
+          "skin_min_z_mm": 4.789999961853027,
+          "pads_min_z_mm": 13.760000228881836,
+          "skin_span_mm": [
+            88.83000183105469,
+            114.38999938964844,
+            151.86000061035156
+          ]
+        },
+        "Rear.R": {
+          "skin_min_z_mm": 33.290000915527344,
+          "pads_min_z_mm": 30.690000534057617,
+          "skin_span_mm": [
+            134.41000366210938,
+            127.48999786376953,
+            103.25
+          ]
+        }
+      },
+      "rear_paw_triangle_intersections": 149,
+      "rear_paw_nearest_skin_mm": 0.01
+    },
+    "Sleep": {
+      "frame": 350,
+      "body_ground_clearance_mm": 5.320000171661377,
+      "paws": {
+        "Front.L": {
+          "skin_min_z_mm": 10.710000038146973,
+          "pads_min_z_mm": 23.790000915527344,
+          "skin_span_mm": [
+            108.83000183105469,
+            73.5,
+            155.0
+          ],
+          "head_lowest_xy_distance_mm": 341.5799865722656
+        },
+        "Front.R": {
+          "skin_min_z_mm": 122.45999908447266,
+          "pads_min_z_mm": 132.64999389648438,
+          "skin_span_mm": [
+            131.58999633789062,
+            74.6500015258789,
+            145.58999633789062
+          ],
+          "head_lowest_xy_distance_mm": 297.3999938964844
+        },
+        "Rear.L": {
+          "skin_min_z_mm": 0.3199999928474426,
+          "pads_min_z_mm": 12.569999694824219,
+          "skin_span_mm": [
+            93.66999816894531,
+            114.63999938964844,
+            155.05999755859375
+          ]
+        },
+        "Rear.R": {
+          "skin_min_z_mm": 127.94999694824219,
+          "pads_min_z_mm": 129.5800018310547,
+          "skin_span_mm": [
+            97.13999938964844,
+            133.2899932861328,
+            138.32000732421875
+          ]
+        }
+      },
+      "head_lowest_mm": [
+        -609.469970703125,
+        -234.5399932861328,
+        110.0999984741211
+      ]
+    },
+    "Lick": {
+      "frame": 537,
+      "body_ground_clearance_mm": 10.010000228881836,
+      "paws": {
+        "Front.L": {
+          "skin_min_z_mm": 5.010000228881836,
+          "pads_min_z_mm": 3.4100000858306885,
+          "skin_span_mm": [
+            155.19000244140625,
+            129.02999877929688,
+            73.9800033569336
+          ]
+        },
+        "Front.R": {
+          "skin_min_z_mm": 389.2200012207031,
+          "pads_min_z_mm": 389.6300048828125,
+          "skin_span_mm": [
+            153.55999755859375,
+            110.5999984741211,
+            82.4000015258789
+          ]
+        },
+        "Rear.L": {
+          "skin_min_z_mm": 21.889999389648438,
+          "pads_min_z_mm": 32.91999816894531,
+          "skin_span_mm": [
+            154.74000549316406,
+            132.02999877929688,
+            107.77999877929688
+          ]
+        },
+        "Rear.R": {
+          "skin_min_z_mm": 21.889999389648438,
+          "pads_min_z_mm": 32.90999984741211,
+          "skin_span_mm": [
+            154.74000549316406,
+            132.02999877929688,
+            107.77999877929688
+          ]
+        }
+      },
+      "head_paw_triangle_intersections": 0,
+      "tongue_to_paw_skin_min_mm": 22.14,
+      "tongue_to_Pad_min_mm": 4.71,
+      "tongue_to_Bean0_min_mm": 57.52,
+      "tongue_to_Bean1_min_mm": 55.92,
+      "tongue_to_Bean2_min_mm": 59.92,
+      "tongue_to_Bean3_min_mm": 69.87,
+      "tongue_keys": {
+        "Basis": 1.0,
+        "Up": 1.0,
+        "Out": 0.9999948143959045
+      },
+      "wrist_rotation_deg": 85.1
+    }
+  },
+  "skin_clip_minima": {
+    "LieDown": {
+      "frame": 204,
+      "body_z_mm": 0.9599999785423279,
+      "ground_clearance_mm": 5.960000038146973,
+      "vertex": 2441,
+      "bind_position_mm": [
+        -124.87,
+        -222.58,
+        1.09
+      ],
+      "weights": {
+        "FrontPaw.L": 0.521,
+        "FrontToe1.L": 0.479
+      }
+    },
+    "SideLie": {
+      "frame": 260,
+      "body_z_mm": -44.810001373291016,
+      "ground_clearance_mm": -39.810001373291016,
+      "vertex": 19850,
+      "bind_position_mm": [
+        -188.74,
+        206.4,
+        9.99
+      ],
+      "weights": {
+        "Pelvis": 0.001,
+        "RearPaw.L": 0.507,
+        "RearToe0.L": 0.493
+      }
+    },
+    "Sleep": {
+      "frame": 368,
+      "body_z_mm": 0.3199999928474426,
+      "ground_clearance_mm": 5.320000171661377,
+      "vertex": 19824,
+      "bind_position_mm": [
+        -197.37,
+        206.47,
+        34.75
+      ],
+      "weights": {
+        "Pelvis": 0.001,
+        "RearLower.L": 0.001,
+        "RearPaw.L": 0.563,
+        "RearToe0.L": 0.436
+      }
+    }
+  },
+  "ground_top_z_mm": -5.000002682209015
+}

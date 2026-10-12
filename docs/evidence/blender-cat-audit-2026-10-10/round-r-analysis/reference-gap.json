@@ -1,0 +1,214 @@
+{
+ "LieDown": {
+  "frame": 236,
+  "checks": [
+   {
+    "metric": "two front paws: inner gap / paw width",
+    "value": 0.7,
+    "expect": 0.8,
+    "gap": -0.1,
+    "tol": 0.35,
+    "unit": "ratio",
+    "verdict": "OK"
+   },
+   {
+    "metric": "front paws flat on floor (lowest vertex)",
+    "value": 2.2,
+    "expect": 0.0,
+    "gap": 2.2,
+    "tol": 5.0,
+    "unit": "mm",
+    "verdict": "OK"
+   },
+   {
+    "metric": "front paws not tilted (sole off floor)",
+    "value": 5.9,
+    "expect": 0.0,
+    "gap": 5.9,
+    "tol": 10.0,
+    "unit": "deg",
+    "verdict": "OK"
+   },
+   {
+    "metric": "both paws same forward depth",
+    "value": 0.0,
+    "expect": 0.0,
+    "gap": 0.0,
+    "tol": 5.0,
+    "unit": "mm",
+    "verdict": "OK"
+   },
+   {
+    "metric": "paw height / paw width  (ref: height ~ half width)",
+    "value": 0.3,
+    "expect": 0.5,
+    "gap": -0.2,
+    "tol": 0.15,
+    "unit": "ratio",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "forearm FL parallel to floor (elevation)",
+    "value": 16.4,
+    "expect": 0.0,
+    "gap": 16.4,
+    "tol": 10.0,
+    "unit": "deg",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "forearm FR parallel to floor (elevation)",
+    "value": 16.4,
+    "expect": 0.0,
+    "gap": 16.4,
+    "tol": 10.0,
+    "unit": "deg",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "forearm mid height / forearm diameter",
+    "value": 0.3,
+    "expect": 1.0,
+    "gap": -0.7,
+    "tol": 0.45,
+    "unit": "ratio",
+    "verdict": "MISS"
+   }
+  ]
+ },
+ "SideLie": {
+  "frame": 284,
+  "checks": [
+   {
+    "metric": "LOWER hind paw resting on floor",
+    "value": 13.8,
+    "expect": 0.0,
+    "gap": 13.8,
+    "tol": 5.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "stack height / one paw height (upper ON lower)",
+    "value": 0.1,
+    "expect": 1.0,
+    "gap": -0.9,
+    "tol": 0.35,
+    "unit": "ratio",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "both hind tips point the same way",
+    "value": 33.0,
+    "expect": 0.0,
+    "gap": 33.0,
+    "tol": 25.0,
+    "unit": "deg",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "lower paw projects past upper / half paw width",
+    "value": 0.6,
+    "expect": 1.0,
+    "gap": -0.4,
+    "tol": 0.6,
+    "unit": "ratio",
+    "verdict": "OK"
+   },
+   {
+    "metric": "upper hind paw absolute height",
+    "value": 30.7,
+    "expect": 123.95414710044861,
+    "gap": -93.3,
+    "tol": 40.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   }
+  ],
+  "lower_is": "HL",
+  "paw_height_mm": 124.0
+ },
+ "Sleep": {
+  "frame": 350,
+  "checks": [
+   {
+    "metric": "front paw FL on the floor",
+    "value": 23.8,
+    "expect": 0.0,
+    "gap": 23.8,
+    "tol": 8.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "front paw FL: chin horizontal distance",
+    "value": 374.1,
+    "expect": 0.0,
+    "gap": 374.1,
+    "tol": 40.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "front paw FR on the floor",
+    "value": 132.6,
+    "expect": 0.0,
+    "gap": 132.6,
+    "tol": 8.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "front paw FR: chin horizontal distance",
+    "value": 343.7,
+    "expect": 0.0,
+    "gap": 343.7,
+    "tol": 40.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "chin-to-paw AIR GAP (vs the LOWER paw, its top)",
+    "value": -40.2,
+    "expect": 0.0,
+    "gap": -40.2,
+    "tol": 6.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "chin height above floor (ref: on the paws, not on the floor)",
+    "value": 110.1,
+    "expect": 60.0,
+    "gap": 50.1,
+    "tol": 45.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   },
+   {
+    "metric": "the two paws side by side, not stacked (inner gap)",
+    "value": -66.8,
+    "expect": 12.0,
+    "gap": -78.8,
+    "tol": 10.0,
+    "unit": "mm",
+    "verdict": "MISS"
+   }
+  ],
+  "chin_height_mm": 110.1,
+  "per_paw": {
+   "FL": {
+    "min_z_mm": 23.8,
+    "top_z_mm": 150.3,
+    "gap_chin_minus_top_mm": -40.2,
+    "chin_horiz_mm": 374.1
+   },
+   "FR": {
+    "min_z_mm": 132.6,
+    "top_z_mm": 246.5,
+    "gap_chin_minus_top_mm": -136.4,
+    "chin_horiz_mm": 343.7
+   }
+  }
+ }
+}
