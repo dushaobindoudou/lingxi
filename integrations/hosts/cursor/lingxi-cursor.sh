@@ -2,11 +2,12 @@
 # Cursor user hook. Prints the hook's required stdout immediately, then reports the
 # lifecycle event to 灵犀 in the background. A pet must never block or fail a turn.
 #
-#   lingxi-cursor.sh sessionStart|beforeSubmitPrompt|stop
+#   lingxi-cursor.sh sessionStart|beforeSubmitPrompt|afterAgentResponse|stop [--response-hook]
 # stdin: the Cursor hook JSON
 set -u
 
 EVENT="${1:-}"
+RESPONSE_HOOK="${2:-}"
 SELF="$0"
 if [ -L "${SELF}" ]; then
   SELF="$(readlink "${SELF}")"
@@ -43,9 +44,16 @@ esac
     }
   fi
   [ -n "${PAYLOAD}" ] || exit 0
-  command -v node >/dev/null 2>&1 || exit 0
+  N=""
+  for candidate in "${LINGXI_NODE:-}" "$(command -v node 2>/dev/null)" \
+    /opt/homebrew/bin/node /usr/local/bin/node "$HOME"/.nvm/versions/node/*/bin/node \
+    /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node; do
+    [ -n "${candidate}" ] && [ -x "${candidate}" ] || continue
+    N="${candidate}"; break
+  done
+  [ -n "${N}" ] || exit 0
   [ -f "${EMIT}" ] || exit 0
-  STAMPED="$(printf '%s' "${PAYLOAD}" | EVENT="${EVENT}" python3 -c '
+  STAMPED="$(printf '%s' "${PAYLOAD}" | EVENT="${EVENT}" RESPONSE_HOOK="${RESPONSE_HOOK}" python3 -c '
 import json, os, sys
 raw = sys.stdin.read().strip()
 try:
@@ -55,14 +63,15 @@ except Exception:
 if not isinstance(data, dict):
     sys.exit(0)
 data["hook_event_name"] = os.environ.get("EVENT", "")
+data["response_hook_enabled"] = os.environ.get("RESPONSE_HOOK") == "--response-hook"
 sys.stdout.write(json.dumps(data, ensure_ascii=False))
 ')" || exit 0
   [ -n "${STAMPED}" ] || exit 0
-  LINGXI_AGENT=cursor \
+  printf '%s' "${STAMPED}" | LINGXI_AGENT=cursor \
   LINGXI_AGENT_NAME=Cursor \
   LINGXI_AGENT_BADGE='▸' \
   LINGXI_AGENT_COLOR='#14120B' \
-    node "${EMIT}" --host cursor "${STAMPED}"
+    "${N}" "${EMIT}" --host cursor
 ) </dev/null >/dev/null 2>&1 &
 
 exit 0

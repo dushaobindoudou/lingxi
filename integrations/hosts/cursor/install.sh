@@ -34,7 +34,7 @@ AGENT_ID="cursor"
 AGENT_NAME="Cursor"
 AGENT_BADGE="▸"
 AGENT_COLOR="#14120B"
-HOOK_EVENTS="sessionStart beforeSubmitPrompt stop"
+HOOK_EVENTS="sessionStart beforeSubmitPrompt afterAgentResponse stop"
 
 DRY_RUN=0
 UNINSTALL=0
@@ -207,7 +207,8 @@ hooks = data.setdefault('hooks', {})
 events = {
     'sessionStart': './hooks/lingxi-cursor.sh sessionStart',
     'beforeSubmitPrompt': './hooks/lingxi-cursor.sh beforeSubmitPrompt',
-    'stop': './hooks/lingxi-cursor.sh stop',
+    'afterAgentResponse': './hooks/lingxi-cursor.sh afterAgentResponse',
+    'stop': './hooks/lingxi-cursor.sh stop --response-hook',
 }
 for name, command in events.items():
     items = [item for item in (hooks.get(name) or []) if 'lingxi-cursor.sh' not in str((item or {}).get('command', ''))]
@@ -252,15 +253,18 @@ elif ! "${CLI}" health >/dev/null 2>&1; then
 elif [ "${DRY_RUN}" = 1 ]; then
   note "会注册 ${AGENT_BADGE} ${AGENT_NAME}"
 else
-  LINGXI_AGENT="${AGENT_ID}" "${CLI}" register "${AGENT_ID}" --logo "${MARK}" \
-    --name "${AGENT_NAME}" --color "${AGENT_COLOR}" --badge "${AGENT_BADGE}" >/dev/null
-  log "已注册 ${AGENT_BADGE} ${AGENT_NAME}"
+  if LINGXI_AGENT="${AGENT_ID}" "${CLI}" register "${AGENT_ID}" --logo "${MARK}" \
+      --name "${AGENT_NAME}" --color "${AGENT_COLOR}" --badge "${AGENT_BADGE}" >/dev/null; then
+    log "已注册 ${AGENT_BADGE} ${AGENT_NAME}"
+  else
+    note "徽章注册失败；已安装的 hooks、skill 与 MCP 配置仍可用"
+  fi
 fi
 
 echo
 echo "完成。新开一个 Cursor Agent 会话后生效。验收："
-echo "  ${HOOK_SRC} stop <<'EOF'"
-echo "  {\"conversation_id\":\"cursor-e2e\",\"status\":\"completed\"}"
+echo "  ${HOOK_SRC} afterAgentResponse <<'EOF'"
+echo "  {\"conversation_id\":\"cursor-e2e\",\"text\":\"Cursor 通知链路检查通过。\"}"
 echo "  EOF"
 echo "  lingxi events    # provider=cursor，summary=本轮回复结束"
 echo

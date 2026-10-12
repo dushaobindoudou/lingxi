@@ -1,6 +1,6 @@
 ---
 name: lingxi-cursor
-description: Cursor-only rules for the 灵犀 desktop cat - the identity to speak as, what the user-level hooks already report (session start, each prompt, each turn end), why Cursor's turn end carries no content without your report, and MCP trust on first use. Read alongside the lingxi skill whenever you drive the cat from Cursor. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
+description: Cursor-only rules for the 灵犀 desktop cat - the identity to speak as, lifecycle and final-response hooks, your full task reports, and MCP trust on first use. Read alongside the lingxi skill whenever you drive the cat from Cursor. Triggers - 灵犀, 桌宠, desktop cat, "让猫", "cat react", "remind me", "提醒我".
 ---
 
 # 灵犀 · 只在 Cursor 上成立的事
@@ -22,16 +22,20 @@ LINGXI_AGENT=cursor LINGXI_TASK_ID=fix-login lingxi task completed test proud "�
 
 ## 二、hooks 已经自动报了什么
 
-用户级 hooks（`~/.cursor/hooks.json`）在三个时刻必触发，不经过你：
+用户级 hooks（`~/.cursor/hooks.json`）自动报告以下事件，不经过你：
 
 | 时刻 | 猫知道的 |
 |---|---|
 | 会话开始 | 会话开了；猫没在跑时顺手在后台拉起（`LINGXI_AUTOSTART=0` 时不拉） |
 | 你收到用户的一条消息 | 新一轮开始（不带用户说了什么） |
-| 一轮结束 | 这一轮结束了——**不带任何内容**，Cursor 的这个事件里没有你的回复 |
+| 回复完成 | `afterAgentResponse.text` 传给应用，从结论截一句；末尾有问题时叫用户回答 |
+| 一轮失败或取消 | `stop.status` 更新终态；正常 stop 让位于回复事件 |
 
-所以在 Cursor 上，**这一轮做成了什么只有你报了猫才知道**。你没报时只更新状态，不播空的「回复结束」；
-你报过时直接展示具体结果。每轮结束前报终态和 `summary`：任务名、结果、下一步或原样的问题。
+你没报时 hook 从最终回复兜底；你报过时直接展示具体结果。完整任务结果和心情仍然只有你知道，
+每轮结束前报终态和 `summary`：任务名、结果、下一步或原样的问题。
+旧配置没有 `afterAgentResponse` 时，结束仍只更新状态；重跑安装器升级。
+当前公开 hooks 没有通用授权弹窗事件，工具执行前事件也不能证明用户正在等授权；
+需要用户决定或补充信息时，主动报 `needs_approval` / `needs_input`。
 
 已知真实会话 id 时，CLI 用 `LINGXI_SESSION`，MCP 的 `lingxi_task` 用可选 `session`，
 这样能和 hooks 对齐；不知道时省略，不要拿别的会话 id 来填。
