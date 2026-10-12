@@ -161,7 +161,9 @@ def closing_reply(conversation, since):
             content = entry.get("content")
             if isinstance(content, list):
                 content = " ".join(part.get("text", "") for part in content if isinstance(part, dict))
-            return content[:4000] if isinstance(content, str) and content.strip() else None
+            if not isinstance(content, str) or not content.strip():
+                return None
+            return content if len(content) <= 4000 else content[:3000] + "\n\n…\n\n" + content[-995:]
     return None
 
 
@@ -214,7 +216,9 @@ class Watcher:
                     self.current = None
                     set_active(None)
                 time.sleep(1.5)  # let 豆包 finish writing the trajectory
-                self.report("completed", conversation, "本轮回复结束", closing_reply(conversation, began))
+                reply = closing_reply(conversation, began)
+                summary = "本轮回复结束" if reply else "豆包回复结束（hook 兜底，无可用回复文本）"
+                self.report("completed", conversation, summary, reply or "这一轮结束了")
             return
         if ASK.search(text) and self.current:
             self.report("needs_input", self.current, "豆包在等你回答")

@@ -80,6 +80,8 @@ test('a 豆包 turn is reported as it starts, waits on the user, and ends - and 
     appendFileSync(log, logLine('Unregister blocker', '222'));
     assert.ok(await until(() => events.length >= 3), 'turn end never reported');
     assert.equal(events[2].state, 'completed');
+    assert.equal(events[2].result, '这一轮结束了', 'a missing trajectory must still produce an audible fallback');
+    assert.match(events[2].summary, /无可用回复文本/);
     assert.ok(!existsSync(join(state, 'active-conversation')), 'the finished conversation is still marked active');
     // 豆包's face is registered once for this app instance, not on every event.
     assert.equal(registrations.length, 1);
@@ -91,6 +93,16 @@ test('a 豆包 turn is reported as it starts, waits on the user, and ends - and 
     assert.ok(await until(() => events.length >= 4), 'a turn in a newly rotated log was never reported');
     assert.equal(events[3].taskId, '333');
     assert.equal(events[3].state, 'running');
+
+    const finalSystem = join(doubao, 'Default/.doubao/agent_mode/workspace/.sessions/333/agents/m_x/system');
+    mkdirSync(finalSystem, { recursive: true });
+    writeFileSync(join(finalSystem, 'trajectory.jsonl'), JSON.stringify({ role: 'assistant', content: '豆包通知链路修好了。\n' + 'x'.repeat(6000) + '\n要继续检查吗？' }) + '\n');
+    appendFileSync(join(doubao, 'sdk_storage/log/saman_2026.0930.1.log'), logLine('Unregister blocker', '333'));
+    assert.ok(await until(() => events.length >= 5));
+    assert.ok(events[4].result.startsWith('豆包通知链路修好了。'));
+    assert.ok(events[4].result.endsWith('要继续检查吗？'));
+    assert.equal(events[4].result.length, 4000);
+    assert.ok(!events[4].summary.includes('通知链路修好了'), 'reply content must not enter persisted summaries');
   } finally {
     child.kill();
     server.close();
