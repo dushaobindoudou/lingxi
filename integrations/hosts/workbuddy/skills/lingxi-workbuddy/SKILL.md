@@ -13,12 +13,13 @@ description: WorkBuddy-only rules for the 灵犀 desktop cat - the trust gate th
 
 ## 一、生命周期和弹窗都不用你报了
 
-`install.sh` 已经装好四个 hook 事件，宿主自己触发：
+`install.sh` 已经装好五个 hook 事件，宿主自己触发（具体事件支持取决于宿主版本）：
 
 | 事件 | 猫的反应 |
 |---|---|
 | `UserPromptSubmit` | 新一轮开始 → running |
 | `Stop` | 这一轮结束 → completed |
+| `StopFailure` | 失败终止 → failed |
 | `Notification` | agent 在等用户（权限提示、提问）→ `needs_approval` / `needs_input` |
 | `PermissionRequest` | 权限对话框刚打开 → `needs_approval` |
 
@@ -26,8 +27,15 @@ description: WorkBuddy-only rules for the 灵犀 desktop cat - the trust gate th
 （弹窗这两条是后加的：以前只装生命周期，WorkBuddy 弹权限框时猫完全没反应。）
 
 hook 报不出的是**心情**和完整任务结果。结束前用稳定 `taskId` 报终态和具体 `summary`；
-回复内容能取到时会兜底，取不到时只更新状态，不播固定结束句。
+Stop 由独立 workbuddy 适配器读取原生 transcript 的最终回复；取不到时播「这一轮结束了」，
+只代表回合结束，不代表用户任务完成。你报过同一轮的结果后，应用仍会让 hook 让位。
 同一等待的 Notification 是重复提示，不会反复念或重新挂起已读数字。
+
+每条任务命令都带同一个 `LINGXI_TASK_ID`，不要只换表情。结束前报具体结论，例如：
+
+```bash
+LINGXI_AGENT=workbuddy LINGXI_TASK_ID=fix-login "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi" task completed test proud "登录测试已修复，相关用例通过，可以继续发布"
+```
 
 ## 二、额度守卫也在自己跑
 

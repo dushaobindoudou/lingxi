@@ -24,17 +24,19 @@ lingxi events | tail     # 结束一轮对话后应出现 workbuddy 署名的 ru
   下载最新版、校验后装好并打开；装了没开就后台拉起。`LINGXI_AUTOINSTALL=0` 关掉
 - **hooks**：`UserPromptSubmit`→running、`Stop`→completed 自动生效，实时加载，无需重启会话
 - **skill**：`lingxi`（任务上报与心情）与 `lingxi-authoring`（自定义动作/表情/皮肤）出现在可用 skill 列表
-- **身份**：机器级 `~/.lingxi/agent.json`（id=workbuddy）——首次反应时若该文件不存在，
+- **身份**：hook 固定为 workbuddy，不借用机器级 `~/.lingxi/agent.json` 中其他宿主的身份——首次反应时若未注册，
   会以 fallback 徽章出现；跑一次本仓库的 `integrations/hosts/workbuddy/install.sh`
   即可补齐署名、MCP 与真实图标 logo
 
 ## 设计边界
 
-- 装四个事件：`UserPromptSubmit` / `Stop`（会话生命周期）+ `Notification` / `PermissionRequest`
+- 装五个事件：`UserPromptSubmit` / `Stop`（会话生命周期）+ `StopFailure`（失败）+ `Notification` / `PermissionRequest`
   （agent 弹出权限提示或提问、在等用户）。**只装生命周期那两条时弹窗完全不会被覆盖**——
   这就是"WorkBuddy 弹了个东西，猫却没反应"的原因
 - **不要加 `PreToolUse` / `PostToolUse`**：每次工具调用都触发，会把猫变成通知轰炸
-- `SessionStart` 是有的（实测会触发），只是我们没装——它只能报 `queued`，价值不大
+- `SessionStart` 用来检查并启动应用
+- `Stop` 用独立 workbuddy 适配器读取原生回复，缺失时说「这一轮结束了」；
+  装了安装器版的新 hook 时，插件按事件让位，避免同一回合说两遍
 - hooks 报不出 `mood`（适配器故意不猜）；想让猫懂内容，靠 skill 里的 `lingxi task` 上报
 - **MCP 不随插件分发**：用户级 `~/.workbuddy/mcp.json` 若已配过 lingxi，插件再带一份
   `.mcp.json` 会撞 server id；且 WorkBuddy 的信任按配置哈希记账，见上层 README 的

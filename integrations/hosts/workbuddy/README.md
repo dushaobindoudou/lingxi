@@ -4,7 +4,7 @@
 
 | | 谁触发 | 会漏吗 | 能带 `mood` 吗 |
 |---|---|---|---|
-| hooks（5.6+） | 宿主，确定性 | **不会** | ❌ |
+| hooks（5.6+） | 宿主，确定性 | 取决于宿主是否触发事件 | ❌ |
 | skill | 模型自己决定 | **会** | ✅ |
 | MCP | 模型自己决定 | **会** | ✅ |
 
@@ -14,17 +14,58 @@
 - hooks 配置在 `~/.workbuddy/settings.json` 的 `hooks` 键，格式与 Claude Code 兼容
   （`UserPromptSubmit` / `Stop` / `PreToolUse` / `PostToolUse` / `SubagentStop` 等），
   **配置实时生效，不需要重启会话**。
-- 载荷与 Claude Code 同形：`hook_event_name` / `session_id` / `cwd` / `transcript_path` /
-  `tool_name` / `tool_input`——所以适配器直接走 `--host claude` 适配臂，零改动。
+- 公共字段类似 Claude Code，但 **Stop 不保证携带 `last_assistant_message`**。
+  使用独立 `--host workbuddy --event <事件>` 适配臂，不能复用 Claude 的回复解析。
 - 事件是**全局**的：所有会话（含并行会话与子代理）都会触发。
-- 因此只装两条生命周期事件：`UserPromptSubmit`→running、`Stop`→completed。
+- 安装五条事件：`UserPromptSubmit`→running、`Stop`→completed、`StopFailure`→failed，
+  `Notification` / `PermissionRequest`→等待用户。
   `PostToolUse` 每次工具调用都触发，会让猫变成通知轰炸，不要装。
-- 没有观察到 `SessionStart` / `Notification` 事件（与 Claude Code 的事件集不同）；
-  会话开始由 `UserPromptSubmit` 兜底。
+- 2026-09 的实测未观察到 `SessionStart` / `Notification`；安装事件不代表当前版本一定触发。
+  会话开始由 `UserPromptSubmit` 兜底，插件的 `SessionStart` 负责应用检查。
 - hooks 报不出 `mood`——它们是对话生命周期事件。**想要猫真的懂在发生什么，
   让模型自己发 task event**，这正是 skill 教它做的事。
 
 ---
+
+## Hook 输入契约与回复兜底（2026-10-09）
+
+配置格式参考 [官方 Hook 输入文档](https://www.codebuddy.cn/docs/cli/hooks)；
+原生会话记录结构已在本机 WorkBuddy 5.7.7 的 `~/.workbuddy/projects/` 下核对。
+脚本通过 **stdin** 接收一个 JSON 对象，安装命令的 `--event` 是事件来源，优先于 payload 内事件名。
+
+| 字段 | 使用规则 |
+|---|---|
+| `hook_event_name` | `UserPromptSubmit`、`Stop`、`StopFailure`、`Notification`、`PermissionRequest`；直接运行脚本时必需，安装命令会补齐 |
+| `session_id` | 宿主真实会话 ID，映射到 `session` 与 `taskId`；缺失时不猜最新会话 |
+| `generation_id` | 可选回合 ID；读取记录时必须匹配 `providerData.conversationRequestId` |
+| `transcript_path` | 可选绝对 `.jsonl` 路径；Stop 最多读取尾部 512 KiB，不遍历目录或查询整个用量数据库 |
+| `last_assistant_message` | 可选直接回复文本，非空时优先；当前宿主 Stop 不保证提供 |
+| `notification_type` / `message` | 可选通知类别与提示文字；权限类→`needs_approval`，无类型或未知类型→`needs_input`；明确的登录成功等非等待通知忽略 |
+| `tool_name` / `tool_input` | 可选；PermissionRequest 即使两者缺失也报授权；`tool_input.questions[0].question` 存在时传达原问题 |
+| `stop_hook_active` / `cwd` / `permission_mode` | 宿主可能提供；不用于气泡结果，不发送用户 prompt、工具输出或推理正文 |
+
+Stop 从原生记录 `type=message`、`role=assistant`、`status=completed` 的
+`content[]` 中只取 `type=output_text` 的 `text`。存在会话 ID 时记录的 `sessionId` 必须匹配；
+遇到更新的用户消息、未完成回复或回合不匹配时，不复读旧答案。
+直接文本或记录读取都不可用时，`result` 退化为「这一轮结束了」，这只表示回复回合结束。
+
+所有映射事件都保留 `origin=hook`，仍由应用负责与模型的终态报告去重。
+`summary` 只写生命周期事实：例如「WorkBuddy 回复结束（hook 兜底，无可用回复文本）」，
+实际回复只放在不落盘的 `result`。因此 `events` 中能分清兜底是否拿到文本；
+不能把非占位 summary 当成实际任务结果已播出的证据。
+
+需要探测未知 payload 时，单次设置 `LINGXI_WORKBUDDY_DEBUG=1` 运行 emit：stderr 仅输出字段名、
+事件名、是否有会话/直接文本/transcript、是否映射与是否降级；不记录正文、路径或工具参数。
+宿主版本若不触发对应事件，适配器无法自行感知弹窗；须根据宿主 hook 日志核对。
+
+模型仍负责每个实质任务的终态、心情和具体结论，例如每条命令复用同一个 `LINGXI_TASK_ID`：
+
+```sh
+LINGXI_AGENT=workbuddy LINGXI_TASK_ID=fix-login "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi" task completed test proud "登录测试已修复，相关用例通过，可以继续发布"
+```
+
+回归验收：`node --test integrations/test/emit-privacy.test.mjs integrations/test/workbuddy-plugin.test.mjs`。
+安装测试会在隔离 HOME 中实际安装、重复安装、卸载再安装，并检查 host/event 参数及其他 hook 保留。
 
 ## 装什么
 
@@ -43,7 +84,7 @@
 | 2 | `~/.workbuddy/skills/` | 软链**两份** skill：`lingxi`（共享基础能力 + `lingxi-authoring`）与 `lingxi-workbuddy`（本宿主定制，见下） |
 | 3 | `~/.lingxi/agent.json` | 机器级署名 → `workbuddy` |
 | 4 | `POST /agents` | 用 `workbuddy-mark.svg` 注册身份与徽章 |
-| 5 | `~/.workbuddy/settings.json` | 合并 hooks 的**四个**事件（确定性的一半）：`UserPromptSubmit`→running、`Stop`→completed、`Notification`/`PermissionRequest`→弹权限框或提问时提醒，外加额度守卫（生命周期两事件上各多一个独立 group） |
+| 5 | `~/.workbuddy/settings.json` | 合并 hooks 的**五个**事件：`UserPromptSubmit`→running、`Stop`→completed、`StopFailure`→failed、`Notification`/`PermissionRequest`→等待用户，外加额度守卫（生命周期两事件上各多一个独立 group） |
 
 ⚠️ `workbuddy-mark.svg` **必须以 `<svg` 开头**。应用的 logo 校验是"以 `<svg` 开头，或是
 `data:image/svg+xml|png|webp`"，所以在文件顶上写一段 HTML 注释（哪怕是说明出处的）会被判成
@@ -106,7 +147,8 @@ emit 那条命令的后半段——后者以 `exec` 结尾，同一条 shell 里
 ```
 
 插件不带 MCP（避免与用户级 `mcp.json` 撞 server id + 信任哈希问题），也不写机器级署名——
-要完整体验再跑一次 `./install.sh`（幂等，两者共存不冲突；hooks 语义相同，重复投递幂等）。
+要完整体验再跑一次 `./install.sh`（幂等）；两者共存时，插件 emit 用 `--skip-if-installed`
+按事件检测 settings 中的新适配命令并让位。旧的 `--host claude` 不会关闭插件兜底。
 同步与注意事项见 `plugin/README.md`。
 
 ---

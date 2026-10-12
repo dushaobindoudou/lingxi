@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 # 灵犀 · WorkBuddy 专用安装器。
 #
-# WorkBuddy 这条路只有两个宿主自己的可配置面——它没有 Claude Code 那种 hooks 配置文件，
-# 会话生命周期事件不外露，所以没有「确定性的一半」，只有模型主动那一半：
+# WorkBuddy 提供 MCP、skills 与 settings.json hooks 三个集成面：
 #
 #   1. ~/.workbuddy/mcp.json 里的一个 mcpServers.lingxi   带类型的工具，逐工具授权
 #   2. ~/.workbuddy/skills/ 下的 skill 软链                模型自己判断要不要用
 #
 #   5. ~/.workbuddy/settings.json 里的 hooks               确定性的一半（WorkBuddy 5.6+）
-#      WorkBuddy 的 hooks 载荷与 Claude Code 兼容（hook_event_name/session_id/cwd/transcript_path），
-#      且配置实时生效、无需重启会话。UserPromptSubmit→running、Stop→completed，
-#      直接复用 adapters/lingxi-emit.mjs 的 claude 适配臂。
+#      使用独立 workbuddy 适配臂；Stop 从 transcript_path 的原生记录取最终回复。
 #
 # 外加两个不属于任何宿主、但也必须配对的共享件：
 #
@@ -389,9 +386,8 @@ else
 fi
 
 # ---------------------------------------------------------------- 5. hooks（确定性的一半）
-# WorkBuddy 5.6+ 暴露了与 Claude Code 兼容的 hooks：UserPromptSubmit / Stop 等事件，
-# 载荷带 hook_event_name / session_id / cwd / transcript_path，配置实时生效、无需重启会话。
-# 只装两条生命周期事件——PostToolUse 每次工具调用都触发，会让猫变成通知轰炸。
+# WorkBuddy hooks 的公共字段类似 Claude，但 Stop 不保证携带回复正文。
+# 生命周期、失败和等待用户分别处理；不装每次工具调用都会触发的 PostToolUse。
 echo "5. hooks（${WB_SETTINGS}）"
 HOOK_CMD=""
 GUARD_CMD=""
@@ -412,14 +408,14 @@ else
   # 换一版托管 node 之后指向一个已经不存在的可执行文件——hooks 于是静默空转，而 hooks 是
   # "确定性的一半"，它挂了宿主不会报错，表象只有"猫怎么不反应了"，和别的故障无法区分。
   # 这条命令与 plugin/hooks/hooks.json 里那条同形，改一处就要改另一处。
-  HOOK_CMD="N=\$(command -v node || true); [ -x \"\$N\" ] || N=\$(ls -t \"\$HOME\"/.workbuddy/binaries/node/versions/*/bin/node 2>/dev/null | head -1); [ -n \"\$N\" ] && exec \"\$N\" \"${EMIT}\" --host claude"
+  HOOK_CMD="N=\$(command -v node || true); [ -x \"\$N\" ] || N=\$(ls -t \"\$HOME\"/.workbuddy/binaries/node/versions/*/bin/node 2>/dev/null | head -1); [ -n \"\$N\" ] && exec \"\$N\" \"${EMIT}\" --host workbuddy"
   if [ "${DRY_RUN}" != 1 ] && [ -z "$(command -v node 2>/dev/null || true)" ] \
      && [ -z "$(ls -t "${WB_DIR}"/binaries/node/versions/*/bin/node 2>/dev/null | head -1 || true)" ]; then
     note "这台机器上现在找不到 node：hooks 照样装上，但运行时会静默空转"
   fi
   backup_once "${WB_SETTINGS}" "${BACKUP_TAG}"
   if [ "${DRY_RUN}" = 1 ]; then
-    note "会合并 hooks：UserPromptSubmit + Stop → ${HOOK_CMD}（只覆盖命令含 lingxi-emit.mjs 的旧条目）"
+    note "会合并五个 hooks：UserPromptSubmit / Stop / StopFailure / Notification / PermissionRequest → ${HOOK_CMD} --event <事件>"
     # 写成 if 而不是 `[ -n ... ] && note`：后者在 GUARD_CMD 为空时整体返回 1，
     # 而本脚本 set -euo pipefail，那一下就会把安装器打死在最后一步。
     if [ -n "${GUARD_CMD}" ]; then
@@ -445,14 +441,14 @@ with open(path, encoding='utf-8') as f:
     data = json.load(f)
     if not isinstance(data, dict):
         raise SystemExit(f'✗ {path} 的顶层不是一个对象')
-# 四个事件，两种性质：
+# 五个事件，三种性质：
 #   UserPromptSubmit / Stop   会话生命周期——一轮开始与结束。
 #   Notification / PermissionRequest  "弹出问题"——agent 在等用户（权限提示、提问），
 #     以及权限对话框刚打开的那一刻。这俩才是"WorkBuddy 弹了个东西，猫却没反应"的答案：
-#     以前只装了生命周期两条，弹窗完全不在覆盖范围内。应用侧两个都认
-#     （apps/lingxi/src-tauri/src/lib.rs 的 normalize_claude_hook_event）。
+#     由 workbuddy 适配臂映射为通用 task event，不要求 Claude 工具名。
+#   StopFailure 失败终止。
 # 不装 PreToolUse / PostToolUse：每次工具调用都触发，会让猫变成通知轰炸。
-EMIT_EVENTS = ('UserPromptSubmit', 'Stop', 'Notification', 'PermissionRequest')
+EMIT_EVENTS = ('UserPromptSubmit', 'Stop', 'StopFailure', 'Notification', 'PermissionRequest')
 # 额度守卫只挂在生命周期上：它读的是整个会话的用量，跟弹窗没关系。
 GUARD_EVENTS = ('UserPromptSubmit', 'Stop')
 
@@ -461,7 +457,7 @@ for event in EMIT_EVENTS:
     # owned() 把 emit 和守卫都认作 lingxi 的，所以这个清空动作只能做一次——
     # 分两个循环的话，第二个循环会把第一个刚写进去的 group 又删掉。
     groups = [g for g in hooks.get(event, []) if not owned(g)]
-    groups.append({'hooks': [{'type': 'command', 'command': cmd, 'timeout': 10, 'async': True}]})
+    groups.append({'hooks': [{'type': 'command', 'command': cmd + ' --event ' + event, 'timeout': 10, 'async': True}]})
     if guard_cmd and event in GUARD_EVENTS:
         groups.append({'hooks': [{'type': 'command', 'command': guard_cmd, 'timeout': 10, 'async': True}]})
     hooks[event] = groups
@@ -469,7 +465,7 @@ with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, indent=2)
     f.write('\n')
 PY
-    log "${WB_SETTINGS}: UserPromptSubmit→running、Stop→completed（claude 兼容载荷，实时生效）"
+    log "${WB_SETTINGS}: WorkBuddy 生命周期、失败与等待用户 hooks 已安装（--host workbuddy）"
     if [ -n "${GUARD_CMD}" ]; then
       log "${WB_SETTINGS}: 额度守卫已挂上（上下文 60/70/90% 提醒）"
     fi

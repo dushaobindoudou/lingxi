@@ -80,7 +80,7 @@ test('the hooks cover the lifecycle AND the moments the agent is waiting on the 
   const events = Object.keys(JSON.parse(read(join(PLUGIN, 'hooks/hooks.json'))).hooks);
   // Notification / PermissionRequest are the "WorkBuddy popped a dialog and the cat said
   // nothing" fix: lifecycle hooks alone never fire for a permission prompt or a question.
-  assert.deepEqual(events.sort(), ['Notification', 'PermissionRequest', 'SessionStart', 'Stop', 'UserPromptSubmit']);
+  assert.deepEqual(events.sort(), ['Notification', 'PermissionRequest', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit']);
   // The tool-level events fire on every single tool call - they turn the cat into a firehose.
   assert.ok(!events.includes('PostToolUse'), 'PostToolUse would spam the cat');
   assert.ok(!events.includes('PreToolUse'), 'PreToolUse would spam the cat');
@@ -97,6 +97,12 @@ test('hook commands resolve node at run time, never a baked version path', () =>
       assert.match(cmd, /command -v node/, `${f}: node must be looked up when the hook runs`);
       assert.doesNotMatch(cmd, /versions\/\d+\.\d+\.\d+-\d+\/bin\/node/,
         `${f}: a baked node version path dies when WorkBuddy ships a different node`);
+    }
+    for (const [event, groups] of Object.entries(JSON.parse(read(f)).hooks)) {
+      for (const hook of groups.flatMap((g) => g.hooks).filter((h) => h.command.includes('lingxi-emit.mjs'))) {
+        assert.match(hook.command, /--host workbuddy/);
+        assert.ok(hook.command.includes(`--event ${event}`), `${event} must be stamped by the command`);
+      }
     }
   }
 });
@@ -159,7 +165,12 @@ test('install writes an env-free MCP entry, the hooks, and leaves other servers 
 
     const hooks = JSON.parse(read(settings)).hooks;
     assert.deepEqual(Object.keys(hooks).sort(),
-      ['Notification', 'PermissionRequest', 'Stop', 'UserPromptSubmit']);
+      ['Notification', 'PermissionRequest', 'Stop', 'StopFailure', 'UserPromptSubmit']);
+    for (const [event, groups] of Object.entries(hooks)) {
+      const cmd = groups[0].hooks[0].command;
+      assert.match(cmd, /--host workbuddy/);
+      assert.ok(cmd.includes(`--event ${event}`));
+    }
     // The two dialog events only need the emitter; the quota guard reads whole-session usage
     // and has nothing to say about a permission prompt.
     for (const ev of ['Notification', 'PermissionRequest']) {
@@ -206,6 +217,9 @@ test('install writes an env-free MCP entry, the hooks, and leaves other servers 
     const after = read(settings);
     runInstaller(home, wb, agent);
     assert.equal(read(settings), after, 'a second install changed settings.json');
+    runInstaller(home, wb, agent, '--uninstall');
+    runInstaller(home, wb, agent);
+    assert.equal(read(settings), after, 'uninstall/reinstall must retain the WorkBuddy mapping');
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
