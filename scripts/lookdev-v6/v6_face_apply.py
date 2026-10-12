@@ -37,7 +37,7 @@ def _remember_rest():
     for m in bpy.data.materials:
         if m.node_tree:
             for n in m.node_tree.nodes:
-                if n.name.startswith(('LX_Pupil', 'LX_Catch')):
+                if n.name.startswith(('LX_Pupil', 'LX_Catch', 'LX_SparkX')):
                     REST[(m.name, n.name)] = n.outputs[0].default_value if n.type == 'VALUE' else n.inputs[1].default_value
 
 
@@ -109,6 +109,11 @@ def apply(values):
                 for (mn, nn), base in REST.items():
                     if mn == a[1] and nn.startswith('LX_Catch'):
                         bpy.data.materials[mn].node_tree.nodes[nn].inputs[1].default_value = base * (1 + (a[2] - 1) * v)
+            elif kind == 'sparkx':                           # the extra highlights rest at 0: strength a[2] per unit
+                for (mn, nn), base in REST.items():
+                    if mn == a[1] and nn.startswith('LX_SparkX'):
+                        n = bpy.data.materials[mn].node_tree.nodes[nn]
+                        n.inputs[1].default_value = n.inputs[1].default_value + a[2] * v
     for (mn, nn), v in pupil.items():
         bpy.data.materials[mn].node_tree.nodes[nn].outputs[0].default_value = v
     for sf, e in ear.items():
@@ -133,6 +138,9 @@ def expression(name):
     for layer in ('eye', 'brow', 'mouth', 'ear'):
         for k, v in layer_state(layer, e[layer]).items():
             out[k] = out.get(k, 0) + v
+    # what the block cat shows with its screen symbol, given to the 3D face as extra controls (face-controls.json 'expression_extras')
+    for k, v in SPEC.get('expression_extras', {}).get(name, {}).items():
+        out[k] = out.get(k, 0) + v
     return out
 
 

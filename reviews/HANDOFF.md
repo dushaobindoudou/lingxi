@@ -883,3 +883,31 @@ codex 做了两轮后处理（都改的是已构建的 .blend，不是 build_lin
 - **应用对接要点**：虹膜材质名变为 `LX_IrisLayer.L/.R`；表情按 `face-controls.json` 在动画混合之后叠加（身体片段里的脸部通道要么清零，要么按通道合成规则处理）；应用内实时步态要换成新的腿链（爪多了 Foot 节、背和颈各节拆成两段，转角对半分）。
 
 审阅页：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW（v16）；规格页：https://claude.ai/artifact/CpnEaXru5fvyKmrQW5J6QE（v3）。
+
+## Round Z（Claude 主会话，2026-10-12）——表情拉开、竖瞳、胸毛、尾尖；修骨架 v1 张嘴回归
+
+用户：「表情不对，我看着所有表情都一样，另外胸前的毛是不是太多了？……尾巴尖还是秃的。……眼睛竖着的时候多了一个竖线这是啥？」
+codex 批次 9：`assets/characters/lingxi/v5-imagegen-sources/iris_nopupil.png`（无瞳孔虹膜）、`reviews/FACE-STRICT-COMPARE-FOR-CLAUDE.md` + `reviews/face-target-measures.json`（四张九宫格 36 格量化、我们 28 个单层状态逐格差距、21 对近似表情、胸毛和尾尖审查）。
+
+| 问题 | 原因 | 改法 |
+|---|---|---|
+| 竖瞳多一条线 | `iris_albedo.png` 中间画死了半径约 .25 UV 的黑洞，竖瞳时洞的边缘露成平涂圆盘 | 构建优先用 `v5/textures/iris_nopupil.png`（需从 v5-imagegen-sources 拷入；两处都在 .gitignore），没有时着色器把纹理半径映射成 .26+.48r 盖住洞；瞳孔在高宽比 1.8→4.3 之间过渡成梭形（半宽 ×(1−y²)）。竖瞳 W .058 / H .35（可见 .13×.80，目标 .11–.13×.77–.82） |
+| **张嘴 / 哈气都一样（回归）** | 骨架 v1 的脸部控制骨把份额同时从 Head 和 Jaw 里扣：头部网格 `_hk=1−Σ`、`_with_face` 统一乘 (1−Σ)，嘴角骨（挂 Head）拿走下唇内侧 .5–.9 的权重，张嘴时这块皮肤留在头上挂成浅色帘子 | 每个控制骨只从自己一侧扣：LipLow（挂 Jaw）扣 Jaw 份额，其余扣 Head 一侧。审计：哈欠开口 84.5（X2）→ 34.5（Y）→ **82 mm**；咬 57 → 11 → **56.5 mm**；舌与头部交叉 57→38 对、与上唇 30→0 |
+| 表情都一样 | 状态间只差瞳孔几个百分点；眉动在毛下看不见；嘴被帘子挡 | 按 codex 量值重定五层预设（见构建里 LAYERS 的注释）；新增上睑形态键 `SlantIn` / `SlantOut`（整片下压，内 / 外侧多：.12+.80·w^1.3），眉的 furrow / sad 通过它表现；`MouthWide` 控制；`Sparkle` 另点亮三颗额外高光（`LX_SparkX*`，平时强度 0）；`expression_extras`：方块猫只靠屏幕符号区分的表情给 3D 脸附加量。张嘴角度按审计换算（鼻宽 33.8 mm）：open .18、喵 .22、哈气 .45、吐舌 .10 |
+| 胸前毛多 | 侧面投影的白色把胸前整面涂白；胸毛 bib 加长 | `chest_bib()`：胸前白色只留中间一道（半宽 30→58 mm 由下到上），两侧换成侧面虎斑；`V6_BIB` .45→0、`V6_HEAD_BIB` .5→.2、新 `V6_CHEST_TRIM` .50（胸前朝前的毛短一半） |
+| 尾尖秃 | 尾端半球盖皮肤浅色，尾尖毛按毛根绑骨，尾尖一翘皮肤戳出毛外；主体尾毛 15 cm、立起 1.7，尾尖细毛刷与它体积断开 | 尾管最后 3.6 cm 收细（18→10 mm）、末端 10 cm 染深；尾尖毛刷（`groom(brush=)`，约 4500 根）沿尾巴收拢到尖外 4.5 cm；主体尾毛最后 12 cm 逐渐并入毛刷形（`V6_TAIL_BRUSH_L`）；两者都按点绑定（伸出尾尖的点只跟最后一节） |
+
+### 量测（`v6/round-z/`，带毛）
+
+- 21 对近似表情的脸部像素差（`expr-pair-mae.json`，同 codex 的框）：中位数 0.9 → 4.1，最小 0 → 1.5，低于 1.3 的对数 20 → 0。
+- 眼睑斜切相对眨眼的比例（左眼外→内）：SlantIn .12→.92。带毛渲染里皱眉、委屈看得出，但幅度仍弱于目标（furrow 目标斜率 +.18 虹膜径）。
+- 舔：舌尖贴肉垫 -0.03 mm 不变；脸部机位下嘴被爪挡住（开口读 0 是遮挡，不是帘子）。
+- 新工具 `scripts/lookdev-v6/v6_face_try.py`：不重建，直接把任意控制值组合渲成脸部特写（`FACE_TRY` JSON，`ZOOM` / `ZOOM_Z`）。
+- 接口：`reviews/rig-v1/face-controls.json` 更新（只增：LidSlantIn/Out、MouthWide、sparkx、expression_extras；骨架未变，rig-v1.json 不变）。
+
+### 还差
+
+- 笑眼弧线被眼睑毛压得淡；平嘴 / ω / 撇嘴差别小（嘴线被胡须垫的毛盖住）；含泪的湿亮下眼缘（材质）；单耳侧转无状态。
+- 坐姿正面胸腹比目标鼓、前腿显短——坐姿身形，下一轮。
+
+审阅页：https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW（v17）。

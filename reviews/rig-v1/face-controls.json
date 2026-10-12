@@ -51,6 +51,20 @@
     "Smile"
    ]
   ],
+  "LidSlantIn.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "SlantIn"
+   ]
+  ],
+  "LidSlantOut.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "SlantOut"
+   ]
+  ],
   "PupilW.L": [
    [
     "mat",
@@ -103,9 +117,9 @@
     "loc",
     "MouthCorner.L",
     [
-     -0.00099,
-     0.0018,
-     0.0054
+     -0.00135,
+     0.00225,
+     0.0081
     ]
    ]
   ],
@@ -115,8 +129,19 @@
     "MouthCorner.L",
     [
      0.0,
-     -0.00063,
-     -0.0054
+     -0.0009,
+     -0.0081
+    ]
+   ]
+  ],
+  "MouthWide.L": [
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     -0.0063,
+     0.00315,
+     0.0009
     ]
    ]
   ],
@@ -292,6 +317,20 @@
     "Smile"
    ]
   ],
+  "LidSlantIn.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "SlantIn"
+   ]
+  ],
+  "LidSlantOut.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "SlantOut"
+   ]
+  ],
   "PupilW.R": [
    [
     "mat",
@@ -344,9 +383,9 @@
     "loc",
     "MouthCorner.R",
     [
-     0.00099,
-     0.0018,
-     0.0054
+     0.00135,
+     0.00225,
+     0.0081
     ]
    ]
   ],
@@ -356,8 +395,19 @@
     "MouthCorner.R",
     [
      0.0,
-     -0.00063,
-     -0.0054
+     -0.0009,
+     -0.0081
+    ]
+   ]
+  ],
+  "MouthWide.R": [
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     0.0063,
+     0.00315,
+     0.0009
     ]
    ]
   ],
@@ -617,42 +667,56 @@
     "catch",
     "LX_Cornea",
     1.7
+   ],
+   [
+    "sparkx",
+    "LX_Cornea",
+    3.5
    ]
   ]
  },
  "layers": {
   "eye": {
    "slit": {
-    "Squint.L": 0.45,
-    "Squint.R": 0.45,
-    "PupilW.L": 0.05,
-    "PupilW.R": 0.05,
-    "PupilH.L": 0.44,
-    "PupilH.R": 0.44
+    "Squint.L": 0.3,
+    "Squint.R": 0.3,
+    "PupilW.L": 0.058,
+    "PupilW.R": 0.058,
+    "PupilH.L": 0.35,
+    "PupilH.R": 0.35
    },
    "round": {
-    "PupilW.L": 0.31,
-    "PupilW.R": 0.31,
-    "PupilH.L": 0.34,
-    "PupilH.R": 0.34
+    "PupilW.L": 0.27,
+    "PupilW.R": 0.27,
+    "PupilH.L": 0.29,
+    "PupilH.R": 0.29
    },
    "wide": {
     "UpperWide.L": 1,
     "UpperWide.R": 1,
-    "PupilW.L": 0.37,
-    "PupilW.R": 0.37,
-    "PupilH.L": 0.37,
-    "PupilH.R": 0.37
+    "PupilW.L": 0.35,
+    "PupilW.R": 0.35,
+    "PupilH.L": 0.36,
+    "PupilH.R": 0.36,
+    "Sparkle": 0.4
    },
    "side": {
-    "GazeYaw.L": 0.35,
-    "GazeYaw.R": 0.35,
-    "Squint.L": 0.2,
-    "Squint.R": 0.2
+    "GazeYaw.L": 0.65,
+    "GazeYaw.R": 0.65,
+    "Blink.L": 0.25,
+    "Blink.R": 0.25,
+    "PupilW.L": 0.25,
+    "PupilW.R": 0.25,
+    "PupilH.L": 0.28,
+    "PupilH.R": 0.28
    },
    "half": {
-    "Blink.L": 0.45,
-    "Blink.R": 0.45
+    "Blink.L": 0.6,
+    "Blink.R": 0.6,
+    "PupilW.L": 0.28,
+    "PupilW.R": 0.28,
+    "PupilH.L": 0.3,
+    "PupilH.R": 0.3
    },
    "happy": {
     "SmileArc.L": 1,
@@ -663,42 +727,51 @@
     "Blink.R": 1
    },
    "heart": {
-    "PupilW.L": 0.36,
-    "PupilW.R": 0.36,
-    "PupilH.L": 0.36,
-    "PupilH.R": 0.36,
-    "Sparkle": 1
+    "PupilW.L": 0.3,
+    "PupilW.R": 0.3,
+    "PupilH.L": 0.32,
+    "PupilH.R": 0.32,
+    "Sparkle": 1.4
    },
    "soft": {
-    "Squint.L": 0.25,
-    "Squint.R": 0.25,
-    "LowerLift.L": 0.4,
-    "LowerLift.R": 0.4
+    "Blink.L": 0.26,
+    "Blink.R": 0.26,
+    "LowerLift.L": 0.6,
+    "LowerLift.R": 0.6,
+    "PupilW.L": 0.29,
+    "PupilW.R": 0.29,
+    "PupilH.L": 0.31,
+    "PupilH.R": 0.31
    },
    "wink-left": {
     "Blink.L": 1,
-    "SmileArc.R": 0.25
+    "SmileArc.R": 0.35,
+    "LowerLift.R": 0.3
    },
    "wink-right": {
     "Blink.R": 1,
-    "SmileArc.L": 0.25
+    "SmileArc.L": 0.35,
+    "LowerLift.L": 0.3
    },
    "sparkle": {
-    "PupilW.L": 0.37,
-    "PupilW.R": 0.37,
-    "PupilH.L": 0.37,
-    "PupilH.R": 0.37,
-    "Sparkle": 1
+    "PupilW.L": 0.27,
+    "PupilW.R": 0.27,
+    "PupilH.L": 0.29,
+    "PupilH.R": 0.29,
+    "UpperWide.L": 0.3,
+    "UpperWide.R": 0.3,
+    "Sparkle": 1.0
    },
    "tearful": {
-    "LowerLift.L": 0.3,
-    "LowerLift.R": 0.3,
-    "Squint.L": 0.1,
-    "Squint.R": 0.1,
-    "PupilW.L": 0.36,
-    "PupilW.R": 0.36,
-    "PupilH.L": 0.36,
-    "PupilH.R": 0.36
+    "LowerLift.L": 0.5,
+    "LowerLift.R": 0.5,
+    "LidSlantOut.L": 0.8,
+    "LidSlantOut.R": 0.8,
+    "PupilW.L": 0.3,
+    "PupilW.R": 0.3,
+    "PupilH.L": 0.32,
+    "PupilH.R": 0.32,
+    "Sparkle": 0.8
    }
   },
   "brow": {
@@ -706,75 +779,86 @@
    "none": {},
    "furrow": {
     "BrowInnerDown.L": 1,
-    "BrowInnerDown.R": 1
+    "BrowInnerDown.R": 1,
+    "LidSlantIn.L": 1,
+    "LidSlantIn.R": 1
    },
    "raise": {
-    "BrowInnerUp.L": 0.6,
-    "BrowInnerUp.R": 0.6,
-    "BrowOuterUp.L": 0.9,
-    "BrowOuterUp.R": 0.9
+    "BrowInnerUp.L": 0.7,
+    "BrowInnerUp.R": 0.7,
+    "BrowOuterUp.L": 1,
+    "BrowOuterUp.R": 1,
+    "UpperWide.L": 0.45,
+    "UpperWide.R": 0.45
    },
    "sad": {
     "BrowInnerUp.L": 1,
     "BrowInnerUp.R": 1,
     "BrowOuterUp.L": -0.3,
-    "BrowOuterUp.R": -0.3
+    "BrowOuterUp.R": -0.3,
+    "LidSlantOut.L": 1,
+    "LidSlantOut.R": 1
    }
   },
   "mouth": {
-   "flat": {},
+   "flat": {
+    "MouthCornerDown.L": 0.15,
+    "MouthCornerDown.R": 0.15
+   },
    "cat": {
-    "MouthCornerUp.L": 0.7,
-    "MouthCornerUp.R": 0.7
+    "MouthCornerUp.L": 1,
+    "MouthCornerUp.R": 1
    },
    "open": {
-    "JawOpen": 0.3,
-    "MouthO": 0.3
+    "JawOpen": 0.18
    },
    "frown": {
+    "LowerLipDown": 0.35,
     "MouthCornerDown.L": 1,
     "MouthCornerDown.R": 1
    },
    "hiss": {
     "JawOpen": 0.45,
-    "LowerLipDown": 0.6,
+    "LowerLipDown": 0.8,
     "UpperLipRaise.L": 1,
     "UpperLipRaise.R": 1,
-    "NoseWrinkle.L": 0.8,
-    "NoseWrinkle.R": 0.8
+    "NoseWrinkle.L": 1,
+    "NoseWrinkle.R": 1,
+    "MouthWide.L": 1.3,
+    "MouthWide.R": 1.3
    },
    "tongue": {
     "JawOpen": 0.1,
-    "TongueOut": 0.25,
-    "MouthCornerUp.L": 0.3,
-    "MouthCornerUp.R": 0.3
+    "TongueOut": 0.7,
+    "MouthCornerUp.L": 0.5,
+    "MouthCornerUp.R": 0.5
    }
   },
   "ear": {
    "neutral": {},
    "forward": {
-    "EarForward.L": 0.3,
-    "EarForward.R": 0.3
+    "EarForward.L": 0.4,
+    "EarForward.R": 0.4
    },
    "airplane": {
-    "EarFlatten.L": 0.85,
-    "EarFlatten.R": 0.85,
-    "EarSwivel.L": 0.6,
-    "EarSwivel.R": 0.6,
+    "EarFlatten.L": 1.0,
+    "EarFlatten.R": 1.0,
+    "EarSwivel.L": 0.7,
+    "EarSwivel.R": 0.7,
     "EarForward.L": -0.1,
     "EarForward.R": -0.1,
     "EarTipBend.L": -0.2,
     "EarTipBend.R": -0.2
    },
    "back": {
-    "EarForward.L": -0.55,
-    "EarForward.R": -0.55,
-    "EarFlatten.L": 0.35,
-    "EarFlatten.R": 0.35,
-    "EarSwivel.L": 0.7,
-    "EarSwivel.R": 0.7,
-    "EarTipBend.L": 0.35,
-    "EarTipBend.R": 0.35
+    "EarForward.L": -0.65,
+    "EarForward.R": -0.65,
+    "EarFlatten.L": 0.65,
+    "EarFlatten.R": 0.65,
+    "EarSwivel.L": 0.8,
+    "EarSwivel.R": 0.8,
+    "EarTipBend.L": 0.65,
+    "EarTipBend.R": 0.65
    }
   }
  },
@@ -988,6 +1072,93 @@
    "mouth": "cat",
    "ear": "forward",
    "symbol": "heart"
+  }
+ },
+ "expression_extras": {
+  "安心": {
+   "MouthCornerUp.L": 0.45,
+   "MouthCornerUp.R": 0.45,
+   "LowerLift.L": 0.25,
+   "LowerLift.R": 0.25
+  },
+  "陶醉": {
+   "SmileArc.L": 0.45,
+   "SmileArc.R": 0.45,
+   "MouthCornerUp.L": 0.5,
+   "MouthCornerUp.R": 0.5,
+   "EarFlatten.L": 0.3,
+   "EarFlatten.R": 0.3,
+   "EarForward.L": -0.15,
+   "EarForward.R": -0.15
+  },
+  "撒娇": {
+   "SmileArc.L": 0.2,
+   "SmileArc.R": 0.2,
+   "MouthCornerUp.L": 0.35,
+   "MouthCornerUp.R": 0.35
+  },
+  "期待": {
+   "EarForward.L": 0.25,
+   "EarForward.R": 0.25,
+   "UpperWide.L": 0.35,
+   "UpperWide.R": 0.35
+  },
+  "闪亮": {
+   "Sparkle": 1.0
+  },
+  "困惑": {
+   "EarSwivel.R": 0.9,
+   "EarFlatten.R": 0.45,
+   "BrowInnerUp.L": 0.7,
+   "LidSlantIn.R": 0.5
+  },
+  "认真": {
+   "LidSlantIn.L": 0.6,
+   "LidSlantIn.R": 0.6
+  },
+  "喵喵": {
+   "JawOpen": 0.22,
+   "MouthO": 0.3
+  },
+  "开心": {
+   "MouthCornerUp.L": 0.35,
+   "MouthCornerUp.R": 0.35
+  },
+  "求抱抱": {
+   "LidSlantOut.L": 0.4,
+   "LidSlantOut.R": 0.4,
+   "UpperWide.L": 0.2,
+   "UpperWide.R": 0.2
+  },
+  "温柔": {
+   "EarForward.L": 0.12,
+   "EarForward.R": 0.12,
+   "MouthCornerUp.L": 0.25,
+   "MouthCornerUp.R": 0.25
+  },
+  "害羞": {
+   "LowerLift.L": 0.3,
+   "LowerLift.R": 0.3,
+   "MouthCornerUp.L": 0.3,
+   "MouthCornerUp.R": 0.3,
+   "GazeYaw.L": -0.35,
+   "GazeYaw.R": -0.35
+  },
+  "得意": {
+   "MouthCornerUp.L": 0.7,
+   "SmileArc.R": 0.2
+  },
+  "清醒": {
+   "UpperWide.L": 0.25,
+   "UpperWide.R": 0.25
+  },
+  "警惕": {
+   "LidSlantIn.L": 0.35,
+   "LidSlantIn.R": 0.35
+  },
+  "满足": {
+   "EarFlatten.L": 0.15,
+   "EarFlatten.R": 0.15
   }
  },
  "ear": {

@@ -726,7 +726,7 @@ def face_fields(P,below=None,only=None):
   eg=np.clip((np.hypot(x-s_*EYE_X,z-EYE_Z)-1.05*EYE_R)/(.25*EYE_R),0,1)
   for nm in ('BrowIn.','BrowOut.'):bx,bz,_=FACE_BONES[nm+sf];out[nm+sf]=G(bx,bz,.014,.012)*fr(-.30)*eg
   if only!='brow':
-   bx,bz,_=FACE_BONES['MouthCorner.'+sf];out['MouthCorner.'+sf]=G(bx,bz,.013,.009)*fr(-.37)
+   bx,bz,_=FACE_BONES['MouthCorner.'+sf];out['MouthCorner.'+sf]=G(bx,bz,_v6('V6_CORNER_RX',.020),.010)*fr(-.37)   # round Z: .013 -> .020 wide - the corner alone moved under the whisker pads' fur; now the omega's arcs bend with it
    bx,bz,_=FACE_BONES['LipUp.'+sf];out['LipUp.'+sf]=G(bx,bz,.014,.009)*fr(-.37)*(1-below)
    bx,bz,_=FACE_BONES['NoseSide.'+sf];out['NoseSide.'+sf]=G(bx,bz,.012,.010)*fr(-.40)
    bx,bz,_=FACE_BONES['Nostril.'+sf];out['Nostril.'+sf]=G(bx,bz,.008,.006)*fr(-.40)
@@ -736,7 +736,17 @@ def face_fields(P,below=None,only=None):
 def _with_face(w,P,below=None,only=None):
  fw=face_fields(P,below,only)
  if not fw:return w
- tot=sum(fw.values());w={k:v*(1-tot) for k,v in w.items()};w.update(fw);return w
+ # Round Z2: each control takes its share from its own side of the mouth - LipLow (a child of Jaw) from the jaw's weight, the others
+ # (children of Head) from the rest. Taken from both, the corner fields put .5-.9 of the lower lip's inner skin on the head and an
+ # open mouth stretched it across the gap as a pale curtain over the cavity - every yawn, meow, hiss and lick since rig v1.
+ w={k:np.asarray(v,dtype=float) for k,v in w.items()};isj=lambda k:k in ('Jaw','LipLow') or k.startswith('Tongue')
+ for jaw_side in (False,True):
+  side={k:v for k,v in fw.items() if (k=='LipLow')==jaw_side};src=[k for k in w if isj(k)==jaw_side]
+  if not side or not src:continue
+  share=sum(w[k] for k in src);tot=sum(side.values())
+  for k in src:w[k]=w[k]*(1-tot)
+  for k,v in side.items():w[k]=w.get(k,0)+v*share
+ return w
 def weights(points,region):
  if FACE_V1 and not region.endswith('#') and (region in ('Head','Lip','Nose','JawSkin') or region.startswith('Lid:')):
   # rig v1: the face control bones take their share of the skin (and of the coat rooted on it)
@@ -905,12 +915,18 @@ bind(body,'body');bind(head,'Head')
 # the two lips apart; weight the head by which side of the mouth each vertex's faces are on.
 _hp=np.array([v.co[:] for v in head.data.vertices]);_hj=jaw_share(_hp[:,0],_hp[:,1],_hp[:,2],HEAD_BELOW);_hl=lip_share(_hp[:,0],_hp[:,1],_hp[:,2],1-HEAD_BELOW)
 _gh=head.vertex_groups['Head'];_gj=head.vertex_groups.get('Jaw') or head.vertex_groups.new(name='Jaw');_gl=head.vertex_groups.get('LipUpper') or head.vertex_groups.new(name='LipUpper')
-_hk=np.ones(len(_hp));_hf={}
-if FACE_V1:_hf=face_fields(_hp,HEAD_BELOW);_hk=1-(sum(_hf.values()) if _hf else 0)   # rig v1: the face bones' share, by which side of the mouth each vertex is
+_hk=np.ones(len(_hp));_jk=np.ones(len(_hp));_hf={}
+if FACE_V1:
+ # rig v1: the face bones' share. Round Z2: each from its own side of the mouth - LipLow (a child of Jaw) from the jaw's share, the
+ # rest (children of Head) from the head's. One factor off both had moved up to 90% of the lower lip's inner skin onto Head-side
+ # bones, and an open mouth hung it across the gap (audit: yawn opening 84.5 -> 34.5 mm, lick 34 -> 0, see _with_face)
+ _hf=face_fields(_hp,HEAD_BELOW)
+ _hk=1-sum([v for k_,v in _hf.items() if k_!='LipLow'],np.zeros(len(_hp)));_jk=1-_hf.get('LipLow',np.zeros(len(_hp)))
+ _hf={k_:v*(_hj if k_=='LipLow' else 1-_hj) for k_,v in _hf.items()}
 for i,(j,l) in enumerate(zip(_hj,_hl)):
- k=float(_hk[i]) if np.ndim(_hk) else 1.0
+ k=float(_hk[i]);kj=float(_jk[i])
  _gh.add([i],(1-float(j)-float(l))*k,'REPLACE')
- if j>0:_gj.add([i],float(j)*k,'REPLACE')
+ if j>0:_gj.add([i],float(j)*kj,'REPLACE')
  else:_gj.remove([i])
  if l>0:_gl.add([i],float(l)*k,'REPLACE')
  else:_gl.remove([i])
@@ -1030,6 +1046,19 @@ def iris_material():
   fl=nt.nodes.new('ShaderNodeMixRGB');fl.inputs['Fac'].default_value=_v6('V6_IRIS_FLAT',.35);fl.inputs[2].default_value=(.40,.35,.17,1)
   gn=nt.nodes.new('ShaderNodeMixRGB');gn.blend_type='MULTIPLY';gn.inputs['Fac'].default_value=1;_g=_v6('V6_IRIS_GAIN',1.45);gn.inputs[2].default_value=(_g,_g,_g,1)
   nt.links.new(_tex.outputs['Color'],fl.inputs[1]);nt.links.new(fl.outputs['Color'],gn.inputs[1])
+  # Round Z: the painted iris has a black pupil hole (radius ~.25 of the UV) - a slit pupil showed it as a flat disc round the slit.
+  # codex's pupil-free iris (iris_nopupil.png) when staged; otherwise the ring is pulled in over the hole (r -> .26 + .48 r).
+  _np=TEXDIR/'iris_nopupil.png'
+  if FACE_V1 and _np.exists():_tex.image=bpy.data.images.load(str(_np),check_existing=True)
+  elif FACE_V1:
+   _u=nt.nodes.new('ShaderNodeUVMap');_c=nt.nodes.new('ShaderNodeVectorMath');_c.operation='SUBTRACT';_c.inputs[1].default_value=(.5,.5,0);nt.links.new(_u.outputs['UV'],_c.inputs[0])
+   _l=nt.nodes.new('ShaderNodeVectorMath');_l.operation='LENGTH';nt.links.new(_c.outputs[0],_l.inputs[0])
+   _a=nt.nodes.new('ShaderNodeMath');_a.operation='MULTIPLY_ADD';nt.links.new(_l.outputs['Value'],_a.inputs[0]);_a.inputs[1].default_value=.48;_a.inputs[2].default_value=.26
+   _m=nt.nodes.new('ShaderNodeMath');_m.operation='MAXIMUM';nt.links.new(_l.outputs['Value'],_m.inputs[0]);_m.inputs[1].default_value=1e-4
+   _d=nt.nodes.new('ShaderNodeMath');_d.operation='DIVIDE';nt.links.new(_a.outputs[0],_d.inputs[0]);nt.links.new(_m.outputs[0],_d.inputs[1])
+   _sc=nt.nodes.new('ShaderNodeVectorMath');_sc.operation='SCALE';nt.links.new(_c.outputs[0],_sc.inputs[0]);nt.links.new(_d.outputs[0],_sc.inputs['Scale'])
+   _ad=nt.nodes.new('ShaderNodeVectorMath');_ad.operation='ADD';_ad.inputs[1].default_value=(.5,.5,0);nt.links.new(_sc.outputs[0],_ad.inputs[0])
+   nt.links.new(_ad.outputs[0],_tex.inputs['Vector'])
   uv0=nt.nodes.new('ShaderNodeUVMap');sp=nt.nodes.new('ShaderNodeSeparateXYZ');nt.links.new(uv0.outputs['UV'],sp.inputs[0])
   lo=nt.nodes.new('ShaderNodeMapRange');lo.inputs['From Min'].default_value=.5;lo.inputs['From Max'].default_value=.15;nt.links.new(sp.outputs['Y'],lo.inputs['Value'])   # 0 at the centre, 1 low in the iris
   lf=nt.nodes.new('ShaderNodeMath');lf.operation='MULTIPLY';lf.inputs[1].default_value=_v6('V6_IRIS_LIFT',.45);nt.links.new(lo.outputs['Result'],lf.inputs[0])
@@ -1059,7 +1088,20 @@ def iris_material():
    b=nt.nodes.new('ShaderNodeMath');b.operation='DIVIDE';nt.links.new(a.outputs[0],b.inputs[0]);nt.links.new(pv[nm].outputs[0],b.inputs[1]);axes.append(b)
   cmb=nt.nodes.new('ShaderNodeCombineXYZ');nt.links.new(axes[0].outputs[0],cmb.inputs[0]);nt.links.new(axes[1].outputs[0],cmb.inputs[1])
   ln=nt.nodes.new('ShaderNodeVectorMath');ln.operation='LENGTH';nt.links.new(cmb.outputs[0],ln.inputs[0])
-  mr=nt.nodes.new('ShaderNodeMapRange');mr.inputs['From Min'].default_value=.97;mr.inputs['From Max'].default_value=1.025;nt.links.new(ln.outputs['Value'],mr.inputs['Value'])
+  # Round Z (user: 「眼睛竖着的时候多了一个竖线」): a tall pupil closes to a LENS, pointed at both ends - its half-width shrinks as
+  # (1 - y^2) toward the top and bottom - blended in as the pupil gets tall (H/W 1.8 -> 4.3); the ellipse stays for round pupils.
+  def M(op,a,b=None,v=None):
+   n_=nt.nodes.new('ShaderNodeMath');n_.operation=op
+   for i_,x_ in enumerate((a,b)):
+    if x_ is None:continue
+    if isinstance(x_,(int,float)):n_.inputs[i_].default_value=x_
+    else:nt.links.new(x_,n_.inputs[i_])
+   return n_.outputs[0]
+  ex=M('ABSOLUTE',axes[0].outputs[0]);ey=M('ABSOLUTE',axes[1].outputs[0])
+  wid=M('MAXIMUM',M('SUBTRACT',1.0,M('MULTIPLY',ey,ey)),.05);dl=M('MAXIMUM',ey,M('DIVIDE',ex,wid))
+  L_=M('MINIMUM',M('MAXIMUM',M('DIVIDE',M('SUBTRACT',M('DIVIDE',pv['LX_PupilH'].outputs[0],pv['LX_PupilW'].outputs[0]),1.8),2.5),0.0),1.0)
+  dd=M('ADD',M('MULTIPLY',ln.outputs['Value'],M('SUBTRACT',1.0,L_)),M('MULTIPLY',dl,L_))
+  mr=nt.nodes.new('ShaderNodeMapRange');mr.inputs['From Min'].default_value=.97;mr.inputs['From Max'].default_value=1.025;nt.links.new(dd,mr.inputs['Value'])
   nt.links.new(mr.outputs['Result'],pupil.inputs['Fac'])
  else:nt.links.new(ramp(PUPIL-.010,PUPIL+.008),pupil.inputs['Fac'])
  nt.links.new(limbal.outputs['Color'],pupil.inputs[2])
@@ -1096,6 +1138,15 @@ for _hu,_hv,_hr in ((.80,.63,.085),(.62,.51,.028)):
  _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=_v6('V6_CATCH',3.5);_ms.name='LX_Catch%d'%len([n for n in cn if n.name.startswith('LX_Catch')]);cl.new(_mr.outputs['Result'],_ms.inputs[0])
  _em=cn.new('ShaderNodeEmission');_em.inputs['Color'].default_value=(1,.99,.97,1);cl.new(_ms.outputs[0],_em.inputs['Strength'])
  _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_em.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
+# Round Z (codex FACE-STRICT-COMPARE: the sparkling eye is several highlights, not a bigger pupil): three more catchlights, off
+# (strength 0) until the face's Sparkle control lights them (nodes LX_SparkX*)
+if FACE_V1:
+ for _hu,_hv,_hr in ((.36,.37,.050),(.40,.66,.024),(.66,.35,.020)):
+  _d=cn.new('ShaderNodeVectorMath');_d.operation='DISTANCE';cl.new(_uvc.outputs['UV'],_d.inputs[0]);_d.inputs[1].default_value=(_hu,_hv,0)
+  _mr=cn.new('ShaderNodeMapRange');_mr.interpolation_type='SMOOTHERSTEP';_mr.inputs['From Min'].default_value=_hr;_mr.inputs['From Max'].default_value=_hr*.45;cl.new(_d.outputs['Value'],_mr.inputs['Value'])
+  _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=0.0;_ms.name='LX_SparkX%d'%len([n for n in cn if n.name.startswith('LX_SparkX')]);cl.new(_mr.outputs['Result'],_ms.inputs[0])
+  _em=cn.new('ShaderNodeEmission');_em.inputs['Color'].default_value=(1,.99,.97,1);cl.new(_ms.outputs[0],_em.inputs['Strength'])
+  _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_em.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
 cl.new(_acc,co_out.inputs['Surface'])
 # Eyelid skin: coloured per vertex after the coat is known (see "lid colour" below) - a thin
 # dark rim against the eye, the surrounding coat beyond it. As a flat beige it was the pale
@@ -1120,6 +1171,15 @@ LID_MARGIN=.20*_v6('V6_LID_MARGIN',1.0)
 # Lift raises the lower lid (soft / squinting), and Smile pairs an upper lid .80 shut with a lower lid pushed past the meeting
 # line (1.25): it tucks behind the upper, and the closed eye is the upper rim's higher arch - the ^ ^ eye.
 LID_V1={'U':(('Wide',-.25),('Smile',.80)),'L':(('Lift',.45),('Smile',1.25))}
+def _lid_slants(P,s):
+ """Round Z (user: 「表情不对，所有表情都一样」): the upper lid shut more on one side - SlantIn lowers its inner half (the frown of
+  an angry / intent cat), SlantOut its outer half (the droop of a sad one). Per-point fractions of the same exact turn; the brow
+  layer reads through these - a cat's brow is fur, and moving it barely showed."""
+ L=lid_local(P,s);a=np.arctan2(L[:,2],L[:,0]);win=np.clip((1-s*np.cos(a))/2,0,1)
+ # the whole lid comes down, more on one side (round Z2: weighted to the corners only, mean 2.6 mm against the blink's 10.7, the lid
+ # never reached the iris - the open eye's lid sits above it - and furrow / sad rendered as the neutral face)
+ # Z3: x1.6 - at .08 -> .58 of a blink across the eye the fur-covered lid took ~.1 off the iris's inner top (target furrow: slope +.18 iris)
+ return (('SlantIn',.12+.80*win**1.3),('SlantOut',.12+.70*(1-win)**1.3))
 def lid_local(P,s):
  """World points (N,3) to the eye-local frame of eye_frame(): x across, y into the head, z up."""
  cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
@@ -1188,7 +1248,7 @@ for s in [-1,1]:
   # The keys close the lid (see lid_turn above); the lid bones stay at rest. Squint is the same
   # turn at 55% - what the pose code used to give the bones for a full squint.
   o.shape_key_add(name='Basis');P=np.array([v.co[:] for v in me.vertices])
-  for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1['U' if upper else 'L'] if FACE_V1 else ()):
+  for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1['U' if upper else 'L'] if FACE_V1 else ())+(_lid_slants(P,s) if (FACE_V1 and upper) else ()):
    o.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s,'U' if upper else 'L',f).astype('f').ravel())
   eyelids.append(o)
  # Tear duct at the inner corner: the small pink caruncle every cat has. Without it the
@@ -1265,7 +1325,7 @@ if _v6('V6_TAIL_CAP',1)>0:
  # sheared where the plume rises) and the end closes in a half-dome whose coat runs on past the tip (fur_direction).
  cs=[];rs=[]
  for j in range(41):
-  t=j/40*5;idx=min(int(t),4);f=t-idx;cs.append(np.array(tailpoints[idx])*(1-f)+np.array(tailpoints[idx+1])*f);rs.append(.042*(1-j/70))
+  t=j/40*5;idx=min(int(t),4);f=t-idx;cs.append(np.array(tailpoints[idx])*(1-f)+np.array(tailpoints[idx+1])*f);rs.append(.042*(1-j/70)*(1-_v6('V6_TAIL_END_TAPER',.45)*np.clip((j-28)/12,0,1)**1.5))   # round Z: the last 3.6 cm closes to a point (18 -> 10 mm), inside the tip's brush - the round cap stood out of it bare
  cs=np.array(cs);tg_=np.gradient(cs,axis=0);tg_/=np.linalg.norm(tg_,axis=1)[:,None];e_=tg_[-1];R_=rs[-1]
  for k in range(1,6):ph=k/6*math.pi/2;cs=np.vstack([cs,cs[40]+e_*R_*math.sin(ph)]);tg_=np.vstack([tg_,e_]);rs.append(R_*math.cos(ph))
  for c,t_,rad in zip(cs,tg_,rs):
@@ -1374,6 +1434,17 @@ def face_white(p,col,white):
  m=(np.maximum(vee,low)*front*FACE_WHITE).clip(0,1)[:,None]
  return col*(1-m)+white[None,:]*m
 SOCK_Z=_v6('V6_SOCK_Z',.088)   # 0 = the painted coat's white legs
+def chest_bib(p,col):
+ """Round Z: the white on the front of the chest is a bib down the middle (codex stand-app / sit-front: about half the head's width
+  under the chin, narrowing between the forelegs), the tabby of the flanks either side. The side painting projected onto the chest's
+  front had made all of it white, from shoulder to shoulder."""
+ if _v6('V6_CHEST_BIB',1)<=0:return col
+ x,y,z=p.T;front=np.clip((-.06-y)/.06,0,1)*np.clip((.47-z)/.05,0,1)*np.clip((z-.15)/.04,0,1)
+ if not front.any():return col
+ half=np.interp(z,[.15,.24,.34,.44],[.030,.036,.048,.058])*_v6('V6_CHEST_BIB_W',1.0)
+ out=np.clip((np.abs(x)-half)/.018,0,1)*front
+ flank=coat_grade(coat_sample('coat_body_side',np.column_stack((x,y+.13,z))))
+ return col*(1-out[:,None])+flank*out[:,None]
 def leg_socks(p,col):
  """Round P (user: 「爪子的毛覆盖的范围不太对」 -> white only as socks): the painted side map carries the bib's white
   down the legs to the elbow, so the cat stood on four white posts. The codex paw refs (lingxi-ref-paw-front /
@@ -1449,7 +1520,7 @@ def fur_color(p,reg):
  dark=np.array([.29,.235,.205]);light=np.array([.70,.625,.565]);white=np.array([.96,.945,.915])
  x,y,z=p.T
  if COAT is not None and reg=='Head':return muzzle_detail(p,lip_crease(p,face_white(p,painted_coat(p,reg),white)))
- if COAT is not None and reg=='body':return leg_socks(p,painted_coat(p,reg))*paw_crease(p)[:,None]
+ if COAT is not None and reg=='body':return leg_socks(p,chest_bib(p,painted_coat(p,reg)))*paw_crease(p)[:,None]
  if COAT is not None and reg in ('Head','body'):return painted_coat(p,reg)
  if COAT is not None and reg=='Jaw':return np.tile(white,(len(p),1))
  if COAT is not None and reg.startswith('Ear'):return coat_sample('coat_head_front',p)
@@ -1459,7 +1530,8 @@ def fur_color(p,reg):
   dk=np.array([.27,.19,.14]);lt=np.array([.78,.64,.51])   # the coat grade's ramp
   along=np.clip((y-.36)/.40,0,1)
   ring=((np.sin(y*95+np.sin(x*30)*.5)+1)/2)**1.6
-  s=np.clip(ring*.8+.55*along**2,0,1)[:,None]
+  s=np.clip(ring*.8+.55*along**2,0,1)
+  s=np.maximum(s,.92*np.clip((y-tailpoints[-1][1]+.10)/.06,0,1))[:,None]   # round Z: dark from 10 cm before the end (full over the last 4 cm, skin and the tuft rooted there), as the reference brush - the end showed as pale skin
   return lt[None,:]*(1-s)+dk[None,:]*s
  if reg=='tail':
   # ring markings, which tail tabbies genuinely have
@@ -1600,7 +1672,7 @@ RADII={'guard':[.00078,.00056,.00030,.00006],'under':[.00045,.00032,.00018,.0000
 # a strand arc and its tip gather into a clump, which is most of what "fluffy" looks like.
 NP=6
 _CK=_v6('V6_CLUMP',1.0);CLUMP={'Head':.0095*_CK,'body':.011*_CK,'tail':.013*_CK}
-def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=None,shade=None):
+def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=None,shade=None,brush=None):
  me=o.data;me.calc_loop_triangles();v=np.array([v.co[:] for v in me.vertices]);norm=np.array([v.normal[:] for v in me.vertices]);tri=np.array([t.vertices[:] for t in me.loop_triangles]);corn=v[tri];area=np.linalg.norm(np.cross(corn[:,1]-corn[:,0],corn[:,2]-corn[:,0]),axis=1);ids=rng.choice(len(tri),n,p=area/area.sum());b=rng.random((n,2));b[b.sum(1)>1]=1-b[b.sum(1)>1];b=np.column_stack((1-b.sum(1),b));root=(corn[ids]*b[:,:,None]).sum(1);normal=(norm[tri[ids]]*b[:,:,None]).sum(1);normal/=np.maximum(np.linalg.norm(normal,axis=1)[:,None],1e-8)
  if reg=='Head' and not o.name.startswith('LX_Lid'):
   keep=np.ones(n,dtype=bool)
@@ -1668,13 +1740,16 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   tq=root*np.array([41.,37.,43.]);tuft=.5+.5*np.sin(tq[:,0]+1.7*np.sin(tq[:,2]))*np.sin(tq[:,1]*1.3+tq[:,2]*.7)
   ln*=(.78+.44*tuft)[:,None,None]
   ruff=1+_v6('V6_CHEEK_FLUFF',.30)*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # cheek fluff widens the lower face; round N (「脸是不是胖了」): .75 -> .30, the face 3-5% narrower below the eyes (face view rows at the eye / mouth / chin)
-  bib=1+.5*np.clip((.50-root[:,2])/.08,0,1)
+  bib=1+_v6('V6_HEAD_BIB',.20)*np.clip((.50-root[:,2])/.08,0,1)   # round Z (user: 「胸前的毛是不是太多了」): .5 -> .2 - the chin and throat's coat hung over the chest as a white apron
   # ...but not on the whisker pads (round G): the bib lengthened the upper-lip coat by ~1.3x and
   # that is what hung over the mouth. Below the lip the chin keeps its fluff.
   bib=np.where((root[:,1]<-.40)&(np.abs(root[:,0])<.050)&(root[:,2]>LIP0-.004),1,bib)
   ln*=np.maximum(ruff,bib)[:,None,None]
  elif reg=='body':
-  bib=1+_v6('V6_BIB',.45)*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)
+  bib=1+_v6('V6_BIB',0.0)*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)   # round Z: .45 -> 0
+  # Round Z (user: 「胸前的毛是不是太多了」; codex stand-app / sit-front: a bib down the middle, the forelegs showing): the coat on the
+  # front of the chest V6_CHEST_TRIM shorter - full length it stood out as a white apron as wide as the head over the forelegs
+  bib=bib*(1-_v6('V6_CHEST_TRIM',.50)*np.clip((-.08-root[:,1])/.08,0,1)*np.clip((.46-root[:,2])/.10,0,1)*np.clip((root[:,2]-.14)/.05,0,1)*np.clip(-normal[:,1]*1.4,0,1))
   # Short on the paws, full by mid-leg. At .30 the paw still wore 2.5cm of an 8.5cm coat and read
   # as a pom-pom with no toes (round C, 2026-09-30); ~1cm lets the foot and its toes show.
   # Round D: the pom-pom was the LEG coat hanging over the paw (8.5cm strands rooted at mid-leg),
@@ -1707,6 +1782,22 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
  if reg in ('paw','sole'):wave=wave*np.clip(ln/.025,.25,1)
  elif reg=='body':wave=wave*np.clip(ln/.020,.55,1)*(1-_v6('V6_PAW_SLEEK',.65)*PAW_ZONE(root[:,2]))[:,None,None]   # round P: the paw's coat is sleek - waved and frizzed like the body it rendered as crinkled wool
  pts=root[:,None,:]+ln*(normal[:,None,:]*lift+tangent[:,None,:]*drift)+wave
+ if brush is not None:
+  # Round Z: a brush that closes past the end (brush=(end point, end direction)) - each strand lies along the tail from its root and
+  # meets the others ~4.5 cm beyond the tip, a quarter of its distance off the axis: the tail's own coat stands off at 1.7 and,
+  # from the last 7 cm, had fanned up and down round the bare cap (codex lingxi-ref-tail-tip-closeup.png: a dark brush, tapering)
+  te_,e_=brush;rel=root-te_;ax=rel@e_;off=rel-ax[:,None]*e_[None,:]
+  tip=te_+e_*(_v6('V6_TAIL_TUFT_OUT',.045)*rng.uniform(.65,1.15,(n,1)))+off*.25+rng.normal(0,.004,(n,3))
+  tt=t.reshape(1,NP,1);pts=root[:,None,:]+(tip-root)[:,None,:]*tt**.85+normal[:,None,:]*(.010*np.sin(np.pi*tt))+wave*.5
+ _bw=None
+ if reg=='tail' and brush is None and _v6('V6_TAIL_BRUSH',1)>0:
+  # Round Z3: the coat's last V6_TAIL_BRUSH_L closes into that brush as well - it stood off at full length to the end, and the tuft
+  # lying along the tip read as a thin bare finger poking out of it. Blended in toward the end, so the plume tapers to the point.
+  te_=np.array(tailpoints[-1]);e_=te_-np.array(tailpoints[-2]);e_/=np.linalg.norm(e_);rel=root-te_;ax=rel@e_;off=rel-ax[:,None]*e_[None,:]
+  _bw=np.clip(1+ax/_v6('V6_TAIL_BRUSH_L',.12),0,1)**1.5
+  tip=te_+e_*(_v6('V6_TAIL_TUFT_OUT',.045)*rng.uniform(.8,1.4,(n,1)))+off*.35+rng.normal(0,.006,(n,3))
+  tt=t.reshape(1,NP,1);bp=root[:,None,:]+(tip-root)[:,None,:]*tt**.85+normal[:,None,:]*(.022*np.sin(np.pi*tt))+wave*.5
+  pts=pts*(1-_bw[:,None,None])+bp*_bw[:,None,None]
  # Clumping: strands rooted in the same small patch pull their tips toward the patch's mean
  # tip. Evenly spaced independent hairs read as velvet; real long fur parts into tufts.
  cs=CLUMP.get(reg)
@@ -1725,7 +1816,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
  # the build-only memory spikes. Array-in, no per-point Python objects.
  mesh.vertices.add(n*NP);mesh.vertices.foreach_set('co',pts.astype('f').ravel())
  mesh.edges.add(edges.shape[0]);mesh.edges.foreach_set('vertices',edges.astype(np.int32).ravel())
- mesh.update();ob=bpy.data.objects.new('LX_Fur_'+layer+'_'+o.name,mesh);scene.collection.objects.link(ob);bind(ob,bind_as or reg,wpts=np.repeat(root,NP,axis=0))
+ mesh.update();ob=bpy.data.objects.new('LX_Fur_'+layer+'_'+o.name,mesh);scene.collection.objects.link(ob);bind(ob,bind_as or reg,wpts=pts.reshape(-1,3) if brush is not None else np.repeat(root,NP,axis=0) if _bw is None else (root[:,None,:]+(pts-root[:,None,:])*_bw[:,None,None]).reshape(-1,3))   # round Z: the tip's brush bends point by point like the skin under it - bound by the root it lagged the last bone's turn and the (dark) skin end stood out above it
  # The strand mesh is only a deformation source for the render curves. It carries no
  # material of its own, so in Cycles it came out as default-white fluff and buried both
  # the striped skin and the coloured curves. Never let it render directly.
@@ -1839,8 +1930,9 @@ for lid in [o for o in eyelids if o.name.startswith('LX_Lid')]:
        color_at=(lambda r,s_=s_:lid_turn(r,s_,'L',1.0)) if ul=='L' else None)
  fo=furs[-1];P=np.empty(len(fo.data.vertices)*3,dtype='f');fo.data.vertices.foreach_get('co',P);P=P.reshape(-1,3).astype(float)
  fo.shape_key_add(name='Basis')
- for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1[ul] if FACE_V1 else ()):
-  fo.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s_,ul,f,roots=np.repeat(P[::NP],NP,axis=0)).astype('f').ravel())
+ _R=np.repeat(P[::NP],NP,axis=0)
+ for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1[ul] if FACE_V1 else ())+(_lid_slants(_R,s_) if (FACE_V1 and ul=='U') else ()):
+  fo.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s_,ul,f,roots=_R).astype('f').ravel())
  eyelids.append(fo)
 # Round I: a denser coat on the legs, so the leg reads as a furry limb continuing the body's fluff
 # rather than a stick (the user: "thin sticks on snowballs"). Grown LAST so every other strand keeps
@@ -1856,6 +1948,14 @@ if _NVN>0:
  _nr=lambda r:np.hypot(r[:,0]/NW,(r[:,2]-NC[2]+.0005)/(NH+.002))
  groom(head,max(1,int(_NVN*SCALE/.009)),_v6('V6_NOSE_VELVET',.030),'Head','under',root_filter=lambda r:(_nr(r)<1.8)&(r[:,1]<-.42))
  furs[-1].name='LX_Fur_under_LX_NoseVelvet';print('NOSE_VELVET strands',len(furs[-1].data.vertices)//NP)
+# Round Z (user: 「尾巴尖还是秃的」): the capped tip's few strands ran off along the tail and left its skin bare at the end - a dense
+# tuft rooted on the last 7.5 cm (and the cap), long enough to close into a rounded dark brush (codex lingxi-ref-tail-tip-closeup.png)
+_TTN=_v6('V6_TAIL_TUFT_N',4000)
+if _TTN>0:
+ _te=np.array(tailpoints[-1])
+ _ted=_te-np.array(tailpoints[-2]);_ted/=np.linalg.norm(_ted)
+ groom(tail,max(1,int(_TTN*10*SCALE*DENSITY)),_v6('V6_TAIL_TUFT',.11),'tail','guard',root_filter=lambda r:np.linalg.norm(r-_te,axis=1)<.075,brush=(_te,_ted))   # roots fall over the whole tail and the tip keeps ~1/10: x10 (644 strands at x1)
+ furs[-1].name='LX_Fur_guard_LX_TailTip';print('TAIL_TUFT strands',len(furs[-1].data.vertices)//NP)
 scene['fur_quality']=QUALITY
 # Belly breathing applies identically to body surface and ALL its bound hairs. With only the
 # guard layer keyed, the expanding flank swallowed the 7mm undercoat on every inhale.
@@ -3235,11 +3335,14 @@ if FACE_V1:
   C['UpperWide.'+sf]=[['key','LidUpper.'+sf,'Wide']]
   C['LowerLift.'+sf]=[['key','LidLower.'+sf,'Lift']]
   C['SmileArc.'+sf]=[['key','LidUpper.'+sf,'Smile'],['key','LidLower.'+sf,'Smile']]
+  C['LidSlantIn.'+sf]=[['key','LidUpper.'+sf,'SlantIn']];C['LidSlantOut.'+sf]=[['key','LidUpper.'+sf,'SlantOut']]
   C['PupilW.'+sf]=[['mat','LX_IrisLayer.'+sf,'LX_PupilW']];C['PupilH.'+sf]=[['mat','LX_IrisLayer.'+sf,'LX_PupilH']]
   # round-v-test f1 (face sheet on the furred preview): at 5 mm the brows did not read through the coat - x1.5
   C['BrowInnerUp.'+sf]=[['loc','BrowIn.'+sf,_mm(0,.75,8.2)]];C['BrowOuterUp.'+sf]=[['loc','BrowOut.'+sf,_mm(s_*.7,0,7.2)]]
   C['BrowInnerDown.'+sf]=[['loc','BrowIn.'+sf,_mm(-s_*1.45,-2.2,-6.5)]]
-  C['MouthCornerUp.'+sf]=[['loc','MouthCorner.'+sf,_mm(s_*1.1,2,6)]];C['MouthCornerDown.'+sf]=[['loc','MouthCorner.'+sf,_mm(0,-.7,-6)]]
+  # round Z (codex FACE-STRICT-COMPARE: corner +.13 nose widths in the target, +.03 rendered): 6 -> 9 mm
+  C['MouthCornerUp.'+sf]=[['loc','MouthCorner.'+sf,_mm(s_*1.5,2.5,9)]];C['MouthCornerDown.'+sf]=[['loc','MouthCorner.'+sf,_mm(0,-1,-9)]]
+  C['MouthWide.'+sf]=[['loc','MouthCorner.'+sf,_mm(s_*7,3.5,1)]]   # the hiss's lips drawn back and out: its opening 1.8 nose widths wide in the target, .65 rendered
   C['UpperLipRaise.'+sf]=[['loc','LipUp.'+sf,_mm(0,2,5.5)]]
   C['NoseWrinkle.'+sf]=[['loc','NoseSide.'+sf,_mm(-s_*.8,1.5,3)],['loc','Nose',_mm(0,0,.6)]]
   C['NostrilFlare.'+sf]=[['loc','Nostril.'+sf,_mm(s_*1.5,0,0)]]
@@ -3251,17 +3354,37 @@ if FACE_V1:
  C['JawOpen']=[['rot','Jaw',[1.0,0,0]],['loc_local','LipUpper',[round(float(c),6) for c in LIP_AX@(Vector(LIP_LIFT['Yawn'])*(1/JAW_OPEN['Yawn']))]]]
  C['TongueOut']=[['key','LX_Tongue','Up',2.0],['key','LX_Tongue','Out',1.0]];C['TongueCurl']=[['key','LX_Tongue','Curl',1.0]]
  C['Sniff']=[['loc','Nose',_mm(0,0,1.2)],['loc','Nostril.L',_mm(-1,0,0)],['loc','Nostril.R',_mm(1,0,0)]]
- C['Sparkle']=[['catch','LX_Cornea',1.7]]
+ C['Sparkle']=[['catch','LX_Cornea',1.7],['sparkx','LX_Cornea',3.5]]
  both=lambda **kw:{k+'.'+sf:v for k,v in kw.items() for sf in 'LR'}
- LAYERS={'eye':{'slit':both(Squint=.45,PupilW=.05,PupilH=.44),'round':both(PupilW=.31,PupilH=.34),'wide':both(UpperWide=1,PupilW=.37,PupilH=.37),
-   'side':both(GazeYaw=.35,Squint=.2),'half':both(Blink=.45),'happy':both(SmileArc=1),'closed':both(Blink=1),'heart':{**both(PupilW=.36,PupilH=.36),'Sparkle':1},
-   'soft':both(Squint=.25,LowerLift=.4),'wink-left':{'Blink.L':1,'SmileArc.R':.25},'wink-right':{'Blink.R':1,'SmileArc.L':.25},
-   'sparkle':{**both(PupilW=.37,PupilH=.37),'Sparkle':1},'tearful':both(LowerLift=.3,Squint=.1,PupilW=.36,PupilH=.36)},
-  'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1),'raise':both(BrowInnerUp=.6,BrowOuterUp=.9),'sad':both(BrowInnerUp=1,BrowOuterUp=-.3)},
-  'mouth':{'flat':{},'cat':both(MouthCornerUp=.7),'open':{'JawOpen':.30,'MouthO':.3},'frown':both(MouthCornerDown=1),
-   'hiss':{'JawOpen':.45,'LowerLipDown':.6,**both(UpperLipRaise=1,NoseWrinkle=.8)},'tongue':{'JawOpen':.10,'TongueOut':.25,**both(MouthCornerUp=.3)}},
-  'ear':{'neutral':{},'forward':both(EarForward=.30),'airplane':both(EarFlatten=.85,EarSwivel=.6,EarForward=-.1,EarTipBend=-.2),
-   'back':both(EarForward=-.55,EarFlatten=.35,EarSwivel=.7,EarTipBend=.35)}}
+ # Round Z (user: 「表情不对，我看着所有表情都一样」): every state made distinct at desktop size - the eye states by how far the lids
+ # close and how big the pupil is (the resting pupil .33 left little iris; 'round' now shows a ring of it), the brow states through
+ # the upper lid's slant (a cat's brow is fur: moving it alone barely read), the mouth states by a wider opening, the ears further.
+ # Round Z (user: 「表情不对，我看着所有表情都一样」), tuned to codex's measures (reviews/FACE-STRICT-COMPARE-FOR-CLAUDE.md, visible
+ # pupil / iris: round .62, wide .72, slit .11 x .82, sparkle .60 + extra highlights; lids: half .55, soft .23, tearful lower .08;
+ # brow slants furrow +.18, sad -.10; mouth: corner +-.13 nose widths, meow .70 high, hiss 1.8 wide, tongue .25 out; ears back ~71 deg).
+ # Jaw angles from the part audit (fur-visible opening / nose width 33.8 mm): .22 rad ~ .7 (the meow); the hiss .45 (.36 rendered ~.9).
+ LAYERS={'eye':{'slit':both(Squint=.30,PupilW=.058,PupilH=.35),'round':both(PupilW=.27,PupilH=.29),
+   'wide':{**both(UpperWide=1,PupilW=.35,PupilH=.36),'Sparkle':.4},'side':both(GazeYaw=.65,Blink=.25,PupilW=.25,PupilH=.28),
+   'half':both(Blink=.60,PupilW=.28,PupilH=.30),'happy':both(SmileArc=1),'closed':both(Blink=1),
+   'heart':{**both(PupilW=.30,PupilH=.32),'Sparkle':1.4},'soft':both(Blink=.26,LowerLift=.60,PupilW=.29,PupilH=.31),
+   'wink-left':{'Blink.L':1,'SmileArc.R':.35,'LowerLift.R':.3},'wink-right':{'Blink.R':1,'SmileArc.L':.35,'LowerLift.L':.3},
+   'sparkle':{**both(PupilW=.27,PupilH=.29,UpperWide=.3),'Sparkle':1.0},
+   'tearful':{**both(LowerLift=.50,LidSlantOut=.8,PupilW=.30,PupilH=.32),'Sparkle':.8}},
+  'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1,LidSlantIn=1),'raise':both(BrowInnerUp=.7,BrowOuterUp=1,UpperWide=.45),
+   'sad':both(BrowInnerUp=1,BrowOuterUp=-.3,LidSlantOut=1)},
+  'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1),'open':{'JawOpen':.18},
+   'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1)},
+   'hiss':{'JawOpen':.45,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)},'tongue':{'JawOpen':.10,'TongueOut':.70,**both(MouthCornerUp=.5)}},
+  'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=1.0,EarSwivel=.7,EarForward=-.1,EarTipBend=-.2),
+   'back':both(EarForward=-.65,EarFlatten=.65,EarSwivel=.8,EarTipBend=.65)}}
+ # per-expression additions over the four layers - the block cat tells some apart only by the screen symbol (放松 / 安心, 闭眼休息 / 陶醉
+ # identical; 撒娇 / 期待 / 闪亮, 好奇 / 玩心 / 困惑 ... under 1.3 / 255 apart, codex), which the 3D face cannot show
+ EXPR_EXTRA={'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(SmileArc=.45,MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},
+  '撒娇':both(SmileArc=.2,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
+  '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5},'认真':both(LidSlantIn=.6),
+  '喵喵':{'JawOpen':.22,'MouthO':.30},'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
+  '温柔':both(EarForward=.12,MouthCornerUp=.25),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35)},
+  '得意':{'MouthCornerUp.L':.7,'SmileArc.R':.2},'清醒':both(UpperWide=.25),'警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15)}
  # apps/lingxi/src/rig/art.ts BUILT_IN_EXPRESSIONS (symbol: a screen effect, carried through for the app)
  EXPR={'安然':'slit none cat neutral none','好奇':'round raise flat forward question','满足':'happy none cat neutral none','警觉':'wide raise flat forward exclaim',
   '不爽':'side furrow frown airplane none','惊吓':'wide raise open back sweat','困困':'half sad flat neutral sleep','玩心':'round raise tongue forward none',
@@ -3272,7 +3395,7 @@ if FACE_V1:
   '警惕':'side raise flat forward exclaim','嫌弃':'half furrow frown airplane none','得意':'half raise cat forward none','左眼眨':'wink-left raise cat neutral none',
   '右眼眨':'wink-right raise cat neutral none','闪亮':'sparkle none cat forward heart'}
  EXPR={k:dict(zip(('eye','brow','mouth','ear','symbol'),v.split())) for k,v in EXPR.items()}
- FACE_SPEC={'version':1,'controls':C,'layers':LAYERS,'expressions':EXPR,'ear':{'fwd_rad':1.0,'flat_rad':1.0,'swivel_rad':1.0,'tip_rad':1.0},
+ FACE_SPEC={'version':1,'controls':C,'layers':LAYERS,'expressions':EXPR,'expression_extras':EXPR_EXTRA,'ear':{'fwd_rad':1.0,'flat_rad':1.0,'swivel_rad':1.0,'tip_rad':1.0},
   'notes':'heart / tearful iris looks are material variants for the app (not built in Blender v1); symbol is a screen effect.'}
  (OUT/'face-controls.json').write_text(json.dumps(FACE_SPEC,indent=1,ensure_ascii=False))
 import resource
