@@ -613,7 +613,9 @@ for s in [-1,1]:
  for front in (True,False):
   pre='Front' if front else 'Rear';x=s*(.108 if front else .12);y=-.17 if front else .24
   if front:
-   bone('Scap.'+suf,(s*.078,-.105,.425),(x,-.185,.300),'Spine')
+   # Round X (codex FELINE-RIG-NUMBERS, Peters 1983 table II): the shoulder blade was 147 mm, 1.13 x the humerus, its top on the back
+   # line - a cat's is .67 (8 weeks) - .72 (adult) x. Now ~92 mm, its top inside the back (V6_SCAP_SHORT=0: the old one).
+   bone('Scap.'+suf,(s*.088,-.14,.38) if _v6('V6_SCAP_SHORT',1)>0 else (s*.078,-.105,.425),(x,-.185,.300),'Spine')
    chain=[(x,-.185,.300),(x,-.145,.175),(x,-.190,.065),(x,-.250,.035)];par='Scap.'+suf
   else:
    # Round Q (user: 「查一下猫科动物的身材比例，骨骼特征，以及联动关系」): the hind leg on a cat's measured skeleton - Day &
@@ -622,6 +624,14 @@ for s in [-1,1]:
    # hock comes 39 mm forward and the metatarsus stands at 68 deg. Ours had the hock at 72 deg - a Z-folded leg with the
    # shank sloping far back (the old chain is V6_HIND_ANAT=0).
    chain=[(x,.225,.305),(x,.181,.191),(x,.261,.108),(x,.231,.036)] if _v6('V6_HIND_ANAT',1)>0 else [(x,.225,.305),(x,.172,.195),(x,.300,.115),(x,.205,.036)];par='Pelvis'
+   if _v6('V6_HIND_LONG',1)>0:
+    # Round X (codex FELINE-RIG-NUMBERS, Peters 1983): femur / tibia were .93 / .85 x the humerus, a kitten's 1.03 / 1.01 (adult 1.10 /
+    # 1.15) - the hind leg too short to crouch deep or push out long. 135 / 132 mm, hip, hock and toes where they were: the knee is
+    # re-found forward on the two circles, so the standing leg is more flexed and a straightened one reaches further.
+    hp,hk=np.array(chain[0][1:]),np.array(chain[2][1:]);L1,L2=_v6('V6_FEMUR',.135),_v6('V6_TIBIA',.132);dv=hk-hp;dd=np.linalg.norm(dv);u_=dv/dd
+    a_=(L1*L1-L2*L2+dd*dd)/(2*dd);h_=math.sqrt(max(0,L1*L1-a_*a_));nrm=np.array([-u_[1],u_[0]]);kn=hp+a_*u_+h_*nrm
+    if kn[0]>hp[0]+a_*u_[0]:kn=hp+a_*u_-h_*nrm   # the knee forward (-y)
+    chain[1]=(x,float(kn[0]),float(kn[1]))
   bone(pre+'Upper.'+suf,chain[0],chain[1],par);bone(pre+'Lower.'+suf,chain[1],chain[2],pre+'Upper.'+suf);bone(pre+'Paw.'+suf,chain[2],chain[3],pre+'Lower.'+suf)
   for i in range(4):tx,ty=toe_xy(pre,s,i);bone(pre+f'Toe{i}.'+suf,(tx,ty+.024,.026),(tx,ty-.014,.021),pre+'Paw.'+suf)
  bone('Ear.'+suf,(s*.100,-.250,.604),(s*(.100+.066*EAR_S),-.250+.010*EAR_S,.604+.156*EAR_S),'Head')  # matches the new ear shell
@@ -636,7 +646,22 @@ for s in [-1,1]:
   bone(nm,eye_frame(s,0,LID_YC,0),eye_frame(s,0,LID_YC-.03,0),'Head')
  bone('Whisker.'+suf,(s*.048,-.43,.477),(s*.21,-.43,.48),'Head')
 tailpoints=[(0,.36,.33),(.02,.44,.29),(.03,.51,.24),(.04,.57,.20),(.05,.63,.17),(.05,.69,.16)] if _v6('V6_TAIL_PLUME',1)<=0 else [(0,.36,.33),(.015,.44,.285),(.025,.51,.25),(.03,.57,.235),(.03,.625,.245),(.03,.67,.275)]   # round V: codex lingxi-ref-pose-stand-side.png - the tail falls from the rump, then lifts into a plume (was a straight droop to 160 mm)
+# Round X (user: 「动作不到位的原因是骨骼结构不合理，尤其是联动关系」; codex FELINE-ANATOMY-AND-MOTION-GUIDE): the tail was 316 mm, 43% of
+# nose-to-rump, with five joints - codex's lying / sleeping cats lay theirs round to the forepaws, which takes ~60% (a domestic cat's
+# is 60-65%) and enough joints to bend as a curve, not a polygon. Lengthened about its root (V6_TAIL_LEN) and split below.
+TAIL_LEN=_v6('V6_TAIL_LEN',1.5)
+tailpoints=[tuple(np.array(tailpoints[0])+TAIL_LEN*(np.array(q)-np.array(tailpoints[0]))) for q in tailpoints]
 for i in range(5):bone('Tail'+str(i),tailpoints[i],tailpoints[i+1],'Pelvis' if i==0 else 'Tail'+str(i-1))
+# Round X: every back, neck and tail joint is split in two, collinear - the B half takes the A half's children. The clips still
+# pose the A names (Loin, Spine, Neck, Tail0-4) and _spread() turns each rotation into two half turns, so the same pose bends
+# as an arc over twice the joints instead of folding at one hinge (the curled sleep was two kinks, the back a rigid plank).
+# The back is Pelvis > Loin > LoinB > Spine > Chest > Neck > NeckB > Head; the shoulder blades hang from the Chest.
+RIG_X=_v6('V6_RIG_X',1)>0
+SPLIT={'Loin':'LoinB','Spine':'Chest','Neck':'NeckB',**{f'Tail{i}':f'Tail{i}B' for i in range(5)}} if RIG_X else {}
+for _a,_b in SPLIT.items():
+ _e=ad.edit_bones[_a];_m=(_e.head+_e.tail)/2;_n=ad.edit_bones.new(_b);_n.head=_m;_n.tail=_e.tail.copy();_n.roll=_e.roll
+ for _c in [c for c in _e.children]:_c.parent=_n
+ _e.tail=_m;_n.parent=_e
 bpy.ops.object.mode_set(mode='OBJECT');rig.show_in_front=True
 for p in rig.pose.bones:p.rotation_mode='XYZ'
 
@@ -675,11 +700,33 @@ def weights(points,region):
  if region not in ['body','tail']:
   add(region,1);return w
  if region=='tail':
+  if RIG_X:
+   # round X: by where along the tail a point lies (its nearest point on the bone chain), each joint blended over a bone length
+   tb=[b.name for b in ad.bones if b.name.startswith('Tail')];tb.sort(key=lambda n:ad.bones[n].head_local.y)
+   A=np.array([ad.bones[n].head_local[:] for n in tb]);B=np.array([ad.bones[n].tail_local[:] for n in tb]);best=np.full(n,1e9);sv=np.zeros(n)
+   for i,(a,b) in enumerate(zip(A,B)):
+    ab=b-a;t=np.clip(((points-a)@ab)/(ab@ab),0,1);d=np.linalg.norm(points-(a+t[:,None]*ab),axis=1);m=d<best;best[m]=d[m];sv[m]=i+t[m]
+   H=np.array([np.clip(1-np.abs(sv-(i+.5)),0,1) for i in range(len(tb))])+1e-9;H/=H.sum(0)   # past either end's middle only that bone is left
+   return {nm:H[i] for i,nm in enumerate(tb)}
   centers=np.array([(np.array(tailpoints[i])+np.array(tailpoints[i+1]))/2 for i in range(5)])
   dist=np.linalg.norm(points[:,None,:]-centers[None,:,:],axis=2);val=np.exp(-dist**2/.006)
   val/=val.sum(axis=1)[:,None]
   return {'Tail'+str(i):val[:,i] for i in range(5)}
- x,y,z=points.T;pel=np.clip((y+.06)/.30,0,1);add('Pelvis',pel);lo=(1-pel)*np.clip((y+.10)/.12,0,1);add('Loin',lo);add('Spine',1-pel-lo)   # round P: the old Spine's share, split at the new joint (y -.04)
+ x,y,z=points.T
+ if RIG_X:
+  # Round X: the back's skin along the back - each point between the middles of the two bones it lies between, linearly, so a
+  # bend spreads over every joint (the old bands put 47% of the loin's skin on the pelvis and none on the neck).
+  tr=['Pelvis','Loin','LoinB','Spine','Chest'];mid=np.array([(ad.bones[n].head_local.y+ad.bones[n].tail_local.y)/2 for n in tr])
+  H=np.array([np.interp(-y,-mid,np.eye(len(tr))[i]) for i in range(len(tr))])
+  # The neck (codex guide 3, confirmed: LX_Body's Neck weight was 0 - the head swung on a bone no skin followed and the ruff
+  # stayed on the chest): what lies along the neck, past its first sixth, goes to Neck then NeckB, and next to the skull half
+  # to the Head, so a lowered head carries its neck with it.
+  P5=np.array(ad.bones['Neck'].head_local[1:]);P7=np.array(ad.bones['NeckB'].tail_local[1:]);u_=P7-P5;L_=np.linalg.norm(u_);u_/=L_
+  t=((np.stack([y,z],1)-P5)@u_)/L_;nk=np.clip((t-.15)/.35,0,1);nk=nk*nk*(3-2*nk);nb=np.clip((t-.35)/.40,0,1);hd=.5*np.clip((t-.9)/.3,0,1)
+  for i,nm in enumerate(tr):add(nm,H[i]*(1-nk))
+  add('Neck',nk*(1-nb));add('NeckB',nk*nb*(1-hd));add('Head',nk*nb*hd)
+ else:
+  pel=np.clip((y+.06)/.30,0,1);add('Pelvis',pel);lo=(1-pel)*np.clip((y+.10)/.12,0,1);add('Loin',lo);add('Spine',1-pel-lo)   # round P: the old Spine's share, split at the new joint (y -.04)
  for s in [-1,1]:
   suf='L' if s<0 else 'R'
   for pre,cy in [('Front',-.17),('Rear',.26)]:
@@ -702,6 +749,14 @@ def weights(points,region):
    names=[pre+'Upper.'+suf,pre+'Lower.'+suf,pre+'Paw.'+suf]
    g=np.array([np.exp(-(_segd(points,*_bseg(nm))/.030)**2) for nm in names])+1e-9;g/=g.sum(0)
    for nm,gi in zip(names,g):add(nm,mask*gi)
+   if RIG_X:
+    # Round X: the thigh and the upper arm are the leg's own flesh. The mask above cuts by height (z < .31 -> .19), so the thigh's
+    # skin above the knee stayed half on the pelvis: a folded leg (sit, lie) slid out from under a rigid rump, a stick under a
+    # ball. Now the skin round the femur / humerus, on the outside, below the hip / shoulder top, rides with it.
+    ua,ub=_bseg(pre+'Upper.'+suf);R=_v6('V6_THIGH_R',.075) if pre=='Rear' else _v6('V6_ARM_R',.060)
+    gd=np.exp(-(_segd(points,ua,ub)/R)**4)*np.clip((s*x-.02)/.05,0,1)*np.clip((ua[2]+.04-z)/.06,0,1)*(1-mask)
+    for k in list(w):w[k]*=(1-gd)
+    w[pre+'Upper.'+suf]=w.get(pre+'Upper.'+suf,0)+gd
   # Shoulder blade: the flank over the shoulder, above the leg.
   sc=np.clip((s*x-.02)/.05,0,1)*np.exp(-(_segd(points,*_bseg('Scap.'+suf))/.050)**2)
   for k in list(w):w[k]*=(1-sc)
@@ -1784,9 +1839,21 @@ tongues=[tongue];shapeobs=eyelids+eye_shapes+claws+breathers+tongues;offset=1;ma
 # angles that put the paw PAD in front of the mouth, facing it, with as little bending as
 # possible. Solved once; the clip scales the angles by its ease-in / ease-out.
 from mathutils import Matrix,Euler,Quaternion
+def _half(r):return tuple(Quaternion().slerp(Euler(r,'XYZ').to_quaternion(),.5).to_euler('XYZ'))   # twice this is r, exactly
+def _spread_rots(rots):
+ """Round X: a pose given on the A joints (Loin, Spine, Neck, Tail0-4) -> half the turn on A and half on its B (SPLIT). Rotations
+  that already name a B joint are taken as spread."""
+ if not SPLIT or any(b in rots for b in SPLIT.values()):return rots
+ r=dict(rots)
+ for a,b in SPLIT.items():
+  if a in r:r[a]=r[b]=_half(r[a])
+ return r
+def _spread(pb):
+ for a,b in SPLIT.items():h=_half(tuple(pb[a].rotation_euler));pb[a].rotation_euler=h;pb[b].rotation_euler=h
 def _fk(rots,locs=None):
  locs=locs or {};cache={}
  if 'Loin' not in rots and 'Spine' in rots:rots={**rots,'Loin':rots['Spine'],'Spine':(0,0,0)}   # round P: the solvers bend the back as one joint, at the loin - the pre-Loin rig exactly
+ rots=_spread_rots(rots)
  def m(name):
   if name in cache:return cache[name]
   b=ad.bones[name];basis=Matrix.Translation(Vector(locs.get(name,(0,0,0))))@Euler(rots.get(name,(0,0,0)),'XYZ').to_matrix().to_4x4()
@@ -1855,6 +1922,26 @@ def leg_ik(rots,locs,key,target,paw_ang,abduct=False):
   rv[up]=tuple((Quaternion(A,-phi).to_matrix()@Euler(rv[up],'XYZ').to_matrix()).to_euler('XYZ'))
  return (rv,abs(t.x-R['x']),over)
 def _paw_rest(key):return LREST[key]['ang'][LEGS[key][3]]
+# Round X (user: 「尤其是联动关系」; codex guide 2: the shoulder blade turns and slides on the ribs and that adds to the stride - English
+# 1978): it hung fixed from the chest in every clip but the lick, so each foreleg swung from a socket welded to the body. Now it
+# follows its leg: it turns with the reach of the leg (SCAP_ROT of the shoulder-to-wrist swing from rest - a reaching leg carries the
+# shoulder forward, a leg pushing back draws it back), and it rides up the ribs as the leg folds under the chest (SCAP_SLIDE metres
+# for a leg folded to nothing) - the shoulder blades that stand up over a crouching or lying cat's back.
+SCAP_ROT=_v6('V6_SCAP_ROT',.35);SCAP_SLIDE=_v6('V6_SCAP_SLIDE',.06)
+def _scap_rot(s_,a):
+ """The blade's turn about the body's left-right axis (armature X) - about its own x, which leans with the blade's slope, it tipped
+  the whole foreleg's plane inward: the lying forepaws came together 118 mm apart instead of 216 (round-x 240)."""
+ ax=ad.bones['Scap.'+s_].matrix_local.to_3x3().inverted()@Vector((1,0,0));return tuple(Quaternion(ax,a).to_euler('XYZ'))
+SCAP_SIGN={}
+for _s in 'LR':
+ _f=_fk({'Scap.'+_s:_scap_rot(_s,.1)});SCAP_SIGN[_s]=1.0 if _f('FrontUpper.'+_s).translation.y<ad.bones['FrontUpper.'+_s].head_local.y else -1.0
+def _scap_follow(k,tg,rots,locs):
+ if SCAP_ROT<=0 and SCAP_SLIDE<=0:return
+ s_=k[1];sc='Scap.'+s_;up='FrontUpper.'+s_;par=ad.bones[sc].parent.name
+ rots[sc]=(0,0,0);locs[sc]=(0,0,0);f=_fk(rots,locs);D=f(par)@ad.bones[par].matrix_local.inverted();t=D.inverted()@Vector(tg)
+ S0=Vector(ad.bones[up].head_local);r=t-S0;r0=LREST[k]['foot']-S0
+ a=_wrap(math.atan2(-r.y,-r.z)-math.atan2(-r0.y,-r0.z));fold=min(1,max(0,1-r.length/r0.length))
+ rots[sc]=_scap_rot(s_,SCAP_SIGN[s_]*SCAP_ROT*a);locs[sc]=(0,-SCAP_SLIDE*fold,0)
 def _root_delta(f):return f('Root')@ad.bones['Root'].matrix_local.inverted()
 # Round J: the mouth point was given in AUTHORED space, but the bones are not - the head is scaled .9
 # about the neck and the body squeezed nose-to-tail (head_xf / body_xf above). The lick solve aimed the
@@ -1909,7 +1996,7 @@ def solve_sit():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
-  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',52)))   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
+  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',58)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
   mz=(f('Head')@mouth_l).z;c+=60*max(0,.49-mz)   # round J: .49 on the REAL mouth = .50 on the old authored-space point; 60 (was 15): the real mouth sits closer to the neck, so at 15 the solve dropped it 53 mm and bent the head 42 deg onto the chest
   hd0=f('Head').translation;hd1=_tip(f,'Head');c+=3*abs(math.atan2(hd1.z-hd0.z,-(hd1.y-hd0.y))-math.radians(12))
@@ -2092,6 +2179,36 @@ else:
 # no frame has all four paws up (it had 9, and the forepaws never reached the floor).
 WALK=dict(duty=.76,stride=.12,lift=.035,off={'FL':0,'HR':.75,'FR':.5,'HL':.25},bob=.008,dip=.30,nod=.045)   # dips just after each hind paw lands (u .25 / .75)
 RUN=dict(duty=.55,stride=.19,lift=.055,off={'FL':0,'HR':0,'FR':.5,'HL':.5},bob=.012,dip=.275,nod=.07)     # dips mid-stance of each diagonal pair
+# Round X (user: 「跑 跳 走…联动关系」; codex guide 8): the run was a trot - diagonal pairs, the back a rigid plank, the walk sped up. A
+# running cat gallops: a rotary gallop, left lead - left hind, right hind, flight, right fore, left fore, flight (UMN vet. anatomy, gaits)
+# - each paw down about a third of the cycle, and the BACK does the work: flexed (gathered) as the hind paws reach in under the body to
+# land, extended as the forepaws reach out to land, the pelvis and the chest tipping against each other (RUN_FLEX on the spine, half of
+# it the other way on the pelvis, so the trunk's mean line stays level). Touchdowns (u): HL 0, HR .08, FR .45, FL .53.
+RUN_GALLOP=_v6('V6_RUN_GALLOP',1)>0
+if RUN_GALLOP:RUN=dict(duty=_v6('V6_RUN_DUTY',.30),stride=_v6('V6_RUN_STRIDE',.24),lift=_v6('V6_RUN_LIFT',.09),off={'HL':0,'HR':.92,'FR':.55,'FL':.47},bob=.012,dip=.20,nod=.05,flex=_v6('V6_RUN_FLEX',.35),flex_u=.95,
+ reach=(_v6('V6_RUN_REACH_F',.10),_v6('V6_RUN_REACH_H1',.08),_v6('V6_RUN_REACH_H2',.10)))
+# Round X: the jump in six phases (codex guide 7), straight up and down on the spot: crouch (the back flexes, the hind legs load), push
+# (a quadratic rise that leaves the floor at the flight's own speed - the old sin^2 lift left the paws with no push at all), flight (a
+# parabola, the legs tucked, the tail out), the forepaws reach and land first, then the hind; the landing gives (root 45 mm down, the
+# back flexing) and recovers. JUMP_T: forepaws off / hind off / forepaws down / hind down.
+JUMP_PHASED=_v6('V6_JUMP_PHASED',1)>0
+# Round X, against codex's lingxi-ref-jump-{crouch,takeoff,air,land}-side.png: the trunk PITCHES - level and low in the crouch, nose up
+# ~43 deg at take-off over hind legs straightened to the toes, level at the top with every leg tucked, nose down ~17 deg as the forelegs
+# reach for the floor - and the legs in the air are placed in the trunk's own frame (JUMP_LEGS), blended into their floor marks at
+# lift-off and touch-down. Without the pitch every phase was a standing cat at a different height (round-v-test r1/r2).
+JUMP_T=(.27,.30,.74,.80)
+def _jump_root(u):
+ if u<.20:e=u/.20;return -.08*e*e*(3-2*e)
+ if u<.30:return -.08+.14*((u-.20)/.10)**2
+ if u<.74:return .32-5.37*(u-.52)**2
+ if u<.84:return -.06+.12*(1-(u-.74)/.10)**2
+ e=(u-.84)/.16;return -.06*(1-e*e*(3-2*e))
+JUMP_PITCH=[(0,0),(.20,.04),(.27,-.45),(.31,-.75),(.40,-.35),(.52,-.05),(.66,.18),(.74,.30),(.80,.12),(.88,.02),(1,0)]   # Pelvis x: - nose up
+# per leg: (u, dy, dz, paw) in the trunk's frame, off the rest paw (- dy forward)
+JUMP_LEGS={'F':[(.31,-.12,.10,.3),(.42,.02,.14,.9),(.60,.00,.12,.7),(.70,-.07,-.02,.1)],
+           'H':[(.33,.10,.02,.6),(.46,-.06,.12,1.1),(.66,-.05,.10,.9),(.76,-.02,.03,.2)]}
+LD_TAIL_WK=tuple(float(c) for c in os.environ.get('V6_LD_TAIL_WK','1,.6,.35,.2,.3').split(','))   # round X: per-joint share of the lying tail's turn round the flank (round W: 1,.6,.1,.1,.35 on the short tail)
+def _jump_key(u,keys):return float(np.interp(u,[k[0] for k in keys],[k[1] for k in keys]))
 def ROOT_TRAVEL(g):return g['stride']/g['duty']   # metres per cycle
 def _gait(g,u,k):
  ph=(u+g['off'][k])%1
@@ -2100,15 +2217,25 @@ def _gait(g,u,k):
  # curve keeps the stance's backward drift at both ends. (Eased relative to the body, a run's paw still
  # moved 4-6 mm a frame as it touched down.)
  s_=(ph-g['duty'])/(1-g['duty']);e=s_*s_*(3-2*s_);D=ROOT_TRAVEL(g)
- return g['stride']*.5-D*e+D*(1-g['duty'])*s_,g['lift']*math.sin(math.pi*s_),math.sin(math.pi*s_)
+ dy=g['stride']*.5-D*e+D*(1-g['duty'])*s_
+ if 'reach' in g:
+  # Round X, gallop (codex lingxi-ref-run-extended / -gathered-side.png): out of contact the legs go past where they will land - the
+  # foreleg reaches beyond its touch-down and draws back onto it (peak at 65% of the swing), the hind leg trails back off the push
+  # (25%) then swings in under the belly (75%) - the stretched and the gathered flights. Zero at lift-off and touch-down.
+  rf,rh1,rh2=g['reach']
+  if k[0]=='F':dy-=rf*math.sin(math.pi*s_**1.6)**2
+  else:dy+=rh1*math.sin(math.pi*s_**.5)**2-rh2*math.sin(math.pi*s_**2.4)**2
+ return dy,g['lift']*math.sin(math.pi*s_),math.sin(math.pi*s_)
 # Round L LieDown (user: 「躺下去的效果不好」): a sphinx. The forelegs used to fold back INTO the chest (wrists 108 mm
 # up, the pads 59 mm off the floor) and showed as two white sleds under it, the back went flat (spine 2.2 deg) and
 # the body ran longer than Idle's. Now the forearms lie on the floor ahead of the shoulders (wrist f_dy forward,
 # f_z up, the paw at f_pa deg - flat, toes down), the chest settles between them, the hocks fold under the
 # haunches, the back keeps its line (spine .06 -> ~4.5 deg), the head comes a little up off a lowered neck and
 # the tail comes round the flank on the floor. drop/f_z/h_z are set on the built rig: chest 0-1 mm, toes ~3 mm.
-LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-1.3,
- f_dy=.24,f_z=.073,f_pa=-145,h_dy=.05,h_z=.09,h_pa=-178).items()}
+# Round X (codex lingxi-ref-pose-liedown-top.png: a compact cat): the back rounds (spine .06 -> .15), the neck draws back up (.12 -> -.05,
+# head -.12 -> .05), the forepaws come in (f_dy .24 -> .18) and the hind feet forward (h_dy .05 -> -.03).
+LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.15,neck=-.05,head=.05,tail=-.25,tail_side=-1.3,
+ f_dy=.18,f_z=.073,f_pa=-145,h_dy=-.03,h_z=.09,h_pa=-178).items()}
 # Round L SideLie (user: 「躺下去的效果不好」): on its flank for real. It was rolled 1.25 rad - belly half up, the four
 # legs pointing up at 45 deg (paws 264-277 mm), the torso 27 mm off the floor on a hind toe and the head upright.
 # Now a quarter turn, the root lifted by the body's half-width, the neck bent down to lay the cheek on the
@@ -2133,7 +2260,9 @@ SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2047,
 # Round V (codex lingxi-ref-pose-sleep-app.png: a ring - back round the outside, face in it looking out, tail across the front): the
 # back curls 1.4 (was .8) and the neck .9, the hind legs tuck in under the belly, the tail sweeps round the front, and the face is
 # set upright toward the camera in the world (_face_world) rather than left at the end of the curl (round-v-test q1-q8).
-SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2175,spine=1.4,spine_side=0,neck=.9,neck_side=-.25,head=.5,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=1.2,tail_k=-.15,ear_x=0,ear_z=-.60,
+# Round X: the back curls 2.2 (was 1.4) and the neck 1.1 (.9), now over the split back's four joints - a closed ring, as codex's
+# lingxi-ref-pose-sleep-top.png; the tail is laid round the ring's gap to the chin by _tail_wrap (its per-joint angles here are overridden).
+SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2175,spine=2.2,spine_side=0,neck=1.1,neck_side=-.25,head=.5,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=1.2,tail_k=-.15,ear_x=0,ear_z=-.60,
  f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.14,h_dz=.20,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
 # Round Q (user: 「侧躺和躺着姿势不对」): SideLie is the reference's side LOUNGE (lingxi-ref-sidelie.png), not a cat rolled
 # over: the hips go down onto their side with both hind legs laid out beside them, the chest stays nearly upright on its
@@ -2145,8 +2274,10 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # legs' plane stood tilted and the upper hind leg stuck up beside the back), the chest kept 90% upright so both forepaws lie
 # side by side in front, the body turned .8 rad off the camera; with the hips rolled +, the LEFT hind leg is underneath -
 # it swings .2 clear of the floor - and the right one drapes .7 down onto it.
+# Round X: tail 0 / tail_side 0 (were .35 / .55): with the hips rolled over, the tail's own droop-and-plume curve lies in the floor plane;
+# the old turns stood the 1.5x tail up in the air (round-v-test s1-s6). codex's lingxi-ref-pose-sidelie-top.png: laid straight back.
 SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-.8,hip_roll=1.5,chest_keep=.7,spine=.05,neck=.10,head=-.12,head_tilt=.22,head_turn=0,
- tail=.35,tail_side=.55,f_dy=.22,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
+ tail=0,tail_side=0,f_dy=.22,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
  h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088).items()}
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
  for _k in ('add_HL','add_HR','add_FL','add_FR'):SIDELOUNGE[_k]=_v6('V6_SG_'+_k.upper(),0.0)
@@ -2169,7 +2300,7 @@ _TRUNK=None
 def _trunk_sample():
  global _TRUNK
  if _TRUNK is None:
-  me=body.data;gn={g.index:g.name for g in body.vertex_groups};trunk=('Root','Pelvis','Loin','Spine','Neck','Head')
+  me=body.data;gn={g.index:g.name for g in body.vertex_groups};trunk=('Root','Pelvis','Loin','Spine','Neck','Head','LoinB','Chest','NeckB')
   idx=[];W={}
   for vi in range(0,len(me.vertices),max(1,len(me.vertices)//6000)):
    v=me.vertices[vi]
@@ -2180,7 +2311,7 @@ def _trunk_sample():
   _TRUNK=(co,W)
  return _TRUNK
 def _lift_off_floor(pb,margin=.002):
- co,W=_trunk_sample();rots={n:tuple(pb[n].rotation_euler) for n in W};f=_fk(rots,{'Root':tuple(pb['Root'].location)})
+ co,W=_trunk_sample();rots={b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones};f=_fk(rots,{'Root':tuple(pb['Root'].location)})
  z=np.zeros(len(co))
  for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
  low=float(z.min())
@@ -2256,6 +2387,68 @@ def _face_world(pb,yaw,pitch,roll,k=1.0):
  f=_fk(rots,locs);cur=f('Head').to_3x3()
  want=Matrix.Rotation(yaw,3,'Z')@Matrix.Rotation(pitch,3,'X')@Matrix.Rotation(roll,3,'Y')@ad.bones['Head'].matrix_local.to_3x3()
  _set_world_rot('Head',cur.to_quaternion().slerp(want.to_quaternion(),k).to_matrix(),rots,locs);pb['Head'].rotation_euler=rots['Head']
+# Round X: the tail laid along a path in the WORLD - on the floor, round the outside of the body, from behind the rump to a chosen end
+# (LieDown: beside the forepaw on one side; Sleep: across the front of the face). Per-joint angles could not do it: each joint turns
+# about axes the droop / the roll before it has already tipped, so the same numbers sent the tail under the belly, up into the air or
+# back round the rump (round-v-test s1-s6). Each bone in turn points at the path point one bone-length on from its head.
+TAIL_CHAIN=None
+def _tail_chain():
+ global TAIL_CHAIN
+ if TAIL_CHAIN is None:
+  c=['Tail0'];kids={b.parent.name:b.name for b in ad.bones if b.name.startswith('Tail') and b.parent}
+  while c[-1] in kids:c.append(kids[c[-1]])
+  TAIL_CHAIN=c
+ return TAIL_CHAIN
+_HEADS=None
+def _tail_wrap(pb,via,end,k=1.0,margin=None,lead=0.0):
+ """via: a floor direction (x,y) the path passes on its way round, or None - through the gap between the tail's root and `end` (a curled
+  cat closes its ring with its tail); end: the world point (x,y) it ends beside; lead: the path leaves the rump this far (rad) round
+  toward its way, so the tail drops to the floor on the diagonal instead of spending its length straight behind."""
+ global _HEADS
+ if k<1e-3:return
+ margin=_v6('V6_TAIL_WRAP_GAP',.012) if margin is None else margin
+ names=[b.name for b in ad.bones];rots={n:tuple(pb[n].rotation_euler) for n in names};locs={n:tuple(pb[n].location) for n in names};f=_fk(rots,locs)
+ pts=[]
+ co,W=_trunk_sample();P=np.zeros((len(co),3))
+ for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());P+=w[:,None]*(co@M[:3,:3].T+M[:3,3])
+ pts.append(P)
+ for kk in LEGS:
+  c2,W2=_paw_sample(kk);P2=np.zeros((len(c2),3))
+  for n,w in W2.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());P2+=w[:,None]*(c2@M[:3,:3].T+M[:3,3])
+  pts.append(P2[::4])
+ if _HEADS is None:hv=np.array([v.co[:] for v in head.data.vertices]);_HEADS=hv[::max(1,len(hv)//1500)]
+ M=np.array(f('Head')@ad.bones['Head'].matrix_local.inverted());pts.append(_HEADS@M[:3,:3].T+M[:3,3])
+ Q=np.concatenate(pts);Q=Q[Q[:,2]<.30];C=Q[:,:2].mean(0);d=Q[:,:2]-C;ang=np.arctan2(d[:,1],d[:,0]);rad=np.linalg.norm(d,axis=1)
+ chain=_tail_chain();R0=np.array(f(chain[0]).translation[:])
+ th0=math.atan2(R0[1]-C[1],R0[0]-C[0]);th1=math.atan2(end[1]-C[1],end[0]-C[0])
+ if via is None:g=(R0[:2]+np.array(end[:2]))/2-C;via=(g[0],g[1])
+ tv=math.atan2(via[1],via[0])
+ sweep=(th1-th0)%math.tau;sv=(tv-th0)%math.tau
+ if sv>sweep:sweep-=math.tau   # go the other way round, through `via`
+ th0+=math.copysign(min(lead,abs(sweep)*.5),sweep);sweep-=math.copysign(min(lead,abs(sweep)*.5),sweep)
+ L=sum(ad.bones[n].length for n in chain);path=[R0];s_=0.0
+ for th in th0+sweep*np.linspace(0,1,361):
+  dd=np.abs((ang-th+math.pi)%math.tau-math.pi);r=float(rad[dd<.14].max()) if (dd<.14).any() else 0.0
+  e=s_/L;rt=.042*(1-min(1,e)*40/70)*_v6('V6_TAIL_WRAP_RT',1.0)
+  q=np.array([C[0]+(r+rt+margin)*math.cos(th),C[1]+(r+rt+margin)*math.sin(th),rt+.006]);s_+=float(np.linalg.norm(q-path[-1]));path.append(q)
+ path=np.array(path)
+ for _ in range(6):path[1:-1]=(path[:-2]+2*path[1:-1]+path[2:])/4   # smooth the contour's corners
+ # resample at 2 mm
+ seg=np.linalg.norm(np.diff(path,axis=0),axis=1);cum=np.concatenate([[0],np.cumsum(seg)]);ss=np.arange(0,cum[-1],.002)
+ path=np.stack([np.interp(ss,cum,path[:,i]) for i in range(3)],1)
+ j=0;R_fk={n:Euler(rots[n],'XYZ').to_quaternion() for n in chain}
+ for n in chain:
+  f=_fk(rots,locs);h=np.array(f(n).translation[:]);Lb=ad.bones[n].length
+  dist=np.linalg.norm(path[j:]-h,axis=1);hit=np.nonzero(dist>=Lb)[0]
+  tgt=path[j+hit[0]] if len(hit) else path[-1]+(path[-1]-path[-2])/max(1e-6,np.linalg.norm(path[-1]-path[-2]))*Lb
+  if len(hit):j=j+hit[0]
+  base=f(n).to_3x3();want=(base@Vector((0,1,0))).rotation_difference(Vector(tgt-h).normalized()).to_matrix()@base
+  _set_world_rot(n,want,rots,locs)
+  rots[n]=tuple(R_fk[n].slerp(Euler(rots[n],'XYZ').to_quaternion(),k).to_euler('XYZ'))
+ for n in chain:pb[n].rotation_euler=rots[n]
+ if _v6('V6_TAIL_DEBUG',0)>0:
+  f=_fk(rots,locs);print('TAIL_WRAP',json.dumps({'C':[round(1000*c) for c in C],'R0':[round(1000*c) for c in R0],'th0':round(math.degrees(th0)),'th1':round(math.degrees(th1)),'sweep':round(math.degrees(sweep)),
+   'path_mm':round(1000*cum[-1]),'tail_mm':round(1000*L),'tips':[[round(1000*c) for c in _tip(f,n)] for n in chain[1::2]],'k':round(k,2)}))
 _TAILS=None
 def _tail_off_floor(pb,margin=.004):
  """Round V: the tail's real skin stays on / above the floor - lifted at its root (Tail1 up) when a pose (a straighter sit,
@@ -2277,7 +2470,7 @@ def _tail_off_floor(pb,margin=.004):
   pb['Tail1'].rotation_euler[0]+=min(.25,max(.03,(margin-low)*4))
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
- names=['Root','Pelvis','Loin','Spine','Neck','Head','Scap.L','Scap.R']
+ names=['Root','Pelvis','Loin','Spine','Neck','Head','Scap.L','Scap.R']+list(SPLIT.values())
  rots={n:tuple(pb[n].rotation_euler) for n in names};locs={'Root':tuple(pb['Root'].location)}
  f=_fk(rots,locs);RD=_root_delta(f)
  # Lying (sphinx): forearms flat on the ground ahead of the shoulders; hocks down behind the hips,
@@ -2296,6 +2489,14 @@ def place_legs(name,u,pb,hold=0.0):
    g=WALK if name=='Walk' else RUN;dy,dz,flex=_gait(g,u,k)
    if k[0]=='H':dz*=1.25   # the hind paw clears its longer swing a little higher (round J: no stride multiplier - the planted paws must all move at the body's speed)
    tg=foot+Vector((0,dy-ROOT_TRAVEL(g)*u,dz))   # the ground under a travelling body: a planted paw's target stays fixed in the world
+  elif name=='Jump' and JUMP_PHASED:
+   off_,on_=(JUMP_T[0],JUMP_T[2]) if k[0]=='F' else (JUMP_T[1],JUMP_T[3])
+   if off_<u<on_:
+    keys=JUMP_LEGS[k[0]];bn='Chest' if k[0]=='F' else 'Pelvis';D=f(bn)@ad.bones[bn].matrix_local.inverted()
+    tb=D@(foot+Vector((0,_jump_key(u,[(c[0],c[1]) for c in keys]),_jump_key(u,[(c[0],c[2]) for c in keys]))))
+    w_=min(1,(u-off_)/.05,(on_-u)/.05);w_=w_*w_*(3-2*w_)   # into / out of the floor mark
+    tg=foot.lerp(tb,w_);tg.z=max(tg.z,0.0);pa+=_jump_key(u,[(c[0],c[3]) for c in keys])*w_+_ang(D.to_3x3()@Vector((0,1,0)))*w_
+   elif k[0]=='H' and .20<=u<=off_:pa+=.6*((u-.20)/(off_-.20))**2   # the hind toes push off
   elif name=='Jump':
    lift=math.sin(math.pi*u)**2
    tg=foot+(Vector((0,-.09*lift,.30*lift)) if k[0]=='F' else Vector((0,.11*lift,.27*lift)));pa+=lift*(.9 if k[0]=='F' else 1.2)
@@ -2319,7 +2520,7 @@ def place_legs(name,u,pb,hold=0.0):
    # Round P: on its side each pair is placed from the part it hangs from - the forelegs from the chest, the hind legs
    # from the pelvis. From the root, the back's new curve (Loin + Spine) swung the chest away from its forelegs' targets
    # and folded them up against it (round-p-test s2).
-    if name=='SideLie' and _v6('V6_SL_FRAME',1)>0:_bn='Spine' if k[0]=='F' else 'Pelvis';D_=f(_bn)@ad.bones[_bn].matrix_local.inverted()
+    if name=='SideLie' and _v6('V6_SL_FRAME',1)>0:_bn=('Chest' if RIG_X else 'Spine') if k[0]=='F' else 'Pelvis';D_=f(_bn)@ad.bones[_bn].matrix_local.inverted()
    if not (name=='SideLie' and SL_MODE==2):
     tg=D_@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
     if name in ('SideLie','Sleep'):pa=pa+_ang(D_.to_3x3()@Vector((0,1,0)))
@@ -2351,7 +2552,9 @@ def place_legs(name,u,pb,hold=0.0):
     # re-derived here from the old mouth point, so the pad never met the tongue)
     tip=f('Head')@lick_l;wr=tip+Vector((0,LICK_WRIST[0],LICK_WRIST[1]));tg=tg.lerp(wr,hold)
     pa=pa+(_ang(tip-wr)+LICK_WRIST[2]-pa)*hold
-  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META);lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab)
+  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META)
+  if k[0]=='F' and RIG_X:_scap_follow(k,tg,rots,locs);pb['Scap.'+k[1]].rotation_euler=rots['Scap.'+k[1]];pb['Scap.'+k[1]].location=locs['Scap.'+k[1]]
+  lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab)
   if name in ('LieDown','SideLie','Sleep') and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:
    # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
    # through it at frame 259 while its angle blended from standing to lying)
@@ -2383,7 +2586,25 @@ def pose(name,u):
   w=math.cos(2*(phase-math.tau*(g['dip']+.04)))
   pb['Neck'].rotation_euler[0]=-g['nod']*w;pb['Head'].rotation_euler[0]=.6*g['nod']*w
   pb['Spine'].rotation_euler[0]=.25*g['nod']*math.cos(2*(phase-math.tau*g['dip']))   # the back flexes with the dip
- if name=='Jump':
+  if name=='Run' and RUN_GALLOP:
+   fl=g['flex']*math.cos(phase-math.tau*g['flex_u'])   # + flexed (gathered, u .95), - extended (u .45)
+   pb['Spine'].rotation_euler[0]=fl;pb['Pelvis'].rotation_euler[0]=-.5*fl
+   pb['Root'].location.y=-g['bob']*(.5+.5*math.cos(2*(phase-math.tau*g['dip'])))+.012*max(0,math.cos(phase-math.tau*.95))   # up in the gathered flight
+   pb['Neck'].rotation_euler[0]+=-.5*fl;pb['Head'].rotation_euler[0]+=.25*fl   # the head stays on the horizon while the chest pitches
+   pb['Tail1'].rotation_euler[0]=-.25+.35*fl;pb['Tail2'].rotation_euler[0]=.15*fl   # the tail counters the back
+   for suf in ('L','R'):pb['Ear.'+suf].rotation_euler[0]=.25
+  if name=='Walk' and RIG_X:
+   # Round X: the walking trunk sways - the back bends a little toward the side whose hind paw is down, the hips roll over it
+   sw=math.sin(phase+math.tau*.25);pb['Spine'].rotation_euler[2]=.035*sw;pb['Pelvis'].rotation_euler[1]=.03*sw;pb['Tail2'].rotation_euler[2]=-.10*sw
+ if name=='Jump' and JUMP_PHASED:
+  pb['Root'].location.y=_jump_root(u)
+  pb['Spine'].rotation_euler[0]=_jump_key(u,[(0,0),(.20,.10),(.30,-.12),(.45,.08),(.60,.06),(.72,-.05),(.82,.12),(.90,.05),(1,0)])   # + flexed
+  pb['Pelvis'].rotation_euler[0]=_jump_key(u,JUMP_PITCH)-.5*pb['Spine'].rotation_euler[0]
+  pb['Neck'].rotation_euler[0]=_jump_key(u,[(0,0),(.18,.15),(.30,-.25),(.52,0),(.74,.10),(.84,.12),(1,0)])
+  pb['Head'].rotation_euler[0]=_jump_key(u,[(0,0),(.18,-.35),(.30,.30),(.52,.05),(.74,-.25),(.84,-.10),(1,0)])   # eyes stay on the spot as the trunk pitches
+  for i,tb in enumerate(('Tail0','Tail1','Tail2','Tail3')):pb[tb].rotation_euler[0]=_jump_key(u,[(0,0),(.18,-.10),(.30,.25),(.50,-.10),(.74,.20),(.86,.05),(1,0)])*(1.0,.8,-.6,-.6)[i]
+  for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=_jump_key(u,[(0,0),(.18,-.15),(.30,.35),(.74,.35),(.9,0),(1,0)])
+ if name=='Jump' and not JUMP_PHASED:
   lift=math.sin(math.pi*u)**2;pb['Root'].location.y=.32*lift;pb['Spine'].rotation_euler[0]=-.12*math.sin(phase)
   # A cat in the air flies its tail for balance and lays its ears back. The clip measured
   # 1.1 deg of ear and 1.4 deg of tail - it jumped with a dead face and a rigid tail.
@@ -2407,7 +2628,7 @@ def pose(name,u):
    pb['Neck'].rotation_euler[0]=L['neck']*fh;pb['Head'].rotation_euler[0]=L['head']*fh
    if _v6('V6_LD_TAIL_WRAP',1)>0:   # round W: the tail curls round the flank toward the front, more at each joint (codex liedown-app)
     # the turn at the root, then along the flank, the tip hooking in - spread evenly it coiled behind the rump
-    for i,tb in enumerate(('Tail0','Tail1','Tail2','Tail3','Tail4')):wk=(1.0,.6,.1,.1,.35)[i];pb[tb].rotation_euler[0]=L['tail']*ft*(1 if i else 0);pb[tb].rotation_euler[2]=L['tail_side']*wk*ft
+    for i,tb in enumerate(('Tail0','Tail1','Tail2','Tail3','Tail4')):wk=LD_TAIL_WK[i];pb[tb].rotation_euler[0]=(L['tail'] if i else _v6('V6_LD_TAIL_DROP',-.45))*ft;pb[tb].rotation_euler[2]=L['tail_side']*wk*ft   # round X: Tail0 droops the root to the floor
    else:
     for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=L['tail']*ft;pb[tb].rotation_euler[2]=L['tail_side']*ft
    pb['Tail1'].rotation_euler[0]+=_v6('V6_LD_TAIL_LIFT',.6)*max(0,f-ft)   # round U: while the body is down ahead of its tail, the tail is carried up - lagging, it swept 12 mm through the floor (frames 217-225)   # round along the flank on the floor, on the camera's side
@@ -2464,7 +2685,8 @@ def pose(name,u):
   pb['Root'].location.y=.022*bounce
   pb['Spine'].rotation_euler[0]=-.14*bounce;pb['Head'].rotation_euler[0]=-.22*bounce
   for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=-.26
-  pb['Tail1'].rotation_euler[0]=-.85;pb['Tail2'].rotation_euler[0]=-.35+.42*math.sin(phase*2)
+  # Round X: + is UP on the tail (the round-x render: -.85 hung it to the floor - 39 mm under it once the tail was 1.5x)
+  pb['Tail0'].rotation_euler[0]=.5;pb['Tail1'].rotation_euler[0]=.7;pb['Tail2'].rotation_euler[0]=.15+.30*math.sin(phase*2)
   pb['Tail3'].rotation_euler[0]=.30*math.sin(phase*2+1)
  if name in ['Yawn','Bite','Lick']:
   fac=math.sin(math.pi*u)**2 if name=='Yawn' else (.5-.5*math.cos(phase*2))
@@ -2523,7 +2745,7 @@ def pose(name,u):
    pb['Spine'].rotation_euler[2]+=.07*rock;pb['Root'].location.x+=.012*rock
    pb['Neck'].rotation_euler[0]+=.10;pb['Head'].rotation_euler[0]+=.14;pb['Head'].rotation_euler[1]+=.05*rock   # + is down in this rig
    for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=-.22
-   pb['Tail1'].rotation_euler[0]=-.70
+   pb['Tail1'].rotation_euler[0]=.55   # round X: up (+; -.70 hung it down)
   if name=='PawPlay':
    # A play bow and a swat: the front drops, the head goes low and cocks, the tail lashes -
    # then the paw flicks out (see place_legs). A paw waving over a standing pose read as Idle.
@@ -2532,12 +2754,19 @@ def pose(name,u):
    pb['Head'].rotation_euler[0]+=-.12*bow;pb['Head'].rotation_euler[1]+=.30*bow   # the head comes back up to keep its eyes on the target
    for suf in ['L','R']:pb['Ear.'+suf].rotation_euler[0]=.18*bow   # pricked forward at the target
    pb['Tail1'].rotation_euler[0]=-.40;pb['Tail2'].rotation_euler[2]=.55*math.sin(phase*3)
- _back(pb,name)
+ _back(pb,name);_spread(pb)
  if name in ('LieDown','SideLie','Sleep') and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else 0.0)
  if name=='SideLie' and SL_MODE==2 and _v6('V6_SG_FACE',1)>0:_face_world(pb,_v6('V6_SG_FACE_YAW',0),_v6('V6_SG_FACE_PITCH',.05),_v6('V6_SG_FACE_ROLL',-.22),k=_settle(u,.06,LIE_T+.10))   # round W: the face to the camera, upright with a tilt, however far the chest leans over
  if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
- if name in ('Lick','LieDown','SideLie','Sleep') and _v6('V6_TAIL_FLOOR',1)>0:_tail_off_floor(pb)
+ if RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep'):
+  # LieDown: round the +x flank (the camera's right, as codex's liedown-app) to beside that forepaw; Sleep: round the front (the camera
+  # side, -y) to under the chin
+  if name=='LieDown':_fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.R').translation;_tail_wrap(pb,(1,0),(_fp.x+.06,_fp.y-.02),k=_settle(u,.10,LIE_T+.20),lead=_v6('V6_LD_TAIL_LEAD',.7))
+  else:
+   _f=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones});_ch=_f('Head')@mouth_l
+   _tail_wrap(pb,None,(_ch.x,_ch.y),k=1.0,lead=_v6('V6_SP_TAIL_LEAD',.5))
+ if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb)   # a laid tail is already on its path, clear of the floor
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint
  # or the lid overshoots through the eye.
