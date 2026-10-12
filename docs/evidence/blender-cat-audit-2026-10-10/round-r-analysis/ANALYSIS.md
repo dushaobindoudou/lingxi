@@ -6,7 +6,7 @@
 
 - 工作树：`/Users/liepin/workspace/lingxi-v5fix`，分支 `lookdev/b4-review`。
 - 最新提交：`d1661365637d2cc919081a100be2983a765c9034`，10 月 10 日 11:10，Round R。
-- 最终模型：[Round R .blend](/Users/liepin/workspace/lingxi-v5fix/assets/characters/lingxi/v6/round-r/lingxi-short-fur-rig-v5.blend)，10:55 保存；15 张动作渲染完成于 11:09，局部视图到 11:30。
+- 最终模型：[Round R .blend](../../../../assets/characters/lingxi/v6/round-r/lingxi-short-fur-rig-v5.blend)，10:55 保存；15 张动作渲染完成于 11:09，局部视图到 11:30。
 - 55 根骨骼、15 个动作、525 个动作数据块。文件名仍含 v5，但不能用文件名判断迭代轮次。
 - 已检查三个相关工作树的模型文件时间。Round R 是其中最新的完整模型；`round-r-test` 是早于它的实验产物。
 - `round-r-wb` 的模型是 09:58，报告是 10:11，早于 Claude 最终 Round R。因此其数字不直接代表最终 R。
@@ -113,11 +113,11 @@
 
 | Q 爪侧面 | 最新 R 爪侧面 |
 |---|---|
-| ![Q](/Users/liepin/workspace/lingxi-v5fix/assets/characters/lingxi/v6/round-q/views/paw1side.png) | ![R](/Users/liepin/workspace/lingxi-v5fix/assets/characters/lingxi/v6/round-r/views/paw1side.png) |
+| ![Q](../../../../assets/characters/lingxi/v6/round-q/views/paw1side.png) | ![R](../../../../assets/characters/lingxi/v6/round-r/views/paw1side.png) |
 
 | 最新 R 蜷睡 | 预期的双前爪支撑关系 |
 |---|---|
-| ![R Sleep](/Users/liepin/workspace/lingxi-v5fix/assets/characters/lingxi/v6/round-r/poses/Sleep.png) | ![Reference](/Users/liepin/workspace/lingxi-v5fix/assets/characters/lingxi/reference/lingxi-ref-sleep-paws.png) |
+| ![R Sleep](../../../../assets/characters/lingxi/v6/round-r/poses/Sleep.png) | ![Reference](../../../../assets/characters/lingxi/reference/lingxi-ref-sleep-paws.png) |
 
 新增第 260 / 284 帧侧视以及第 537 帧舔爪侧视，见本目录 `views/`。模型未保存、未重建。
 
