@@ -79,6 +79,14 @@
 - 构建：`export PATH="$HOME/.cargo/bin:$PATH"` 后 `cd apps/lingxi && npm run tauri -- build`（约 1.5 分钟）。
   **dmg 打包在沙箱内必失败**（`bundle_dmg.sh` 要 hdiutil），`.app` 照常产出在
   `apps/lingxi/src-tauri/target/release/bundle/macos/灵犀.app`，不需要 dmg。
+- **发 release 时 dmg 报"设备上无剩余空间"先查残留挂载**：`df` 明明有空间，真因是
+  `bundle/macos/` 里有个**仍挂载中**的 `rw.<pid>.*.dmg`（历次失败没 detach），
+  `hdiutil create -srcfolder` 把它当源文件。清场：`hdiutil info` 找 `/dev/disk*s*` 逐个
+  `detach -force -quiet` 再删 rw。bundle_dmg.sh 的 `find_mount_dir` 还有 `grep -E` 方括号 bug，
+  必要时手动 create → `ln -s /Applications` → `convert -format UDZO`。
+- **`release.sh` 的测试门**：`npm test` 因 `/bin/ps` 那条环境级失败会直接 die；
+  测试手动完整跑过之后用 `--skip-tests`。
+- 发布前未跟踪的 `dsh/plugin/` 要 `git stash push -u -- <path>` 让 APP_PATHS 干净，发布后 pop。
 - 安装：先 `mv /Applications/灵犀.app <备份目录>`（保留、可回滚）→ `pkill -x lingxi` → `cp -R` → `open -a`；
   确认进程真退出了用 `curl /status` 是否被拒。
 - 本 shell 没有 `ps`/`pgrep`（Operation not permitted），`osascript ... quit` 报 -10004，**只有 `pkill -x lingxi` 可用**。
