@@ -5507,12 +5507,27 @@ fn forget_session(app: &tauri::AppHandle, event: &TaskEvent) {
     update_tray_attention(app);
 }
 
-/// True when `event` only restates the wait its session's row already shows - see TaskEvent::echo.
+/// True when `event` only restates what its session's row already shows - see TaskEvent::echo.
+///
 /// A wait stays the same until real work resumes or a new question/dialog is reported. Timer
 /// echoes must not resurrect a read reminder or keep an abandoned session fresh forever.
+///
+/// An echo `needs_input` landing on a row that already ENDED is the host's idle ping, not a
+/// question: Claude Code and WorkBuddy fire "waiting for your input" ~60s after every turn the
+/// user did not follow with a prompt (measured 2026-10-12: three Stop→Notification gaps of
+/// 60.0s). The turn is over and the row already records how it landed; letting the ping
+/// overwrite `completed`/`failed` manufactured one unread reminder per conversation - the tray
+/// number that "never disappears" even though every question was answered. A real question never
+/// depends on this path: it arrives as a non-echo PermissionRequest (AskUserQuestion included),
+/// which still applies. An echo `needs_approval` keeps the old behaviour on purpose - if the
+/// PermissionRequest hook was missed, that notification is the only signal a dialog is up.
 fn is_repeat_wait(previous: Option<&AgentActivity>, event: &TaskEvent) -> bool {
     event.echo
-        && previous.is_some_and(|row| row.state == event.state)
+        && previous.is_some_and(|row| {
+            row.state == event.state
+                || (event.state == "needs_input"
+                    && matches!(row.state.as_str(), "completed" | "failed" | "cancelled"))
+        })
 }
 
 /// The activity-map row an event belongs to: its identity, split per session when the host has
@@ -7406,6 +7421,39 @@ mod tests {
     }
 
     #[test]
+    fn an_idle_ping_after_a_finished_turn_does_not_reopen_it_as_a_wait() {
+        // Measured 2026-10-12: both hosts fire "waiting for your input" 60.0s after every Stop
+        // the user does not follow with a prompt. That ping used to overwrite the finished row
+        // with a fresh unread needs_input - one manufactured reminder per conversation, and the
+        // tray number that never cleared even though every question had been answered.
+        let row = |state: &str, updated_at: u64| AgentActivity {
+            provider: "claude".into(), agent: Some("claude".into()), task_id: "s".into(),
+            state: state.into(), kind: "chat".into(), mood: "focused".into(), progress: None,
+            summary: String::new(), label: None, updated_at, revision: 1, busy: false, attention_seen: false, report: None,
+        };
+        let mut idle = claude("Notification", serde_json::json!({
+            "notification_type": "idle_prompt", "message": "Claude is waiting for your input",
+        }));
+        assert!(idle.echo);
+        assert_eq!(idle.state, "needs_input");
+        idle.observed_at = 70_000; // the turn ended at 10_000 - the measured 60s idle gap
+        assert!(is_repeat_wait(Some(&row("completed", 10_000)), &idle), "60s after a finished turn");
+        assert!(is_repeat_wait(Some(&row("failed", 10_000)), &idle), "an idle ping must not hide a failure either");
+        // A question never rides the echo: PermissionRequest has no echo and still applies.
+        let asked = claude("PermissionRequest", serde_json::json!({
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{ "question": "用哪个方案？", "options": [] }] },
+        }));
+        assert!(!asked.echo);
+        assert!(!is_repeat_wait(Some(&row("completed", 10_000)), &asked), "a real question still opens a wait");
+        // Approval echoes keep the old behaviour - the safety net for a missed PermissionRequest.
+        let approval = claude("Notification", serde_json::json!({
+            "notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash",
+        }));
+        assert!(!is_repeat_wait(Some(&row("completed", 10_000)), &approval));
+    }
+
+    #[test]
     fn a_folder_name_never_replaces_a_title_and_an_answered_wait_is_not_kept() {
         let with_title = claude("UserPromptSubmit", serde_json::json!({ "session_title": "修复插件图标", "cwd": "/x/lingxi" }));
         assert_eq!((with_title.label.as_deref(), with_title.label_is_folder), (Some("修复插件图标"), false));
@@ -8038,7 +8086,9 @@ command = "node"
         // so every command the app writes, current or legacy, has to carry it.
         let plugin_lib = include_str!("../../../../integrations/hosts/claude/scripts/lib.sh");
         let marker = "127.0.0.1:47811/task-event";
-        assert!(plugin_lib.contains(&format!("grep -q '{marker}'")), "lib.sh no longer looks for {marker}");
+        // The marker is what the plugin matches the app's hooks by, however lib.sh parses the
+        // settings (a plain grep today, plutil -extract per event group before that).
+        assert!(plugin_lib.contains(marker), "lib.sh no longer looks for {marker}");
         for command in [CLAUDE_HOOK_COMMAND, CLAUDE_SESSION_START_COMMAND].iter().chain(LEGACY_CLAUDE_HOOK_COMMANDS.iter()) {
             assert!(command.contains(marker), "the plugin would not recognise: {command}");
         }

@@ -21,6 +21,13 @@
 
 ### 修复
 
+- **托盘的未读数字永远清不掉**：Claude Code 和 WorkBuddy 在每轮回复结束约 60 秒后（实测三组间隔都是
+  60.0 秒）发一条「waiting for your input」空闲通知，只要用户没有立刻接着输入就会触发。它带着 echo
+  却不是同一等待的重复——行刚被 `Stop` 写成 `completed`——于是每一轮对话都以一条全新的未读 `needs_input`
+  收尾：你答完的会话在灵犀这里永远「等你回答」，24 小时才过期，托盘数字看着就像坏掉了。现在空闲心跳
+  落在已经终态（completed/failed/cancelled）的行上会被当作重复丢弃；真正的提问从不走这条路（它们是
+  无 echo 的 PermissionRequest，含 AskUserQuestion），权限类回声（needs_approval）保留原行为作为
+  PermissionRequest 丢失时的兜底信号。
 - 两个宿主同时开第一个会话会各下载一次、互相替换同一个应用：安装锁改为全机唯一（`~/.lingxi/install.lock`）。
 - 安装器在"找不到已装应用"时（Spotlight 还在建索引、路径被覆盖）会下载并覆盖目标位置已有的灵犀：
   现在只有 `--update` 会替换已装的应用。
