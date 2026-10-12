@@ -284,8 +284,8 @@ PAW={'Front':((.108,-.215,.040-PAW_LOW/2),(.054*PAW_SC,.064*PAW_RYK*PAW_SC,.038-
 # lobes in an arc under the column's front edge (round-r-test pawmeta.py, m1-m3). The pads become patches of the skin
 # (skin_shell). V6_PAW_META=0 builds the old paw.
 PAW_META=_v6('V6_PAW_META',1)>0
-MPAW={'Front':dict(x=.108,col=((-.165,.21),(-.196,.06)),col_r=.058,c=(-.216,.040),r=(.074,.064,.033),front=-.284,padc=-.196,padr=(.031,.025)),
-      'Rear':dict(x=.12,col=((.272,.19),(.262,.062)),col_r=.055,c=(.245,.040),r=(.071,.061,.032),front=.181,padc=.258,padr=(.029,.024))}
+MPAW={'Front':dict(x=.108,col=((-.165,.21),(-.196,.06)),col_r=.058,c=(-.220,.040),r=(.074,.070,.031),front=-.294,padc=-.196,padr=(.031,.025)),
+      'Rear':dict(x=.12,col=((.272,.19),(.262,.062)),col_r=.055,c=(.241,.040),r=(.071,.066,.030),front=.171,padc=.258,padr=(.029,.024))}
 MTOE_R=(.023,.031,.032);MTOE_DX=.035;MTOE_Z=.035;MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
 def mtoe_xy(pre,s,i):m=MPAW[pre];return s*m['x']+(i-1.5)*MTOE_DX,m['front']+MTOE_R[1]+MTOE_ARC*(abs(i-1.5)-.5)
 def meta_leg(pre,s):
@@ -385,7 +385,7 @@ LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather
 LIP_DZ=LIP0-.4575   # the mouth assembly MUST ride with the lip line - cavity/floor/tongue/teeth/jaw - or pink skin peeks above the new lip (v6 lesson)
 MOUTH_W=.024*_v6('V6_MOUTH_W',1.0);MW_K=MOUTH_W/.024;MW2=.016*_v6('V6_LOWER_LIP_W',.66)   # round R: the pink lower lip keeps its old .011 half-width when the omega widens (V6_MOUTH_W 1.0) - wide, it read as a pink wavy band under the mouth   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
 LIP_SAG=.0035*_v6('V6_LIP_SAG',1.0)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m")
-GAPE_W=.036*_v6('V6_GAPE_W',1.0)   # round R: 1.45 -> 1.0 with the arched lip and a deeper jaw - the yawn rounds into the reference's U instead of a wide box (round-r-test mo0-mo3)
+GAPE_W=.036*_v6('V6_GAPE_W',.85)   # round R: 1.45 -> 1.0 with the arched lip and a deeper jaw - the yawn rounds into the reference's U instead of a wide box (round-r-test mo0-mo3)
 #   # round L: 1.2 - the yawn's corners open to ~70 mm; past 1.2 the cut does not get wider (round-l-test y3)
 #    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
                # yawn opens the corners back to here - a cat's gape runs well past its visible lips
@@ -1466,7 +1466,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   bib=np.where((root[:,1]<-.40)&(np.abs(root[:,0])<.050)&(root[:,2]>LIP0-.004),1,bib)
   ln*=np.maximum(ruff,bib)[:,None,None]
  elif reg=='body':
-  bib=1+.8*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)
+  bib=1+_v6('V6_BIB',.45)*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)
   # Short on the paws, full by mid-leg. At .30 the paw still wore 2.5cm of an 8.5cm coat and read
   # as a pom-pom with no toes (round C, 2026-09-30); ~1cm lets the foot and its toes show.
   # Round D: the pom-pom was the LEG coat hanging over the paw (8.5cm strands rooted at mid-leg),
@@ -1479,7 +1479,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   ln*=(bib*legs)[:,None,None]
   # Round Q: the belly's underside coat hung 50+ mm straight down over the legs; a third shorter where the skin faces the floor
   _uz=np.clip(-normal[:,2],0,1)**2*np.clip((.27-root[:,2])/.08,0,1)*np.clip((root[:,2]-.09)/.03,0,1)
-  ln*=(1-_v6('V6_BELLY_TRIM',.35)*_uz)[:,None,None]
+  ln*=(1-_v6('V6_BELLY_TRIM',.55)*_uz)[:,None,None]   # round W: .35 -> .55 and the bib .8 -> .45 (V6_BIB): the chest's coat hung over the forelegs - codex stand-app shows them
  # Fluff physics: the strand hugs the skin at the root, lifts away through the middle,
  # and the tip drifts along the coat direction - then two wave frequencies (a slow
  # bend plus a faster kink) give the micro-curl a long-haired kitten actually has.
@@ -1753,7 +1753,7 @@ def _paw_warp(p):
 def _muzzle_warp(p):
  q=p.copy();x,y,z=p.T;front=np.clip((-.375-y)/.035,0,1)
  lobes=np.exp(-((np.abs(x)-.034)/.026)**2-((z-.471)/.021)**2)*front;crease=np.exp(-(x/.006)**2-((z-.459)/.012)**2)*front
- q[:,1]-=.0035*lobes-.0015*crease;q[:,0]+=.0015*np.sign(x)*lobes
+ q[:,1]-=_v6('V6_PAD_PUFF_MM',6.0)/1000*lobes-_v6('V6_CREASE_MM',3.0)/1000*crease   # round W: the pads 3.5 -> 6 mm, the crease 1.5 -> 3 mm: the shut mouth drawn by the pads' shadow (codex mouth-closed);q[:,0]+=.0015*np.sign(x)*lobes
  chin=np.exp(-(x/.055)**4-((z-.442)/.013)**2)*front;q[:,2]-=.006*chin
  return q
 def _warp_mesh(ob,fn):
@@ -1865,7 +1865,7 @@ mouth_l=ad.bones['Head'].matrix_local.inverted()@Vector(head_xf((0,-.4515,LIP0))
 # Jaw NEGATIVE, which swings this bone UP into the skull: Yawn's -77 deg folded the chin skin inside the
 # head and left a 13.5 mm slit (REPORT A1: 26 px on a 700 px head, .037). Measured in v6_part_audit.py
 # (mouth_open): Yawn .62 -> see HANDOFF round J for the opening it gives.
-JAW_OPEN={'Yawn':_v6('V6_JAW_YAWN',.72),'Bite':_v6('V6_JAW_BITE',.50),'Lick':_v6('V6_JAW_LICK',.22)}
+JAW_OPEN={'Yawn':_v6('V6_JAW_YAWN',.60),'Bite':_v6('V6_JAW_BITE',.50),'Lick':_v6('V6_JAW_LICK',.22)}
 # ...and the upper lip lifts off the teeth with it (LipUpper bone, lip_share): metres in the head's rest
 # frame, (0, back, up).
 LIP_LIFT={'Yawn':(0,.002,.007*_v6('V6_LIP_LIFT',1.0)),'Bite':(0,.0015,.005*_v6('V6_LIP_LIFT',1.0)),'Lick':(0,.0005,.002)}
@@ -2107,8 +2107,8 @@ def _gait(g,u,k):
 # f_z up, the paw at f_pa deg - flat, toes down), the chest settles between them, the hocks fold under the
 # haunches, the back keeps its line (spine .06 -> ~4.5 deg), the head comes a little up off a lowered neck and
 # the tail comes round the flank on the floor. drop/f_z/h_z are set on the built rig: chest 0-1 mm, toes ~3 mm.
-LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-1.2,
- f_dy=.15,f_z=.073,f_pa=-145,h_dy=.05,h_z=.09,h_pa=-178).items()}
+LIEDOWN={k:_v6('V6_LD_'+k.upper(),d) for k,d in dict(drop=.125,spine=.06,neck=.12,head=-.12,tail=-.25,tail_side=-1.3,
+ f_dy=.24,f_z=.073,f_pa=-145,h_dy=.05,h_z=.09,h_pa=-178).items()}
 # Round L SideLie (user: 「躺下去的效果不好」): on its flank for real. It was rolled 1.25 rad - belly half up, the four
 # legs pointing up at 45 deg (paws 264-277 mm), the torso 27 mm off the floor on a hind toe and the head upright.
 # Now a quarter turn, the root lifted by the body's half-width, the neck bent down to lay the cheek on the
@@ -2145,7 +2145,7 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # legs' plane stood tilted and the upper hind leg stuck up beside the back), the chest kept 90% upright so both forepaws lie
 # side by side in front, the body turned .8 rad off the camera; with the hips rolled +, the LEFT hind leg is underneath -
 # it swings .2 clear of the floor - and the right one drapes .7 down onto it.
-SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-.8,hip_roll=1.5,chest_keep=.9,spine=.05,neck=.10,head=-.12,head_tilt=.22,head_turn=0,
+SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-.8,hip_roll=1.5,chest_keep=.7,spine=.05,neck=.10,head=-.12,head_tilt=.22,head_turn=0,
  tail=.35,tail_side=.55,f_dy=.22,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
  h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088).items()}
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
@@ -2405,7 +2405,11 @@ def pose(name,u):
   if name=='LieDown':
    L=LIEDOWN;pb['Root'].location.y=-L['drop']*f;pb['Spine'].rotation_euler[0]=L['spine']*f
    pb['Neck'].rotation_euler[0]=L['neck']*fh;pb['Head'].rotation_euler[0]=L['head']*fh
-   for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=L['tail']*ft;pb[tb].rotation_euler[2]=L['tail_side']*ft
+   if _v6('V6_LD_TAIL_WRAP',1)>0:   # round W: the tail curls round the flank toward the front, more at each joint (codex liedown-app)
+    # the turn at the root, then along the flank, the tip hooking in - spread evenly it coiled behind the rump
+    for i,tb in enumerate(('Tail0','Tail1','Tail2','Tail3','Tail4')):wk=(1.0,.6,.1,.1,.35)[i];pb[tb].rotation_euler[0]=L['tail']*ft*(1 if i else 0);pb[tb].rotation_euler[2]=L['tail_side']*wk*ft
+   else:
+    for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=L['tail']*ft;pb[tb].rotation_euler[2]=L['tail_side']*ft
    pb['Tail1'].rotation_euler[0]+=_v6('V6_LD_TAIL_LIFT',.6)*max(0,f-ft)   # round U: while the body is down ahead of its tail, the tail is carried up - lagging, it swept 12 mm through the floor (frames 217-225)   # round along the flank on the floor, on the camera's side
   if name=='SideLie' and SL_MODE==2:
    K=SIDELOUNGE
@@ -2469,8 +2473,8 @@ def pose(name,u):
    # Round J: the tongue lies 9 mm under the lip line, and with the jaw dropped the floor's red was all the
    # yawn showed. The reference's yawn is a pink tongue filling the lower half of the open mouth: it comes up
    # over the lower teeth and a little forward.
-   _yt=_v6('V6_YAWN_TONGUE',1.0);kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(2.5,_v6('V6_YT_UP',1.15)*_yt)*fac;kb['Out'].value=_v6('V6_YT_OUT',.40)*_yt*fac
-   pb['Tongue'].rotation_euler[0]=_v6('V6_YT_PITCH',.10)*_yt*fac   # + tips it up, against the jaw's drop
+   _yt=_v6('V6_YAWN_TONGUE',1.0);kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(2.5,_v6('V6_YT_UP',1.15)*_yt)*fac;kb['Out'].value=_v6('V6_YT_OUT',.85)*_yt*fac   # round W: .40 -> .85, the yawn's tongue out over the lower lip (codex expressions)
+   pb['Tongue'].rotation_euler[0]=_v6('V6_YT_PITCH',-.05)*_yt*fac   # + tips it up, against the jaw's drop
    blink=.85*fac;pb['Head'].rotation_euler[0]+=-.48*fac   # a cat tips its head back to yawn
    pb['Spine'].rotation_euler[0]+=.14*fac;pb['Root'].location.y+=-.030*fac   # and drops its chest as the jaw opens
    pb['Tail1'].rotation_euler[0]+=-.30*fac;pb['Tail2'].rotation_euler[0]+=.22*fac
@@ -2531,6 +2535,7 @@ def pose(name,u):
  _back(pb,name)
  if name in ('LieDown','SideLie','Sleep') and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else 0.0)
+ if name=='SideLie' and SL_MODE==2 and _v6('V6_SG_FACE',1)>0:_face_world(pb,_v6('V6_SG_FACE_YAW',0),_v6('V6_SG_FACE_PITCH',.05),_v6('V6_SG_FACE_ROLL',-.22),k=_settle(u,.06,LIE_T+.10))   # round W: the face to the camera, upright with a tilt, however far the chest leans over
  if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
  if name in ('Lick','LieDown','SideLie','Sleep') and _v6('V6_TAIL_FLOOR',1)>0:_tail_off_floor(pb)
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
