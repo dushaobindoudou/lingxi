@@ -371,7 +371,7 @@ head.data.materials.clear();head.data.materials.append(headcoat)
 # the eye, the dip of the stop between the eyes, the round whisker pads, the full lower cheeks, a
 # small chin - was missing, so fur lay on a ball. These brushes push the skin along its normal
 # (metres; + is outward), sized from the face close-up reference.
-SCULPT=[((0,-.418,.528),.022,-.0045*_v6('V6_STOP_K',1.0)),                                  # stop: the dip between the eyes
+SCULPT=[((0,-.418,.528),.022,-.0045*_v6('V6_STOP_K',2.0)),                                  # stop: the dip between the eyes
         ((0,-.395,.575),.030,+.0030*_v6('V6_FOREHEAD_K',1.0)),                                  # forehead dome above it
         # Final check (head profile flat - codex ROUND-ZM-AUDIT 4, lingxi-ref-head-profile: the brow recedes from the nose, a stop between):
         # the forehead's midline set back above the stop (V6_BROW_BACK m; 0 = off)
@@ -382,7 +382,7 @@ SCULPT=[((0,-.418,.528),.022,-.0045*_v6('V6_STOP_K',1.0)),                      
         ((-.090,-.415,.486),.018,+.0040*_v6('V6_ZYG_K',1.0)),((.090,-.415,.486),.018,+.0040*_v6('V6_ZYG_K',1.0)),
         ((-.026,-.448,.463),.018,+.0050),((.026,-.448,.463),.018,+.0050),   # whisker pads
         ((-.105,-.355,.455),.040,+.0070),((.105,-.355,.455),.040,+.0070),   # full lower cheeks
-        ((0,-.430,.428),.020,+.0030),                                  # chin
+        ((0,-.430,.428),.020,+.0030*_v6('V6_CHIN_K',-1.0)),                                  # chin (V6_CHIN_K < 0 sets it back - codex head_side_target: the chin's coat 13-18 mm behind ours)
         ((0,-.26,.66),.080,-.0060)]                                    # a lower, flatter crown
 def sculpt(o):
  me=o.data;me.update();bpy.context.view_layer.update();mw=o.matrix_world.copy()   # merged mesh: local != world
@@ -2005,7 +2005,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   _fl=np.where(_dl>=0,np.clip(_dl/_v6('V6_LIP_CLEAR_UP',.008),.10,1),np.clip(-_dl/_v6('V6_LIP_CLEAR_DN',.010),.10,1))
   _sd=np.clip((_cw-np.abs(root[:,0]))/.008,0,1)
   ln*=np.where(root[:,1]<-.395,1-(1-_fl)*_sd,1)[:,None,None]
-  _MC=_v6('V6_MUZZLE_COAT',.58);ln*=np.where(root[:,1]<-.39,np.clip(_MC+(1-_MC)*(dmz-.018)/.055,_MC,1),1)[:,None,None]   # round O: .42 -> .58
+  _MC=_v6('V6_MUZZLE_COAT',.40);ln*=np.where(root[:,1]<-.39,np.clip(_MC+(1-_MC)*(dmz-.018)/.055,_MC,1),1)[:,None,None]   # round O: .42 -> .58
   # The face that looks at you is short and smooth (stripes and features stay crisp); the long
   # fluff grows where the head turns away - cheeks' outer edge, crown, back of the head. A single
   # length everywhere turned the head into a featureless puffball.
@@ -2016,10 +2016,19 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # Final check (head profile flat; the no-fur preview round-v-test hp0 already has a domed brow and a stop - the white blaze's coat between
   # and above the eyes stood out as far as the nose): the midline from the stop up the forehead trimmed (V6_STOP_TRIM), so the coat
   # follows the skin's profile - brow back, stop, then the nose in front (lingxi-ref-head-profile)
-  _st=_v6('V6_STOP_TRIM',.70)   # round ZW: .70 (round-v-test hf1 .45 / hf2 .70: the brow's front edge comes back a little; a no-fur sculpt of the stop at 14 mm tore the skin)
+  # round ZZD (codex head_side_target_mask, measured on a transparent silhouette render on the template's camera): the profile's front edge at
+  # the brow is the coat 35-64 mm off the midline, at the nose the whisker pads' coat - so the trim is wider (.045 -> .070), with the stop
+  # sculpt x2, the chin set back, the muzzle's front coat .58 -> .40: forehead 9.8 -> 2.5 mm, stop 14.4 -> 10.7, chin 18.5 -> 14.8 mm ahead
+  # of the target. The nose leather is then 15 mm BEHIND it - reaching it means a longer snout (not done).
+  _st=_v6('V6_STOP_TRIM',.90)   # round ZW: .70 (round-v-test hf1 .45 / hf2 .70: the brow's front edge comes back a little; a no-fur sculpt of the stop at 14 mm tore the skin)
   if _st>0:
-   _mid=np.clip((.045-np.abs(root[:,0]))/.025,0,1)*np.clip((root[:,2]-(EYE_Z-.025))/.02,0,1)*np.clip((.61-root[:,2])/.03,0,1)*facing
+   _sw=_v6('V6_STOP_TRIM_W',.070);_mid=np.clip((_sw-np.abs(root[:,0]))/.025,0,1)*np.clip((root[:,2]-(EYE_Z-.025))/.02,0,1)*np.clip((.61-root[:,2])/.03,0,1)*facing
    ln*=(1-_st*_mid)[:,None,None]
+  # head profile (codex head_side_target_mask: our chin's coat stood 18.5 mm ahead of the target): the chin's midline coat trimmed
+  _ct=_v6('V6_CHIN_TRIM',.80)
+  if _ct>0:
+   _cm=np.clip((.040-np.abs(root[:,0]))/.020,0,1)*np.clip((LIP0-.008-root[:,2])/.010,0,1)*np.clip((root[:,2]-(LIP0-.075))/.02,0,1)*facing
+   ln*=(1-_ct*_cm)[:,None,None]
   # Tufts: a low-frequency length field (+-25%), so the head's outline breaks into soft locks
   # instead of a clipped sphere - uniform length is what made it read as a ball.
   tq=root*np.array([41.,37.,43.]);tuft=.5+.5*np.sin(tq[:,0]+1.7*np.sin(tq[:,2]))*np.sin(tq[:,1]*1.3+tq[:,2]*.7)
