@@ -2615,7 +2615,7 @@ def solve_sit():
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   # Final check #2 (codex FINAL-CHECK-BODY: the side view too long; measured on round-zq: shoulder-hip 330 mm apart along the floor with the
   # forelegs already ~4 deg off vertical): a cap on that span - the solve can only meet it by curling the back into the reference's C
-  if _v6('V6_SIT_SPAN',.29)>0:_sh=f('FrontUpper.L').translation;c+=_v6('V6_SIT_SPAN_W',200)*max(0,abs(_sh.y-hip.y)-_v6('V6_SIT_SPAN',.29))   # round ZS: 330 -> 283 mm, the pelvis 40 -> 62 deg, shoulders 309 -> 345 mm (round-v-test ss1-ss4; at weight 30 the solve did not move)
+  if _v6('V6_SIT_SPAN',.31)>0:_sh=f('FrontUpper.L').translation;c+=_v6('V6_SIT_SPAN_W',600)*max(0,abs(_sh.y-hip.y)-_v6('V6_SIT_SPAN',.31))   # round ZS: 330 -> 283 mm, the pelvis 40 -> 62 deg (round-v-test ss1-ss4) - a bulging rump (codex ROUND-ZR-ZX-AUDIT); round ZY: .31 / 600 -> span 301 mm, pelvis 50.6 deg (the solve is bimodal: weights 100-140 fell back to 40 deg, sw1-sw8)
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
   c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',28)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
@@ -2913,7 +2913,9 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # the chest still rolled 24 deg so the upper shoulder stood high. The back pitched down .05 -> .65 and the chest kept .7 -> .9 upright lay the
 # chest at 22 mm with both forearms down; the neck lifts the head back up (.10 -> -.55: head 233 -> 328 mm); the forepaws in to 150 mm
 # ahead of the shoulders (codex FINAL-CHECK-BODY: 90-150). (Rolling the whole torso, codex's other suggestion, read as a cat flung on its side.)
-SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-1.10,hip_roll=1.5,chest_keep=.9,spine=.65,neck=-.55,head=-.12,head_tilt=.22,head_turn=0,
+# Round ZZ (codex SIDELIE-OWNBODY-JOINTS: chest ~25 deg, lumbar ~55, pelvis ~75 rolled; ZX measured 6.6 / 26 / 78): chest kept .9 -> .78 (16.7 deg,
+# chest still 28 mm off the floor), neck -.55 -> -.80 (head a little higher)
+SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-1.10,hip_roll=1.5,chest_keep=.78,spine=.65,neck=-.80,head=-.12,head_tilt=.22,head_turn=0,
  tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
  h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088,bend=0.0).items()}
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
@@ -3622,8 +3624,10 @@ def pose(name,u):
  # hidden from the front, a hump in profile); a sitting cat wraps it round on the floor to beside its forepaws (lingxi-ref-sit-front / -back)
  _SITW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and _v6('V6_SIT_TAIL_WRAP',1)>0 and name in SIT_LIKE+('Lick',) and not (name=='ScratchEar')
  if _SITW:
-  _fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.R').translation
-  _tail_wrap(pb,(1,0),(_fp.x+.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.7))
+  # round ZY: round the cat's LEFT (-x) - where lingxi-ref-sit-front / -back have it; on the right it lay between the side camera and the
+  # near hind paw (codex ROUND-ZR-ZX-AUDIT: sit-hindfoot all coat)
+  _fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.L').translation
+  _tail_wrap(pb,(-1,0),(_fp.x-.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.3))   # round ZZ: .7 -> .3 - round the left the tail's tip ran past the path's end into the floor (-29.5 mm, tl1-tl3)
  if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb)   # a laid tail is already on its path, clear of the floor
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  _forearm_twist(pb)
