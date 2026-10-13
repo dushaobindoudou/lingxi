@@ -363,7 +363,10 @@ head.data.materials.clear();head.data.materials.append(headcoat)
 # (metres; + is outward), sized from the face close-up reference.
 SCULPT=[((0,-.418,.528),.022,-.0045),                                  # stop: the dip between the eyes
         ((0,-.395,.575),.030,+.0030),                                  # forehead dome above it
-        ((-.060,-.395,.570),.020,+.0035),((.060,-.395,.570),.020,+.0035),   # brow over each eye
+        ((-.060,-.395,.570),.020,+.0035*_v6('V6_BROW_K',1.6)),((.060,-.395,.570),.020,+.0035*_v6('V6_BROW_K',1.6)),   # brow over each eye
+        # ZK: the brow ridge over the eye's outer half and a zygomatic lift under its outer corner - the frame a sunken eye sits in
+        ((-.086,-.396,.575),.020,+.0045*_v6('V6_BROW_K',1.6)),((.086,-.396,.575),.020,+.0045*_v6('V6_BROW_K',1.6)),
+        ((-.090,-.415,.486),.018,+.0040*_v6('V6_ZYG_K',1.0)),((.090,-.415,.486),.018,+.0040*_v6('V6_ZYG_K',1.0)),
         ((-.026,-.448,.463),.018,+.0050),((.026,-.448,.463),.018,+.0050),   # whisker pads
         ((-.105,-.355,.455),.040,+.0070),((.105,-.355,.455),.040,+.0070),   # full lower cheeks
         ((0,-.430,.428),.020,+.0030),                                  # chin
@@ -424,12 +427,17 @@ def lip_share(x,y,z,above):
  return above*h*h*np.clip((-.400-y)/.020,0,1)*np.sqrt(np.clip(1-u**2,0,1))*arch   # round O: elliptical across the mouth - the lifted upper lip arches
 def eye_frame(s,lx,ly,lz):
  """Eye-local (x across, y into the head, z up) to world, for the eye on side s."""
- cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12)
+ cx=s*EYE_X;ys=eye_y(cx);phi=s*math.radians(12)
  return (cx+lx*math.cos(phi)-ly*math.sin(phi),ys+lx*math.sin(phi)+ly*math.cos(phi),EYE_Z+lz)
 def cranium_front(x,z):
  """Front surface (y) of the Cranium ellipsoid above - where an eye set into it must sit."""
  q=1-(x/.165)**2-((z-.518)/.142)**2
  return -.285-.147*math.sqrt(max(q,0))
+# ZK (user: 「眼窝不够深……面部不够立体」; the 3/4 view: two buttons on the face): the eye sits EYE_SINK into the skull - its rim
+# behind the cranium's surface, so the cornea's apex comes level with the brow and cheek coat instead of standing 10 mm proud of it.
+# Every eye-placed thing (bones, lens, lids, lid weights, the groom's eye window) goes through eye_y.
+EYE_SINK=_v6('V6_EYE_SINK',.007)   # ZL: 5 -> 7 mm (5 mm: set in a little, still proud in 3/4)
+def eye_y(x):return cranium_front(x,EYE_Z)+EYE_SINK
 # Eye sockets. The eyes turn 12 degrees outward, so their nasal edge sits behind the skull's
 # surface and the skin painted over half the iris (a D-shaped pupil). Cut the skin away where
 # an eye is; nothing can then cover it, and the coat around the hole frames it.
@@ -455,7 +463,9 @@ for v in bm.verts:
  p=hw@v.co
  if p.y<-.37:
   ed=min(math.hypot(p.x-s*EYE_X,p.z-EYE_Z) for s in (-1,1))/EYE_R
-  if ed<1.35:v.co.y+=.004*(1-(max(ed,1)-1)/.35)**2
+  # ZK: the press follows the sunken eye (4 mm + EYE_SINK at the rim) and eases out wider (1.35 -> 1.6 r): a real orbit's slope
+  _so=_v6('V6_SOCKET_OUT',1.6)
+  if ed<_so:v.co.y+=(.004+EYE_SINK)*(1-(max(ed,1)-1)/(_so-1))**2
 bm.to_mesh(head.data);bm.free()
 # Muzzle remains divided from lower jaw; dark recessed opening gives a real oral interior.
 # --- Mouth ------------------------------------------------------------------------------------
@@ -668,7 +678,7 @@ for s in [-1,1]:
   else:bone(pre+'Paw.'+suf,chain[2],chain[3],pre+'Lower.'+suf)
   for i in range(4):tx,ty=toe_xy(pre,s,i);bone(pre+f'Toe{i}.'+suf,(tx,ty+.024,.026),(tx,ty-.014,.021),pre+('Foot.' if FOOT else 'Paw.')+suf)
  bone('Ear.'+suf,(s*.100,-.250,.604),(s*(.100+.066*EAR_S),-.250+.010*EAR_S,.604+.156*EAR_S),'Head')  # matches the new ear shell
- ey=cranium_front(s*EYE_X,EYE_Z);bone('Eye.'+suf,(s*EYE_X,ey+.012,EYE_Z),(s*EYE_X,ey-.020,EYE_Z),'Head')
+ ey=eye_y(s*EYE_X);bone('Eye.'+suf,(s*EYE_X,ey+.012,EYE_Z),(s*EYE_X,ey-.020,EYE_Z),'Head')
  # --- Face rig: eyelid bones ---------------------------------------------------------------------
  # A lid is a patch of a sphere concentric with its bone's head, so rotating the bone slides the
  # lid over the eye while it stays on that sphere. (The first shape-key blink moved every vertex in
@@ -795,7 +805,7 @@ def weights(points,region):
   # Lid bone weight: full on the lid's inner half, fading to the head at its outer edge, and less
   # toward the corners (canthi), which a real lid does not move.
   _,ul,sf=region.split(':');sg=-1 if sf=='L' else 1;phi=sg*math.radians(12)
-  cx=sg*EYE_X;ys=cranium_front(cx,EYE_Z);x,y,z=points.T
+  cx=sg*EYE_X;ys=eye_y(cx);x,y,z=points.T
   lx=(x-cx)*math.cos(phi)+(y-ys)*math.sin(phi);lz=z-EYE_Z
   rho=np.hypot(lx,lz)/EYE_R;base,span=(.93,.37) if ul=='U' else (.97,.33)
   t=np.clip((rho-base)/span,0,1);sa=np.abs(lz)/np.maximum(np.hypot(lx,lz),1e-9)
@@ -1245,6 +1255,23 @@ cl.new(_acc,co_out.inputs['Surface'])
 lidskin=bpy.data.materials.new('LX_LidSkin');lidskin.use_nodes=True
 lp=lidskin.node_tree.nodes.get('Principled BSDF');la=lidskin.node_tree.nodes.new('ShaderNodeAttribute');la.attribute_name='lid_color'
 lidskin.node_tree.links.new(la.outputs['Color'],lp.inputs['Base Color']);lp.inputs['Roughness'].default_value=.85;lp.inputs['Specular IOR Level'].default_value=.12
+if (TEXDIR/'lid_margin_upper.png').exists() and (TEXDIR/'lid_margin_lower.png').exists() and _v6('V6_LID_TEX',0)>0:   # ZM: off - even darkened and shifted past its moist line, the strip drew a pale mauve ring round the iris (the plain dark margin reads closest to the reference)
+ # ZK (codex batch 20, ROUND-ZI-AUDIT 1/5): a thicker dark-brown upper margin with a moist inner line, a thinner lower one. Only the strip's
+ # top (v < ~.10: moist line + margin) is laid over the lid colour; its pale pink skin below would ring the eye (the old "goggle"),
+ # and it is desaturated a little (its moist line read pinker than the reference's brown-pink)
+ _ln=lidskin.node_tree.nodes;_ll=lidskin.node_tree.links
+ _lu=_ln.new('ShaderNodeUVMap');_lu.uv_map='lid_uv';_lo=_ln.new('ShaderNodeAttribute');_lo.attribute_type='OBJECT';_lo.attribute_name='lid_lower'
+ _tx=[]
+ for _nm in ('lid_margin_upper.png','lid_margin_lower.png'):
+  _t=_ln.new('ShaderNodeTexImage');_t.image=bpy.data.images.load(str(TEXDIR/_nm),check_existing=True);_t.extension='EXTEND';_ll.new(_lu.outputs['UV'],_t.inputs['Vector']);_tx.append(_t)
+ _mc=_ln.new('ShaderNodeMix');_mc.data_type='RGBA';_ll.new(_lo.outputs['Fac'],_mc.inputs['Factor']);_ll.new(_tx[0].outputs['Color'],_mc.inputs[6]);_ll.new(_tx[1].outputs['Color'],_mc.inputs[7])
+ _ma=_ln.new('ShaderNodeMix');_ma.data_type='FLOAT';_ll.new(_lo.outputs['Fac'],_ma.inputs['Factor']);_ll.new(_tx[0].outputs['Alpha'],_ma.inputs[2]);_ll.new(_tx[1].outputs['Alpha'],_ma.inputs[3])
+ _hs=_ln.new('ShaderNodeHueSaturation');_hs.inputs['Saturation'].default_value=_v6('V6_LID_TEX_SAT',.7);_hs.inputs['Value'].default_value=_v6('V6_LID_TEX_VAL',.45);_ll.new(_mc.outputs[2],_hs.inputs['Color'])   # ZL: value x.45 - its moist line (.67,.42,.39) drew a pale pink ring round each eye
+ _sx=_ln.new('ShaderNodeSeparateXYZ');_ll.new(_lu.outputs['UV'],_sx.inputs[0])
+ _cut=_ln.new('ShaderNodeMapRange');_cut.interpolation_type='SMOOTHSTEP';_cut.inputs['From Min'].default_value=.88;_cut.inputs['From Max'].default_value=.91;_ll.new(_sx.outputs['Y'],_cut.inputs['Value'])
+ _fk=_ln.new('ShaderNodeMath');_fk.operation='MULTIPLY';_ll.new(_ma.outputs[0],_fk.inputs[0]);_ll.new(_cut.outputs['Result'],_fk.inputs[1])
+ _fo=_ln.new('ShaderNodeMix');_fo.data_type='RGBA';_fo.name='LX_LidMargin';_ll.new(_fk.outputs[0],_fo.inputs['Factor']);_ll.new(la.outputs['Color'],_fo.inputs[6]);_ll.new(_hs.outputs['Color'],_fo.inputs[7])
+ _ll.new(_fo.outputs[2],lp.inputs['Base Color'])
 tear=mat('LX_TearDuct',(.62,.30,.30),.45)
 if _v6('V6_EYE_V2',1)>0:
  _tp=tear.node_tree.nodes.get('Principled BSDF');_tp.inputs['Roughness'].default_value=.14;_tp.inputs['Subsurface Weight'].default_value=.25   # wet caruncle
@@ -1257,7 +1284,10 @@ if _v6('V6_EYE_V2',1)>0:
 # weights: a blended turn is a chord, so a partly-weighted lid sank up to 1.2mm inside its sphere,
 # and with the corners only damped to 25% the upper rim fell .2r below them while the lower rose
 # .28r above - the crossed lids and the smooth plate the user read as an eye mask (round b4b).
-LID_SHUT={'U':.81,'L':1.13}                # inner-rim travel when shut, in eye radii
+# ZL (user: 「闭眼的时候有眼痕」; lingxi-ref-face-eyes-a closed: the shut line arches UP across the eye and hooks down into the inner corner):
+# V6_SHUT_ARCH more travel for both lids raises the arch from .12 r to .12+k r; the almond's low nasal corner gives the hook
+_SA=_v6('V6_SHUT_ARCH',.10)
+LID_SHUT={'U':.81-_SA,'L':1.13+_SA}                # inner-rim travel when shut, in eye radii
 LID_RING={'U':(.93,.37),'L':(.97,.33)}     # inner-rim radius and band width, in eye radii (the lid mesh below)
 # The dark margin (t<.2, see "lid colour") turns with the rim as one piece: spread by arc length
 # it would stretch with the band (x3.2) into a 7mm dark stripe across the closed eye.
@@ -1282,11 +1312,11 @@ def _lid_slants(P,s):
  return (('SlantIn',.12+.80*win**1.3),('SlantOut',.12+.70*(1-win)**1.3))
 def lid_local(P,s):
  """World points (N,3) to the eye-local frame of eye_frame(): x across, y into the head, z up."""
- cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
+ cx=s*EYE_X;ys=eye_y(cx);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
  x=P[:,0]-cx;y=P[:,1]-ys
  return np.column_stack((x*c+y*sn,-x*sn+y*c,P[:,2]-EYE_Z))
 def lid_world(L,s):
- cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
+ cx=s*EYE_X;ys=eye_y(cx);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
  return np.column_stack((cx+L[:,0]*c-L[:,1]*sn,ys+L[:,0]*sn+L[:,1]*c,L[:,2]+EYE_Z))
 def lid_base(a,ul,s):
  """Inner-rim radius of a lid (eye radii) at angle a. Rig v2 eye (codex ROUND-ZH-AUDIT 1, eye_outline_template.png): an almond -
@@ -1319,7 +1349,7 @@ def lid_turn(P,s,ul,frac,roots=None):
  dy=L[:,1]-LID_YC;dz=L[:,2];c,sn=np.cos(A),np.sin(A)
  return lid_world(np.column_stack((L[:,0],LID_YC+dy*c-dz*sn,dy*sn+dz*c)),s)
 for s in [-1,1]:
- suf='L' if s<0 else 'R';cx=s*EYE_X;cz=EYE_Z;r=EYE_R;ys=cranium_front(cx,cz);cy=ys
+ suf='L' if s<0 else 'R';cx=s*EYE_X;cz=EYE_Z;r=EYE_R;ys=eye_y(cx);cy=ys
  phi=s*math.radians(12)            # turned half-way toward the skull normal (~20 degrees)
  def W(lx,ly,lz,cx=cx,ys=ys,cz=cz,phi=phi):
   return (cx+lx*math.cos(phi)-ly*math.sin(phi),ys+lx*math.sin(phi)+ly*math.cos(phi),cz+lz)
@@ -1354,7 +1384,15 @@ for s in [-1,1]:
   for poly in me.polygons:
    for li in poly.loop_indices:
     vi=me.loops[li].vertex_index;uv.data[li].uv=((vi%41)/40,(vi//41)/8)
-  o=bpy.data.objects.new('LX_Lid'+('Upper' if upper else 'Lower')+'.'+suf,me);scene.collection.objects.link(o)
+  # ZK: a second map for codex's lid-margin strips (lid_margin_upper/lower.png): u from the outer corner (0) to the nasal one (1) on
+  # every lid - the upper lid's i=0 is local +x, the lower's is -x, and the nasal side is -s - and v x .5 (the strip's rim line,
+  # 3-9% of it, becomes ~1-2 mm of the 13 mm band)
+  uv2=me.uv_layers.new(name='lid_uv');_flip=(upper and s<0) or ((not upper) and s>0)
+  for poly in me.polygons:
+   for li in poly.loop_indices:
+    vi=me.loops[li].vertex_index;uv2.data[li].uv=((1-(vi%41)/40) if _flip else (vi%41)/40,1-(vi//41)/8*_v6('V6_LID_TEX_V',.5))   # 1-: an image's v runs up from its BOTTOM row; the strip's rim is its top (ZK had it upside down - the margin sampled the transparent end)
+  me.uv_layers[0].active_render=True;me.uv_layers.active_index=0
+  o=bpy.data.objects.new('LX_Lid'+('Upper' if upper else 'Lower')+'.'+suf,me);scene.collection.objects.link(o);o['lid_lower']=0.0 if upper else 1.0
   me.materials.append(lidskin)
   for p in me.polygons:p.use_smooth=True
   lidmod=o.modifiers.new('Lid shell','SOLIDIFY');lidmod.thickness=.0020;lidmod.offset=0
@@ -1375,6 +1413,8 @@ for s in [-1,1]:
   # (ZI: at .84 r on the horizontal, a bead on the iris; ZJ: in the almond's nasal point, 15 deg below the horizontal, at the iris edge)
   _ca=math.radians(_v6('V6_CANTHUS_DROP',15));_cr=_v6('V6_CARUNCLE_R',1.03)
   duct=sphere('LX_TearDuct.'+suf,W(-s*r*_cr*math.cos(_ca),.0002,-r*_cr*math.sin(_ca)),(.0058,.0016,.0039),tear);bind(duct,'Head')
+  # ZK (user: 「粉色泪阜这个有点不好，去掉吧」): at this scale it read as a separate pink bead, not part of the corner - hidden, as in v1
+  duct.hide_render=_v6('V6_CARUNCLE',0)<=0
  else:
   duct=sphere('LX_TearDuct.'+suf,W(-s*r*.98,.0005,-.007),(.0060,.004,.005),tear);bind(duct,'Head');duct.hide_render=True
  # Eyebrow tufts: four short pale hairs fanning up and out above the eye. A bare dome of
@@ -1663,11 +1703,21 @@ def muzzle_detail(p,col):
  m=np.where(inside[:,None],MUZZLE[np.clip((v*H).astype(int),0,H-1),np.clip((u*W).astype(int),0,W-1)],1.0)
  k=_v6('V6_MUZZLE_DETAIL',1.0);return col*(1-k+k*m)
 LIP_CREASE=_v6('V6_LIP_CREASE',.50 if MUZZLE is None else .20)
+ORBIT_MASK=None
 def orbit_shade(p,col):
  """Rig v2 eye: a shallow socket - the coat in a band round each eye (1.05-1.5 eye radii, front of the face) a shade darker, the
   shadow the brow and cheek throw onto the eye's surround (codex lingxi-ref-eye-closeup.png); the eye no longer floats flush."""
+ global ORBIT_MASK
  if _v6('V6_EYE_V2',1)<=0 or _v6('V6_ORBIT_SHADE',.16)<=0:return col
  x,y,z=p.T;band=np.zeros(len(p))
+ if ORBIT_MASK is None:ORBIT_MASK=load_mask('orbit_shade_mask.png') if 'load_mask' in globals() else False
+ if ORBIT_MASK is not None and ORBIT_MASK is not False:
+  # ZK (codex batch 20 orbit_shade_mask.png, ROUND-ZI-AUDIT 5): directional - deep under the brow, a pocket at the inner corner, light
+  # below, almost none on the outer side; eye-centred, 1024 px = 3.2 eye radii, nasal to the right (for each eye, toward x = 0)
+  for s_ in (-1,1):
+   q=np.column_stack((-s_*(x-s_*EYE_X),y,z-EYE_Z));R=1.6*EYE_R
+   band=np.maximum(band,1-mask_sample(ORBIT_MASK,q,0,(-R,R),2,(-R,R)))
+  return col*(1-_v6('V6_ORBIT_MASK_K',.40)*np.clip(band,0,1)*np.clip((-.36-y)/.04,0,1))[:,None]
  for s_ in (-1,1):
   rho=np.hypot(x-s_*EYE_X,(z-EYE_Z)*1.05)/EYE_R;band=np.maximum(band,np.clip((rho-1.02)/.10,0,1)*np.clip((1.55-rho)/.30,0,1))
  return col*(1-_v6('V6_ORBIT_SHADE',.16)*band*np.clip((-.36-y)/.04,0,1))[:,None]
@@ -2121,7 +2171,10 @@ if _v6('V6_SOLE_FUR',1)>0:
 LID_FUR={'U':(16000,.030),'L':(24000,.020)}
 for lid in [o for o in eyelids if o.name.startswith('LX_Lid')]:
  s_=-1 if lid.name.endswith('.L') else 1;ul='U' if 'Upper' in lid.name else 'L';r0=LID_RING[ul][0]+LID_RING[ul][1]*LID_MARGIN
- groom(lid,max(1,int(LID_FUR[ul][0]*SCALE*_v6('V6_LID_FUR',1.0))),LID_FUR[ul][1],'Head','guard',root_filter=lambda r,s_=s_,r0=r0:np.hypot(r[:,0]-s_*EYE_X,r[:,2]-EYE_Z)>EYE_R*r0,   # all of the lid but its dark margin
+ # ZL (the bald strip over every shut eye - user: 「闭眼的时候有眼痕」): the coat starts right past the dark margin on the ALMOND rim
+ # (lid_base per angle, in the lid's own frame); a fixed .93 r circle left the upper lid's lowered middle bald for ~2 mm
+ _rf=(lambda r,s_=s_,ul=ul:(lambda L:np.hypot(L[:,0],L[:,2])/EYE_R>lid_base(np.arctan2(L[:,2],L[:,0]),ul,s_)+LID_RING[ul][1]*_v6('V6_LID_FUR_MARGIN',.17))(lid_local(r,s_))) if FACE_V2 else (lambda r,s_=s_,r0=r0:np.hypot(r[:,0]-s_*EYE_X,r[:,2]-EYE_Z)>EYE_R*r0)
+ groom(lid,max(1,int(LID_FUR[ul][0]*SCALE*_v6('V6_LID_FUR',1.0))),LID_FUR[ul][1],'Head','guard',root_filter=_rf,   # all of the lid but its dark margin
        bind_as='Lid:%s:%s'%(ul,'L' if s_<0 else 'R'),
        # The lower lid's coat takes the colour of where it lies SHUT: rooted 1.2r under the eye, in
        # the white under-eye mask, it carried that white up to eye level - a pale panel in the
