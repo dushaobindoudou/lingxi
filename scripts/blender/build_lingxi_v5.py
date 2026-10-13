@@ -2826,12 +2826,14 @@ JUMP_PHASED=_v6('V6_JUMP_PHASED',1)>0
 # lift-off and touch-down. Without the pitch every phase was a standing cat at a different height (round-v-test r1/r2).
 JUMP_T=(_v6('V6_JUMP_F_OFF',.22),.30,.74,.80)   # Z5: forepaws off .27 -> .22 - from .23 the rising, nose-up trunk had the forelegs at full stretch and dragged the paws 3.3 mm a frame sideways before they tore off the floor (77 mm in one frame at 165)
 def _jump_root(u):
- if u<.20:e=u/.20;return -.08*e*e*(3-2*e)
- if u<.30:return -.08+.14*((u-.20)/.10)**2
+ _cd=_v6('V6_JUMP_CROUCH_DROP',.10)
+ if u<.20:e=u/.20;return -_cd*e*e*(3-2*e)
+ if u<.30:return -_cd+(_cd+.06)*((u-.20)/.10)**2
  if u<.74:return .32-5.37*(u-.52)**2
  if u<.84:return -.06+.12*(1-(u-.74)/.10)**2
  e=(u-.84)/.16;return -.06*(1-e*e*(3-2*e))
-JUMP_PITCH=[(0,0),(.20,.04),(.27,-.45),(.31,-.75),(.40,-.35),(.52,-.05),(.66,.18),(.74,.30),(.80,.12),(.88,.02),(1,0)]   # Pelvis x: - nose up
+# final check (codex FINAL-CHECK-BODY 3: the crouch read standing / lunging - the target's rump is low, chest and head up): V6_JUMP_CROUCH_PITCH
+JUMP_PITCH=[(0,0),(.20,_v6('V6_JUMP_CROUCH_PITCH',-.22)),(.27,-.45),(.31,-.75),(.40,-.35),(.52,-.05),(.66,.18),(.74,.30),(.80,.12),(.88,.02),(1,0)]   # Pelvis x: - nose up
 # per leg: (u, dy, dz, paw) in the trunk's frame, off the rest paw (- dy forward)
 JUMP_LEGS={'F':[(.31,-.12,.10,.3),(.42,.02,.14,.9),(.60,.00,.12,.7),(.70,-.07,-.02,.1)],
            'H':[(.33,.10,.02,.6),(.46,-.06,.12,1.1),(.66,-.05,.10,.9),(.76,-.02,.03,.2)]}
@@ -2911,7 +2913,7 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # the chest still rolled 24 deg so the upper shoulder stood high. The back pitched down .05 -> .65 and the chest kept .7 -> .9 upright lay the
 # chest at 22 mm with both forearms down; the neck lifts the head back up (.10 -> -.55: head 233 -> 328 mm); the forepaws in to 150 mm
 # ahead of the shoulders (codex FINAL-CHECK-BODY: 90-150). (Rolling the whole torso, codex's other suggestion, read as a cat flung on its side.)
-SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-.8,hip_roll=1.5,chest_keep=.9,spine=.65,neck=-.55,head=-.12,head_tilt=.22,head_turn=0,
+SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-1.10,hip_roll=1.5,chest_keep=.9,spine=.65,neck=-.55,head=-.12,head_tilt=.22,head_turn=0,
  tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
  h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088,bend=0.0).items()}
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
