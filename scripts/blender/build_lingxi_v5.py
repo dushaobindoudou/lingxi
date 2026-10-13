@@ -379,7 +379,7 @@ sculpt(head)
 # Eye placement, shared by the Eye bones, the lens, the lids and the groom's eye window.
 # Eyelids are spherical shells around a centre far behind the eye, rotated shut by their own bones
 # (see "Face rig" below). LID_APEX is how far the lid stands in front of the cornea's plane.
-LID_APEX=.0048   # .0040 left the lower lid's corner (with its 2mm shell) coincident with the cornea
+LID_APEX=_v6('V6_LID_APEX',.010)   # rig v2 eye volume: 4.8 -> 10 mm proud (lid sphere 172 -> ~86 mm): the eye a lens, not a disc   # .0040 left the lower lid's corner (with its 2mm shell) coincident with the cornea
 EYE_X=.064*_v6('V6_EYE_X',1.20);EYE_Z=.523*_v6('V6_EYE_Z',1.0);EYE_R=.038*_v6('V6_EYE_R',1.06)   # round L (user approved): x1.20 apart, .95 -> 1.06 across - the reference's eyes sit .38 of the furred head apart and are .17 of it across; ours were .30 / .15, a crowded little face (round-l-test f1-f3).
 #   # .95 (2026-09-29, v6_eye_size.py): at 1.0 the outer iris measured .48E bald-rimmed and .55E once the eyeliner rim widened, against the reference's .50E; .95 splits it. The earlier .66 was a MEASUREMENT error - v6_face_shape.py sized pupils by their largest inscribed circle, which the reference's big catchlights bite into (.194E where the hole-filled pupil is .34E); at .66 the eyes were a third too small, beads instead of the reference's big round eyes
 EAR_S=_v6('V6_EAR',1.0)   # ear shell scaled about its base; the Ear bones scale with it (.82 = v6's smaller ear, tried 2026-09-30; the user preferred 1.0)
@@ -1202,7 +1202,9 @@ if _CREF:
  cl.new(_tc.outputs['Reflection'],_mp.inputs['Vector']);cl.new(_mp.outputs['Vector'],_ev.inputs['Vector'])
  # gamma 3: the room's dark grey (.05-.1) would veil the pupil grey; only the window and the strip are kept
  _gm=cn.new('ShaderNodeGamma');_gm.inputs['Gamma'].default_value=_v6('V6_CORNEA_REF_GAMMA',3.0);cl.new(_ev.outputs['Color'],_gm.inputs['Color'])
- _ee=cn.new('ShaderNodeEmission');_ee.inputs['Strength'].default_value=_v6('V6_CORNEA_REF_K',.8);_ee.name='LX_CatchRef';cl.new(_gm.outputs['Color'],_ee.inputs['Color'])
+ # ...and white (luminance only): the warm window, cubed, came out an orange streak
+ _bw=cn.new('ShaderNodeRGBToBW');cl.new(_gm.outputs['Color'],_bw.inputs[0])
+ _ee=cn.new('ShaderNodeEmission');_ee.inputs['Strength'].default_value=_v6('V6_CORNEA_REF_K',1.2);_ee.name='LX_CatchRef';cl.new(_bw.outputs[0],_ee.inputs['Color'])
  _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_ee.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
 # (the mirror alone lit one eye only - each cornea is a shallow dome turned 12 deg out, so a far window lands on one of them; a round
 # eyeball would show it in both: rig v2 eye volume. Until then the painted window stays, softer, and the mirror is a faint wet sheen)
@@ -1215,10 +1217,10 @@ for _hu,_hv,_hr in ((.80,.63,.085),(.62,.51,.028)):
   def _q(sock,k):
    a_=cn.new('ShaderNodeMath');a_.operation='ABSOLUTE';cl.new(sock,a_.inputs[0]);m_=cn.new('ShaderNodeMath');m_.operation='MULTIPLY';m_.inputs[1].default_value=k;cl.new(a_.outputs[0],m_.inputs[0])
    p_=cn.new('ShaderNodeMath');p_.operation='POWER';p_.inputs[1].default_value=_v6('V6_CATCH_SHAPE',2.0);cl.new(m_.outputs[0],p_.inputs[0]);return p_.outputs[0]   # 2: a soft ellipse (4, a rounded square, read as a pasted tile)
-  _sm=cn.new('ShaderNodeMath');_sm.operation='ADD';cl.new(_q(_sep.outputs['X'],1/.085),_sm.inputs[0]);cl.new(_q(_sep.outputs['Y'],1/.068),_sm.inputs[1])
+  _sm=cn.new('ShaderNodeMath');_sm.operation='ADD';cl.new(_q(_sep.outputs['X'],1/.052),_sm.inputs[0]);cl.new(_q(_sep.outputs['Y'],1/.044),_sm.inputs[1])   # ZI: smaller and crisper (the reference: a small sharp highlight; the broad window is the mirror's)
   _rt=cn.new('ShaderNodeMath');_rt.operation='POWER';_rt.inputs[1].default_value=1/_v6('V6_CATCH_SHAPE',2.0);cl.new(_sm.outputs[0],_rt.inputs[0]);_d=_rt;_hr=1.0
  _win=_v6('V6_EYE_V2',1)>0 and _hr==1.0
- _mr=cn.new('ShaderNodeMapRange');_mr.interpolation_type='LINEAR' if _win else 'SMOOTHERSTEP';_mr.inputs['From Min'].default_value=1.6 if _win else _hr;_mr.inputs['From Max'].default_value=0.0 if _win else _hr*.45   # v2 window: a long linear feather (the smootherstep edge, overexposed, cut a hard outline);cl.new(_d.outputs['Value'] if hasattr(_d.outputs,'get') and _d.outputs.get('Value') else _d.outputs[0],_mr.inputs['Value'])
+ _mr=cn.new('ShaderNodeMapRange');_mr.interpolation_type='LINEAR' if _win else 'SMOOTHERSTEP';_mr.inputs['From Min'].default_value=1.3 if _win else _hr;_mr.inputs['From Max'].default_value=0.0 if _win else _hr*.45;cl.new(_d.outputs['Value'],_mr.inputs['Value'])   # v2 window: a long linear feather (the smootherstep edge, overexposed, cut a hard outline)
  _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=_v6('V6_CATCH',3.5 if _v6('V6_EYE_V2',1)<=0 else 3.0);_ms.name='LX_Catch%d'%len([n for n in cn if n.name.startswith('LX_Catch')]);cl.new(_mr.outputs['Result'],_ms.inputs[0])
  _em=cn.new('ShaderNodeEmission');_em.inputs['Color'].default_value=(1,.99,.97,1);cl.new(_ms.outputs[0],_em.inputs['Strength'])
  _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_em.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
@@ -1314,8 +1316,10 @@ for s in [-1,1]:
     v=loc[me.loops[li].vertex_index];uv.data[li].uv=(v[0]/r/2+.5,v[2]/r/2+.5)
   for i,v in enumerate(me.vertices):v.co=W(loc[i][0],loc[i][1]+back,loc[i][2])
   bind(o,'Eye.'+suf);add_eye_blink(o,cz);return o
- dome('LX_Eye.'+suf,r,.0045,.0040,IRISMATS.get(suf,irismat))          # iris: flush with the face
- dome('LX_Cornea.'+suf,r*1.01,.0065,.0040,corneamat) # cornea: apex 2.5mm proud
+ # Rig v2 eye volume (codex RIG-V2-RESEARCH 5: the eye is a ball under a bulging cornea; ours was a near-flat cap, 4.8 mm proud on a
+ # 172 mm lid sphere): V6_LID_APEX raises the lids' sphere and both domes with it, so the lids still close over the eye's own surface
+ dome('LX_Eye.'+suf,r,.0045+(LID_APEX-.0048),.0040,IRISMATS.get(suf,irismat))          # iris: flush with the face
+ dome('LX_Cornea.'+suf,r*1.01,.0065+(LID_APEX-.0048),.0040,corneamat) # cornea: apex 2.5mm proud
  for upper in [True,False]:
   vs=[];fs=[];blink=[];squint=[]
   for j in range(9):
