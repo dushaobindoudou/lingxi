@@ -34,6 +34,11 @@ export interface ToyState {
 export type InteractionMode = 'auto' | 'play';
 export interface Vec2 { x: number; y: number; }
 export interface LifeEngineConfig {
+  /** Optional host geometry; without a 3D renderer toyReach remains the fallback. */
+  toyInteraction?: (request: {
+    kind: ToyKind; position: Vec2; previousPosition: Vec2;
+    petPosition: Vec2; previousPetPosition: Vec2;
+  }) => { target: Vec2; touching: boolean; contactPosition?: Vec2; petContactPosition?: Vec2 } | null;
   bounds?: { width: number; height: number };
   position?: Vec2;
   speed?: number;

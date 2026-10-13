@@ -302,6 +302,7 @@ export function createLifeEngine(config = {}) {
   // measuring the weather.
   const random = typeof config.random === 'function' ? config.random : Math.random;
   const rand = (min, max) => randomBetween(min, max, random);
+  const toyInteraction = typeof config.toyInteraction === 'function' ? config.toyInteraction : null;
   let bounds = cfg.bounds;
   let state = 'idle';
   let position = config.position ?? { x: bounds.width / 2, y: bounds.height / 2 };
@@ -909,13 +910,18 @@ export function createLifeEngine(config = {}) {
     if (toy.kind === 'laser') {
       // Pinned to the cursor exactly. With no cursor it simply stays where it last was, which
       // reads as the dot being held still rather than the toy vanishing.
+      const previous = toy.position;
       if (cursor) toy.position = { x: clamp(cursor.x, loX, hiX), y: clamp(cursor.y, loY, hiY) };
-      toy.velocity = { x: 0, y: 0 };
+      toy.velocity = deltaSeconds > 0 ? {
+        x: (toy.position.x - previous.x) / deltaSeconds,
+        y: (toy.position.y - previous.y) / deltaSeconds,
+      } : { x: 0, y: 0 };
       return;
     }
     if (toy.kind === 'feather') {
       // Trails the cursor with a lag - a wand tip does not teleport with your hand, and the
       // lag is exactly what gives the cat something to overshoot.
+      const previous = toy.position;
       if (cursor) {
         const catchUp = 1 - Math.exp(-deltaSeconds * cfg.toyFeatherLag);
         toy.position = {
@@ -923,7 +929,10 @@ export function createLifeEngine(config = {}) {
           y: clamp(toy.position.y + (cursor.y - toy.position.y) * catchUp, loY, hiY),
         };
       }
-      toy.velocity = { x: 0, y: 0 };
+      toy.velocity = deltaSeconds > 0 ? {
+        x: (toy.position.x - previous.x) / deltaSeconds,
+        y: (toy.position.y - previous.y) / deltaSeconds,
+      } : { x: 0, y: 0 };
       return;
     }
 
@@ -945,19 +954,29 @@ export function createLifeEngine(config = {}) {
   }
 
   /** The cat's half of the game: run the toy down, and swat it when in reach. */
-  function chaseToy(now, deltaSeconds) {
+  function chaseToy(now, deltaSeconds, previousPosition, previousPetPosition) {
     state = 'play_toy';
-    target = { ...toy.position };
-    const gap = distance(position, toy.position);
-    if (gap > cfg.toyReach) {
+    const interaction = () => toyInteraction?.({
+      kind: toy.kind, position: { ...toy.position }, previousPosition,
+      petPosition: { ...position }, previousPetPosition,
+    });
+    let contact = interaction();
+    target = isFinitePoint(contact?.target) ? { ...contact.target } : { ...toy.position };
+    let gap = distance(position, target);
+    const touching = () => toyInteraction ? contact?.touching === true : gap <= cfg.toyReach;
+    if (!touching()) {
       // Aim at the toy itself rather than a standoff point: the cat is trying to reach it, not
       // to keep a polite distance from it.
       // A playful cat commits harder to the chase; a reserved one trots after it.
       moveToward(
-        toy.position,
+        target,
         deltaSeconds,
         cfg.speed * cfg.toyChaseSpeedMultiplier * traitFactor(personality.playfulness, 0.25),
       );
+      // Contact must be evaluated AFTER this frame's movement, not on the stale
+      // gap from before moving. The renderer also sweeps the ball's trajectory.
+      contact = interaction();
+      gap = distance(position, target);
     }
     // Face what it is playing with, always - even standing over a stopped ball.
     if (Math.abs(toy.position.x - position.x) > 1) facing = toy.position.x >= position.x ? 1 : -1;
@@ -966,7 +985,9 @@ export function createLifeEngine(config = {}) {
     // which is also what builds the anticipation for the throw.
     if (charge || toyHeld) return;
 
-    if (gap <= cfg.toyReach && now - lastBatAt >= cfg.toyBatCooldownMs) {
+    if (touching() && now - lastBatAt >= cfg.toyBatCooldownMs) {
+      if (isFinitePoint(contact?.petContactPosition)) position = { ...contact.petContactPosition };
+      if (toy.kind === 'yarn' && isFinitePoint(contact?.contactPosition)) toy.position = { ...contact.contactPosition };
       lastBatAt = now;
       batThisTick = true;
       // Only the yarn ball can actually be sent flying. Swatting the wand or the laser plays
@@ -1394,6 +1415,8 @@ export function createLifeEngine(config = {}) {
 
     // The toy moves whatever the cat is doing - a thrown ball keeps rolling while the cat is
     // being held, and the wand still follows your hand.
+    const previousToyPosition = toy ? { ...toy.position } : null;
+    const previousPetPosition = { ...position };
     stepToy(deltaSeconds, cursor);
 
     if (state === 'dragged') {
@@ -1457,7 +1480,7 @@ export function createLifeEngine(config = {}) {
     // while there is something to play with, that IS what the cat wants to do. It is outranked
     // only by a drag and by an explicit AI intent, both handled above.
     if (toy) {
-      chaseToy(now, deltaSeconds);
+      chaseToy(now, deltaSeconds, previousToyPosition, previousPetPosition);
       return snapshot();
     }
 

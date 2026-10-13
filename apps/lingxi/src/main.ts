@@ -79,6 +79,7 @@ async function main() {
   const engine = createLifeEngine({
     bounds: logicalSize(workArea),
     position: { x: logicalSize(workArea).width / 2, y: logicalSize(workArea).height / 2 },
+    toyInteraction: renderer.toyInteraction,
   });
   renderer.resize(logicalSize(workArea).width, logicalSize(workArea).height);
   dlog(`resized to ${JSON.stringify(logicalSize(workArea))}`);
@@ -809,7 +810,8 @@ async function main() {
       if (toyNow && snapshot.state === 'play_toy' && now >= toyReactionUntil && !renderer.playingAction) {
         const reaction = pickToyReaction({
           kind: toyNow.kind,
-          distance: Math.hypot(toyNow.position.x - snapshot.position.x, toyNow.position.y - snapshot.position.y),
+          distance: Math.hypot((snapshot.target ?? toyNow.position).x - snapshot.position.x,
+            (snapshot.target ?? toyNow.position).y - snapshot.position.y),
           toySpeed: Math.hypot(toyNow.velocity.x, toyNow.velocity.y),
           held: toyNow.held,
         });

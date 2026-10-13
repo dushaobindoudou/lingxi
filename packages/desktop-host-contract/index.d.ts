@@ -74,8 +74,27 @@ export interface RendererCapabilities {
   preciseHitTest: boolean;
 }
 
+/** Logical-pixel inputs; the renderer alone knows the posed model and projection. */
+export interface ToyInteractionRequest {
+  kind: 'yarn' | 'feather' | 'laser';
+  position: { x: number; y: number };
+  previousPosition: { x: number; y: number };
+  petPosition: { x: number; y: number };
+  previousPetPosition: { x: number; y: number };
+}
+export interface ToyInteraction {
+  /** Root destination that brings a front paw to the actual interactive part. */
+  target: { x: number; y: number };
+  touching: boolean;
+  /** First swept contact, preventing a fast ball/cat from tunnelling through. */
+  contactPosition?: { x: number; y: number };
+  petContactPosition?: { x: number; y: number };
+}
+
 export interface Renderer {
   readonly capabilities: RendererCapabilities;
+  /** Actual body/toy contact; optional for renderers with no physical geometry. */
+  toyInteraction?(request: ToyInteractionRequest): ToyInteraction | null;
   /** Mount onto a canvas/container the host owns. */
   mount(container: HTMLElement): void;
   /** Resize the render surface to match the current work area (in CSS pixels). */

@@ -29,6 +29,8 @@ export interface ToyProp {
   readonly worldLayer?: THREE.Object3D;
   /** Told the current voxel->world scale, for props whose world layer has to match the prop. */
   setWorldScale?(scale: number): void;
+  /** Actual interactive part in world space (the plume, not the wand handle). */
+  contactSphere(target: THREE.Sphere): THREE.Sphere;
   /**
    * Per-frame animation (spin, bob, flicker).
    * @param speed the toy's own travel speed, px/s
@@ -47,7 +49,9 @@ export interface ToyProp {
 }
 
 /** Voxel units, matching the rig's own scale (the cat is ~13 units tall). */
-const YARN_RADIUS = 2.0;
+export const YARN_RADIUS = 2.0;
+export const LASER_RADIUS = 0.85;
+export const FEATHER_HAND_HEIGHT = 10;
 
 function disposeTree(root: THREE.Object3D) {
   root.traverse((object) => {
@@ -63,11 +67,13 @@ function disposeTree(root: THREE.Object3D) {
 /** 毛线球: a ball with wound thread. Rolls - the spin is driven by how fast it is moving. */
 function createYarn(): ToyProp {
   const group = new THREE.Group();
+  const rolling = new THREE.Group();
+  group.add(rolling);
   const ball = new THREE.Mesh(
     new THREE.IcosahedronGeometry(YARN_RADIUS, 1), // faceted, to match the voxel look
     new THREE.MeshStandardMaterial({ color: 0xe2708a, roughness: 0.95, metalness: 0 }),
   );
-  group.add(ball);
+  rolling.add(ball);
 
   // Three rings at different tilts read as wound thread from every angle.
   const threadMaterial = new THREE.MeshStandardMaterial({ color: 0xf6c6d2, roughness: 0.95 });
@@ -79,7 +85,7 @@ function createYarn(): ToyProp {
   for (const [rx, rz] of tilts) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(YARN_RADIUS * 0.99, 0.22, 6, 20), threadMaterial);
     ring.rotation.set(rx, 0, rz);
-    group.add(ring);
+    rolling.add(ring);
   }
   // A loose thread trailing off, so a stationary ball still reads as yarn and not as a marble.
   const tail = new THREE.Mesh(
@@ -105,11 +111,18 @@ function createYarn(): ToyProp {
   let squash = 0;
   const rollAxis = new THREE.Vector3();
   const rollQuaternion = new THREE.Quaternion();
+  const worldScale = new THREE.Vector3();
   return {
     object: group,
     // The ball's own centre. The renderer places this exactly on the toy's logical point, so
     // while it is in hand the ball is centred on the pointer rather than floating off it.
     anchorHeight: YARN_RADIUS,
+    contactSphere(target) {
+      ball.getWorldPosition(target.center);
+      ball.getWorldScale(worldScale);
+      target.radius = YARN_RADIUS * Math.max(worldScale.x, worldScale.y, worldScale.z);
+      return target;
+    },
     update(deltaSeconds, speed, charge, travel) {
       // Roll about the axis perpendicular to travel, at the rate the surface would actually
       // turn. Spinning on fixed axes reads as a ball with a motor in it; rolling the right way
@@ -119,9 +132,9 @@ function createYarn(): ToyProp {
         if (rollAxis.lengthSq() > 1e-8) {
           rollAxis.normalize();
           // Arc length over radius = the angle a rolling ball turns through.
-          const worldSpeed = speed * (travel.scale ?? 1);
+          const worldSpeed = Math.hypot(travel.x, travel.z) * travel.scale;
           rollQuaternion.setFromAxisAngle(rollAxis, (worldSpeed / YARN_RADIUS) * deltaSeconds);
-          group.quaternion.premultiply(rollQuaternion);
+          rolling.quaternion.premultiply(rollQuaternion);
         }
       }
 
@@ -209,7 +222,14 @@ function createFeather(): ToyProp {
   return {
     object: group,
     // The hand. Everything below it dangles, so this is what belongs on the pointer.
-    anchorHeight: 0,
+    // The hand must be above the full rope length. Its logical point is still on
+    // the cursor; the interactive point below is the actual dangling feather.
+    anchorHeight: FEATHER_HAND_HEIGHT,
+    contactSphere(target) {
+      plume.localToWorld(target.center.set(0, 1.4, 0));
+      target.radius = 2 * group.getWorldScale(worldScaleVector).x;
+      return target;
+    },
     update(deltaSeconds) {
       // Simulate in world-aligned voxel units. A rope simulated in the moving group's local
       // space sees a stationary hand, so its feather follows rigidly and never swings.
@@ -259,7 +279,7 @@ function createFeather(): ToyProp {
 function createLaser(): ToyProp {
   const group = new THREE.Group();
   const dot = new THREE.Mesh(
-    new THREE.CircleGeometry(0.85, 16),
+    new THREE.CircleGeometry(LASER_RADIUS, 16),
     new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.95 }),
   );
   const halo = new THREE.Mesh(
@@ -302,12 +322,19 @@ function createLaser(): ToyProp {
   let trailIndex = 0;
   let sinceMark = 0;
   const lastWorld = new THREE.Vector3(Infinity, 0, Infinity);
+  const dotWorld = new THREE.Vector3();
+  const worldScale = new THREE.Vector3();
 
   let phase = 0;
   return {
     object: group,
     worldLayer,
     anchorHeight: 0, // the dot is on the floor
+    contactSphere(target) {
+      dot.getWorldPosition(target.center);
+      target.radius = LASER_RADIUS * group.getWorldScale(worldScale).x;
+      return target;
+    },
     update(deltaSeconds) {
       // A real laser dot is never perfectly steady - the tiny flicker is most of what sells it.
       phase += deltaSeconds * 9;
@@ -318,12 +345,13 @@ function createLaser(): ToyProp {
       // Drop a new mark wherever the dot has actually travelled. Distance-gated rather than
       // purely time-gated so a stationary pointer does not pile marks on one spot.
       sinceMark += deltaSeconds;
-      const moved = lastWorld.distanceTo(group.position);
+      dot.getWorldPosition(dotWorld);
+      const moved = lastWorld.distanceTo(dotWorld);
       if (sinceMark > 0.012 && moved > 0.002) {
         sinceMark = 0;
-        lastWorld.copy(group.position);
+        lastWorld.copy(dotWorld);
         trailIndex = (trailIndex + 1) % TRAIL;
-        trailAnchors[trailIndex] = group.position.clone();
+        trailAnchors[trailIndex] = dotWorld.clone();
         trailAges[trailIndex] = 0;
       }
 
@@ -340,7 +368,7 @@ function createLaser(): ToyProp {
         }
         mark.visible = true;
         // World space directly - the layer this lives in is never moved or scaled.
-        mark.position.set(anchor.x, 0.03, anchor.z);
+        mark.position.copy(anchor);
         // Taper: newest marks are nearly the size of the dot, the oldest are a wisp.
         // Scaled in WORLD units now, so it has to be sized like one: the dot itself is a
         // 0.85-voxel circle at the prop's scale, and the tail tapers from about that.
