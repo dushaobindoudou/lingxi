@@ -1205,6 +1205,11 @@ if _CREF:
  # ...and white (luminance only): the warm window, cubed, came out an orange streak
  _bw=cn.new('ShaderNodeRGBToBW');cl.new(_gm.outputs['Color'],_bw.inputs[0])
  _ee=cn.new('ShaderNodeEmission');_ee.inputs['Strength'].default_value=_v6('V6_CORNEA_REF_K',1.2);_ee.name='LX_CatchRef';cl.new(_bw.outputs[0],_ee.inputs['Color'])
+ # ZJ: kept inside the cornea - at the dome's rim the mirror caught the window as a thin white arc over the iris top whenever the lid
+ # lifted (eye:wide; codex ROUND-ZI-AUDIT P1). UV centre .5,.5, rim at .5: full to .33, gone by .45
+ _rd=cn.new('ShaderNodeVectorMath');_rd.operation='DISTANCE';cl.new(_uvc.outputs['UV'],_rd.inputs[0]);_rd.inputs[1].default_value=(.5,.5,0)
+ _rm=cn.new('ShaderNodeMapRange');_rm.interpolation_type='SMOOTHSTEP';_rm.inputs['From Min'].default_value=.45;_rm.inputs['From Max'].default_value=.33;cl.new(_rd.outputs['Value'],_rm.inputs['Value'])
+ _rk=cn.new('ShaderNodeMath');_rk.operation='MULTIPLY';_rk.inputs[1].default_value=_v6('V6_CORNEA_REF_K',.8);_rk.name='LX_CatchRefK';cl.new(_rm.outputs['Result'],_rk.inputs[0]);cl.new(_rk.outputs[0],_ee.inputs['Strength'])
  _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_ee.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
 # (the mirror alone lit one eye only - each cornea is a shallow dome turned 12 deg out, so a far window lands on one of them; a round
 # eyeball would show it in both: rig v2 eye volume. Until then the painted window stays, softer, and the mirror is a faint wet sheen)
@@ -1283,12 +1288,24 @@ def lid_local(P,s):
 def lid_world(L,s):
  cx=s*EYE_X;ys=cranium_front(cx,EYE_Z);phi=s*math.radians(12);c,sn=math.cos(phi),math.sin(phi)
  return np.column_stack((cx+L[:,0]*c-L[:,1]*sn,ys+L[:,0]*sn+L[:,1]*c,L[:,2]+EYE_Z))
-def lid_turn_angle(L,ul):
+def lid_base(a,ul,s):
+ """Inner-rim radius of a lid (eye radii) at angle a. Rig v2 eye (codex ROUND-ZH-AUDIT 1, eye_outline_template.png): an almond -
+  the opening runs out to a small point at the nasal corner, a little below the horizontal (the caruncle sits in it), and the upper
+  lid's middle comes down a touch; the old opening was the same circle as the iris. V6_EYE_ALMOND 0 = the circle."""
+ base=LID_RING[ul][0]
+ if _v6('V6_EYE_ALMOND',2.0)<=0 or not FACE_V2:return base+0*np.asarray(a,dtype=float)
+ an=0.0 if s<0 else math.pi;ac=an+(-1 if s<0 else 1)*math.radians(_v6('V6_CANTHUS_DROP',15))
+ g=np.clip(np.cos(np.asarray(a,dtype=float)-ac),0,1)**6
+ k=_v6('V6_EYE_ALMOND',2.0);ext=(.09 if ul=='U' else .05)*k;top=(.025*k*np.sin(a)**2) if ul=='U' else 0.0
+ return base+ext*g-top
+def lid_turn_angle(L,ul,s=None):
  """Angle (+ = down) about the lid sphere's x axis that shuts each eye-local point (N,3).
   The rim lands on .12r*sin(a) (upper) / .16r*|sin(a)| (lower): two arches through the corners,
   the lower one just behind the upper, so the closed eye is the upper rim's arch."""
  base,span=LID_RING[ul];Rl=LID_R+.0008 if ul=='U' else LID_R;r=EYE_R
- a=np.arctan2(L[:,2],L[:,0]);rx,rz=np.cos(a)*base*r,np.sin(a)*base*r
+ a=np.arctan2(L[:,2],L[:,0])
+ if s is not None:base=lid_base(a,ul,s)   # rig v2: the almond rim
+ rx,rz=np.cos(a)*base*r,np.sin(a)*base*r
  dy=-np.sqrt(np.maximum(Rl*Rl-rx*rx-rz*rz,1e-12));rho=np.hypot(dy,rz)
  tz=rz+(-1 if ul=='U' else 1)*LID_SHUT[ul]*r*np.abs(np.sin(a))
  al=np.arctan2(rz,-dy)-np.arcsin(np.clip(tz/rho,-1,1))
@@ -1298,7 +1315,7 @@ def lid_turn_angle(L,ul):
 def lid_turn(P,s,ul,frac,roots=None):
  """World points P turned shut by `frac` of their angle (an exact turn, so a squint stays on the
   sphere too). Fur strand points pass their ROOTS: a strand turns rigidly with the skin under it."""
- L=lid_local(P,s);A=lid_turn_angle(lid_local(roots,s) if roots is not None else L,ul)*frac
+ L=lid_local(P,s);A=lid_turn_angle(lid_local(roots,s) if roots is not None else L,ul,s)*frac
  dy=L[:,1]-LID_YC;dz=L[:,2];c,sn=np.cos(A),np.sin(A)
  return lid_world(np.column_stack((L[:,0],LID_YC+dy*c-dz*sn,dy*sn+dz*c)),s)
 for s in [-1,1]:
@@ -1327,7 +1344,7 @@ for s in [-1,1]:
    for i in range(41):
     # The upper lid rests a touch over the top of the iris (.93r) - a fully exposed ring of
     # iris is the startled look - and both run out to 1.30r, under the fur.
-    a=math.pi*i/40+(0 if upper else math.pi);rad=r*((.93 if upper else .97)+(.37 if upper else .33)*t)
+    a=math.pi*i/40+(0 if upper else math.pi);rad=r*(float(lid_base(a,'U' if upper else 'L',s))+(.37 if upper else .33)*t)   # rig v2: almond inner rim (lid_base)
     lx,lz=math.cos(a)*rad,math.sin(a)*rad;Rl=LID_R+.0008 if upper else LID_R   # the upper lid in front where they meet
     ly=LID_YC-math.sqrt(Rl*Rl-lx*lx-lz*lz)          # on the lid sphere; beyond the eye it recedes under the coat
     vs.append(W(lx,ly,lz))
@@ -1355,7 +1372,9 @@ for s in [-1,1]:
   # sat outside the eye on the fur - two pink beads - and was hidden: now flattened, tucked into the corner between the lids
   # (partly behind them), and wet
   # (first try at .90 r, 1.2 mm back: its inner half hid behind the iris dome and only the half on the fur showed - a bead again)
-  duct=sphere('LX_TearDuct.'+suf,W(-s*r*_v6('V6_CARUNCLE_X',.84),.0002,-.0035),(.0045,.0012,.0030),tear);bind(duct,'Head')
+  # (ZI: at .84 r on the horizontal, a bead on the iris; ZJ: in the almond's nasal point, 15 deg below the horizontal, at the iris edge)
+  _ca=math.radians(_v6('V6_CANTHUS_DROP',15));_cr=_v6('V6_CARUNCLE_R',1.03)
+  duct=sphere('LX_TearDuct.'+suf,W(-s*r*_cr*math.cos(_ca),.0002,-r*_cr*math.sin(_ca)),(.0058,.0016,.0039),tear);bind(duct,'Head')
  else:
   duct=sphere('LX_TearDuct.'+suf,W(-s*r*.98,.0005,-.007),(.0060,.004,.005),tear);bind(duct,'Head');duct.hide_render=True
  # Eyebrow tufts: four short pale hairs fanning up and out above the eye. A bare dome of
