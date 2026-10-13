@@ -2603,6 +2603,9 @@ def solve_sit():
   for k,(tg,pa) in _sit_targets(f).items():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
+  # Final check #2 (codex FINAL-CHECK-BODY: the side view too long; measured on round-zq: shoulder-hip 330 mm apart along the floor with the
+  # forelegs already ~4 deg off vertical): a cap on that span - the solve can only meet it by curling the back into the reference's C
+  if _v6('V6_SIT_SPAN',.29)>0:_sh=f('FrontUpper.L').translation;c+=_v6('V6_SIT_SPAN_W',200)*max(0,abs(_sh.y-hip.y)-_v6('V6_SIT_SPAN',.29))   # round ZS: 330 -> 283 mm, the pelvis 40 -> 62 deg, shoulders 309 -> 345 mm (round-v-test ss1-ss4; at weight 30 the solve did not move)
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
   c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',28)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
@@ -2891,9 +2894,14 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # it swings .2 clear of the floor - and the right one drapes .7 down onto it.
 # Round X: tail 0 / tail_side 0 (were .35 / .55): with the hips rolled over, the tail's own droop-and-plume curve lies in the floor plane;
 # the old turns stood the 1.5x tail up in the air (round-v-test s1-s6). codex's lingxi-ref-pose-sidelie-top.png: laid straight back.
-SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-.8,hip_roll=1.5,chest_keep=.7,spine=.05,neck=.10,head=-.12,head_tilt=.22,head_turn=0,
- tail=0,tail_side=0,f_dy=.22,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
- h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088).items()}
+# Round ZR (final check #1, measured): the lounge was right (lingxi-ref-pose-sidelie-app: hips on their side, the chest up on its forearms,
+# both forepaws side by side, head high) but its front half hung in the air - chest 85 mm off the floor (LieDown: 24), forearms 56 / 124 mm,
+# the chest still rolled 24 deg so the upper shoulder stood high. The back pitched down .05 -> .65 and the chest kept .7 -> .9 upright lay the
+# chest at 22 mm with both forearms down; the neck lifts the head back up (.10 -> -.55: head 233 -> 328 mm); the forepaws in to 150 mm
+# ahead of the shoulders (codex FINAL-CHECK-BODY: 90-150). (Rolling the whole torso, codex's other suggestion, read as a cat flung on its side.)
+SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-.8,hip_roll=1.5,chest_keep=.9,spine=.65,neck=-.55,head=-.12,head_tilt=.22,head_turn=0,
+ tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
+ h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088,bend=0.0).items()}
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
  for _k in ('add_HL','add_HR','add_FL','add_FR'):SIDELOUNGE[_k]=_v6('V6_SG_'+_k.upper(),0.0)
 K_LOW='HL'   # hips rolled +: the LEFT hind leg is underneath
@@ -3092,12 +3100,15 @@ def _tail_off_floor(pb,margin=.004):
   co=np.array([c for c,_ in rows]);names=sorted({n for _,ws in rows for n in ws})
   W={n:np.array([ws.get(n,0) for _,ws in rows]) for n in names};tot=sum(W.values());_TAILS=(co,{n:w/np.maximum(tot,1e-9) for n,w in W.items()})
  co,W=_TAILS;names=[b.name for b in ad.bones]
- for _ in range(12):
+ for _ in range(20):
   rots={n:tuple(pb[n].rotation_euler) for n in names};f=_fk(rots,{'Root':tuple(pb['Root'].location)});z=np.zeros(len(co))
   for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
   low=float(z.min())
   if low>=margin:break
-  pb['Tail1'].rotation_euler[0]+=min(.25,max(.03,(margin-low)*4))
+  # round ZS: lift at the joint the lowest skin hangs from - with the upright sit's pelvis at 62 deg the tail's ROOT went 48.6 mm under,
+  # which turning Tail1 never reaches (Tail0 when the lowest point is Tail0's, else Tail1 as before)
+  i0=int(np.argmin(z));lb=max(W,key=lambda n:W[n][i0]);jb='Tail0' if lb.startswith('Tail0') and 'Tail0' in pb else 'Tail1'
+  pb[jb].rotation_euler[0]+=min(.25,max(.03,(margin-low)*4))
 # ---- Rig v1 test clips (the block cat's actions the 3D cat lacked; codex lingxi-ref-act-*.png) ----
 SIT_LIKE=('Sit','ScratchEar','WashFace','GroomSide')
 def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
@@ -3415,6 +3426,11 @@ def pose(name,u):
    pb['Root'].location.y=-K['drop']*f;pb['Root'].rotation_euler[1]=K['yaw']*f   # Root's own y is world up: a turn on the floor
    pb['Pelvis'].rotation_euler[1]=K['hip_roll']*f                               # about its own length: the hips go over onto their side
    pb['Spine'].rotation_euler[0]=K['spine']*f;pb['Spine'].rotation_euler[1]=-K['hip_roll']*K['chest_keep']*f   # the back twists the chest back up (_back shares it, Loin + Spine)
+   # Final check (codex FINAL-CHECK-BODY 1; measured on round-zq: only the pelvis on the floor, the chest's underside 85 mm up, the
+   # forepaws 62-89 mm in the air - a cat lunging, not lying): rolled over, a SIDE bend of the back (each joint's own z) is what lays
+   # the chest down onto the floor
+   if K['bend']:
+    for _bb in ('Loin','Spine'):pb[_bb].rotation_euler[2]+=K['bend']*f
    pb['Neck'].rotation_euler[0]=K['neck']*fh;pb['Head'].rotation_euler[0]=K['head']*fh
    pb['Head'].rotation_euler[1]+=K['head_tilt']*fh;pb['Head'].rotation_euler[2]=K['head_turn']*fh
    for tb in ('Tail1','Tail2','Tail3'):pb[tb].rotation_euler[0]=K['tail']*ft;pb[tb].rotation_euler[2]=K['tail_side']*ft
@@ -3588,6 +3604,12 @@ def pose(name,u):
   else:
    _f=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones});_ch=_f('Head')@mouth_l
    _tail_wrap(pb,None,(_ch.x,_ch.y),k=1.0,lead=_v6('V6_SP_TAIL_LEAD',.5))
+ # Round ZT: the upright sit (pelvis 62 deg) put the tail's root into the floor and _tail_off_floor stood it up behind the back (Tail1 2.5 rad,
+ # hidden from the front, a hump in profile); a sitting cat wraps it round on the floor to beside its forepaws (lingxi-ref-sit-front / -back)
+ _SITW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and _v6('V6_SIT_TAIL_WRAP',1)>0 and name in SIT_LIKE+('Lick',) and not (name=='ScratchEar')
+ if _SITW:
+  _fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.R').translation
+  _tail_wrap(pb,(1,0),(_fp.x+.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.7))
  if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb)   # a laid tail is already on its path, clear of the floor
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  _forearm_twist(pb)
@@ -3613,7 +3635,7 @@ for name,duration in clips:
   if o.data.shape_keys:o.data.shape_keys.animation_data_clear()
  # Every 2nd frame, Bezier between - except the gaits: there a planted paw is held by three joint angles
  # whose in-betweens do not hold it (round J: 3-4 mm wobble on the unkeyed frames of a planted run paw).
- for f in range(1,duration+1,1 if name in ('Walk','Run','Jump') else 2):
+ for f in range(1,duration+1,1 if name in ('Walk','Run','Jump','Lick')+SIT_LIKE else 2):   # round ZS: + the sit family - standing back up, the tail swung through the floor between two keys (frame 820: -16 mm)
   pose(name,(f-1)/(duration-1))
   for p in rig.pose.bones:
    p.keyframe_insert('location',frame=f);p.keyframe_insert('rotation_euler',frame=f)
