@@ -2611,10 +2611,13 @@ def solve_sit():
   if SIT_PELVIS>0 and _v6('V6_SIT_SEAT',0)>0:c+=40*abs(_seat_low(rots,locs)-.002)
   else:c+=25*abs(hip.z-_v6('V6_SIT_HIP',.19))   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
   for k,(tg,pa) in _sit_targets(f).items():
-   _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
+   _,off,over=leg_ik(rots,locs,k,tg,pa);c+=(_v6('V6_SIT_FORE_OVER_W',400) if k[0]=='F' else 60)*over   # round ZZ+: the forepaws hung 19 mm off the floor once the span cap lifted the shoulders (codex ROUND-ZZ-AUDIT) - 60 lost to the span's 600
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   # Final check #2 (codex FINAL-CHECK-BODY: the side view too long; measured on round-zq: shoulder-hip 330 mm apart along the floor with the
   # forelegs already ~4 deg off vertical): a cap on that span - the solve can only meet it by curling the back into the reference's C
+  # round ZZ+: the steeper pelvis put the rump 20-30 mm INTO the floor in the solve (seat_mm < 0); _lift_off_floor then raised the whole cat
+  # and the forepaws hung 16-19 mm up. Penalise the seat below the floor here, so the solve picks a pose whose rump just touches it.
+  if _v6('V6_SIT_SEAT_W',400)>0:c+=_v6('V6_SIT_SEAT_W',400)*max(0,.002-_seat_low(rots,locs))
   if _v6('V6_SIT_SPAN',.31)>0:_sh=f('FrontUpper.L').translation;c+=_v6('V6_SIT_SPAN_W',600)*max(0,abs(_sh.y-hip.y)-_v6('V6_SIT_SPAN',.31))   # round ZS: 330 -> 283 mm, the pelvis 40 -> 62 deg (round-v-test ss1-ss4) - a bulging rump (codex ROUND-ZR-ZX-AUDIT); round ZY: .31 / 600 -> span 301 mm, pelvis 50.6 deg (the solve is bimodal: weights 100-140 fell back to 40 deg, sw1-sw8)
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
   c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',28)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
@@ -3130,7 +3133,7 @@ SIT_LIKE=('Sit','ScratchEar','WashFace','GroomSide')
 def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
 # scratch-ear (round-v-test f2-f7): the head swings down and over to the LEFT side (+ here) and tilts up, the trunk stays upright - a
 # pelvis roll laid the whole cat on its side (the pelvis is the trunk's root), the head bent forward-down left the ear 480 mm from the hip
-SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.25,neck=.10,neck_side=.7,head=-.35,head_roll=.55,foot_dy=.02,foot_dz=-.02,foot_pa=.6).items()}
+SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.10,neck=.10,neck_side=.40,head=-.35,head_roll=.25,foot_dy=.02,foot_dz=-.02,foot_pa=.6).items()}
 GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65).items()}   # groom-side
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
 BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
@@ -3622,13 +3625,13 @@ def pose(name,u):
    _tail_wrap(pb,None,(_ch.x,_ch.y),k=1.0,lead=_v6('V6_SP_TAIL_LEAD',.5),margin=_v6('V6_SP_TAIL_GAP',.002))
  # Round ZT: the upright sit (pelvis 62 deg) put the tail's root into the floor and _tail_off_floor stood it up behind the back (Tail1 2.5 rad,
  # hidden from the front, a hump in profile); a sitting cat wraps it round on the floor to beside its forepaws (lingxi-ref-sit-front / -back)
- _SITW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and _v6('V6_SIT_TAIL_WRAP',1)>0 and name in SIT_LIKE+('Lick',) and not (name=='ScratchEar')
+ _SITW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and _v6('V6_SIT_TAIL_WRAP',1)>0 and name in SIT_LIKE+('Lick',)   # round ZZC: + ScratchEar - on the steeper sit its tail went 45.6 mm under (its hip roll is small now)
  if _SITW:
   # round ZY: round the cat's LEFT (-x) - where lingxi-ref-sit-front / -back have it; on the right it lay between the side camera and the
   # near hind paw (codex ROUND-ZR-ZX-AUDIT: sit-hindfoot all coat)
   _fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.L').translation
   _tail_wrap(pb,(-1,0),(_fp.x-.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.3))   # round ZZ: .7 -> .3 - round the left the tail's tip ran past the path's end into the floor (-29.5 mm, tl1-tl3)
- if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb)   # a laid tail is already on its path, clear of the floor
+ if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004)   # a laid tail is already on its path, clear of the floor; round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  _forearm_twist(pb)
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint
