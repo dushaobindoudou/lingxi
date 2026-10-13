@@ -812,9 +812,9 @@
     "MouthCornerUp.R": 1
    },
    "open": {
-    "JawOpen": 0.24,
-    "TongueUp": 0.7,
-    "MouthO": 0.45
+    "JawOpen": 0.18,
+    "TongueUp": 0.8,
+    "MouthO": 1.0
    },
    "frown": {
     "LowerLipDown": 0.35,
@@ -833,11 +833,13 @@
     "MouthWide.R": 1.3
    },
    "tongue": {
-    "JawOpen": 0.12,
+    "JawOpen": 0.06,
     "TongueBlep": 1.0,
-    "LowerLipDown": 0.4,
-    "MouthCornerUp.L": 0.3,
-    "MouthCornerUp.R": 0.3
+    "LowerLipDown": 0.8,
+    "UpperLipRaise.L": -0.8,
+    "UpperLipRaise.R": -0.8,
+    "MouthCornerUp.L": 0.2,
+    "MouthCornerUp.R": 0.2
    }
   },
   "ear": {
@@ -1123,9 +1125,10 @@
    "LidSlantIn.R": 0.6
   },
   "喵喵": {
-   "JawOpen": 0.3,
-   "MouthO": 0.5,
-   "TongueUp": 0.8
+   "JawOpen": 0.24,
+   "MouthO": 1.0,
+   "TongueUp": 0.9,
+   "LowerLipDown": 0.3
   },
   "开心": {
    "MouthCornerUp.L": 0.35,

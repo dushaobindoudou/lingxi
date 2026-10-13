@@ -2458,11 +2458,15 @@ def solve_lick(sit):
   wrist=abs(r['FrontPaw.R'][0]);elbow=r['FrontLower.R'][0]
   # The wrist stays in a cat's range: folded 163 deg (an unbounded solve) the skinned paw ball stretched
   # into a flat white paddle in front of the face (round-j-test n6).
-  terms=dict(touch=300*abs(touch_d-LICK_GAP),pen=400*pen,muzzle=200*mpen,off=200*off,over=60*over,wrist=6*max(0,wrist-LICK_WRIST_MAX),
+  # Round ZC (codex SIT-EYE-TONGUE-AUDIT C, lingxi-ref-lick-paw.png): the tongue's tip out to the licking paw's side (+x), the head
+  # turned that way - square in front of the mouth the paw hid it, and the lick read as a paw held over the mouth
+  tside=_v6('V6_LICK_TIPX',0.0)   # off: the head below is set by V6_LICK_TURN (round V), the solve's own head is not used
+  terms=dict(side=(400*max(0,tside-tip.x) if tside>0 else 0.0),touch=300*abs(touch_d-LICK_GAP),pen=400*pen,muzzle=200*mpen,off=200*off,over=60*over,wrist=6*max(0,wrist-LICK_WRIST_MAX),
              below=15*max(0,palm.z-(mouth.z-.004)),sink=60*sink,reg=.04*(srx*srx+srz*srz)+_v6('V6_LICK_HEADUP',.25)*max(0,dn)**2+.25*min(0,dn)**2+.25*dh*dh+.15*yaw*yaw+.10*roll*roll)   # round U: HEADUP - bringing the head DOWN to the paw costs more than the paw coming up (round R bowed the head 16 deg onto a paw held at the chest)
   if _dbg:terms.update(touch_mm=1000*touch_d,pen_mm=1000*pen,muzzle_mm=1000*mpen,facing=-n_.dot((tip-Hm@Vector(lick_l-lick_d*.012)).normalized()))
   return terms if _dbg else sum(terms.values())
- c_,v=_search(cost,[-.3,.2,.1,.1,0,.1,0,-.04,0],[-1.2,-.9,-.3,-.3,-.25,-.25,-.12,-.12,-1.6],[.6,.9,.4,.5,.25,.25,.12,.12,1.6],8000,7)   # yaw .25: the head turns to the paw a little, the face stays visible
+ _yl=_v6('V6_LICK_YAWMAX',.6)
+ c_,v=_search(cost,[-.3,.2,.1,.1,0,.1,0,-.04,0],[-1.2,-.9,-.3,-.3,-_yl,-.25,-.12,-.12,-1.6],[.6,.9,.4,.5,_yl,.25,.12,.12,1.6],8000,7)   # yaw .25: the head turns to the paw a little, the face stays visible
  r,tip,off,over=build(v);f=_fk(r,locs);palm=f('FrontPaw.R')@palm_l;mouth=f('Head')@mouth_l
  print('LICK_SAMPLES',len(ballv),len(tongue_l),len(facev),sorted(BW),sorted(HW))
  print('LICK_SOLVE',json.dumps({'cost':round(c_,4),'v':[round(float(x),3) for x in v],'offplane_mm':round(off*1000,1),'over_mm':round(over*1000,1),
@@ -2513,8 +2517,10 @@ else:
   # round V: with the arm reaching the mouth by itself (_lick_reach), the head no longer bows to a paw held low (codex
   # lingxi-ref-lick-paw.png: sitting tall, head up and tipped a little toward the raised paw). The sit's neck / head,
   # a slight dip, a turn and a tilt toward the right paw; the shoulder blade as solved.
-  LICK_UPPER={'Scap.R':LICK_UPPER['Scap.R'],'Neck':(SIT[0]['Neck'][0]+_v6('V6_LICK_NOD',.06),0,-_v6('V6_LICK_TURN',.10)*.4),
-              'Head':(SIT[0]['Head'][0],_v6('V6_LICK_TILT',.22),-_v6('V6_LICK_TURN',.10)*.6)}
+  # Round ZC (codex SIT-EYE-TONGUE-AUDIT C, lingxi-ref-lick-paw.png): turn .10 -> .65 toward the paw - square on, the paw hid the mouth
+  # and the tongue; turned, the open mouth and the tongue going into the pad show from the front (the arm still reaches the tip itself)
+  LICK_UPPER={'Scap.R':LICK_UPPER['Scap.R'],'Neck':(SIT[0]['Neck'][0]+_v6('V6_LICK_NOD',.06),0,-_v6('V6_LICK_TURN',.65)*.4),
+              'Head':(SIT[0]['Head'][0],_v6('V6_LICK_TILT',.22),-_v6('V6_LICK_TURN',.65)*.6)}
 (OUT/'lick-solve.json').write_text(json.dumps({'upper':{k:list(v) for k,v in LICK_UPPER.items()},'wrist':list(LICK_WRIST)}))
 # Round J gaits (REPORT B1-B3). Walk: a cat's lateral-sequence walk, LF -> RH -> RF -> LH, each foot a
 # quarter cycle after the last. It used to run RH -> LF -> LH -> RF at duty .62: every swing overlapped
@@ -3451,9 +3457,9 @@ if FACE_V1:
    'tearful':{**both(LowerLift=.50,LidSlantOut=.8,PupilW=.30,PupilH=.32),'Sparkle':.8}},
   'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1,LidSlantIn=1),'raise':both(BrowInnerUp=.7,BrowOuterUp=1,UpperWide=.45),
    'sad':both(BrowInnerUp=1,BrowOuterUp=-.3,LidSlantOut=1)},
-  'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1),'open':{'JawOpen':.24,'TongueUp':.7,'MouthO':.45},
+  'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1),'open':{'JawOpen':.18,'TongueUp':.8,'MouthO':1.0},
    'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1)},
-   'hiss':{'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)},'tongue':{'JawOpen':.12,'TongueBlep':1.0,'LowerLipDown':.4,**both(MouthCornerUp=.3)}},
+   'hiss':{'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)},'tongue':{'JawOpen':.06,'TongueBlep':1.0,'LowerLipDown':.8,**both(UpperLipRaise=-.8,MouthCornerUp=.2)}},   # Z4: the lips close round the tip - at jaw .12 the upper fangs showed (codex blep: no teeth)
   'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=1.0,EarSwivel=.7,EarForward=-.1,EarTipBend=-.2),
    'back':both(EarForward=-.65,EarFlatten=.65,EarSwivel=.8,EarTipBend=.65)}}
  # per-expression additions over the four layers - the block cat tells some apart only by the screen symbol (放松 / 安心, 闭眼休息 / 陶醉
@@ -3461,7 +3467,7 @@ if FACE_V1:
  EXPR_EXTRA={'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(SmileArc=.45,MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},
   '撒娇':both(SmileArc=.2,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
   '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5},'认真':both(LidSlantIn=.6),
-  '喵喵':{'JawOpen':.30,'MouthO':.50,'TongueUp':.8},'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
+  '喵喵':{'JawOpen':.24,'MouthO':1.0,'TongueUp':.9,'LowerLipDown':.3}   # ZC (codex ROUND-ZB-AUDIT 3: the meow 1.55 x 1.25 nose widths, target .63 x .70): the corners drawn in all the way, the jaw less,'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
   '温柔':both(EarForward=.12,MouthCornerUp=.25),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35)},
   '得意':{'MouthCornerUp.L':.7,'SmileArc.R':.2},'清醒':both(UpperWide=.25),'警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15)}
  # apps/lingxi/src/rig/art.ts BUILT_IN_EXPRESSIONS (symbol: a screen effect, carried through for the app)
