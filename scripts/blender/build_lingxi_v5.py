@@ -289,7 +289,17 @@ FACE_V2=_v6('V6_FACE_V2',1)>0   # rig v2 face (reviews/RIG-V2-RESEARCH-2026-10-1
 FACE_V1=_v6('V6_FACE_V1',1)>0   # rig v1 (reviews/RIG-REQUIREMENTS-v1-DRAFT.md, codex FELINE-FACE-AND-DOF): ear tips, a 3-bone tongue, face control bones, lid / pupil controls
 MPAW={'Front':dict(x=.108,col=((-.165,.21),(-.196,.06)),col_r=.058,c=(-.220,.040),r=(.074,.070,.031),front=-.294,padc=-.196,padr=(.031,.025)),
       'Rear':dict(x=.12,col=((.272,.19),(.262,.062)),col_r=.055,c=(.241,.040),r=(.071,.066,.030),front=.171,padc=.258,padr=(.029,.024))}
-MTOE_R=(.023,.031,.032);MTOE_DX=.035;MTOE_Z=.035;MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
+# Final check (2026-10-13, lingxi-ref-paw-front/-side vs round-zn close-ups): the paw read as a wide flat slipper - its ball 148 x 62 mm
+# (2.4 : 1) against the reference's round dome (~1.6-1.8 : 1), the four lobes melted into one slab with shallow ridges. V6_PAW_RX / _RZ
+# scale the ball's width / height, V6_MTOE_DX the lobes' spacing
+# scale the ball's width / height (its bottom stays on the ground: the centre rises with the height), V6_MTOE_* the lobes. Defaults = the
+# round-v-test pw1 preview (pw2, x.85 / x1.5, read as a box)
+for _k in MPAW:
+ _r=MPAW[_k]['r'];_c=MPAW[_k]['c'];_kz=_v6('V6_PAW_RZ',1.35)
+ MPAW[_k]['r']=(_r[0]*_v6('V6_PAW_RX',.88),_r[1],_r[2]*_kz);MPAW[_k]['c']=(_c[0],_c[1]+_r[2]*(_kz-1))
+# (lobes x1.1 tall / x.92 apart, with the stiffer 7.5 lobes, rolled the front soles 0.9 -> 3.5 mm per walking stance - round-v-test pz0-pz8:
+# the ball's shape changed nothing; the lobes keep their size, only the stiffness stays)
+MTOE_R=(.023,.031,.032*_v6('V6_MTOE_H',1.0));MTOE_DX=.035*_v6('V6_MTOE_DX',1.0);MTOE_Z=.035;MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
 def mtoe_xy(pre,s,i):m=MPAW[pre];return s*m['x']+(i-1.5)*MTOE_DX,m['front']+MTOE_R[1]+MTOE_ARC*(abs(i-1.5)-.5)
 def meta_leg(pre,s):
  """The lower leg and paw of one leg as a metaball (resolution 3 mm), returned as a mesh for merge()."""
@@ -303,7 +313,7 @@ def meta_leg(pre,s):
  a=Vector((X,*m['col'][0]));b=Vector((X,*m['col'][1]));d=b-a
  add('CAPSULE',(a+b)/2,m['col_r']*K,2.0,size=(d.length/2,1,1),rot=Vector((1,0,0)).rotation_difference(d.normalized()))
  add('ELLIPSOID',(X,*m['c']),K,2.0,size=m['r'])
- for i in range(4):tx,ty=mtoe_xy(pre,s,i);add('ELLIPSOID',(tx,ty,MTOE_Z),K,_v6('V6_TOE_STIFF',5.5),size=MTOE_R)
+ for i in range(4):tx,ty=mtoe_xy(pre,s,i);add('ELLIPSOID',(tx,ty,MTOE_Z),K,_v6('V6_TOE_STIFF',7.5),size=MTOE_R)
  bpy.context.view_layer.update();me=bpy.data.meshes.new_from_object(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
  o=bpy.data.objects.new('MetaLeg',me);scene.collection.objects.link(o);bpy.data.objects.remove(ob);bpy.data.metaballs.remove(mb);return o
 if PAW_META:PAW={k:((m['x'],)+m['c'],m['r']) for k,m in MPAW.items()}
@@ -967,6 +977,16 @@ def bind(o,region,wpts=None):
  mod=o.modifiers.new('Shared skeletal deformation','ARMATURE');mod.object=rig;o['skin_region']=region
  return pts
 bind(body,'body');bind(head,'Head')
+# Final check (2026-10-13): deep knee / hock flexion (sit, lie, loaf) collapsed the haunch's lower edge into a thin skin flap over the hind
+# foot - with fur, a grey-white blade (open since round X2). A corrective smooth on the hind legs (lower leg, paw, foot, .6 of the thigh)
+# right after the armature puts the rest-shape volume back: the flap thickens and rounds, the blade is gone under the coat. Render-only -
+# glTF export does not carry it (the app's GLB keeps the flap until weights / corrective shapes do the same)
+if _v6('V6_HIND_CS',1)>0:
+ _gi={g.index:g.name for g in body.vertex_groups};_cs=body.vertex_groups.new(name='LX_CS')
+ for _v in body.data.vertices:
+  _a=sum(g.weight*(1.0 if _gi[g.group].startswith(('RearLower.','RearPaw.','RearFoot.')) else .6 if _gi[g.group].startswith('RearUpper.') else 0) for g in _v.groups)
+  if _a>.02:_cs.add([_v.index],min(_a,1.0),'REPLACE')
+ _cm=body.modifiers.new('LX_CorrectiveSmooth','CORRECTIVE_SMOOTH');_cm.vertex_group='LX_CS';_cm.iterations=int(_v6('V6_HIND_CS_IT',60));_cm.factor=_v6('V6_HIND_CS_F',1.0);_cm.smooth_type='LENGTH_WEIGHTED';_cm.rest_source='ORCO'
 # The split duplicates the lip-line vertices at one position, so weights by position cannot tell
 # the two lips apart; weight the head by which side of the mouth each vertex's faces are on.
 _hp=np.array([v.co[:] for v in head.data.vertices]);_hj=jaw_share(_hp[:,0],_hp[:,1],_hp[:,2],HEAD_BELOW);_hl=lip_share(_hp[:,0],_hp[:,1],_hp[:,2],1-HEAD_BELOW)
@@ -2780,8 +2800,8 @@ RUN=dict(duty=.55,stride=.19,lift=.055,off={'FL':0,'HR':0,'FR':.5,'HL':.5},bob=.
 # land, extended as the forepaws reach out to land, the pelvis and the chest tipping against each other (RUN_FLEX on the spine, half of
 # it the other way on the pelvis, so the trunk's mean line stays level). Touchdowns (u): HL 0, HR .08, FR .45, FL .53.
 RUN_GALLOP=_v6('V6_RUN_GALLOP',1)>0
-if RUN_GALLOP:RUN=dict(duty=_v6('V6_RUN_DUTY',.30),stride=_v6('V6_RUN_STRIDE',.24),lift=_v6('V6_RUN_LIFT',.09),off={'HL':0,'HR':.92,'FR':.55,'FL':.47},bob=.012,dip=.20,nod=.05,flex=_v6('V6_RUN_FLEX',.35),flex_u=.95,
- reach=(_v6('V6_RUN_REACH_F',.10),_v6('V6_RUN_REACH_H1',.08),_v6('V6_RUN_REACH_H2',.10)))
+if RUN_GALLOP:RUN=dict(duty=_v6('V6_RUN_DUTY',.30),stride=_v6('V6_RUN_STRIDE',.28),lift=_v6('V6_RUN_LIFT',.09),off={'HL':0,'HR':.92,'FR':.55,'FL':.47},bob=.012,dip=.20,nod=.05,flex=_v6('V6_RUN_FLEX',.35),flex_u=.95,
+ reach=(_v6('V6_RUN_REACH_F',.14),_v6('V6_RUN_REACH_H1',.08),_v6('V6_RUN_REACH_H2',.13)))   # final check: .24/.10/.10 never showed the extended phase (lingxi-ref-run-extended-side); .32 slid the rear sole 5.4 mm, .28 2.9 mm
 # Round X: the jump in six phases (codex guide 7), straight up and down on the spot: crouch (the back flexes, the hind legs load), push
 # (a quadratic rise that leaves the floor at the flight's own speed - the old sin^2 lift left the paws with no push at all), flight (a
 # parabola, the legs tucked, the tail out), the forepaws reach and land first, then the hind; the landing gives (root 45 mm down, the
@@ -3083,7 +3103,7 @@ SIT_LIKE=('Sit','ScratchEar','WashFace','GroomSide')
 def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
 # scratch-ear (round-v-test f2-f7): the head swings down and over to the LEFT side (+ here) and tilts up, the trunk stays upright - a
 # pelvis roll laid the whole cat on its side (the pelvis is the trunk's root), the head bent forward-down left the ear 480 mm from the hip
-SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=0,neck=.25,neck_side=1.2,head=-.35,head_roll=1.0,foot_dy=.02,foot_dz=-.02,foot_pa=.6).items()}
+SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.25,neck=.10,neck_side=.7,head=-.35,head_roll=.55,foot_dy=.02,foot_dz=-.02,foot_pa=.6).items()}
 GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65).items()}   # groom-side
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
 BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
