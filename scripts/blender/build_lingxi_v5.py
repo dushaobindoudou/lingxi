@@ -382,7 +382,9 @@ SCULPT=[((0,-.418,.528),.022,-.0045*_v6('V6_STOP_K',2.0)),                      
         ((-.090,-.415,.486),.018,+.0040*_v6('V6_ZYG_K',1.0)),((.090,-.415,.486),.018,+.0040*_v6('V6_ZYG_K',1.0)),
         ((-.026,-.448,.463),.018,+.0050),((.026,-.448,.463),.018,+.0050),   # whisker pads
         ((-.105,-.355,.455),.040,+.0070),((.105,-.355,.455),.040,+.0070),   # full lower cheeks
-        ((0,-.430,.428),.020,+.0030*_v6('V6_CHIN_K',-1.0)),                                  # chin (V6_CHIN_K < 0 sets it back - codex head_side_target: the chin's coat 13-18 mm behind ours)
+        ((0,-.430,.428),.020,+.0030*_v6('V6_CHIN_K',-1.0)),
+        # the skin behind a nose moved forward (V6_NOSE_FWD) and a short bridge up to it, so it stays seated on the face
+        ((0,-.448,.487),.016,+.90*_v6('V6_NOSE_FWD',0.0)),((0,-.443,.505),.014,+.45*_v6('V6_NOSE_FWD',0.0)),                                  # chin (V6_CHIN_K < 0 sets it back - codex head_side_target: the chin's coat 13-18 mm behind ours)
         ((0,-.26,.66),.080,-.0060)]                                    # a lower, flatter crown
 def sculpt(o):
  me=o.data;me.update();bpy.context.view_layer.update();mw=o.matrix_world.copy()   # merged mesh: local != world
@@ -600,7 +602,10 @@ for s in [-1,1]:
   teeth.append((tt,region))
 # Nose: a rounded inverted-triangle leather with a flat front, comma nostrils on the lower
 # sides and a groove down its centre - it was a squashed sphere, which read as rubber.
-nose=sphere('LX_Nose',(0,0,0),(1,1,1),nosemat);NC=(0,-.447,.487+_v6('V6_NOSE_DZ',0.0));NW,ND,NH=.0215*_v6('V6_NOSE_W',1.0),.0105*_v6('V6_NOSE_D',1.0),.0135*_v6('V6_NOSE_H',1.0)
+# head profile (codex ROUND-ZZD-AUDIT: not the whole snout - try the nose's tip alone forward 5 / 10 / 15 mm): V6_NOSE_FWD moves the
+# leather forward, the philtrum's top with it, and the skin behind it (a SCULPT brush) so it does not float off the face
+NOSE_FWD=_v6('V6_NOSE_FWD',0.0)
+nose=sphere('LX_Nose',(0,0,0),(1,1,1),nosemat);NC=(0,-.447-NOSE_FWD,.487+_v6('V6_NOSE_DZ',0.0));NW,ND,NH=.0215*_v6('V6_NOSE_W',1.0),.0105*_v6('V6_NOSE_D',1.0),.0135*_v6('V6_NOSE_H',1.0)
 shade=[]
 for v in nose.data.vertices:
  nx,ny,nz=v.co.x,v.co.y,v.co.z
@@ -636,7 +641,7 @@ def lip_curve(name,pts,region,bevel=.0009*_v6('V6_LIP_BEVEL',1.35),radii=None): 
  bpy.ops.object.select_all(action='DESELECT');o.select_set(True);bpy.context.view_layer.objects.active=o
  bpy.ops.object.convert(target='MESH');return (o,region)
 _NB=NC[2]-NH   # nose-leather bottom: the philtrum hangs from it wherever V6_NOSE_DZ/_H put it
-lips=[lip_curve('LX_LipPhiltrum',[(0,-.4525,_NB),(0,-.4525,.5*(_NB+LIP0)),(0,-.4515,LIP0)],'Lip')]
+lips=[lip_curve('LX_LipPhiltrum',[(0,-.4525-NOSE_FWD,_NB),(0,-.4525-.5*NOSE_FWD,.5*(_NB+LIP0)),(0,-.4515,LIP0)],'Lip')]
 for side in (-1,1):
  pts=[]
  for j in range(14):
@@ -2027,7 +2032,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # head profile (codex head_side_target_mask: our chin's coat stood 18.5 mm ahead of the target): the chin's midline coat trimmed
   _ct=_v6('V6_CHIN_TRIM',.80)
   if _ct>0:
-   _cm=np.clip((.040-np.abs(root[:,0]))/.020,0,1)*np.clip((LIP0-.008-root[:,2])/.010,0,1)*np.clip((root[:,2]-(LIP0-.075))/.02,0,1)*facing
+   _cw=_v6('V6_CHIN_TRIM_W',.040);_cm=np.clip((_cw-np.abs(root[:,0]))/.020,0,1)*np.clip((LIP0-.008-root[:,2])/.010,0,1)*np.clip((root[:,2]-(LIP0-.075))/.02,0,1)*facing
    ln*=(1-_ct*_cm)[:,None,None]
   # Tufts: a low-frequency length field (+-25%), so the head's outline breaks into soft locks
   # instead of a clipped sphere - uniform length is what made it read as a ball.
