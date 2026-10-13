@@ -2617,9 +2617,16 @@ def _paw_sample(k):
  if k not in _PAWS:
   me=body.data;gn={g.index:g.name for g in body.vertex_groups};pw=LEGS[k][3];suf=pw[-1];pre=pw[:-6]
   own={pw}|{pre+f'Toe{i}.'+suf for i in range(4)}|({FOOT_OF[k]} if FOOT else set());rows=[]
-  for vi in range(0,len(me.vertices),3):
+  for vi in range(0,len(me.vertices),1):   # Z4: every vertex (every 3rd missed the hind heel's lowest, -2.3 mm in the lick)
    v=me.vertices[vi];ws={gn[g.group]:g.weight for g in v.groups if g.weight>1e-4 and gn[g.group] in ad.bones}
    if ws and sum(w for n,w in ws.items() if n in own)>.5*sum(ws.values()):rows.append((v.co[:],ws))
+  for nm_ in [f'LX_{pre}Pad.{suf}']+[f'LX_{pre}Bean{i}.{suf}' for i in range(4)]:   # Z4: the pad and toe beans too (PawPlay's -4.4 mm were beans)
+   ob_=bpy.data.objects.get(nm_)
+   if not ob_:continue
+   gb={g.index:g.name for g in ob_.vertex_groups}
+   for v in ob_.data.vertices:
+    ws={gb[g.group]:g.weight for g in v.groups if g.weight>1e-4 and gb[g.group] in ad.bones}
+    if ws:rows.append(((ob_.matrix_world@v.co)[:],ws))
   co=np.array([c for c,_ in rows]);names=sorted({n for _,ws in rows for n in ws})
   W={n:np.array([ws.get(n,0) for _,ws in rows]) for n in names};tot=sum(W.values());_PAWS[k]=(co,{n:w/np.maximum(tot,1e-9) for n,w in W.items()})
  return _PAWS[k]
@@ -2889,7 +2896,19 @@ def place_legs(name,u,pb,hold=0.0):
     keys=JUMP_LEGS[k[0]];bn='Chest' if k[0]=='F' else 'Pelvis';D=f(bn)@ad.bones[bn].matrix_local.inverted()
     tb=D@(foot+Vector((0,_jump_key(u,[(c[0],c[1]) for c in keys]),_jump_key(u,[(c[0],c[2]) for c in keys]))))
     w_=min(1,(u-off_)/.05,(on_-u)/.05);w_=w_*w_*(3-2*w_)   # into / out of the floor mark
-    tg=base.lerp(tb,w_);tg.z=max(tg.z,0.0);pa+=push*(1-w_)+_jump_key(u,[(c[0],c[3]) for c in keys])*w_+_ang(D.to_3x3()@Vector((0,1,0)))*w_;flat*=1-w_
+    tg=base.lerp(tb,w_);tg.z=max(tg.z,0.0)
+    if _v6('V6_JUMP_PLANT',1)>0:
+     # Round Z4 (codex CAT-REALISM-GAP P0, jump sole slip 7.2 mm): over the floor the paw still slid toward its mark - one blend for
+     # height and position, and the height reaches the floor first (v6_stance_probe: the planted pad moved 8.9 mm in a frame at
+     # touch-down). Across the floor it now arrives .02 (~1 frame) before it lands and leaves .02 after it lifts: lands straight down.
+     # ...and by height: the nose-down trunk brings the forepaws to the floor ~.05 early, so across the last 3 cm of their drop
+     # (above their own floor height) they close on the mark as well
+     wh=min(1,max(0,(u-off_-.02)/.05),max(0,(on_-u-.02)/.05));wz=min(1,max(0,(base.lerp(tb,w_).z-base.z)/.03))
+     wh=min(wh*wh*(3-2*wh),wz*wz*(3-2*wz));th=base.lerp(tb,wh);tg.x,tg.y=th.x,th.y
+     wa=wh   # the paw's angle as well: turning flat on the floor it pivoted on its bone and the planted pad slid 6.8 mm in a frame
+    else:wa=w_
+    tg.z=max(tg.z,base.z*(1-wa))   # Z4: a paw turned flat stops at its own standing height (z 0 is the bone, 48 mm under it: -9.5 mm at frame 187)
+    pa+=push*(1-wa)+_jump_key(u,[(c[0],c[3]) for c in keys])*wa+_ang(D.to_3x3()@Vector((0,1,0)))*wa;flat*=1-wa
    elif u<=off_:tg=base;pa+=push
    if FOOT and flat>0:R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);fa=rig_+_wrap(R_[ft]-rig_)*flat
   elif name=='Jump':
@@ -2983,16 +3002,20 @@ def place_legs(name,u,pb,hold=0.0):
    R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);wf=_settle(u) if name=='LieDown' else hold
    fa=rig_+_wrap(R_[ft]-rig_)*wf
   lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa,paw_dir=pdir)
-  if (name in ('LieDown','SideLie','Sleep','Stretch') or (FACE_V1 and name in SIT_LIKE)) and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:
-   # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
-   # through it at frame 259 while its angle blended from standing to lying)
-   for _ in range(3):
-    rr=dict(rots);rr.update(lr);lw=_paw_low(k,rr,locs)
-    if lw>=.0005:break
-    tg=tg+Vector((0,0,.0015-lw));lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa)
+  ko=0.0
   if RIG_X and k[0]=='H':
    ko={'LieDown':LIEDOWN['knee_out']*_settle(u),'Lick':_v6('V6_SIT_KNEE_OUT',.5)*hold}.get(name,_v6('V6_SIT_KNEE_OUT',.5)*hold if (name in SIT_LIKE and not (name=='ScratchEar' and k=='HL')) else 0.0)
    if ko>1e-3:lr=_knee_out(k,lr,rots,locs,ko)
+  if (name in ('LieDown','SideLie','Sleep','Stretch') or (FACE_V1 and name in SIT_LIKE+('Lick','PawPlay'))) and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:   # Z4: + PawPlay (its planted forepaw's beans -4.4 mm)
+   # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
+   # through it at frame 259 while its angle blended from standing to lying)
+   # Round Z4 (codex CAT-REALISM-GAP P0/P1: lick -7.9, loaf / lie-down -2.7 mm - all the hind heel's skin, RearPaw .8): checked
+   # AFTER the knee turns out (it ran before, and the turn pressed the heel back under), the lick included, re-solved the same way
+   for _ in range(4):
+    rr=dict(rots);rr.update(lr);lw=_paw_low(k,rr,locs)
+    if lw>=.0005:break
+    tg=tg+Vector((0,0,.0015-lw));lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa,paw_dir=pdir)
+    if ko>1e-3:lr=_knee_out(k,lr,rots,locs,ko)
   for n,rv in lr.items():pb[n].rotation_euler=rv
   if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]+=((SIDELOUNGE if SL_MODE==2 else SIDELIE)['add_'+k]*_settle(u) if name=='SideLie' else SLEEP['add_'+k])   # round R: += (on top of the solve's own plane swing)   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
@@ -3207,6 +3230,7 @@ def pose(name,u):
   pb['Tail1'].rotation_euler[2]=-.35*bend
  if name in ['Knead','PawPlay']:
   for suf,ph in [('L',0),('R',math.pi)]:
+   if name=='PawPlay' and suf=='R' and _v6('V6_PAWPLAY_PLANT',1)>0:continue   # Z4: the planted forepaw's toes stay flat - flexing, they dug 5 mm into the floor
    a=.5+.5*math.sin(phase*2+ph)
    for i in range(4):pb[f'FrontToe{i}.'+suf].rotation_euler[0]=.35*a
   # Kneading is the blissed-out clip; without the squint it was just paws moving.

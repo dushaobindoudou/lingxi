@@ -89,7 +89,7 @@ def feet():
         P = np.concatenate([bp[idx]] + [eval_points(p) for p in parts])
         lo = P[:, 2].min()
         sole = P[P[:, 2] < lo + .003]
-        out[nm] = (1000 * lo, 1000 * sole[:, 0].mean(), 1000 * sole[:, 1].mean())
+        out[nm] = (1000 * lo, 1000 * sole[:, 0].mean(), 1000 * sole[:, 1].mean(), P)
     return out
 
 
@@ -134,7 +134,15 @@ def gait(clip):
     o['sole_max_contact_step_mm'] = {k: round(max((math.hypot(b['feet'][k][1] - a['feet'][k][1], b['feet'][k][2] - a['feet'][k][2])
                                                    for a, b in zip(v, v[1:]) if b['f'] == a['f'] + 1), default=0), 2)
                                      for k, v in sc.items()}
+    # the same skin points from frame to frame (the ones touching at the first): a pad that rolls heel-to-toe moves its lowest
+    # band (sole_max_contact_step) without sliding; these move only if it slides (round ZA, v6_stance_probe.py)
+    def mat_step(a, b, k):
+        A, B = a['feet'][k][3], b['feet'][k][3]; m = A[:, 2] < A[:, 2].min() + .003
+        return 1000 * float(np.hypot(*(B[m, :2].mean(0) - A[m, :2].mean(0))))
+    o['sole_material_step_mm'] = {k: round(max((mat_step(a, b, k) for a, b in zip(v, v[1:]) if b['f'] == a['f'] + 1), default=0), 2)
+                                  for k, v in sc.items()}
     o['sole_low_mm'] = round(min(r['feet'][k][0] for r in rows for k in PAWS), 2)
+    o['sole_low_frame'] = min(((r['feet'][k][0], r['f'], k) for r in rows for k in PAWS))[1:]
     o['sole_all_air_frames'] = [r['f'] for r in rows if all(r['feet'][k][0] > 3 for k in PAWS)]
     o['sole_never_down'] = [k for k in PAWS if not sc[k]]
     o['root_z_range_mm'] = [round(min(r['root'][2] for r in rows), 2), round(max(r['root'][2] for r in rows), 2)]
@@ -184,7 +192,9 @@ result = {'base_tip_mm': BASE, 'proportions': proportions()}
 for name in ('Walk', 'Run', 'Jump'):
     if name in clips:
         result[name] = gait(clips[name])
-result['targets'] = {'Walk': 'swing_order 对角（LF→RH→RF→LH）、same_side_overlap 0、max_contact_step ≤ 3 mm、sole_low 0–3 mm',
+result['targets'] = {'Walk': 'swing_order 同侧序列（RH→RF→LH→LF，同 Thibaudier 2014 成年猫跑台步行；旧注释写"对角"有误）、same_side_overlap 0、'
+                             'sole_material_step ≤ 3 mm（sole_max_contact_step 含脚掌从跟到趾的滚动，不等于打滑）、sole_low 0–3 mm',
+                     'Jump': 'sole_material_step ≤ 3 mm、sole_low ≥ 0（看 sole_low_frame）',
                      'Run': 'sole_never_down 空、max_contact_step ≤ 3 mm、all_air 无（除非验收标准改成带腾空）',
                      'head': 'Walk/Run/Jump 的 head_pitch / neck_pitch 有与触地相称的小幅变化（不再恒定）',
                      'proportions': 'foreleg_body → 0.174、shoulder_body 下降；head_body / tail_body 不变'}
