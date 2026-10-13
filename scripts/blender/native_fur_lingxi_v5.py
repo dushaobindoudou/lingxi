@@ -1,7 +1,7 @@
 import bpy,numpy as np,json,os
 from pathlib import Path
 from mathutils import Vector
-ROOT=Path(__file__).resolve().parents[2];OUT=Path(os.environ.get('LINGXI_OUT',ROOT/'assets/characters/lingxi/v5'));s=bpy.context.scene
+ROOT=Path(__file__).resolve().parents[2];OUT=Path(os.environ.get('LINGXI_OUT') or Path(bpy.data.filepath).parent);s=bpy.context.scene   # 2026-10-13: default = the input .blend's own folder (the old default, the shared v5/ folder, let two test runs without LINGXI_OUT overwrite its build and each other)
 # Idempotent: a previous conversion must never survive into this one, or the render
 # doubles the hair count and every later run adds another ".00x" layer.
 for old in [o for o in s.objects if o.type=='CURVES' and o.name.startswith('LX_RenderFur_')]:
