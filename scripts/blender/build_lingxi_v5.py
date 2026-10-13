@@ -60,7 +60,7 @@ def texmat(name,albedo,bump=None,rough=.5,sss=.08,fallback=(.6,.3,.3)):
 _V1=_v6('V6_SKIN_V1',0)>0
 pink=texmat('Pad','pad_skin.png','pad_bump.png',rough=.5,sss=.15,fallback=(.65,.32,.30)) if _V1 else texmat('Pad','pad_skin_v2.png','pad_skin_v2_bump.png',rough=.45,sss=.25,fallback=(.85,.52,.55))
 nosemat=texmat('Nose','nose_skin.png','nose_bump.png',rough=.35,sss=.12,fallback=(.62,.28,.25))
-_TT=os.environ.get('V6_TONGUE_TEX','tongue_v3')   # round P (user: 「舌头……颜色也不对」): v2's pale grey-pink read as plastic; v3 = codex's warm coral-rose
+_TT=os.environ.get('V6_TONGUE_TEX','tongue_v4' if (TEXDIR/'tongue_v4.png').exists() and (TEXDIR/'tongue_v4_bump.png').exists() else 'tongue_v3')   # round ZD: codex batch 13's v4 when staged   # round P (user: 「舌头……颜色也不对」): v2's pale grey-pink read as plastic; v3 = codex's warm coral-rose
 mouthmat=texmat('Tongue','tongue.png','tongue_bump.png',rough=.22,sss=.20,fallback=(.46,.14,.17)) if _V1 else texmat('Tongue',_TT+'.png',_TT+'_bump.png',rough=.16,sss=.30,fallback=(.82,.42,.48))   # wet: a little glossier
 # Round P: in the mouth the wet sheen and the subsurface glow washed v3's coral (226,117,138) out to a pale (197,130,134) -
 # the same pale tongue as v2 (round-p-test tg1/tg2: SAT 1.45 went magenta; 1.18 / .86 with less sheen is the reference's rose)
@@ -474,7 +474,14 @@ jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True 
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
 _ML=_v6('V6_MOUTH_LIGHT',1.6)   # round ZB: 1.2 -> 1.6 - a meow read as a near-black hole (codex: warm rose inside, darker only at the throat)   # round O: 1.6 -> 1.2, a deeper rose behind the (now big) pale tongue, as in the reference
 #   # round L: x1.6 - with the bag open the whole yawn showed it, a deep red where the reference is rosy
-mouthpink=mat('LX_MouthPink',(.30*_ML,.07*_ML,.08*_ML),.5)   # rosy, like the yawn reference - near-black read as a hole
+mouthpink=mat('LX_MouthPink',(.30*_ML,.07*_ML,.08*_ML),.5)
+if (TEXDIR/'mouth_mucosa_tile.png').exists() and _v6('V6_MUCOSA',1)>0:
+ # round ZD: codex's mucosa tile (batch 13) laid over the rose - palatal ridges and a wet grain instead of a flat colour
+ _mn=mouthpink.node_tree;_mp=_mn.nodes.get('Principled BSDF');_tc=_mn.nodes.new('ShaderNodeTexCoord');_mm=_mn.nodes.new('ShaderNodeMapping');_mm.inputs['Scale'].default_value=(_v6('V6_MUCOSA_TILE',18),)*3
+ _ti=_mn.nodes.new('ShaderNodeTexImage');_ti.image=bpy.data.images.load(str(TEXDIR/'mouth_mucosa_tile.png'),check_existing=True)
+ _mn.links.new(_tc.outputs['Object'],_mm.inputs['Vector']);_mn.links.new(_mm.outputs['Vector'],_ti.inputs['Vector'])
+ _mx=_mn.nodes.new('ShaderNodeMixRGB');_mx.blend_type='MULTIPLY';_mx.inputs['Fac'].default_value=_v6('V6_MUCOSA_MIX',.7);_mx.inputs['Color1'].default_value=_mp.inputs['Base Color'].default_value
+ _br=_mn.nodes.new('ShaderNodeBrightContrast');_br.inputs['Bright'].default_value=.35;_mn.links.new(_ti.outputs['Color'],_br.inputs['Color']);_mn.links.new(_br.outputs['Color'],_mx.inputs['Color2']);_mn.links.new(_mx.outputs['Color'],_mp.inputs['Base Color'])   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
 cavity=sphere('LX_MouthCavity',(0,_v6('V6_CAV_Y',-.430),CAV_Z),(max(.042,GAPE_W+.006),   # round O: as wide as the cut (+6 mm) - the wider yawn showed black past the bag's sides
  _v6('V6_CAV_RY',.065),_v6('V6_CAV_RZ',.020)),mouthpink)   # round O: -.458 / .040 put the cup's back wall at y -.418, IN FRONT of the tongue (-.372..-.423): a yawn showed only its tip poking through. -.430 / .065 opens in front of the tip and closes behind the root (round-l-test c1: tongue rays 1280 -> 2677, Rest 73 rays of pink in the lip slit)   # round M: -.392 -> -.458, 66 mm forward (WorkBuddy round-l-cav sweep): yawn leak 0, gape .218 / bite .180   # round J: Jaw 的转向修正后张口到 66 mm，34x32x16 的袋子盖不住，能从嘴里看到头壳内壁（shell_rays 176 -> 20）
@@ -1129,6 +1136,9 @@ def iris_material():
    to=l.to_socket;nt.links.remove(l);nt.links.new(gsub.outputs[0],to)
   if not _tex.inputs['Vector'].links:nt.links.new(gsub.outputs[0],_tex.inputs['Vector'])
   scl=nt.nodes.new('ShaderNodeMixRGB');scl.inputs[2].default_value=(*[_v6('V6_SCLERA',.78)*c for c in (1,.97,.88)],1)
+  if (TEXDIR/'sclera.png').exists():   # round ZD: codex's sclera (batch 13) - the lid's shadow along the top, warm corners
+   st=nt.nodes.new('ShaderNodeTexImage');st.image=bpy.data.images.load(str(TEXDIR/'sclera.png'),check_existing=True);st.extension='EXTEND';nt.links.new(guv.outputs['UV'],st.inputs['Vector'])
+   nt.links.new(st.outputs['Color'],scl.inputs[2])
   nt.links.new(ramp(.505,.525),scl.inputs['Fac']);nt.links.new(pupil.outputs['Color'],scl.inputs[1]);nt.links.new(scl.outputs['Color'],p.inputs['Base Color'])
  # No bump under a cornea: it speckled the pupil, and the two eyes caught the light differently.
  for l in list(p.inputs['Normal'].links):nt.links.remove(l)
@@ -1193,7 +1203,12 @@ LID_MARGIN=.20*_v6('V6_LID_MARGIN',1.0)
 # Rig v1 lid keys, the same exact turn at other fractions: Wide opens the upper lid past rest (codex AU5, the startled / wide eye),
 # Lift raises the lower lid (soft / squinting), and Smile pairs an upper lid .80 shut with a lower lid pushed past the meeting
 # line (1.25): it tucks behind the upper, and the closed eye is the upper rim's higher arch - the ^ ^ eye.
-LID_V1={'U':(('Wide',-.25),('Smile',.80)),'L':(('Lift',.45),('Smile',1.25))}
+# Round ZD (codex ROUND-Z-REMEASURE 5: the happy eye's closed line arched .04 of the eye's width, target .12): the Smile keys turn each
+# point by its own fraction - the upper lid less and the lower one further toward the middle of the eye - so where they meet it is
+# an arch up (^ ^), not the flat line of a blink. V6_SMILE_ARCH 0 gives the old uniform .80 / 1.25.
+SMILE_ARCH=_v6('V6_SMILE_ARCH',.50)
+def _lid_sin(P,s):L=lid_local(P,s);return np.abs(L[:,2])/np.maximum(np.hypot(L[:,0],L[:,2]),1e-9)
+LID_V1={'U':(('Wide',-.25),('Smile',lambda P,s:.80-.6*SMILE_ARCH*_lid_sin(P,s)**1.5)),'L':(('Lift',.45),('Smile',lambda P,s:1.25+SMILE_ARCH*_lid_sin(P,s)**1.5))}
 def _lid_slants(P,s):
  """Round Z (user: 「表情不对，所有表情都一样」): the upper lid shut more on one side - SlantIn lowers its inner half (the frown of
   an angry / intent cat), SlantOut its outer half (the droop of a sad one). Per-point fractions of the same exact turn; the brow
@@ -1272,7 +1287,7 @@ for s in [-1,1]:
   # turn at 55% - what the pose code used to give the bones for a full squint.
   o.shape_key_add(name='Basis');P=np.array([v.co[:] for v in me.vertices])
   for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1['U' if upper else 'L'] if FACE_V1 else ())+(_lid_slants(P,s) if (FACE_V1 and upper) else ()):
-   o.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s,'U' if upper else 'L',f).astype('f').ravel())
+   o.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s,'U' if upper else 'L',f(P,s) if callable(f) else f).astype('f').ravel())
   eyelids.append(o)
  # Tear duct at the inner corner: the small pink caruncle every cat has. Without it the
  # eye is a perfect circle floating in fur, which is most of the "uncanny" read.
@@ -1395,6 +1410,27 @@ def load_coat():
   maps[n]=a.reshape(h,w,4)[::-1,:,:3].copy();bpy.data.images.remove(im)
  return maps
 COAT=load_coat()
+# Round ZD: codex's paint-over masks (batch 13, reviews/ASSET-BATCH13-2026-10-13.md) - grey 0..1, rows top to bottom, sampled
+# through an orthographic frame (axis, (left, right), axis, (top, bottom)) in authored space; None when the file is not staged.
+def load_mask(name):
+ f=TEXDIR/name
+ if not f.exists() or _v6('V6_MASKS',1)<=0:return None
+ im=bpy.data.images.load(str(f),check_existing=True);im.colorspace_settings.name='Non-Color'
+ w,h=im.size;a=np.empty(w*h*4,dtype='f');im.pixels.foreach_get(a);m=a.reshape(h,w,4)[::-1,:,:3].mean(2).copy();bpy.data.images.remove(im);return m
+def mask_sample(m,p,ha,hr,va,vr):
+ H,Wd=m.shape;u=np.clip((p[:,ha]-hr[0])/(hr[1]-hr[0])*Wd-.5,0,Wd-1.001);v=np.clip((p[:,va]-vr[0])/(vr[1]-vr[0])*H-.5,0,H-1.001)
+ iu=u.astype(int);iv=v.astype(int);fu=u-iu;fv=v-iv
+ return m[iv,iu]*(1-fu)*(1-fv)+m[iv,iu+1]*fu*(1-fv)+m[iv+1,iu]*(1-fu)*fv+m[iv+1,iu+1]*fu*fv
+CHEST_MASK=load_mask('chest_bib_mask.png')     # body front: x -.30 -> .30, z .62 -> .02 (templates/chest_front_template.png)
+MUZZLE_FUR=load_mask('muzzle_fur_mask.png')    # head front: the coat_head_front frame, x -.21 -> .21, z .76 -> .34
+def _box_blur(m,r,n=3):
+ for _ in range(n):
+  for ax in (0,1):
+   c=np.cumsum(np.pad(m,[(r+1,r) if a==ax else (0,0) for a in (0,1)],mode='edge'),axis=ax);m=((np.take(c,range(2*r+1,c.shape[ax]),axis=ax)-np.take(c,range(0,c.shape[ax]-2*r-1),axis=ax))/(2*r+1))
+ return m
+if MUZZLE_FUR is not None:
+ # the painted lines are 3-4 mm wide and the whisker pads' 1-2 cm coat lay over them: spread to ~8 mm and deepened (V6_MUZZLE_FUR_K)
+ MUZZLE_FUR=np.clip(1-(1-_box_blur(MUZZLE_FUR,int(_v6('V6_MUZZLE_BLUR',8))))*_v6('V6_MUZZLE_FUR_K',2.2),0,1)
 def coat_sample(name,p):
  img=COAT[name];N=img.shape[0];ha,(h0,h1),va,(v0,v1)=COAT_FRAMES[name]
  u=np.clip((p[:,ha]-h0)/(h1-h0)*N-.5,0,N-1.001);v=np.clip((p[:,va]-v0)/(v1-v0)*N-.5,0,N-1.001)
@@ -1462,6 +1498,23 @@ def chest_bib(p,col):
   under the chin, narrowing between the forelegs), the tabby of the flanks either side. The side painting projected onto the chest's
   front had made all of it white, from shoulder to shoulder."""
  if _v6('V6_CHEST_BIB',1)<=0:return col
+ if CHEST_MASK is not None:
+  # codex's mask: 1 white, 0 the flank's tabby, .5 as painted - on the front of the trunk only (the projection runs through the body)
+  # by which way the surface faces (the chest's ellipsoid for the front, the trunk's cylinder for the underside): the mask on the front
+  # of the chest only - through the body it turned the lower flanks tabby and the side view lost its white belly; the underside (what
+  # a sitting cat shows the camera: the 'apron', 1.05 head widths) keeps a white strip down the middle, the flank's tabby either side
+  x,y,z=p.T;m=mask_sample(CHEST_MASK,p,0,(-.30,.30),2,(.62,.02));white=np.array([.96,.945,.915])
+  nc=np.column_stack((x/.145**2,(y+.17)/.17**2,(z-.315)/.16**2));nc/=np.maximum(np.linalg.norm(nc,axis=1)[:,None],1e-9)
+  fw=np.clip(-nc[:,1]*1.4-.15,0,1)*np.clip((.02-y)/.08,0,1)
+  nu=(z-.30)/np.maximum(np.hypot(x/.15*.16,z-.30),1e-9);uw=np.clip(-nu*1.6-.6,0,1)*np.clip((.30-y)/.08,0,1)*(1-fw)
+  # the tabby to paint in: the side painting's mid-body at chest height (at the chest's own y it is the white ruff - first try: whiter)
+  flank=coat_grade(coat_sample('coat_body_side',np.column_stack((x,np.full(len(x),_v6('V6_BIB_TABBY_Y',.05)),np.maximum(z,.33)))))
+  # ...half of it the back's painting straight above (the shoulders' stripes) - the side's mid-body alone came out a pale cream
+  _bt=_v6('V6_BIB_TABBY_TOP',.5);flank=flank*(1-_bt)+coat_grade(coat_sample('coat_body_top',p))*_bt;tabby=flank
+  tw=(np.clip((m-.5)*2,0,1)*fw)[:,None];tf=(np.clip((.5-m)*2,0,1)*fw)[:,None]
+  col=col*(1-tw-tf)+white*tw+flank*tf
+  side=(np.clip((np.abs(x)-_v6('V6_BELLY_WHITE_W',.055))/.02,0,1)*uw)[:,None]
+  return col*(1-side)+tabby*side
  x,y,z=p.T;front=np.clip((-.06-y)/.06,0,1)*np.clip((.47-z)/.05,0,1)*np.clip((z-.15)/.04,0,1)
  if not front.any():return col
  half=np.interp(z,[.15,.24,.34,.44],[.030,.036,.048,.058])*_v6('V6_CHEST_BIB_W',1.0)
@@ -1768,6 +1821,10 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # that is what hung over the mouth. Below the lip the chin keeps its fluff.
   bib=np.where((root[:,1]<-.40)&(np.abs(root[:,0])<.050)&(root[:,2]>LIP0-.004),1,bib)
   ln*=np.maximum(ruff,bib)[:,None,None]
+  if MUZZLE_FUR is not None and not o.name.startswith('LX_Lid'):
+   # Round ZD: codex's muzzle fur-length mask - shorter along the omega lip line and the philtrum so the mouth's shape reads through
+   # the coat; front-facing roots only (the projection runs through the head)
+   mf=mask_sample(MUZZLE_FUR,root,0,(-.21,.21),2,(.76,.34));ln*=(1-np.clip(-hn[:,1]*1.6,0,1)*(1-np.clip(mf,0,1)))[:,None,None]
  elif reg=='body':
   bib=1+_v6('V6_BIB',0.0)*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)   # round Z: .45 -> 0
   # Round Z (user: 「胸前的毛是不是太多了」; codex stand-app / sit-front: a bib down the middle, the forelegs showing): the coat on the
@@ -1955,7 +2012,7 @@ for lid in [o for o in eyelids if o.name.startswith('LX_Lid')]:
  fo.shape_key_add(name='Basis')
  _R=np.repeat(P[::NP],NP,axis=0)
  for kn,f in (('Blink',1.0),('Squint',.55))+(LID_V1[ul] if FACE_V1 else ())+(_lid_slants(_R,s_) if (FACE_V1 and ul=='U') else ()):
-  fo.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s_,ul,f,roots=_R).astype('f').ravel())
+  fo.shape_key_add(name=kn).data.foreach_set('co',lid_turn(P,s_,ul,f(_R,s_) if callable(f) else f,roots=_R).astype('f').ravel())
  eyelids.append(fo)
 # Round I: a denser coat on the legs, so the leg reads as a furry limb continuing the body's fluff
 # rather than a stick (the user: "thin sticks on snowballs"). Grown LAST so every other strand keeps

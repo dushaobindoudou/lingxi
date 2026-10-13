@@ -974,3 +974,18 @@ codex 批次 12：`reviews/ROUND-ZB-AUDIT-2026-10-13.md`（ZB 之后 5 项：坐
 坐类代表帧最低 -1.3 mm、趴 -0.4、香箱 +0.2；Yawn / Bite 开口 82 / 56.5 mm 不变；Jump 前爪 3.35 mm 未处理。
 
 **素材**（用户：「除了审计你还需要 codex 给你素材，精雕细琢」）：批次 13 发起——胸前白毛遮罩（对齐新模板 `templates/chest_front_template.png`：身体正面正交，x -0.30→0.30、z 0.62→0.02）、口鼻毛长遮罩（让 ω 嘴线露出）、tongue_v4、sclera、口腔黏膜平铺、按本猫体型的端坐参考两张。说明见 `reviews/ASSET-BATCH13-2026-10-13.md`（codex 写）。
+
+## Round ZD（Claude 主会话，2026-10-13）——接入 codex 素材批次 13、笑眼拱形
+
+素材（`reviews/ASSET-BATCH13-2026-10-13.md`，图在 `v5-imagegen-sources/`，拷入 `v5/textures/`；两处都在 .gitignore）：chest_bib_mask、muzzle_fur_mask、tongue_v4(+bump)、sclera、mouth_mucosa_tile；参考 `lingxi-ref-sit-ownbody-{side,front}.png`（按本猫体型的端坐）。接入代码都是"文件存在才启用"（`load_mask` / `mask_sample`，`V6_MASKS`=0 全关）。
+
+| 项 | 做法 | 结果 |
+|---|---|---|
+| 胸前白毛（codex 遮罩） | 遮罩是沿 y 穿透全身的正面投影：只按前后位置限范围时，把两侧下腹染成虎斑、侧面丢了白肚；虎斑取样沿用旧法（胸口 y 后移 13 cm）取到的是侧面画里的白胸毛，结果更白。改为按朝向：胸口朝前（胸部椭球法线）用遮罩，朝下的腹面中间留 ±5.5 cm 白、两侧换虎斑（`V6_BELLY_WHITE_W`），侧面不动；虎斑 = 侧面画中段 z≥.33 与背部画同位各半 | 站 / 坐正面白色收成中间一道，侧面白肚保留；两侧仍偏奶油色，不如参考的条纹虎斑深 |
+| 口鼻毛长（codex 遮罩） | 原遮罩的线 3–4 mm 宽，胡须垫 1–2 cm 的毛倒下来盖住；盒式模糊 8 px（~3 mm）×3 次、加深 ×2.2（`V6_MUZZLE_BLUR` / `V6_MUZZLE_FUR_K`），仅正面朝向的毛根 | 嘴线略清楚（ω、平嘴），差别仍小 |
+| 舌 v4、眼白、口腔黏膜 | tongue_v4 自动替换 v3；sclera 贴图代替平色（用未偏移的 UV）；黏膜平铺（物体坐标 ×18）乘在玫瑰色上 | 侧看露出暖白眼白；舌面有中央沟和乳头纹 |
+| 笑眼弧 .04 → 目标 .12 | Smile 键逐点比例：上睑 .80-.6k·sin^1.5、下睑 1.25+k·sin^1.5（越近眼中线上睑闭得越少、下睑推得越高），k=`V6_SMILE_ARCH` .5 | 闭合线成 ^ 形，带毛仍被睑毛压淡 |
+
+### 下一轮
+
+按 `lingxi-ref-sit-ownbody-side.png` 重做坐姿：codex 画出了本体型也能竖坐——脊柱 C 形、胸低落在前腿上、臀坐地、后掌在前。之前"体型上限"的结论偏悲观，先按这张图试脊柱弯曲 + 肩胛下沉，不动骨架。
