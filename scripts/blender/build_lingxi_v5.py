@@ -3467,7 +3467,8 @@ if FACE_V1:
  EXPR_EXTRA={'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(SmileArc=.45,MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},
   '撒娇':both(SmileArc=.2,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
   '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5},'认真':both(LidSlantIn=.6),
-  '喵喵':{'JawOpen':.24,'MouthO':1.0,'TongueUp':.9,'LowerLipDown':.3}   # ZC (codex ROUND-ZB-AUDIT 3: the meow 1.55 x 1.25 nose widths, target .63 x .70): the corners drawn in all the way, the jaw less,'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
+  # ZC (codex ROUND-ZB-AUDIT 3: the meow 1.55 x 1.25 nose widths, target .63 x .70): the meow's corners drawn in all the way, the jaw less
+  '喵喵':{'JawOpen':.24,'MouthO':1.0,'TongueUp':.9,'LowerLipDown':.3},'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
   '温柔':both(EarForward=.12,MouthCornerUp=.25),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35)},
   '得意':{'MouthCornerUp.L':.7,'SmileArc.R':.2},'清醒':both(UpperWide=.25),'警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15)}
  # apps/lingxi/src/rig/art.ts BUILT_IN_EXPRESSIONS (symbol: a screen effect, carried through for the app)
