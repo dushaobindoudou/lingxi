@@ -1206,7 +1206,7 @@ LID_MARGIN=.20*_v6('V6_LID_MARGIN',1.0)
 # Round ZD (codex ROUND-Z-REMEASURE 5: the happy eye's closed line arched .04 of the eye's width, target .12): the Smile keys turn each
 # point by its own fraction - the upper lid less and the lower one further toward the middle of the eye - so where they meet it is
 # an arch up (^ ^), not the flat line of a blink. V6_SMILE_ARCH 0 gives the old uniform .80 / 1.25.
-SMILE_ARCH=_v6('V6_SMILE_ARCH',.50)
+SMILE_ARCH=_v6('V6_SMILE_ARCH',.70)   # ZF: .5 -> .7 (codex ROUND-ZD-AUDIT 5: the arch still .04-.06 short under the lid coat)
 def _lid_sin(P,s):L=lid_local(P,s);return np.abs(L[:,2])/np.maximum(np.hypot(L[:,0],L[:,2]),1e-9)
 LID_V1={'U':(('Wide',-.25),('Smile',lambda P,s:.80-.6*SMILE_ARCH*_lid_sin(P,s)**1.5)),'L':(('Lift',.45),('Smile',lambda P,s:1.25+SMILE_ARCH*_lid_sin(P,s)**1.5))}
 def _lid_slants(P,s):
@@ -1578,6 +1578,16 @@ def muzzle_detail(p,col):
  m=np.where(inside[:,None],MUZZLE[np.clip((v*H).astype(int),0,H-1),np.clip((u*W).astype(int),0,W-1)],1.0)
  k=_v6('V6_MUZZLE_DETAIL',1.0);return col*(1-k+k*m)
 LIP_CREASE=_v6('V6_LIP_CREASE',.50 if MUZZLE is None else .20)
+LIP_LINE=None
+def lip_line(p,col):
+ """Round ZF: codex batch 15's lip line (lip_line_mask.png, the coat_head_front frame) painted into the face - the omega, the philtrum's
+  foot and short hooks at the corners, dark pinkish brown - so the corners' lift / drop reads through the coat (skin and the coat on it)."""
+ global LIP_LINE
+ if LIP_LINE is None:LIP_LINE=load_mask('lip_line_mask.png') if 'load_mask' in globals() else None
+ if LIP_LINE is None or _v6('V6_LIP_LINE',1)<=0:return col
+ hn=(p-np.array([0,-.285,.525]))/np.array([.165,.147,.156]);hn/=np.maximum(np.linalg.norm(hn,axis=1)[:,None],1e-8)
+ a=(np.clip(mask_sample(LIP_LINE,p,0,(-.21,.21),2,(.76,.34)),0,1)*np.clip(-hn[:,1]*2,0,1)*_v6('V6_LIP_LINE_K',.85))[:,None]
+ return col*(1-a)+np.array([.40,.25,.25])*a
 def lip_crease(p,col):
  """Round P (user: 「嘴巴效果在闭上的时候不是很明显」): in the closed-mouth reference the omega is drawn by shadow - the
   crease under each whisker pad and the philtrum groove from the nose - more than by the lip line itself. On an
@@ -1611,7 +1621,7 @@ def fur_color(p,reg):
  # step down in value - dark bands ~.32, base ~.70, white markings ~.88.
  dark=np.array([.29,.235,.205]);light=np.array([.70,.625,.565]);white=np.array([.96,.945,.915])
  x,y,z=p.T
- if COAT is not None and reg=='Head':return muzzle_detail(p,lip_crease(p,face_white(p,painted_coat(p,reg),white)))
+ if COAT is not None and reg=='Head':return lip_line(p,muzzle_detail(p,lip_crease(p,face_white(p,painted_coat(p,reg),white))))
  if COAT is not None and reg=='body':return leg_socks(p,chest_bib(p,painted_coat(p,reg)))*paw_crease(p)[:,None]
  if COAT is not None and reg in ('Head','body'):return painted_coat(p,reg)
  if COAT is not None and reg=='Jaw':return np.tile(white,(len(p),1))
@@ -3513,7 +3523,7 @@ if FACE_V1:
  C['MouthO']=[['loc','MouthCorner.L',_mm(6,-3,0)],['loc','MouthCorner.R',_mm(-6,-3,0)],['loc','LipUp.L',_mm(0,-1.5,0)],['loc','LipUp.R',_mm(0,-1.5,0)],['loc','LipLow',_mm(0,-1.5,0)]]
  C['JawOpen']=[['rot','Jaw',[1.0,0,0]],['loc_local','LipUpper',[round(float(c),6) for c in LIP_AX@(Vector(LIP_LIFT['Yawn'])*(1/JAW_OPEN['Yawn']))]]]
  C['TongueOut']=[['key','LX_Tongue','Up',2.0],['key','LX_Tongue','Out',1.0]];C['TongueCurl']=[['key','LX_Tongue','Curl',1.0]]
- C['TongueUp']=[['key','LX_Tongue','Up',1.0]];C['TongueBlep']=[['key','LX_Tongue','Blep',1.0],['key','LX_Tongue','Out',.5]]   # Blep alone left the tip 6 mm past the lower lip, under its fur   # round ZB: the tongue on show in an open mouth / its tip out (blep)
+ C['TongueUp']=[['key','LX_Tongue','Up',1.0]];C['TongueBlep']=[['key','LX_Tongue','Blep',1.0],['key','LX_Tongue','Out',.6]]   # ZF: .5 -> .6 (codex: .05-.07 nose widths short). Blep alone left the tip 6 mm past the lower lip, under its fur   # round ZB: the tongue on show in an open mouth / its tip out (blep)
  C['Sniff']=[['loc','Nose',_mm(0,0,1.2)],['loc','Nostril.L',_mm(-1,0,0)],['loc','Nostril.R',_mm(1,0,0)]]
  C['Sparkle']=[['catch','LX_Cornea',1.7],['sparkx','LX_Cornea',3.5]]
  both=lambda **kw:{k+'.'+sf:v for k,v in kw.items() for sf in 'LR'}
@@ -3525,7 +3535,7 @@ if FACE_V1:
  # brow slants furrow +.18, sad -.10; mouth: corner +-.13 nose widths, meow .70 high, hiss 1.8 wide, tongue .25 out; ears back ~71 deg).
  # Jaw angles from the part audit (fur-visible opening / nose width 33.8 mm): .22 rad ~ .7 (the meow); the hiss .45 (.36 rendered ~.9).
  LAYERS={'eye':{'slit':both(Squint=.30,PupilW=.058,PupilH=.35),'round':both(PupilW=.27,PupilH=.29),
-   'wide':{**both(UpperWide=1,PupilW=.35,PupilH=.36),'Sparkle':.4},'side':both(GazeYaw=.65,Blink=.25,PupilW=.25,PupilH=.28),
+   'wide':{**both(UpperWide=1,PupilW=.35,PupilH=.36),'Sparkle':.4},'side':both(GazeYaw=.55,Blink=.25,PupilW=.25,PupilH=.28),
    'half':both(Blink=.60,PupilW=.28,PupilH=.30),'happy':both(SmileArc=1),'closed':both(Blink=1),
    'heart':{**both(PupilW=.30,PupilH=.32),'Sparkle':1.4},'soft':both(Blink=.26,LowerLift=.60,PupilW=.29,PupilH=.31),
    'wink-left':{'Blink.L':1,'SmileArc.R':.35,'LowerLift.R':.3},'wink-right':{'Blink.R':1,'SmileArc.L':.35,'LowerLift.L':.3},
@@ -3533,8 +3543,9 @@ if FACE_V1:
    'tearful':{**both(LowerLift=.50,LidSlantOut=.8,PupilW=.30,PupilH=.32),'Sparkle':.8}},
   'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1,LidSlantIn=1),'raise':both(BrowInnerUp=.7,BrowOuterUp=1,UpperWide=.45),
    'sad':both(BrowInnerUp=1,BrowOuterUp=-.3,LidSlantOut=1)},
-  'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1),'open':{'JawOpen':.18,'TongueUp':.8,'MouthO':1.0},
-   'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1)},
+  # ZF: the corners x1.4 (codex ROUND-ZD-AUDIT 3: cat .08-.10, frown .09-.12 nose widths short)
+  'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1.4),'open':{'JawOpen':.18,'TongueUp':.8,'MouthO':1.0},
+   'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1.4)},
    'hiss':{'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)},'tongue':{'JawOpen':.06,'TongueBlep':1.0,'LowerLipDown':.8,**both(UpperLipRaise=-.8,MouthCornerUp=.2)}},   # Z4: the lips close round the tip - at jaw .12 the upper fangs showed (codex blep: no teeth)
   'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=1.0,EarSwivel=.7,EarForward=-.1,EarTipBend=-.2),
    'back':both(EarForward=-.65,EarFlatten=.65,EarSwivel=.8,EarTipBend=.65)}}
