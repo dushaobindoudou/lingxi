@@ -14,7 +14,13 @@ for pb in bpy.data.objects['LX_Rig'].pose.bones:
 raw = os.environ['FACE_TRY']; todo = json.load(open(raw)) if os.path.exists(raw) else json.loads(raw)
 out = os.environ.get('FACE_OUT', '/tmp/face-try'); os.makedirs(out, exist_ok=True)
 for i, (label, vals) in enumerate(todo):
-    F.apply(vals); F._face_camera(int(os.environ.get('RES', 300)))
+    raw = {k: v for k, v in vals.items() if ':' in k}; F.apply({k: v for k, v in vals.items() if ':' not in k})
+    for k, v in raw.items():   # 'key:<object>:<shape key>' = value, 'rot:<bone>' = [x, y, z] added, 'mat:<material>:<node>' = value
+        kind, *rest = k.split(':')
+        if kind == 'key': bpy.data.objects[rest[0]].data.shape_keys.key_blocks[rest[1]].value = v
+        elif kind == 'rot': pb = bpy.data.objects['LX_Rig'].pose.bones[rest[0]]; pb.rotation_euler = [a + b for a, b in zip(pb.rotation_euler, v)]
+        elif kind == 'mat': bpy.data.materials[rest[0]].node_tree.nodes[rest[1]].outputs[0].default_value = v
+    bpy.context.view_layer.update(); F._face_camera(int(os.environ.get('RES', 300)))
     cam = sc.camera; z = float(os.environ.get('ZOOM', 1)); cam.data.ortho_scale *= z; cam.location.z += float(os.environ.get('ZOOM_Z', 0))
     sc.render.filepath = os.path.join(out, f'{i:02d}-{label}.png'); bpy.ops.render.render(write_still=True)
     print('FACE_TRY', i, label)

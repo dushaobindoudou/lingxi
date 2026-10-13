@@ -472,7 +472,7 @@ jaw=merge([sphere('JawL',(-.022,-.398,.424+LIP_DZ),(.030,.034,.008)),sphere('Jaw
 jaw.data.materials.clear();jaw.data.materials.append(dark);jaw.hide_render=True   # chin skin is the head's now
 # The mouth bag: big enough to fill the whole gap when the jaw drops (otherwise the gap shows the
 # white inside of the head shell), and 15mm+ behind the skin everywhere so it never shows shut.
-_ML=_v6('V6_MOUTH_LIGHT',1.2)   # round O: 1.6 -> 1.2, a deeper rose behind the (now big) pale tongue, as in the reference
+_ML=_v6('V6_MOUTH_LIGHT',1.6)   # round ZB: 1.2 -> 1.6 - a meow read as a near-black hole (codex: warm rose inside, darker only at the throat)   # round O: 1.6 -> 1.2, a deeper rose behind the (now big) pale tongue, as in the reference
 #   # round L: x1.6 - with the bag open the whole yawn showed it, a deep red where the reference is rosy
 mouthpink=mat('LX_MouthPink',(.30*_ML,.07*_ML,.08*_ML),.5)   # rosy, like the yawn reference - near-black read as a hole
 CAV_Z=.455+LIP_DZ
@@ -533,6 +533,13 @@ if FACE_V1:
  for v,c_ in zip(tongue.data.vertices,tc.data):
   t=min(1,max(0,(_TR-v.co.y)/(2*_TH)))
   if t>.55:yc=_TR-.55*2*_TH;f=yc-v.co.y;th=1.3*((t-.55)/.45)**1.5;c_.co=(v.co.x,yc-f*math.cos(th),v.co.z+f*math.sin(th))
+ # Round ZB (user: 「嘴巴和舌头，尤其是舌头不太对」; codex lingxi-ref-tongue-mouth.png 'blep'): the tip of the tongue out between barely
+ # parted lips - the blade lifted over the lower canines and lip (as Up), its front slid V6_BLEP_OUT forward and resting a little down
+ # on the lower lip, a touch wider. Out (the lick) dives 58 mm and dips; at small values it went under the chin skin and never showed.
+ tb=tongue.shape_key_add(name='Blep')
+ for v,b_ in zip(tongue.data.vertices,tb.data):
+  t=min(1,max(0,(_TR-v.co.y)/(2*_TH)))
+  b_.co=(v.co.x*(1+.10*t),v.co.y-_v6('V6_BLEP_OUT',.028)*t**1.5,v.co.z+TONGUE_UP*min(1,t/.40)**.7-_v6('V6_BLEP_DROOP',.004)*max(0,(t-.70)/.30)**2)
 # Canines: two up, two down, only seen when the mouth opens.
 teeth=[]
 for s in [-1,1]:
@@ -1107,6 +1114,22 @@ def iris_material():
  nt.links.new(limbal.outputs['Color'],pupil.inputs[2])
  nt.links.new(pupil.outputs['Color'],p.inputs['Base Color'])
  p.inputs['Roughness'].default_value=.45;p.inputs['Subsurface Weight'].default_value=0;p.inputs['Specular IOR Level'].default_value=.04   # was .15: its sheen laid the studio over the pupil as a grey veil
+ if FACE_V1 and _v6('V6_GAZE_MAT',1)>0:
+  # Round ZB (user: 「眼睛 side 的时候好像会穿模」): the eye is a shallow dome filling the lid opening, so turning it on the Eye bone for
+  # a sideways look swung one edge out through the lid and fur (the green crescent) and the other back into the skull (a black wedge).
+  # The look moves the iris PATTERN instead: every UV read in this material is offset by LX_GazeX / LX_GazeY (control units, x .30 of
+  # the UV - .65 puts the pupil .2 of the iris across, codex's eyes-a:8), and what the iris leaves uncovered is a pale sclera.
+  g={}
+  for nm in ('LX_GazeX','LX_GazeY'):g[nm]=nt.nodes.new('ShaderNodeValue');g[nm].name=g[nm].label=nm;g[nm].outputs[0].default_value=0
+  gx=nt.nodes.new('ShaderNodeMath');gx.operation='MULTIPLY';gx.inputs[1].default_value=_v6('V6_GAZE_UV',.30);nt.links.new(g['LX_GazeX'].outputs[0],gx.inputs[0])
+  gy=nt.nodes.new('ShaderNodeMath');gy.operation='MULTIPLY';gy.inputs[1].default_value=-_v6('V6_GAZE_UV',.30);nt.links.new(g['LX_GazeY'].outputs[0],gy.inputs[0])
+  off=nt.nodes.new('ShaderNodeCombineXYZ');nt.links.new(gx.outputs[0],off.inputs[0]);nt.links.new(gy.outputs[0],off.inputs[1])
+  guv=nt.nodes.new('ShaderNodeUVMap');gsub=nt.nodes.new('ShaderNodeVectorMath');gsub.operation='SUBTRACT';nt.links.new(guv.outputs['UV'],gsub.inputs[0]);nt.links.new(off.outputs[0],gsub.inputs[1])
+  for l in [l for l in nt.links if l.from_node.type=='UVMAP' and l.from_node!=guv]:
+   to=l.to_socket;nt.links.remove(l);nt.links.new(gsub.outputs[0],to)
+  if not _tex.inputs['Vector'].links:nt.links.new(gsub.outputs[0],_tex.inputs['Vector'])
+  scl=nt.nodes.new('ShaderNodeMixRGB');scl.inputs[2].default_value=(*[_v6('V6_SCLERA',.78)*c for c in (1,.97,.88)],1)
+  nt.links.new(ramp(.505,.525),scl.inputs['Fac']);nt.links.new(pupil.outputs['Color'],scl.inputs[1]);nt.links.new(scl.outputs['Color'],p.inputs['Base Color'])
  # No bump under a cornea: it speckled the pupil, and the two eyes caught the light differently.
  for l in list(p.inputs['Normal'].links):nt.links.remove(l)
  return m
@@ -2274,7 +2297,7 @@ def _sit_targets(f):
   # Round X2: the hock IN FRONT of the hip (V6_SIT_HOCK_DY), on the floor - a sitting cat's femur runs forward beside the belly, the
   # shank drops back to the hock, the metatarsus lies forward. 35 mm behind the hip, the two-bone solve could only fold the knee down
   # onto the floor and stand the hock and the paw up in the air (round-v-test z4, the white 'blade' at the sitting hind paw).
-  if k[0]=='H':hip=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],hip.y+(_v6('V6_SIT_HOCK_DY',-.05) if FOOT else .035),.046)),math.radians(-176))
+  if k[0]=='H':hip=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],hip.y+(_v6('V6_SIT_HOCK_DY',-.015) if FOOT else .035),_v6('V6_SIT_HOCK_Z',.036))),math.radians(_v6('V6_SIT_PAW_ANG',-170)))
   else:sh=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],sh.y-.012,.066)),_paw_rest(k))
  return T
 # Two targets in this cost are really one: the hip's height and the spine's pitch. The hip
@@ -2282,15 +2305,45 @@ def _sit_targets(f):
 # below the hip joint), and at that height a 62 deg pitch lifts the shoulder out of the
 # forelegs' reach - so the pitch has to flatten with it. 170 mm and 44 deg holds the
 # shoulder at ~390 mm, which is where a straight foreleg already puts it.
+_SEAT=None
+def _seat_low(rots,locs):
+ """Lowest point of the rump and thigh skin (body vertices mostly on Root / Pelvis / Loin / RearUpper) under the pose - what a cat
+  sits on."""
+ global _SEAT
+ if _SEAT is None:
+  me=body.data;gn={g.index:g.name for g in body.vertex_groups};own=('Root','Pelvis','Loin','LoinB','RearUpper.L','RearUpper.R');rows=[]
+  for vi in range(0,len(me.vertices),max(1,len(me.vertices)//8000)):
+   v=me.vertices[vi];ws={gn[g.group]:g.weight for g in v.groups if g.weight>1e-4 and gn[g.group] in ad.bones}
+   if ws and sum(w for n,w in ws.items() if n in own)>.6*sum(ws.values()):rows.append((v.co[:],ws))
+  co=np.array([c for c,_ in rows]);names=sorted({n for _,ws in rows for n in ws})
+  W={n:np.array([ws.get(n,0) for _,ws in rows]) for n in names};tot=sum(W.values());_SEAT=(co,{n:w/np.maximum(tot,1e-9) for n,w in W.items()})
+ co,W=_SEAT;f=_fk(rots,locs);z=np.zeros(len(co))
+ for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
+ return float(z.min())
+# Round ZB (user: 「后腿的骨骼坐姿不对」; codex SIT-EYE-TONGUE-AUDIT A, lingxi-ref-sit-skeleton-side.png): what shipped as the sit is
+# hip .17 / back 48 deg / hock 15 mm in front of the hip on the floor / paw -170 / knee out .2 (was .135 / 58 / 50 mm / -176 / .5):
+# the pelvis comes up to 27 deg (17), the femur runs forward and a little down to a knee at mid-height, the shank folds back to the
+# hock, the metatarsus lies forward - the hip-knee-hock Z of a sitting cat - and the hind soles face the floor, not the camera
+# (knee out .5 turned them out as two white rings). Hock behind the hip (codex's reading) dropped the knee onto the floor: this
+# cat's hip sits too low for it (the forelegs' reach caps the shoulder).
+# Earlier in this round: the sit tipped up only at the waist - pelvis 17 deg (12 standing), loin 36, back 58 - so the
+# rump lay flat behind on the floor with the hind legs folded beside it: a sphinx propped on its forelegs. A sitting cat stands its
+# pelvis up and sits on it (the ischia on the floor) - so the pelvis gets a pitch target and the rump's skin must rest on the floor,
+# in place of the hip-height target (a short-legged cat cannot sit tall at that height: the trunk comes forward over the hind feet).
+SIT_PELVIS=_v6('V6_SIT_PELVIS',0)   # 0: the hip-height target (below); the seat-contact form tried at 28-40 deg sank the fat rump 50 mm and floated the forepaws
 def solve_sit():
  def cost(v):
   rots,locs=_sit_rots(v);f=_fk(rots,locs);c=0.0
-  hip=f('RearUpper.L').translation;c+=25*abs(hip.z-_v6('V6_SIT_HIP',.135))   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
+  hip=f('RearUpper.L').translation
+  if SIT_PELVIS>0:
+   pv0=f('Pelvis').translation;pv1=_tip(f,'Pelvis');c+=12*abs(math.atan2(pv1.z-pv0.z,abs(pv1.y-pv0.y))-math.radians(SIT_PELVIS))
+   c+=40*abs(_seat_low(rots,locs)-.002)
+  else:c+=25*abs(hip.z-_v6('V6_SIT_HIP',.17))   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
   for k,(tg,pa) in _sit_targets(f).items():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
-  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',58)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
+  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',48)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
   mz=(f('Head')@mouth_l).z;c+=60*max(0,.49-mz)   # round J: .49 on the REAL mouth = .50 on the old authored-space point; 60 (was 15): the real mouth sits closer to the neck, so at 15 the solve dropped it 53 mm and bent the head 42 deg onto the chest
   hd0=f('Head').translation;hd1=_tip(f,'Head');c+=3*abs(math.atan2(hd1.z-hd0.z,-(hd1.y-hd0.y))-math.radians(12))
@@ -2300,7 +2353,8 @@ def solve_sit():
  _sv=_tip(f,'Spine')-f('Spine').translation
  _p=math.degrees(math.atan2(_sv.z,abs(_sv.y)))
  _ov={k:round(1000*leg_ik(rots,locs,k,tg,pa)[2],1) for k,(tg,pa) in _sit_targets(f).items()}
- print('SIT_SOLVE',json.dumps({'cost':round(c_,4),'v':[round(float(x),3) for x in v],'hip_z':round(f('RearUpper.L').translation.z,3),
+ _pv=_tip(f,'Pelvis')-f('Pelvis').translation
+ print('SIT_SOLVE',json.dumps({'cost':round(c_,4),'v':[round(float(x),3) for x in v],'hip_z':round(f('RearUpper.L').translation.z,3),'pelvis_deg':round(math.degrees(math.atan2(_pv.z,abs(_pv.y))),1),'seat_mm':round(1000*_seat_low(rots,locs),1),
   'mouth_z':round((f('Head')@mouth_l).z,3),'pitch_deg':round(_p,1),'sh_z':round(f('FrontUpper.L').translation.z,3),'over_mm':_ov}))
  return rots,locs,_sit_targets(f)
 def _ell_sd(q,c,r):
@@ -2450,7 +2504,7 @@ SIT=solve_sit()
 # so any root lift takes the forepaws off the floor with the body (measured: +80 mm root ->
 # paws +77 mm). The hind pads sat 13 mm low on their own account, so their targets come up too.
 for _k,(_t,_a) in SIT[2].items():
- if _k[0]=='H':_t.z+=.013;SIT[2][_k]=(_t,_a)
+ if _k[0]=='H':_t.z+=_v6('V6_SIT_HOCK_LIFT',0.0);SIT[2][_k]=(_t,_a)   # round ZB: .013 -> 0, the paw guard (after the knee turns out) keeps the heel on the floor
 if os.environ.get('V6_LICK_FROM'):   # scratch iterations on the face only: reuse a previous build's solve (it does not depend on the mouth parts)
  _lj=json.loads(Path(os.environ['V6_LICK_FROM']).read_text());LICK_UPPER={k:tuple(v) for k,v in _lj['upper'].items()};LICK_WRIST=tuple(_lj['wrist'])
 else:
@@ -3004,7 +3058,7 @@ def place_legs(name,u,pb,hold=0.0):
   lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa,paw_dir=pdir)
   ko=0.0
   if RIG_X and k[0]=='H':
-   ko={'LieDown':LIEDOWN['knee_out']*_settle(u),'Lick':_v6('V6_SIT_KNEE_OUT',.5)*hold}.get(name,_v6('V6_SIT_KNEE_OUT',.5)*hold if (name in SIT_LIKE and not (name=='ScratchEar' and k=='HL')) else 0.0)
+   ko={'LieDown':LIEDOWN['knee_out']*_settle(u),'Lick':_v6('V6_SIT_KNEE_OUT',.2)*hold}.get(name,_v6('V6_SIT_KNEE_OUT',.2)*hold if (name in SIT_LIKE and not (name=='ScratchEar' and k=='HL')) else 0.0)
    if ko>1e-3:lr=_knee_out(k,lr,rots,locs,ko)
   if (name in ('LieDown','SideLie','Sleep','Stretch') or (FACE_V1 and name in SIT_LIKE+('Lick','PawPlay'))) and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:   # Z4: + PawPlay (its planted forepaw's beans -4.4 mm)
    # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
@@ -3372,11 +3426,12 @@ if FACE_V1:
   C['NostrilFlare.'+sf]=[['loc','Nostril.'+sf,_mm(s_*1.5,0,0)]]
   C['EarForward.'+sf]=[['ear',sf,'fwd',1.0]];C['EarFlatten.'+sf]=[['ear',sf,'flat',1.0]];C['EarSwivel.'+sf]=[['ear',sf,'swivel',1.0]];C['EarTipBend.'+sf]=[['ear',sf,'tip',1.0]]
   C['WhiskerForward.'+sf]=[['rotarm','Whisker.'+sf,[0,0,1],-s_*.35]];C['WhiskerUp.'+sf]=[['rotarm','Whisker.'+sf,[0,1,0],-s_*.25]]
-  C['GazeYaw.'+sf]=[['rotarm','Eye.'+sf,[0,0,1],1.0]];C['GazePitch.'+sf]=[['rotarm','Eye.'+sf,[1,0,0],1.0]]
+  C['GazeYaw.'+sf]=[['mat','LX_IrisLayer.'+sf,'LX_GazeX']];C['GazePitch.'+sf]=[['mat','LX_IrisLayer.'+sf,'LX_GazeY']]   # round ZB: the iris pattern slides (material), the dome stays - turning the dome poked it through the lids
  C['LowerLipDown']=[['loc','LipLow',_mm(0,-1,-4.5)]]
  C['MouthO']=[['loc','MouthCorner.L',_mm(6,-3,0)],['loc','MouthCorner.R',_mm(-6,-3,0)],['loc','LipUp.L',_mm(0,-1.5,0)],['loc','LipUp.R',_mm(0,-1.5,0)],['loc','LipLow',_mm(0,-1.5,0)]]
  C['JawOpen']=[['rot','Jaw',[1.0,0,0]],['loc_local','LipUpper',[round(float(c),6) for c in LIP_AX@(Vector(LIP_LIFT['Yawn'])*(1/JAW_OPEN['Yawn']))]]]
  C['TongueOut']=[['key','LX_Tongue','Up',2.0],['key','LX_Tongue','Out',1.0]];C['TongueCurl']=[['key','LX_Tongue','Curl',1.0]]
+ C['TongueUp']=[['key','LX_Tongue','Up',1.0]];C['TongueBlep']=[['key','LX_Tongue','Blep',1.0],['key','LX_Tongue','Out',.5]]   # Blep alone left the tip 6 mm past the lower lip, under its fur   # round ZB: the tongue on show in an open mouth / its tip out (blep)
  C['Sniff']=[['loc','Nose',_mm(0,0,1.2)],['loc','Nostril.L',_mm(-1,0,0)],['loc','Nostril.R',_mm(1,0,0)]]
  C['Sparkle']=[['catch','LX_Cornea',1.7],['sparkx','LX_Cornea',3.5]]
  both=lambda **kw:{k+'.'+sf:v for k,v in kw.items() for sf in 'LR'}
@@ -3396,9 +3451,9 @@ if FACE_V1:
    'tearful':{**both(LowerLift=.50,LidSlantOut=.8,PupilW=.30,PupilH=.32),'Sparkle':.8}},
   'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1,LidSlantIn=1),'raise':both(BrowInnerUp=.7,BrowOuterUp=1,UpperWide=.45),
    'sad':both(BrowInnerUp=1,BrowOuterUp=-.3,LidSlantOut=1)},
-  'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1),'open':{'JawOpen':.18},
+  'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1),'open':{'JawOpen':.24,'TongueUp':.7,'MouthO':.45},
    'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1)},
-   'hiss':{'JawOpen':.45,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)},'tongue':{'JawOpen':.10,'TongueOut':.70,**both(MouthCornerUp=.5)}},
+   'hiss':{'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)},'tongue':{'JawOpen':.12,'TongueBlep':1.0,'LowerLipDown':.4,**both(MouthCornerUp=.3)}},
   'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=1.0,EarSwivel=.7,EarForward=-.1,EarTipBend=-.2),
    'back':both(EarForward=-.65,EarFlatten=.65,EarSwivel=.8,EarTipBend=.65)}}
  # per-expression additions over the four layers - the block cat tells some apart only by the screen symbol (放松 / 安心, 闭眼休息 / 陶醉
@@ -3406,7 +3461,7 @@ if FACE_V1:
  EXPR_EXTRA={'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(SmileArc=.45,MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},
   '撒娇':both(SmileArc=.2,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
   '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5},'认真':both(LidSlantIn=.6),
-  '喵喵':{'JawOpen':.22,'MouthO':.30},'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
+  '喵喵':{'JawOpen':.30,'MouthO':.50,'TongueUp':.8},'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
   '温柔':both(EarForward=.12,MouthCornerUp=.25),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35)},
   '得意':{'MouthCornerUp.L':.7,'SmileArc.R':.2},'清醒':both(UpperWide=.25),'警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15)}
  # apps/lingxi/src/rig/art.ts BUILT_IN_EXPRESSIONS (symbol: a screen effect, carried through for the app)

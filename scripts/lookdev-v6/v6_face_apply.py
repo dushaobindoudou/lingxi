@@ -37,7 +37,7 @@ def _remember_rest():
     for m in bpy.data.materials:
         if m.node_tree:
             for n in m.node_tree.nodes:
-                if n.name.startswith(('LX_Pupil', 'LX_Catch', 'LX_SparkX')):
+                if n.name.startswith(('LX_Pupil', 'LX_Catch', 'LX_SparkX', 'LX_Gaze')):
                     REST[(m.name, n.name)] = n.outputs[0].default_value if n.type == 'VALUE' else n.inputs[1].default_value
 
 
