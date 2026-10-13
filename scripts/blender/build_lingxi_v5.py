@@ -371,8 +371,11 @@ head.data.materials.clear();head.data.materials.append(headcoat)
 # the eye, the dip of the stop between the eyes, the round whisker pads, the full lower cheeks, a
 # small chin - was missing, so fur lay on a ball. These brushes push the skin along its normal
 # (metres; + is outward), sized from the face close-up reference.
-SCULPT=[((0,-.418,.528),.022,-.0045),                                  # stop: the dip between the eyes
-        ((0,-.395,.575),.030,+.0030),                                  # forehead dome above it
+SCULPT=[((0,-.418,.528),.022,-.0045*_v6('V6_STOP_K',1.0)),                                  # stop: the dip between the eyes
+        ((0,-.395,.575),.030,+.0030*_v6('V6_FOREHEAD_K',1.0)),                                  # forehead dome above it
+        # Final check (head profile flat - codex ROUND-ZM-AUDIT 4, lingxi-ref-head-profile: the brow recedes from the nose, a stop between):
+        # the forehead's midline set back above the stop (V6_BROW_BACK m; 0 = off)
+        ((0,-.405,.585),.032,-_v6('V6_BROW_BACK',0.0)),
         ((-.060,-.395,.570),.020,+.0035*_v6('V6_BROW_K',1.6)),((.060,-.395,.570),.020,+.0035*_v6('V6_BROW_K',1.6)),   # brow over each eye
         # ZK: the brow ridge over the eye's outer half and a zygomatic lift under its outer corner - the frame a sunken eye sits in
         ((-.086,-.396,.575),.020,+.0045*_v6('V6_BROW_K',1.6)),((.086,-.396,.575),.020,+.0045*_v6('V6_BROW_K',1.6)),
@@ -2010,6 +2013,13 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   facing=np.clip(-hn[:,1],0,1)**2
   ln*=(1-.55*facing)[:,None,None]
   crown=np.clip(hn[:,2],0,1)**2;ln*=(1-.40*crown)[:,None,None]     # a sleek crown: the ball shape was mostly crown fluff
+  # Final check (head profile flat; the no-fur preview round-v-test hp0 already has a domed brow and a stop - the white blaze's coat between
+  # and above the eyes stood out as far as the nose): the midline from the stop up the forehead trimmed (V6_STOP_TRIM), so the coat
+  # follows the skin's profile - brow back, stop, then the nose in front (lingxi-ref-head-profile)
+  _st=_v6('V6_STOP_TRIM',.70)   # round ZW: .70 (round-v-test hf1 .45 / hf2 .70: the brow's front edge comes back a little; a no-fur sculpt of the stop at 14 mm tore the skin)
+  if _st>0:
+   _mid=np.clip((.045-np.abs(root[:,0]))/.025,0,1)*np.clip((root[:,2]-(EYE_Z-.025))/.02,0,1)*np.clip((.61-root[:,2])/.03,0,1)*facing
+   ln*=(1-_st*_mid)[:,None,None]
   # Tufts: a low-frequency length field (+-25%), so the head's outline breaks into soft locks
   # instead of a clipped sphere - uniform length is what made it read as a ball.
   tq=root*np.array([41.,37.,43.]);tuft=.5+.5*np.sin(tq[:,0]+1.7*np.sin(tq[:,2]))*np.sin(tq[:,1]*1.3+tq[:,2]*.7)
@@ -2880,7 +2890,9 @@ SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2047,
 # set upright toward the camera in the world (_face_world) rather than left at the end of the curl (round-v-test q1-q8).
 # Round X: the back curls 2.2 (was 1.4) and the neck 1.1 (.9), now over the split back's four joints - a closed ring, as codex's
 # lingxi-ref-pose-sleep-top.png; the tail is laid round the ring's gap to the chin by _tail_wrap (its per-joint angles here are overridden).
-SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2175,spine=2.2,spine_side=0,neck=1.1,neck_side=-.25,head=.5,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=1.2,tail_k=-.15,ear_x=0,ear_z=-.60,
+# Round ZV (final check: the tail never reached the chin - V6_TAIL_DEBUG: a 974 mm path round a 139 deg gap for a 474 mm tail; the ring was
+# too open): the back curls 2.2 -> 3.0 (gap 115 deg; 3.4 threw the paws out) and the tail lies closer (V6_SP_TAIL_GAP 2 mm)
+SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2175,spine=3.0,spine_side=0,neck=1.1,neck_side=-.25,head=.5,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=1.2,tail_k=-.15,ear_x=0,ear_z=-.60,
  f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.14,h_dz=.20,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
 # Round Q (user: 「侧躺和躺着姿势不对」): SideLie is the reference's side LOUNGE (lingxi-ref-sidelie.png), not a cat rolled
 # over: the hips go down onto their side with both hind legs laid out beside them, the chest stays nearly upright on its
@@ -3603,7 +3615,7 @@ def pose(name,u):
   if name=='LieDown':_fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.R').translation;_tail_wrap(pb,(1,0),(_fp.x+.06,_fp.y-.02),k=_settle(u,.10,LIE_T+.20),lead=_v6('V6_LD_TAIL_LEAD',.7))
   else:
    _f=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones});_ch=_f('Head')@mouth_l
-   _tail_wrap(pb,None,(_ch.x,_ch.y),k=1.0,lead=_v6('V6_SP_TAIL_LEAD',.5))
+   _tail_wrap(pb,None,(_ch.x,_ch.y),k=1.0,lead=_v6('V6_SP_TAIL_LEAD',.5),margin=_v6('V6_SP_TAIL_GAP',.002))
  # Round ZT: the upright sit (pelvis 62 deg) put the tail's root into the floor and _tail_off_floor stood it up behind the back (Tail1 2.5 rad,
  # hidden from the front, a hump in profile); a sitting cat wraps it round on the floor to beside its forepaws (lingxi-ref-sit-front / -back)
  _SITW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and _v6('V6_SIT_TAIL_WRAP',1)>0 and name in SIT_LIKE+('Lick',) and not (name=='ScratchEar')
