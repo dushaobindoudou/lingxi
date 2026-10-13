@@ -1111,7 +1111,10 @@ def iris_material():
   r=nt.nodes.new('ShaderNodeMapRange');r.inputs['From Min'].default_value=lo;r.inputs['From Max'].default_value=hi
   nt.links.new(dist.outputs['Value'],r.inputs['Value']);return r.outputs['Result']
  limbal=nt.nodes.new('ShaderNodeMixRGB');limbal.inputs[2].default_value=(.10,.085,.04,1)   # a soft olive rim, not a black outline
- nt.links.new(ramp(.48,.50),limbal.inputs['Fac']);nt.links.new(src,limbal.inputs[1])
+ if _v6('V6_EYE_V2',1)>0:
+  # Rig v2 eye: depth in the iris - its outer third shaded down toward the limbus (the reference's darker rim, lighter collarette)
+  _dk=nt.nodes.new('ShaderNodeMixRGB');_dk.blend_type='MULTIPLY';_dk.inputs[2].default_value=(.55,.52,.45,1);nt.links.new(ramp(.30,.47),_dk.inputs['Fac']);nt.links.new(src,_dk.inputs[1]);src=_dk.outputs['Color']
+ nt.links.new(ramp(.46 if _v6('V6_EYE_V2',1)>0 else .48,.50),limbal.inputs['Fac']);nt.links.new(src,limbal.inputs[1])
  pupil=nt.nodes.new('ShaderNodeMixRGB');pupil.inputs[1].default_value=(.003,.003,.004,1)
  if FACE_V1:
   # rig v1 (codex AD68 / AD69, material not skin): the pupil an ellipse of half-width LX_PupilW and half-height LX_PupilH in the iris's
@@ -1187,10 +1190,36 @@ cl.new(co_fr.outputs[0],co_mix.inputs[0]);cl.new(co_tr.outputs[0],co_mix.inputs[
 # wedge cut off by the upper lid. A shading-only "rounder cornea" mirrored the whole studio into the pupil.
 # Like the reference: one soft round light on the pupil's upper-right edge and a small one nearer the centre.
 _acc=co_mix.outputs[0];_uvc=cn.new('ShaderNodeUVMap')
+_CREF=_v6('V6_EYE_V2',1)>0 and (TEXDIR/'cornea_reflection.png').exists() and _v6('V6_CORNEA_REF',1)>0
+if _CREF:
+ # Rig v2 eye (codex batch 17 cornea_reflection.png): the cornea mirrors a studio - a soft window and a fill strip over a dark warm
+ # room - looked up by the reflection vector, so the catchlight is a feathered window that moves with the view, and the whole cornea
+ # carries a faint wet sheen. Turned about z (V6_CORNEA_REF_ROT) to put the window on the pupil's upper right from the front.
+ # Facing the camera the reflection runs level toward it (equirect u .25, v .5: the dark horizon) and the window sits ~38 deg up at
+ # u .36 - so tilt up first (x), then turn (z): window on the pupil's upper right, ~10 deg right and 12 deg up of the view
+ _tc=cn.new('ShaderNodeTexCoord');_mp=cn.new('ShaderNodeMapping');_mp.inputs['Rotation'].default_value=(math.radians(_v6('V6_CORNEA_REF_TILT',-26)),0,math.radians(_v6('V6_CORNEA_REF_ROT',-49)))
+ _ev=cn.new('ShaderNodeTexEnvironment');_ev.image=bpy.data.images.load(str(TEXDIR/'cornea_reflection.png'),check_existing=True)
+ cl.new(_tc.outputs['Reflection'],_mp.inputs['Vector']);cl.new(_mp.outputs['Vector'],_ev.inputs['Vector'])
+ # gamma 3: the room's dark grey (.05-.1) would veil the pupil grey; only the window and the strip are kept
+ _gm=cn.new('ShaderNodeGamma');_gm.inputs['Gamma'].default_value=_v6('V6_CORNEA_REF_GAMMA',3.0);cl.new(_ev.outputs['Color'],_gm.inputs['Color'])
+ _ee=cn.new('ShaderNodeEmission');_ee.inputs['Strength'].default_value=_v6('V6_CORNEA_REF_K',.8);_ee.name='LX_CatchRef';cl.new(_gm.outputs['Color'],_ee.inputs['Color'])
+ _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_ee.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
+# (the mirror alone lit one eye only - each cornea is a shallow dome turned 12 deg out, so a far window lands on one of them; a round
+# eyeball would show it in both: rig v2 eye volume. Until then the painted window stays, softer, and the mirror is a faint wet sheen)
 for _hu,_hv,_hr in ((.80,.63,.085),(.62,.51,.028)):
  _d=cn.new('ShaderNodeVectorMath');_d.operation='DISTANCE';cl.new(_uvc.outputs['UV'],_d.inputs[0]);_d.inputs[1].default_value=(_hu,_hv,0)
- _mr=cn.new('ShaderNodeMapRange');_mr.interpolation_type='SMOOTHERSTEP';_mr.inputs['From Min'].default_value=_hr;_mr.inputs['From Max'].default_value=_hr*.45;cl.new(_d.outputs['Value'],_mr.inputs['Value'])
- _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=_v6('V6_CATCH',3.5);_ms.name='LX_Catch%d'%len([n for n in cn if n.name.startswith('LX_Catch')]);cl.new(_mr.outputs['Result'],_ms.inputs[0])
+ if _v6('V6_EYE_V2',1)>0 and _hr>.05:
+  # Rig v2 eye: the big catchlight a soft rounded window (a superellipse, wider than tall, feathered edge) - the hard disc read as a
+  # sticker next to the reference's softbox reflection
+  _sep=cn.new('ShaderNodeSeparateXYZ');_sub=cn.new('ShaderNodeVectorMath');_sub.operation='SUBTRACT';_sub.inputs[1].default_value=(_hu,_hv,0);cl.new(_uvc.outputs['UV'],_sub.inputs[0]);cl.new(_sub.outputs[0],_sep.inputs[0])
+  def _q(sock,k):
+   a_=cn.new('ShaderNodeMath');a_.operation='ABSOLUTE';cl.new(sock,a_.inputs[0]);m_=cn.new('ShaderNodeMath');m_.operation='MULTIPLY';m_.inputs[1].default_value=k;cl.new(a_.outputs[0],m_.inputs[0])
+   p_=cn.new('ShaderNodeMath');p_.operation='POWER';p_.inputs[1].default_value=_v6('V6_CATCH_SHAPE',2.0);cl.new(m_.outputs[0],p_.inputs[0]);return p_.outputs[0]   # 2: a soft ellipse (4, a rounded square, read as a pasted tile)
+  _sm=cn.new('ShaderNodeMath');_sm.operation='ADD';cl.new(_q(_sep.outputs['X'],1/.085),_sm.inputs[0]);cl.new(_q(_sep.outputs['Y'],1/.068),_sm.inputs[1])
+  _rt=cn.new('ShaderNodeMath');_rt.operation='POWER';_rt.inputs[1].default_value=1/_v6('V6_CATCH_SHAPE',2.0);cl.new(_sm.outputs[0],_rt.inputs[0]);_d=_rt;_hr=1.0
+ _win=_v6('V6_EYE_V2',1)>0 and _hr==1.0
+ _mr=cn.new('ShaderNodeMapRange');_mr.interpolation_type='LINEAR' if _win else 'SMOOTHERSTEP';_mr.inputs['From Min'].default_value=1.6 if _win else _hr;_mr.inputs['From Max'].default_value=0.0 if _win else _hr*.45   # v2 window: a long linear feather (the smootherstep edge, overexposed, cut a hard outline);cl.new(_d.outputs['Value'] if hasattr(_d.outputs,'get') and _d.outputs.get('Value') else _d.outputs[0],_mr.inputs['Value'])
+ _ms=cn.new('ShaderNodeMath');_ms.operation='MULTIPLY';_ms.inputs[1].default_value=_v6('V6_CATCH',3.5 if _v6('V6_EYE_V2',1)<=0 else 3.0);_ms.name='LX_Catch%d'%len([n for n in cn if n.name.startswith('LX_Catch')]);cl.new(_mr.outputs['Result'],_ms.inputs[0])
  _em=cn.new('ShaderNodeEmission');_em.inputs['Color'].default_value=(1,.99,.97,1);cl.new(_ms.outputs[0],_em.inputs['Strength'])
  _ad=cn.new('ShaderNodeAddShader');cl.new(_acc,_ad.inputs[0]);cl.new(_em.outputs[0],_ad.inputs[1]);_acc=_ad.outputs[0]
 # Round Z (codex FACE-STRICT-COMPARE: the sparkling eye is several highlights, not a bigger pupil): three more catchlights, off
@@ -1209,7 +1238,11 @@ cl.new(_acc,co_out.inputs['Surface'])
 lidskin=bpy.data.materials.new('LX_LidSkin');lidskin.use_nodes=True
 lp=lidskin.node_tree.nodes.get('Principled BSDF');la=lidskin.node_tree.nodes.new('ShaderNodeAttribute');la.attribute_name='lid_color'
 lidskin.node_tree.links.new(la.outputs['Color'],lp.inputs['Base Color']);lp.inputs['Roughness'].default_value=.85;lp.inputs['Specular IOR Level'].default_value=.12
-tear=mat('LX_TearDuct',(.55,.32,.30),.45)
+tear=mat('LX_TearDuct',(.62,.30,.30),.45)
+if _v6('V6_EYE_V2',1)>0:
+ _tp=tear.node_tree.nodes.get('Principled BSDF');_tp.inputs['Roughness'].default_value=.14;_tp.inputs['Subsurface Weight'].default_value=.25   # wet caruncle
+ if (TEXDIR/'canthus.png').exists():
+  _tt=tear.node_tree.nodes.new('ShaderNodeTexImage');_tt.image=bpy.data.images.load(str(TEXDIR/'canthus.png'),check_existing=True);tear.node_tree.links.new(_tt.outputs['Color'],_tp.inputs['Base Color'])
 # Closing the lids (2026-10-01): each lid turns shut about its own sphere's centre PER VERTEX, in
 # its Blink key. The inner rim turns all the way (upper .81 eye-radii down, lower 1.13 up - the
 # travel the lid bones had), the corners (sin=0) and the outer edge (t=1) stay put, and the band
@@ -1313,7 +1346,14 @@ for s in [-1,1]:
   eyelids.append(o)
  # Tear duct at the inner corner: the small pink caruncle every cat has. Without it the
  # eye is a perfect circle floating in fur, which is most of the "uncanny" read.
- duct=sphere('LX_TearDuct.'+suf,W(-s*r*.98,.0005,-.007),(.0060,.004,.005),tear);bind(duct,'Head');duct.hide_render=True
+ if _v6('V6_EYE_V2',1)>0:
+  # Rig v2 eye (codex RIG-V2-RESEARCH 5, lingxi-ref-eye-closeup.png: the wet pink tissue IN the inner corner). The old caruncle
+  # sat outside the eye on the fur - two pink beads - and was hidden: now flattened, tucked into the corner between the lids
+  # (partly behind them), and wet
+  # (first try at .90 r, 1.2 mm back: its inner half hid behind the iris dome and only the half on the fur showed - a bead again)
+  duct=sphere('LX_TearDuct.'+suf,W(-s*r*_v6('V6_CARUNCLE_X',.84),.0002,-.0035),(.0045,.0012,.0030),tear);bind(duct,'Head')
+ else:
+  duct=sphere('LX_TearDuct.'+suf,W(-s*r*.98,.0005,-.007),(.0060,.004,.005),tear);bind(duct,'Head');duct.hide_render=True
  # Eyebrow tufts: four short pale hairs fanning up and out above the eye. A bare dome of
  # fur gives the face nothing to emote with; these are what a raised brow actually moves.
  for i in range(4):
@@ -1600,6 +1640,14 @@ def muzzle_detail(p,col):
  m=np.where(inside[:,None],MUZZLE[np.clip((v*H).astype(int),0,H-1),np.clip((u*W).astype(int),0,W-1)],1.0)
  k=_v6('V6_MUZZLE_DETAIL',1.0);return col*(1-k+k*m)
 LIP_CREASE=_v6('V6_LIP_CREASE',.50 if MUZZLE is None else .20)
+def orbit_shade(p,col):
+ """Rig v2 eye: a shallow socket - the coat in a band round each eye (1.05-1.5 eye radii, front of the face) a shade darker, the
+  shadow the brow and cheek throw onto the eye's surround (codex lingxi-ref-eye-closeup.png); the eye no longer floats flush."""
+ if _v6('V6_EYE_V2',1)<=0 or _v6('V6_ORBIT_SHADE',.16)<=0:return col
+ x,y,z=p.T;band=np.zeros(len(p))
+ for s_ in (-1,1):
+  rho=np.hypot(x-s_*EYE_X,(z-EYE_Z)*1.05)/EYE_R;band=np.maximum(band,np.clip((rho-1.02)/.10,0,1)*np.clip((1.55-rho)/.30,0,1))
+ return col*(1-_v6('V6_ORBIT_SHADE',.16)*band*np.clip((-.36-y)/.04,0,1))[:,None]
 LIP_LINE=None
 def lip_line(p,col):
  """Round ZF: codex batch 15's lip line (lip_line_mask.png, the coat_head_front frame) painted into the face - the omega, the philtrum's
@@ -1643,7 +1691,7 @@ def fur_color(p,reg):
  # step down in value - dark bands ~.32, base ~.70, white markings ~.88.
  dark=np.array([.29,.235,.205]);light=np.array([.70,.625,.565]);white=np.array([.96,.945,.915])
  x,y,z=p.T
- if COAT is not None and reg=='Head':return lip_line(p,muzzle_detail(p,lip_crease(p,face_white(p,painted_coat(p,reg),white))))
+ if COAT is not None and reg=='Head':return orbit_shade(p,lip_line(p,muzzle_detail(p,lip_crease(p,face_white(p,painted_coat(p,reg),white)))))
  if COAT is not None and reg=='body':return leg_socks(p,chest_bib(p,painted_coat(p,reg)))*paw_crease(p)[:,None]
  if COAT is not None and reg in ('Head','body'):return painted_coat(p,reg)
  if COAT is not None and reg=='Jaw':return np.tile(white,(len(p),1))
@@ -1723,7 +1771,7 @@ for o in eyelids:
  # as a smooth pale goggle ring round each eye.
  # The lower lid is coloured where it lies SHUT, like its coat (see the lid groom): open, it sits
  # mostly behind the cheek, and its open-position white showed as a pale strip under the closed eye.
- col=fur_color(lid_turn(co,-1 if o.name.endswith('.L') else 1,'L',1.0) if 'Lower' in o.name else co,'Head');rim=np.clip((ring-.09)/.12,0,1)[:,None]   # round A's (.16,.18) read as a bold cartoon ring
+ col=fur_color(lid_turn(co,-1 if o.name.endswith('.L') else 1,'L',1.0) if 'Lower' in o.name else co,'Head');rim=np.clip((ring-(.12 if _v6('V6_EYE_V2',1)>0 else .09))/.12,0,1)[:,None]   # v2: .09 -> .12, a thicker eyeliner (codex: 1.5-2.5 mm). round A's (.16,.18) read as a bold cartoon ring
  # The LOWER lid's skin at .85 (2026-10-01): shut, its band is stretched x5 and shows between its
  # strands, and .62 of the white under-eye coat drew those gaps as grey streaks.
  col=np.array([.05,.035,.03])*(1-rim)+col*(.62 if 'Upper' in o.name else .85)*rim   # skin under the coat is a shade darker than the coat
