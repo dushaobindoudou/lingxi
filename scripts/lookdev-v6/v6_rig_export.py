@@ -14,6 +14,7 @@ GROUPS = [
     ('ear', ('Ear.', 'EarTip.')),
     ('eye', ('Eye.', 'LidUpper.', 'LidLower.')),
     ('face-control', ('BrowIn.', 'BrowOut.', 'MouthCorner.', 'LipUp.', 'LipLow', 'NoseSide.', 'Nostril.', 'LipUpper', 'Nose', 'Whisker.')),
+    ('face-sheet', ('MuzzlePad.', 'UpperLipSheet.', 'CheekLift.', 'OrbitLower.', 'NoseBridge')),   # rig v2: skin sheets that move together
     ('tongue', ('Tongue',)),
     ('foreleg', ('Scap.', 'FrontUpper.', 'FrontLower.', 'ForearmTwist.', 'FrontPaw.', 'FrontFoot.', 'FrontToe')),
     ('hindleg', ('RearUpper.', 'RearLower.', 'RearPaw.', 'RearFoot.', 'RearToe')),
@@ -42,7 +43,7 @@ out = os.environ.get('RIG_JSON') or os.path.join(os.path.dirname(bpy.data.filepa
 counts = {}
 for b in bones:
     counts[b['group']] = counts.get(b['group'], 0) + 1
-json.dump({'version': 1, 'bones': bones, 'bone_count': len(bones), 'by_group': counts, 'meshes': skins,
+json.dump({'version': int(os.environ.get('RIG_VERSION', 1)), 'bones': bones, 'bone_count': len(bones), 'by_group': counts, 'meshes': skins,
            'clips': [t.name for t in rig.animation_data.nla_tracks] if rig.animation_data else []},
           open(out, 'w'), indent=1, ensure_ascii=False)
 print('RIG_EXPORT', out, len(bones), counts)

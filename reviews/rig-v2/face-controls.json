@@ -1,0 +1,1809 @@
+{
+ "version": 1,
+ "controls": {
+  "Blink.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "Blink"
+   ],
+   [
+    "key",
+    "LidLower.L",
+    "Blink"
+   ]
+  ],
+  "Squint.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "Squint"
+   ],
+   [
+    "key",
+    "LidLower.L",
+    "Squint"
+   ]
+  ],
+  "UpperWide.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "Wide"
+   ]
+  ],
+  "LowerLift.L": [
+   [
+    "key",
+    "LidLower.L",
+    "Lift"
+   ]
+  ],
+  "SmileArc.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "Smile"
+   ],
+   [
+    "key",
+    "LidLower.L",
+    "Smile"
+   ]
+  ],
+  "LidSlantIn.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "SlantIn"
+   ]
+  ],
+  "LidSlantOut.L": [
+   [
+    "key",
+    "LidUpper.L",
+    "SlantOut"
+   ]
+  ],
+  "PupilW.L": [
+   [
+    "mat",
+    "LX_IrisLayer.L",
+    "LX_PupilW"
+   ]
+  ],
+  "PupilH.L": [
+   [
+    "mat",
+    "LX_IrisLayer.L",
+    "LX_PupilH"
+   ]
+  ],
+  "BrowInnerUp.L": [
+   [
+    "loc",
+    "BrowIn.L",
+    [
+     0.0,
+     0.000675,
+     0.00738
+    ]
+   ]
+  ],
+  "BrowOuterUp.L": [
+   [
+    "loc",
+    "BrowOut.L",
+    [
+     -0.00063,
+     0.0,
+     0.00648
+    ]
+   ]
+  ],
+  "BrowInnerDown.L": [
+   [
+    "loc",
+    "BrowIn.L",
+    [
+     0.001305,
+     -0.00198,
+     -0.00585
+    ]
+   ]
+  ],
+  "MouthCornerUp.L": [
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     -0.00135,
+     0.00225,
+     0.0081
+    ]
+   ]
+  ],
+  "MouthCornerDown.L": [
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     0.0,
+     -0.0009,
+     -0.0081
+    ]
+   ]
+  ],
+  "MouthWide.L": [
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     -0.0063,
+     0.00315,
+     0.0009
+    ]
+   ]
+  ],
+  "UpperLipRaise.L": [
+   [
+    "loc",
+    "LipUp.L",
+    [
+     0.0,
+     0.0018,
+     0.00495
+    ]
+   ]
+  ],
+  "NoseWrinkle.L": [
+   [
+    "loc",
+    "NoseSide.L",
+    [
+     0.00072,
+     0.00135,
+     0.0027
+    ]
+   ],
+   [
+    "loc",
+    "Nose",
+    [
+     0.0,
+     0.0,
+     0.00054
+    ]
+   ]
+  ],
+  "NostrilFlare.L": [
+   [
+    "loc",
+    "Nostril.L",
+    [
+     -0.00135,
+     0.0,
+     0.0
+    ]
+   ]
+  ],
+  "EarForward.L": [
+   [
+    "ear",
+    "L",
+    "fwd",
+    1.0
+   ]
+  ],
+  "EarFlatten.L": [
+   [
+    "ear",
+    "L",
+    "flat",
+    1.0
+   ]
+  ],
+  "EarSwivel.L": [
+   [
+    "ear",
+    "L",
+    "swivel",
+    1.0
+   ]
+  ],
+  "EarTipBend.L": [
+   [
+    "ear",
+    "L",
+    "tip",
+    1.0
+   ]
+  ],
+  "WhiskerForward.L": [
+   [
+    "rotarm",
+    "Whisker.L",
+    [
+     0,
+     0,
+     1
+    ],
+    0.35
+   ]
+  ],
+  "WhiskerUp.L": [
+   [
+    "rotarm",
+    "Whisker.L",
+    [
+     0,
+     1,
+     0
+    ],
+    0.25
+   ]
+  ],
+  "GazeYaw.L": [
+   [
+    "mat",
+    "LX_IrisLayer.L",
+    "LX_GazeX"
+   ]
+  ],
+  "GazePitch.L": [
+   [
+    "mat",
+    "LX_IrisLayer.L",
+    "LX_GazeY"
+   ]
+  ],
+  "Blink.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "Blink"
+   ],
+   [
+    "key",
+    "LidLower.R",
+    "Blink"
+   ]
+  ],
+  "Squint.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "Squint"
+   ],
+   [
+    "key",
+    "LidLower.R",
+    "Squint"
+   ]
+  ],
+  "UpperWide.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "Wide"
+   ]
+  ],
+  "LowerLift.R": [
+   [
+    "key",
+    "LidLower.R",
+    "Lift"
+   ]
+  ],
+  "SmileArc.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "Smile"
+   ],
+   [
+    "key",
+    "LidLower.R",
+    "Smile"
+   ]
+  ],
+  "LidSlantIn.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "SlantIn"
+   ]
+  ],
+  "LidSlantOut.R": [
+   [
+    "key",
+    "LidUpper.R",
+    "SlantOut"
+   ]
+  ],
+  "PupilW.R": [
+   [
+    "mat",
+    "LX_IrisLayer.R",
+    "LX_PupilW"
+   ]
+  ],
+  "PupilH.R": [
+   [
+    "mat",
+    "LX_IrisLayer.R",
+    "LX_PupilH"
+   ]
+  ],
+  "BrowInnerUp.R": [
+   [
+    "loc",
+    "BrowIn.R",
+    [
+     0.0,
+     0.000675,
+     0.00738
+    ]
+   ]
+  ],
+  "BrowOuterUp.R": [
+   [
+    "loc",
+    "BrowOut.R",
+    [
+     0.00063,
+     0.0,
+     0.00648
+    ]
+   ]
+  ],
+  "BrowInnerDown.R": [
+   [
+    "loc",
+    "BrowIn.R",
+    [
+     -0.001305,
+     -0.00198,
+     -0.00585
+    ]
+   ]
+  ],
+  "MouthCornerUp.R": [
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     0.00135,
+     0.00225,
+     0.0081
+    ]
+   ]
+  ],
+  "MouthCornerDown.R": [
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     0.0,
+     -0.0009,
+     -0.0081
+    ]
+   ]
+  ],
+  "MouthWide.R": [
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     0.0063,
+     0.00315,
+     0.0009
+    ]
+   ]
+  ],
+  "UpperLipRaise.R": [
+   [
+    "loc",
+    "LipUp.R",
+    [
+     0.0,
+     0.0018,
+     0.00495
+    ]
+   ]
+  ],
+  "NoseWrinkle.R": [
+   [
+    "loc",
+    "NoseSide.R",
+    [
+     -0.00072,
+     0.00135,
+     0.0027
+    ]
+   ],
+   [
+    "loc",
+    "Nose",
+    [
+     0.0,
+     0.0,
+     0.00054
+    ]
+   ]
+  ],
+  "NostrilFlare.R": [
+   [
+    "loc",
+    "Nostril.R",
+    [
+     0.00135,
+     0.0,
+     0.0
+    ]
+   ]
+  ],
+  "EarForward.R": [
+   [
+    "ear",
+    "R",
+    "fwd",
+    1.0
+   ]
+  ],
+  "EarFlatten.R": [
+   [
+    "ear",
+    "R",
+    "flat",
+    1.0
+   ]
+  ],
+  "EarSwivel.R": [
+   [
+    "ear",
+    "R",
+    "swivel",
+    1.0
+   ]
+  ],
+  "EarTipBend.R": [
+   [
+    "ear",
+    "R",
+    "tip",
+    1.0
+   ]
+  ],
+  "WhiskerForward.R": [
+   [
+    "rotarm",
+    "Whisker.R",
+    [
+     0,
+     0,
+     1
+    ],
+    -0.35
+   ]
+  ],
+  "WhiskerUp.R": [
+   [
+    "rotarm",
+    "Whisker.R",
+    [
+     0,
+     1,
+     0
+    ],
+    -0.25
+   ]
+  ],
+  "GazeYaw.R": [
+   [
+    "mat",
+    "LX_IrisLayer.R",
+    "LX_GazeX"
+   ]
+  ],
+  "GazePitch.R": [
+   [
+    "mat",
+    "LX_IrisLayer.R",
+    "LX_GazeY"
+   ]
+  ],
+  "LowerLipDown": [
+   [
+    "loc",
+    "LipLow",
+    [
+     0.0,
+     -0.0009,
+     -0.00405
+    ]
+   ]
+  ],
+  "MouthO": [
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     0.0054,
+     -0.0027,
+     0.0
+    ]
+   ],
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     -0.0054,
+     -0.0027,
+     0.0
+    ]
+   ],
+   [
+    "loc",
+    "LipUp.L",
+    [
+     0.0,
+     -0.00135,
+     0.0
+    ]
+   ],
+   [
+    "loc",
+    "LipUp.R",
+    [
+     0.0,
+     -0.00135,
+     0.0
+    ]
+   ],
+   [
+    "loc",
+    "LipLow",
+    [
+     0.0,
+     -0.00135,
+     0.0
+    ]
+   ]
+  ],
+  "JawOpen": [
+   [
+    "rot",
+    "Jaw",
+    [
+     1.0,
+     0,
+     0
+    ]
+   ],
+   [
+    "loc_local",
+    "LipUpper",
+    [
+     -0.0,
+     -0.003333,
+     0.011667
+    ]
+   ]
+  ],
+  "TongueOut": [
+   [
+    "key",
+    "LX_Tongue",
+    "Up",
+    2.0
+   ],
+   [
+    "key",
+    "LX_Tongue",
+    "Out",
+    1.0
+   ]
+  ],
+  "TongueCurl": [
+   [
+    "key",
+    "LX_Tongue",
+    "Curl",
+    1.0
+   ]
+  ],
+  "PadLift.L": [
+   [
+    "loc",
+    "MuzzlePad.L",
+    [
+     -0.00792,
+     0.0099,
+     0.01386
+    ]
+   ]
+  ],
+  "LipCurl.L": [
+   [
+    "loc",
+    "UpperLipSheet.L",
+    [
+     -0.00198,
+     0.00396,
+     0.01584
+    ]
+   ]
+  ],
+  "CheekLift.L": [
+   [
+    "loc",
+    "CheekLift.L",
+    [
+     -0.00396,
+     0.00396,
+     0.01188
+    ]
+   ]
+  ],
+  "OrbitLift.L": [
+   [
+    "loc",
+    "OrbitLower.L",
+    [
+     0.0,
+     -0.00198,
+     0.00594
+    ]
+   ]
+  ],
+  "MouthRetract.L": [
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     -0.0081,
+     0.0054,
+     0.0018
+    ]
+   ]
+  ],
+  "PadLift.R": [
+   [
+    "loc",
+    "MuzzlePad.R",
+    [
+     0.00792,
+     0.0099,
+     0.01386
+    ]
+   ]
+  ],
+  "LipCurl.R": [
+   [
+    "loc",
+    "UpperLipSheet.R",
+    [
+     0.00198,
+     0.00396,
+     0.01584
+    ]
+   ]
+  ],
+  "CheekLift.R": [
+   [
+    "loc",
+    "CheekLift.R",
+    [
+     0.00396,
+     0.00396,
+     0.01188
+    ]
+   ]
+  ],
+  "OrbitLift.R": [
+   [
+    "loc",
+    "OrbitLower.R",
+    [
+     0.0,
+     -0.00198,
+     0.00594
+    ]
+   ]
+  ],
+  "MouthRetract.R": [
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     0.0081,
+     0.0054,
+     0.0018
+    ]
+   ]
+  ],
+  "NoseBridgeWrinkle": [
+   [
+    "loc",
+    "NoseBridge",
+    [
+     0.0,
+     0.00198,
+     0.00396
+    ]
+   ]
+  ],
+  "TongueUp": [
+   [
+    "key",
+    "LX_Tongue",
+    "Up",
+    1.0
+   ]
+  ],
+  "TongueBlep": [
+   [
+    "key",
+    "LX_Tongue",
+    "Blep",
+    1.0
+   ],
+   [
+    "key",
+    "LX_Tongue",
+    "Out",
+    0.6
+   ]
+  ],
+  "Sniff": [
+   [
+    "loc",
+    "Nose",
+    [
+     0.0,
+     0.0,
+     0.00108
+    ]
+   ],
+   [
+    "loc",
+    "Nostril.L",
+    [
+     -0.0009,
+     0.0,
+     0.0
+    ]
+   ],
+   [
+    "loc",
+    "Nostril.R",
+    [
+     0.0009,
+     0.0,
+     0.0
+    ]
+   ]
+  ],
+  "Sparkle": [
+   [
+    "catch",
+    "LX_Cornea",
+    1.7
+   ],
+   [
+    "sparkx",
+    "LX_Cornea",
+    3.5
+   ]
+  ],
+  "SnarlMouth": [
+   [
+    "loc",
+    "UpperLipSheet.L",
+    [
+     -0.00198,
+     0.00396,
+     0.01584
+    ]
+   ],
+   [
+    "loc",
+    "UpperLipSheet.R",
+    [
+     0.00198,
+     0.00396,
+     0.01584
+    ]
+   ],
+   [
+    "loc",
+    "MuzzlePad.L",
+    [
+     -0.006336,
+     0.00792,
+     0.011088
+    ]
+   ],
+   [
+    "loc",
+    "MuzzlePad.R",
+    [
+     0.006336,
+     0.00792,
+     0.011088
+    ]
+   ],
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     -0.006885,
+     0.00459,
+     0.00153
+    ]
+   ],
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     0.006885,
+     0.00459,
+     0.00153
+    ]
+   ],
+   [
+    "loc",
+    "CheekLift.L",
+    [
+     -0.002574,
+     0.002574,
+     0.007722
+    ]
+   ],
+   [
+    "loc",
+    "CheekLift.R",
+    [
+     0.002574,
+     0.002574,
+     0.007722
+    ]
+   ],
+   [
+    "loc",
+    "OrbitLower.L",
+    [
+     0.0,
+     -0.001089,
+     0.003267
+    ]
+   ],
+   [
+    "loc",
+    "OrbitLower.R",
+    [
+     0.0,
+     -0.001089,
+     0.003267
+    ]
+   ],
+   [
+    "loc",
+    "NoseSide.L",
+    [
+     0.000324,
+     0.000608,
+     0.001215
+    ]
+   ],
+   [
+    "loc",
+    "Nose",
+    [
+     0.0,
+     0.0,
+     0.000243
+    ]
+   ],
+   [
+    "loc",
+    "NoseSide.R",
+    [
+     -0.000324,
+     0.000608,
+     0.001215
+    ]
+   ],
+   [
+    "loc",
+    "Nose",
+    [
+     0.0,
+     0.0,
+     0.000243
+    ]
+   ],
+   [
+    "loc",
+    "LipUp.L",
+    [
+     0.0,
+     0.00108,
+     0.00297
+    ]
+   ],
+   [
+    "loc",
+    "LipUp.R",
+    [
+     0.0,
+     0.00108,
+     0.00297
+    ]
+   ],
+   [
+    "loc",
+    "NoseBridge",
+    [
+     0.0,
+     0.001485,
+     0.00297
+    ]
+   ],
+   [
+    "rot",
+    "Jaw",
+    [
+     0.37,
+     0.0,
+     0.0
+    ]
+   ],
+   [
+    "loc_local",
+    "LipUpper",
+    [
+     -0.0,
+     -0.001233,
+     0.004317
+    ]
+   ],
+   [
+    "loc",
+    "LipLow",
+    [
+     0.0,
+     -0.00054,
+     -0.00243
+    ]
+   ]
+  ],
+  "Snarl": [
+   [
+    "loc",
+    "UpperLipSheet.L",
+    [
+     -0.00198,
+     0.00396,
+     0.01584
+    ]
+   ],
+   [
+    "loc",
+    "UpperLipSheet.R",
+    [
+     0.00198,
+     0.00396,
+     0.01584
+    ]
+   ],
+   [
+    "loc",
+    "MuzzlePad.L",
+    [
+     -0.006336,
+     0.00792,
+     0.011088
+    ]
+   ],
+   [
+    "loc",
+    "MuzzlePad.R",
+    [
+     0.006336,
+     0.00792,
+     0.011088
+    ]
+   ],
+   [
+    "loc",
+    "MouthCorner.L",
+    [
+     -0.006885,
+     0.00459,
+     0.00153
+    ]
+   ],
+   [
+    "loc",
+    "MouthCorner.R",
+    [
+     0.006885,
+     0.00459,
+     0.00153
+    ]
+   ],
+   [
+    "loc",
+    "CheekLift.L",
+    [
+     -0.002574,
+     0.002574,
+     0.007722
+    ]
+   ],
+   [
+    "loc",
+    "CheekLift.R",
+    [
+     0.002574,
+     0.002574,
+     0.007722
+    ]
+   ],
+   [
+    "loc",
+    "OrbitLower.L",
+    [
+     0.0,
+     -0.001089,
+     0.003267
+    ]
+   ],
+   [
+    "loc",
+    "OrbitLower.R",
+    [
+     0.0,
+     -0.001089,
+     0.003267
+    ]
+   ],
+   [
+    "loc",
+    "NoseSide.L",
+    [
+     0.000324,
+     0.000608,
+     0.001215
+    ]
+   ],
+   [
+    "loc",
+    "Nose",
+    [
+     0.0,
+     0.0,
+     0.000243
+    ]
+   ],
+   [
+    "loc",
+    "NoseSide.R",
+    [
+     -0.000324,
+     0.000608,
+     0.001215
+    ]
+   ],
+   [
+    "loc",
+    "Nose",
+    [
+     0.0,
+     0.0,
+     0.000243
+    ]
+   ],
+   [
+    "loc",
+    "LipUp.L",
+    [
+     0.0,
+     0.00108,
+     0.00297
+    ]
+   ],
+   [
+    "loc",
+    "LipUp.R",
+    [
+     0.0,
+     0.00108,
+     0.00297
+    ]
+   ],
+   [
+    "loc",
+    "NoseBridge",
+    [
+     0.0,
+     0.001485,
+     0.00297
+    ]
+   ],
+   [
+    "rot",
+    "Jaw",
+    [
+     0.37,
+     0.0,
+     0.0
+    ]
+   ],
+   [
+    "loc_local",
+    "LipUpper",
+    [
+     -0.0,
+     -0.001233,
+     0.004317
+    ]
+   ],
+   [
+    "loc",
+    "LipLow",
+    [
+     0.0,
+     -0.00054,
+     -0.00243
+    ]
+   ],
+   [
+    "key",
+    "LidLower.L",
+    "Lift",
+    0.35
+   ],
+   [
+    "key",
+    "LidLower.R",
+    "Lift",
+    0.35
+   ],
+   [
+    "key",
+    "LidUpper.L",
+    "Squint",
+    0.45
+   ],
+   [
+    "key",
+    "LidLower.L",
+    "Squint",
+    0.45
+   ],
+   [
+    "key",
+    "LidUpper.R",
+    "Squint",
+    0.45
+   ],
+   [
+    "key",
+    "LidLower.R",
+    "Squint",
+    0.45
+   ],
+   [
+    "key",
+    "LidUpper.L",
+    "SlantIn",
+    0.7
+   ],
+   [
+    "key",
+    "LidUpper.R",
+    "SlantIn",
+    0.7
+   ],
+   [
+    "loc",
+    "BrowIn.L",
+    [
+     0.000783,
+     -0.001188,
+     -0.00351
+    ]
+   ],
+   [
+    "loc",
+    "BrowIn.R",
+    [
+     -0.000783,
+     -0.001188,
+     -0.00351
+    ]
+   ],
+   [
+    "ear",
+    "L",
+    "flat",
+    0.8
+   ],
+   [
+    "ear",
+    "R",
+    "flat",
+    0.8
+   ],
+   [
+    "ear",
+    "L",
+    "fwd",
+    -0.75
+   ],
+   [
+    "ear",
+    "R",
+    "fwd",
+    -0.75
+   ],
+   [
+    "ear",
+    "L",
+    "swivel",
+    0.65
+   ],
+   [
+    "ear",
+    "R",
+    "swivel",
+    0.65
+   ]
+  ],
+  "Sneer.L": [
+   [
+    "loc",
+    "UpperLipSheet.L",
+    [
+     -0.001584,
+     0.003168,
+     0.012672
+    ]
+   ],
+   [
+    "loc",
+    "MuzzlePad.L",
+    [
+     -0.00396,
+     0.00495,
+     0.00693
+    ]
+   ],
+   [
+    "loc",
+    "NoseBridge",
+    [
+     0.0,
+     0.000792,
+     0.001584
+    ]
+   ],
+   [
+    "loc",
+    "CheekLift.L",
+    [
+     -0.001188,
+     0.001188,
+     0.003564
+    ]
+   ]
+  ]
+ },
+ "layers": {
+  "eye": {
+   "slit": {
+    "Squint.L": 0.3,
+    "Squint.R": 0.3,
+    "PupilW.L": 0.058,
+    "PupilW.R": 0.058,
+    "PupilH.L": 0.35,
+    "PupilH.R": 0.35
+   },
+   "round": {
+    "PupilW.L": 0.27,
+    "PupilW.R": 0.27,
+    "PupilH.L": 0.29,
+    "PupilH.R": 0.29
+   },
+   "wide": {
+    "UpperWide.L": 1,
+    "UpperWide.R": 1,
+    "PupilW.L": 0.35,
+    "PupilW.R": 0.35,
+    "PupilH.L": 0.36,
+    "PupilH.R": 0.36,
+    "Sparkle": 0.4
+   },
+   "side": {
+    "GazeYaw.L": 0.55,
+    "GazeYaw.R": 0.55,
+    "Blink.L": 0.25,
+    "Blink.R": 0.25,
+    "PupilW.L": 0.25,
+    "PupilW.R": 0.25,
+    "PupilH.L": 0.28,
+    "PupilH.R": 0.28
+   },
+   "half": {
+    "Blink.L": 0.6,
+    "Blink.R": 0.6,
+    "PupilW.L": 0.28,
+    "PupilW.R": 0.28,
+    "PupilH.L": 0.3,
+    "PupilH.R": 0.3
+   },
+   "happy": {
+    "SmileArc.L": 1,
+    "SmileArc.R": 1
+   },
+   "closed": {
+    "Blink.L": 1,
+    "Blink.R": 1
+   },
+   "heart": {
+    "PupilW.L": 0.3,
+    "PupilW.R": 0.3,
+    "PupilH.L": 0.32,
+    "PupilH.R": 0.32,
+    "Sparkle": 1.4
+   },
+   "soft": {
+    "Blink.L": 0.26,
+    "Blink.R": 0.26,
+    "LowerLift.L": 0.6,
+    "LowerLift.R": 0.6,
+    "PupilW.L": 0.29,
+    "PupilW.R": 0.29,
+    "PupilH.L": 0.31,
+    "PupilH.R": 0.31
+   },
+   "wink-left": {
+    "Blink.L": 1,
+    "SmileArc.R": 0.35,
+    "LowerLift.R": 0.3
+   },
+   "wink-right": {
+    "Blink.R": 1,
+    "SmileArc.L": 0.35,
+    "LowerLift.L": 0.3
+   },
+   "sparkle": {
+    "PupilW.L": 0.27,
+    "PupilW.R": 0.27,
+    "PupilH.L": 0.29,
+    "PupilH.R": 0.29,
+    "UpperWide.L": 0.3,
+    "UpperWide.R": 0.3,
+    "Sparkle": 1.0
+   },
+   "tearful": {
+    "LowerLift.L": 0.5,
+    "LowerLift.R": 0.5,
+    "LidSlantOut.L": 0.8,
+    "LidSlantOut.R": 0.8,
+    "PupilW.L": 0.3,
+    "PupilW.R": 0.3,
+    "PupilH.L": 0.32,
+    "PupilH.R": 0.32,
+    "Sparkle": 0.8
+   }
+  },
+  "brow": {
+   "flat": {},
+   "none": {},
+   "furrow": {
+    "BrowInnerDown.L": 1,
+    "BrowInnerDown.R": 1,
+    "LidSlantIn.L": 1,
+    "LidSlantIn.R": 1
+   },
+   "raise": {
+    "BrowInnerUp.L": 0.7,
+    "BrowInnerUp.R": 0.7,
+    "BrowOuterUp.L": 1,
+    "BrowOuterUp.R": 1,
+    "UpperWide.L": 0.45,
+    "UpperWide.R": 0.45
+   },
+   "sad": {
+    "BrowInnerUp.L": 1,
+    "BrowInnerUp.R": 1,
+    "BrowOuterUp.L": -0.3,
+    "BrowOuterUp.R": -0.3,
+    "LidSlantOut.L": 1,
+    "LidSlantOut.R": 1
+   }
+  },
+  "mouth": {
+   "flat": {
+    "MouthCornerDown.L": 0.15,
+    "MouthCornerDown.R": 0.15
+   },
+   "cat": {
+    "MouthCornerUp.L": 1.4,
+    "MouthCornerUp.R": 1.4
+   },
+   "open": {
+    "JawOpen": 0.18,
+    "TongueUp": 0.8,
+    "MouthO": 1.0
+   },
+   "frown": {
+    "LowerLipDown": 0.35,
+    "MouthCornerDown.L": 1.4,
+    "MouthCornerDown.R": 1.4
+   },
+   "hiss": {
+    "SnarlMouth": 1.0,
+    "TongueUp": 0.4
+   },
+   "tongue": {
+    "JawOpen": 0.06,
+    "TongueBlep": 1.0,
+    "LowerLipDown": 0.8,
+    "UpperLipRaise.L": -0.8,
+    "UpperLipRaise.R": -0.8,
+    "MouthCornerUp.L": 0.2,
+    "MouthCornerUp.R": 0.2
+   }
+  },
+  "ear": {
+   "neutral": {},
+   "forward": {
+    "EarForward.L": 0.4,
+    "EarForward.R": 0.4
+   },
+   "airplane": {
+    "EarFlatten.L": 1.0,
+    "EarFlatten.R": 1.0,
+    "EarSwivel.L": 0.7,
+    "EarSwivel.R": 0.7,
+    "EarForward.L": -0.1,
+    "EarForward.R": -0.1,
+    "EarTipBend.L": -0.2,
+    "EarTipBend.R": -0.2
+   },
+   "back": {
+    "EarForward.L": -0.65,
+    "EarForward.R": -0.65,
+    "EarFlatten.L": 0.65,
+    "EarFlatten.R": 0.65,
+    "EarSwivel.L": 0.8,
+    "EarSwivel.R": 0.8,
+    "EarTipBend.L": 0.65,
+    "EarTipBend.R": 0.65
+   }
+  }
+ },
+ "expressions": {
+  "安然": {
+   "eye": "slit",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "none"
+  },
+  "好奇": {
+   "eye": "round",
+   "brow": "raise",
+   "mouth": "flat",
+   "ear": "forward",
+   "symbol": "question"
+  },
+  "满足": {
+   "eye": "happy",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "none"
+  },
+  "警觉": {
+   "eye": "wide",
+   "brow": "raise",
+   "mouth": "flat",
+   "ear": "forward",
+   "symbol": "exclaim"
+  },
+  "不爽": {
+   "eye": "side",
+   "brow": "furrow",
+   "mouth": "frown",
+   "ear": "airplane",
+   "symbol": "none"
+  },
+  "惊吓": {
+   "eye": "wide",
+   "brow": "raise",
+   "mouth": "open",
+   "ear": "back",
+   "symbol": "sweat"
+  },
+  "困困": {
+   "eye": "half",
+   "brow": "sad",
+   "mouth": "flat",
+   "ear": "neutral",
+   "symbol": "sleep"
+  },
+  "玩心": {
+   "eye": "round",
+   "brow": "raise",
+   "mouth": "tongue",
+   "ear": "forward",
+   "symbol": "none"
+  },
+  "生气": {
+   "eye": "slit",
+   "brow": "furrow",
+   "mouth": "hiss",
+   "ear": "back",
+   "symbol": "anger"
+  },
+  "撒娇": {
+   "eye": "heart",
+   "brow": "raise",
+   "mouth": "cat",
+   "ear": "forward",
+   "symbol": "heart"
+  },
+  "闭眼休息": {
+   "eye": "closed",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "sleep"
+  },
+  "开心": {
+   "eye": "happy",
+   "brow": "raise",
+   "mouth": "cat",
+   "ear": "forward",
+   "symbol": "none"
+  },
+  "放松": {
+   "eye": "soft",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "none"
+  },
+  "认真": {
+   "eye": "slit",
+   "brow": "flat",
+   "mouth": "flat",
+   "ear": "forward",
+   "symbol": "none"
+  },
+  "陶醉": {
+   "eye": "closed",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "heart"
+  },
+  "期待": {
+   "eye": "sparkle",
+   "brow": "raise",
+   "mouth": "cat",
+   "ear": "forward",
+   "symbol": "none"
+  },
+  "喵喵": {
+   "eye": "round",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "none"
+  },
+  "清醒": {
+   "eye": "round",
+   "brow": "flat",
+   "mouth": "flat",
+   "ear": "forward",
+   "symbol": "none"
+  },
+  "安心": {
+   "eye": "soft",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "heart"
+  },
+  "温柔": {
+   "eye": "soft",
+   "brow": "raise",
+   "mouth": "cat",
+   "ear": "forward",
+   "symbol": "none"
+  },
+  "委屈": {
+   "eye": "tearful",
+   "brow": "sad",
+   "mouth": "frown",
+   "ear": "back",
+   "symbol": "none"
+  },
+  "害羞": {
+   "eye": "half",
+   "brow": "sad",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "heart"
+  },
+  "求抱抱": {
+   "eye": "round",
+   "brow": "sad",
+   "mouth": "cat",
+   "ear": "forward",
+   "symbol": "heart"
+  },
+  "困惑": {
+   "eye": "round",
+   "brow": "raise",
+   "mouth": "frown",
+   "ear": "neutral",
+   "symbol": "question"
+  },
+  "警惕": {
+   "eye": "side",
+   "brow": "raise",
+   "mouth": "flat",
+   "ear": "forward",
+   "symbol": "exclaim"
+  },
+  "嫌弃": {
+   "eye": "half",
+   "brow": "furrow",
+   "mouth": "frown",
+   "ear": "airplane",
+   "symbol": "none"
+  },
+  "得意": {
+   "eye": "half",
+   "brow": "raise",
+   "mouth": "cat",
+   "ear": "forward",
+   "symbol": "none"
+  },
+  "左眼眨": {
+   "eye": "wink-left",
+   "brow": "raise",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "none"
+  },
+  "右眼眨": {
+   "eye": "wink-right",
+   "brow": "raise",
+   "mouth": "cat",
+   "ear": "neutral",
+   "symbol": "none"
+  },
+  "闪亮": {
+   "eye": "sparkle",
+   "brow": "none",
+   "mouth": "cat",
+   "ear": "forward",
+   "symbol": "heart"
+  }
+ },
+ "expression_extras": {
+  "嫌弃": {
+   "Sneer.L": 1.0
+  },
+  "不爽": {
+   "NoseBridgeWrinkle": 0.35,
+   "PadLift.L": 0.25,
+   "PadLift.R": 0.25,
+   "OrbitLift.L": 0.3,
+   "OrbitLift.R": 0.3
+  },
+  "安心": {
+   "MouthCornerUp.L": 0.45,
+   "MouthCornerUp.R": 0.45,
+   "LowerLift.L": 0.25,
+   "LowerLift.R": 0.25
+  },
+  "陶醉": {
+   "SmileArc.L": 0.45,
+   "SmileArc.R": 0.45,
+   "MouthCornerUp.L": 0.5,
+   "MouthCornerUp.R": 0.5,
+   "EarFlatten.L": 0.3,
+   "EarFlatten.R": 0.3,
+   "EarForward.L": -0.15,
+   "EarForward.R": -0.15
+  },
+  "撒娇": {
+   "SmileArc.L": 0.2,
+   "SmileArc.R": 0.2,
+   "MouthCornerUp.L": 0.35,
+   "MouthCornerUp.R": 0.35
+  },
+  "期待": {
+   "EarForward.L": 0.25,
+   "EarForward.R": 0.25,
+   "UpperWide.L": 0.35,
+   "UpperWide.R": 0.35
+  },
+  "闪亮": {
+   "Sparkle": 1.0
+  },
+  "困惑": {
+   "EarSwivel.R": 0.9,
+   "EarFlatten.R": 0.45,
+   "BrowInnerUp.L": 0.7,
+   "LidSlantIn.R": 0.5
+  },
+  "认真": {
+   "LidSlantIn.L": 0.6,
+   "LidSlantIn.R": 0.6
+  },
+  "喵喵": {
+   "JawOpen": 0.24,
+   "MouthO": 1.0,
+   "TongueUp": 0.9,
+   "LowerLipDown": 0.3
+  },
+  "开心": {
+   "MouthCornerUp.L": 0.35,
+   "MouthCornerUp.R": 0.35
+  },
+  "求抱抱": {
+   "LidSlantOut.L": 0.4,
+   "LidSlantOut.R": 0.4,
+   "UpperWide.L": 0.2,
+   "UpperWide.R": 0.2
+  },
+  "温柔": {
+   "EarForward.L": 0.12,
+   "EarForward.R": 0.12,
+   "MouthCornerUp.L": 0.25,
+   "MouthCornerUp.R": 0.25
+  },
+  "害羞": {
+   "LowerLift.L": 0.3,
+   "LowerLift.R": 0.3,
+   "MouthCornerUp.L": 0.3,
+   "MouthCornerUp.R": 0.3,
+   "GazeYaw.L": -0.35,
+   "GazeYaw.R": -0.35
+  },
+  "得意": {
+   "MouthCornerUp.L": 0.7,
+   "SmileArc.R": 0.2
+  },
+  "清醒": {
+   "UpperWide.L": 0.25,
+   "UpperWide.R": 0.25
+  },
+  "警惕": {
+   "LidSlantIn.L": 0.35,
+   "LidSlantIn.R": 0.35
+  },
+  "满足": {
+   "EarFlatten.L": 0.15,
+   "EarFlatten.R": 0.15
+  }
+ },
+ "ear": {
+  "fwd_rad": 1.0,
+  "flat_rad": 1.0,
+  "swivel_rad": 1.0,
+  "tip_rad": 1.0
+ },
+ "notes": "heart / tearful iris looks are material variants for the app (not built in Blender v1); symbol is a screen effect."
+}

@@ -285,6 +285,7 @@ PAW={'Front':((.108,-.215,.040-PAW_LOW/2),(.054*PAW_SC,.064*PAW_RYK*PAW_SC,.038-
 # (skin_shell). V6_PAW_META=0 builds the old paw.
 PAW_META=_v6('V6_PAW_META',1)>0
 FOOT=_v6('V6_FOOT',1)>0   # round X2: a knuckle (MCP / MTP) joint, the Foot bone
+FACE_V2=_v6('V6_FACE_V2',1)>0   # rig v2 face (reviews/RIG-V2-RESEARCH-2026-10-13.md): the sheets of skin that move together - whisker pads, upper-lip sheets, cheeks, lower orbits, nose bridge
 FACE_V1=_v6('V6_FACE_V1',1)>0   # rig v1 (reviews/RIG-REQUIREMENTS-v1-DRAFT.md, codex FELINE-FACE-AND-DOF): ear tips, a 3-bone tongue, face control bones, lid / pupil controls
 MPAW={'Front':dict(x=.108,col=((-.165,.21),(-.196,.06)),col_r=.058,c=(-.220,.040),r=(.074,.070,.031),front=-.294,padc=-.196,padr=(.031,.025)),
       'Rear':dict(x=.12,col=((.272,.19),(.262,.062)),col_r=.055,c=(.241,.040),r=(.071,.066,.030),front=.171,padc=.258,padr=(.029,.024))}
@@ -714,6 +715,15 @@ if FACE_V1:
    'MouthCorner.'+_sf:(_s*MOUTH_W,_LZC,'Head'),'LipUp.'+_sf:(_s*.013,LIP0+.006,'Head'),'NoseSide.'+_sf:(_s*.016,NC[2]+.007,'Head'),
    'Nostril.'+_sf:(_s*.012,NC[2]-.003,'Head')})
  FACE_BONES['LipLow']=(0,LIP0-.008,'Jaw')
+ if FACE_V2:
+  # Rig v2 face (user: 「现在根本无法做出愤怒的表情……脸部骨骼和皮肤的拉扯关系不够，整个面部是一个整体」; codex RIG-V2-RESEARCH 4.2):
+  # 9 deformers on Head, each moving a whole sheet of skin - the v1 controls were small gaussians, and a snarl moved nothing outside
+  # the mouth (reviews/angry-diagnosis-2026-10-13.jpg). Placed on this head's own landmarks (authored space): the whisker pads are
+  # the muzzle balls (x .034, z .462), the cheek between the muzzle and the eye's outer corner, the orbit under the lower lid.
+  for _s,_sf in ((-1,'L'),(1,'R')):
+   FACE_BONES.update({'MuzzlePad.'+_sf:(_s*.034,.462,'Head'),'UpperLipSheet.'+_sf:(_s*.018,LIP0+.008,'Head'),
+    'CheekLift.'+_sf:(_s*.080,.478,'Head'),'OrbitLower.'+_sf:(_s*(EYE_X+.004),EYE_Z-EYE_R-.008,'Head')})
+  FACE_BONES['NoseBridge']=(0,NC[2]+NH+.008,'Head')
  for _nm,(_x,_z,_par) in FACE_BONES.items():bone(_nm,(_x,-.44,_z),(_x,-.44,_z+.010),_par)
  # Rig v1, body: a forearm twist bone each side - the forearm's lower half on it, and it takes half of whatever the paw turns about
  # the forearm's axis (_forearm_twist), so a paw turned palm-to-face no longer wrings the forearm's skin into a sock (codex [FORE]:
@@ -745,6 +755,18 @@ def face_fields(P,below=None,only=None):
    bx,bz,_=FACE_BONES['NoseSide.'+sf];out['NoseSide.'+sf]=G(bx,bz,.012,.010)*fr(-.40)
    bx,bz,_=FACE_BONES['Nostril.'+sf];out['Nostril.'+sf]=G(bx,bz,.008,.006)*fr(-.40)
  if only!='brow':bx,bz,_=FACE_BONES['LipLow'];out['LipLow']=G(bx,bz,.018,.009)*fr(-.37)*below
+ if FACE_V2 and only!='brow':
+  # rig v2 sheets: full weight inside r0, smoothstep to 0 at r1 (ax / az stretch the ellipse); own side of the midline only for the
+  # paired ones; the upper-lip sheet and the pads above the lip line; the orbit and cheek kept off the eye itself
+  def S(cx,cz,r0,r1,ax=1.,az=1.):
+   d=np.hypot((x-cx)/ax,(z-cz)/az);t=np.clip((r1-d)/(r1-r0),0,1);return t*t*(3-2*t)
+  for s_,sf in ((-1,'L'),(1,'R')):
+   side=np.clip((s_*x-.002)/.006,0,1);eye=np.clip((np.hypot(x-s_*EYE_X,z-EYE_Z)-1.08*EYE_R)/(.18*EYE_R),0,1)
+   bx,bz,_=FACE_BONES['MuzzlePad.'+sf];out['MuzzlePad.'+sf]=S(bx,bz,.018,.042,1.,.8)*fr(-.36)*side*(1-below)
+   bx,bz,_=FACE_BONES['UpperLipSheet.'+sf];out['UpperLipSheet.'+sf]=S(bx,bz,.009,.027,1.,.8)*fr(-.38)*side*(1-below)
+   bx,bz,_=FACE_BONES['CheekLift.'+sf];out['CheekLift.'+sf]=S(bx,bz,.018,.050,1.,.8)*fr(-.30)*eye
+   bx,bz,_=FACE_BONES['OrbitLower.'+sf];out['OrbitLower.'+sf]=S(bx,bz,.009,.028,1.6,.7)*fr(-.33)*eye
+  bx,bz,_=FACE_BONES['NoseBridge'];out['NoseBridge']=S(bx,bz,.006,.019)*fr(-.40)
  tot=sum(out.values());k=np.where(tot>.95,.95/np.maximum(tot,1e-9),1.0)
  return {nm:v*k for nm,v in out.items() if v.max()>1e-4}
 def _with_face(w,P,below=None,only=None):
@@ -3523,10 +3545,37 @@ if FACE_V1:
  C['MouthO']=[['loc','MouthCorner.L',_mm(6,-3,0)],['loc','MouthCorner.R',_mm(-6,-3,0)],['loc','LipUp.L',_mm(0,-1.5,0)],['loc','LipUp.R',_mm(0,-1.5,0)],['loc','LipLow',_mm(0,-1.5,0)]]
  C['JawOpen']=[['rot','Jaw',[1.0,0,0]],['loc_local','LipUpper',[round(float(c),6) for c in LIP_AX@(Vector(LIP_LIFT['Yawn'])*(1/JAW_OPEN['Yawn']))]]]
  C['TongueOut']=[['key','LX_Tongue','Up',2.0],['key','LX_Tongue','Out',1.0]];C['TongueCurl']=[['key','LX_Tongue','Curl',1.0]]
+ if FACE_V2:
+  for s_,sf in ((-1,'L'),(1,'R')):
+   C['PadLift.'+sf]=[['loc','MuzzlePad.'+sf,_mm(s_*4*_v6('V6_V2_K',2.2),5*_v6('V6_V2_K',2.2),7*_v6('V6_V2_K',2.2))]]   # up 7, out 4, back 5 mm (codex 4.2) x V6_V2_K
+   C['LipCurl.'+sf]=[['loc','UpperLipSheet.'+sf,_mm(s_*1*_v6('V6_V2_K',2.2),2*_v6('V6_V2_K',2.2),8*_v6('V6_V2_K',2.2))]]
+   C['CheekLift.'+sf]=[['loc','CheekLift.'+sf,_mm(s_*2*_v6('V6_V2_K',2.2),2*_v6('V6_V2_K',2.2),6*_v6('V6_V2_K',2.2))]]
+   C['OrbitLift.'+sf]=[['loc','OrbitLower.'+sf,_mm(0,-1*_v6('V6_V2_K',2.2),3*_v6('V6_V2_K',2.2))]]
+   C['MouthRetract.'+sf]=[['loc','MouthCorner.'+sf,_mm(s_*9,6,2)]]
+  C['NoseBridgeWrinkle']=[['loc','NoseBridge',_mm(0,1*_v6('V6_V2_K',2.2),2*_v6('V6_V2_K',2.2))]]
  C['TongueUp']=[['key','LX_Tongue','Up',1.0]];C['TongueBlep']=[['key','LX_Tongue','Blep',1.0],['key','LX_Tongue','Out',.6]]   # ZF: .5 -> .6 (codex: .05-.07 nose widths short). Blep alone left the tip 6 mm past the lower lip, under its fur   # round ZB: the tongue on show in an open mouth / its tip out (blep)
  C['Sniff']=[['loc','Nose',_mm(0,0,1.2)],['loc','Nostril.L',_mm(-1,0,0)],['loc','Nostril.R',_mm(1,0,0)]]
  C['Sparkle']=[['catch','LX_Cornea',1.7],['sparkx','LX_Cornea',3.5]]
  both=lambda **kw:{k+'.'+sf:v for k,v in kw.items() for sf in 'LR'}
+ if FACE_V2:
+  # Rig v2 macros (codex RIG-V2-RESEARCH 4.5): one value drives every region of a snarl, each at its own share, evaluated one way
+  # (macro -> regions; no region drives another). SnarlMouth is the mouth layer's part - lip sheets, pads, nose bridge, corners drawn
+  # back, cheeks and the lower orbit pushed up, the jaw a little open; Snarl adds the eyes, brows and ears for use on its own.
+  def _macro(parts):
+   out=[]
+   for cn,w in parts.items():
+    for a in C[cn]:
+     a=list(a)
+     if a[0] in ('loc','loc_local','rot'):a[2]=[round(v*w,6) for v in a[2]]
+     elif a[0] in ('rotarm','ear'):a[3]=round(a[3]*w,6)
+     elif a[0]=='key':a=a[:3]+[round((a[3] if len(a)>3 else 1.0)*w,6)]
+     else:continue   # material controls are absolute: never inside a macro
+     out.append(a)
+   return out
+  _SM={**both(LipCurl=1.0,PadLift=.8,MouthRetract=.85,CheekLift=.65,OrbitLift=.55,NoseWrinkle=.45,UpperLipRaise=.6),'NoseBridgeWrinkle':.75,'JawOpen':.37,'LowerLipDown':.6}
+  C['SnarlMouth']=_macro(_SM)
+  C['Snarl']=_macro({**_SM,**both(LowerLift=.35,Squint=.45,LidSlantIn=.7,BrowInnerDown=.6,EarFlatten=.8,EarForward=-.75,EarSwivel=.65)})
+  C['Sneer.L']=_macro({'LipCurl.L':.8,'PadLift.L':.5,'NoseBridgeWrinkle':.4,'CheekLift.L':.3})   # one side's lip up: disgust
  # Round Z (user: 「表情不对，我看着所有表情都一样」): every state made distinct at desktop size - the eye states by how far the lids
  # close and how big the pupil is (the resting pupil .33 left little iris; 'round' now shows a ring of it), the brow states through
  # the upper lid's slant (a cat's brow is fur: moving it alone barely read), the mouth states by a wider opening, the ears further.
@@ -3546,12 +3595,12 @@ if FACE_V1:
   # ZF: the corners x1.4 (codex ROUND-ZD-AUDIT 3: cat .08-.10, frown .09-.12 nose widths short)
   'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1.4),'open':{'JawOpen':.18,'TongueUp':.8,'MouthO':1.0},
    'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1.4)},
-   'hiss':{'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)},'tongue':{'JawOpen':.06,'TongueBlep':1.0,'LowerLipDown':.8,**both(UpperLipRaise=-.8,MouthCornerUp=.2)}},   # Z4: the lips close round the tip - at jaw .12 the upper fangs showed (codex blep: no teeth)
+   'hiss':({'SnarlMouth':1.0,'TongueUp':.4} if FACE_V2 else {'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)}),'tongue':{'JawOpen':.06,'TongueBlep':1.0,'LowerLipDown':.8,**both(UpperLipRaise=-.8,MouthCornerUp=.2)}},   # Z4: the lips close round the tip - at jaw .12 the upper fangs showed (codex blep: no teeth)
   'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=1.0,EarSwivel=.7,EarForward=-.1,EarTipBend=-.2),
    'back':both(EarForward=-.65,EarFlatten=.65,EarSwivel=.8,EarTipBend=.65)}}
  # per-expression additions over the four layers - the block cat tells some apart only by the screen symbol (放松 / 安心, 闭眼休息 / 陶醉
  # identical; 撒娇 / 期待 / 闪亮, 好奇 / 玩心 / 困惑 ... under 1.3 / 255 apart, codex), which the 3D face cannot show
- EXPR_EXTRA={'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(SmileArc=.45,MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},
+ EXPR_EXTRA={**({'嫌弃':{'Sneer.L':1.0},'不爽':{'NoseBridgeWrinkle':.35,**both(PadLift=.25,OrbitLift=.3)}} if FACE_V2 else {}),'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(SmileArc=.45,MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},
   '撒娇':both(SmileArc=.2,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
   '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5},'认真':both(LidSlantIn=.6),
   # ZC (codex ROUND-ZB-AUDIT 3: the meow 1.55 x 1.25 nose widths, target .63 x .70): the meow's corners drawn in all the way, the jaw less
