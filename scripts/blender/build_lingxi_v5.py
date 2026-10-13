@@ -1422,6 +1422,13 @@ def mask_sample(m,p,ha,hr,va,vr):
  iu=u.astype(int);iv=v.astype(int);fu=u-iu;fv=v-iv
  return m[iv,iu]*(1-fu)*(1-fv)+m[iv,iu+1]*fu*(1-fv)+m[iv+1,iu]*(1-fu)*fv+m[iv+1,iu+1]*fu*fv
 CHEST_MASK=load_mask('chest_bib_mask.png')     # body front: x -.30 -> .30, z .62 -> .02 (templates/chest_front_template.png)
+def load_rgb(name):
+ f=TEXDIR/name
+ if not f.exists() or _v6('V6_MASKS',1)<=0:return None
+ im=bpy.data.images.load(str(f),check_existing=True);im.colorspace_settings.name='sRGB'
+ w,h=im.size;a=np.empty(w*h*4,dtype='f');im.pixels.foreach_get(a);m=a.reshape(h,w,4)[::-1,:,:3].copy();bpy.data.images.remove(im);return m
+# Round ZE: codex batch 14's painting of the chest's front (white V bib, striped tabby either side) and where to use it (alpha)
+CHEST_COAT=load_rgb('chest_front_coat.png');CHEST_COAT_A=load_mask('chest_front_coat_alpha.png')
 MUZZLE_FUR=load_mask('muzzle_fur_mask.png')    # head front: the coat_head_front frame, x -.21 -> .21, z .76 -> .34
 def _box_blur(m,r,n=3):
  for _ in range(n):
@@ -1511,8 +1518,17 @@ def chest_bib(p,col):
   flank=coat_grade(coat_sample('coat_body_side',np.column_stack((x,np.full(len(x),_v6('V6_BIB_TABBY_Y',.05)),np.maximum(z,.33)))))
   # ...half of it the back's painting straight above (the shoulders' stripes) - the side's mid-body alone came out a pale cream
   _bt=_v6('V6_BIB_TABBY_TOP',.5);flank=flank*(1-_bt)+coat_grade(coat_sample('coat_body_top',p))*_bt;tabby=flank
-  tw=(np.clip((m-.5)*2,0,1)*fw)[:,None];tf=(np.clip((.5-m)*2,0,1)*fw)[:,None]
-  col=col*(1-tw-tf)+white*tw+flank*tf
+  if CHEST_COAT is not None and CHEST_COAT_A is not None and _v6('V6_CHEST_COAT',1)>0:
+   # round ZE: the painting itself on the front (graded like the coat), in place of the mask's white / pale-flank swap - the
+   # flank sampled from the side painting read as cream where the reference's chest sides are striped tabby
+   # its own, wider facing window (the alpha already keeps it to the chest): the bib's fw left the chest's sides - turned 40-70 deg off
+   # the front, what a sitting cat shows - on the old cream
+   fwc=np.clip(-nc[:,1]*_v6('V6_CHEST_COAT_FACE',2.2)+.25,0,1)*np.clip((.02-y)/.08,0,1)
+   cc=np.stack([mask_sample(CHEST_COAT[:,:,i],p,0,(-.30,.30),2,(.62,.02)) for i in range(3)],1);ca=(mask_sample(CHEST_COAT_A,p,0,(-.30,.30),2,(.62,.02))*fwc)[:,None]
+   col=col*(1-ca)+coat_grade(cc)*ca
+  else:
+   tw=(np.clip((m-.5)*2,0,1)*fw)[:,None];tf=(np.clip((.5-m)*2,0,1)*fw)[:,None]
+   col=col*(1-tw-tf)+white*tw+flank*tf
   side=(np.clip((np.abs(x)-_v6('V6_BELLY_WHITE_W',.055))/.02,0,1)*uw)[:,None]
   return col*(1-side)+tabby*side
  x,y,z=p.T;front=np.clip((-.06-y)/.06,0,1)*np.clip((.47-z)/.05,0,1)*np.clip((z-.15)/.04,0,1)
@@ -2354,7 +2370,7 @@ def _sit_targets(f):
   # Round X2: the hock IN FRONT of the hip (V6_SIT_HOCK_DY), on the floor - a sitting cat's femur runs forward beside the belly, the
   # shank drops back to the hock, the metatarsus lies forward. 35 mm behind the hip, the two-bone solve could only fold the knee down
   # onto the floor and stand the hock and the paw up in the air (round-v-test z4, the white 'blade' at the sitting hind paw).
-  if k[0]=='H':hip=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],hip.y+(_v6('V6_SIT_HOCK_DY',-.015) if FOOT else .035),_v6('V6_SIT_HOCK_Z',.036))),math.radians(_v6('V6_SIT_PAW_ANG',-170)))
+  if k[0]=='H':hip=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],hip.y+(_v6('V6_SIT_HOCK_DY',0.0) if FOOT else .035),_v6('V6_SIT_HOCK_Z',.036))),math.radians(_v6('V6_SIT_PAW_ANG',-170)))
   else:sh=f(LEGS[k][1]).translation;T[k]=(Vector((LREST[k]['x'],sh.y-.012,.066)),_paw_rest(k))
  return T
 # Two targets in this cost are really one: the hip's height and the spine's pitch. The hip
@@ -2387,20 +2403,22 @@ def _seat_low(rots,locs):
 # rump lay flat behind on the floor with the hind legs folded beside it: a sphinx propped on its forelegs. A sitting cat stands its
 # pelvis up and sits on it (the ischia on the floor) - so the pelvis gets a pitch target and the rump's skin must rest on the floor,
 # in place of the hip-height target (a short-legged cat cannot sit tall at that height: the trunk comes forward over the hind feet).
-SIT_PELVIS=_v6('V6_SIT_PELVIS',0)   # 0: the hip-height target (below); the seat-contact form tried at 28-40 deg sank the fat rump 50 mm and floated the forepaws
+SIT_PELVIS=_v6('V6_SIT_PELVIS',40)   # 0: the hip-height target (below); the seat-contact form tried at 28-40 deg sank the fat rump 50 mm and floated the forepaws
 def solve_sit():
  def cost(v):
   rots,locs=_sit_rots(v);f=_fk(rots,locs);c=0.0
   hip=f('RearUpper.L').translation
   if SIT_PELVIS>0:
+   # round ZE (codex SIT-OWNBODY-JOINTS: this cat's own upright sit - hip 215 mm up, pelvis 37 deg, the back's chord only ~20 deg,
+   # the hock under the hip): the pelvis gets its own pitch target; the seat-contact form is optional (V6_SIT_SEAT)
    pv0=f('Pelvis').translation;pv1=_tip(f,'Pelvis');c+=12*abs(math.atan2(pv1.z-pv0.z,abs(pv1.y-pv0.y))-math.radians(SIT_PELVIS))
-   c+=40*abs(_seat_low(rots,locs)-.002)
-  else:c+=25*abs(hip.z-_v6('V6_SIT_HIP',.17))   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
+  if SIT_PELVIS>0 and _v6('V6_SIT_SEAT',0)>0:c+=40*abs(_seat_low(rots,locs)-.002)
+  else:c+=25*abs(hip.z-_v6('V6_SIT_HIP',.19))   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
   for k,(tg,pa) in _sit_targets(f).items():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=60*over
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
-  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',48)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
+  c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',28)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
   mz=(f('Head')@mouth_l).z;c+=60*max(0,.49-mz)   # round J: .49 on the REAL mouth = .50 on the old authored-space point; 60 (was 15): the real mouth sits closer to the neck, so at 15 the solve dropped it 53 mm and bent the head 42 deg onto the chest
   hd0=f('Head').translation;hd1=_tip(f,'Head');c+=3*abs(math.atan2(hd1.z-hd0.z,-(hd1.y-hd0.y))-math.radians(12))
@@ -2607,7 +2625,7 @@ JUMP_PHASED=_v6('V6_JUMP_PHASED',1)>0
 # ~43 deg at take-off over hind legs straightened to the toes, level at the top with every leg tucked, nose down ~17 deg as the forelegs
 # reach for the floor - and the legs in the air are placed in the trunk's own frame (JUMP_LEGS), blended into their floor marks at
 # lift-off and touch-down. Without the pitch every phase was a standing cat at a different height (round-v-test r1/r2).
-JUMP_T=(.27,.30,.74,.80)
+JUMP_T=(_v6('V6_JUMP_F_OFF',.22),.30,.74,.80)   # Z5: forepaws off .27 -> .22 - from .23 the rising, nose-up trunk had the forelegs at full stretch and dragged the paws 3.3 mm a frame sideways before they tore off the floor (77 mm in one frame at 165)
 def _jump_root(u):
  if u<.20:e=u/.20;return -.08*e*e*(3-2*e)
  if u<.30:return -.08+.14*((u-.20)/.10)**2
@@ -3026,7 +3044,8 @@ def place_legs(name,u,pb,hold=0.0):
     else:wa=w_
     tg.z=max(tg.z,base.z*(1-wa))   # Z4: a paw turned flat stops at its own standing height (z 0 is the bone, 48 mm under it: -9.5 mm at frame 187)
     pa+=push*(1-wa)+_jump_key(u,[(c[0],c[3]) for c in keys])*wa+_ang(D.to_3x3()@Vector((0,1,0)))*wa;flat*=1-wa
-   elif u<=off_:tg=base;pa+=push
+   elif u<=off_:
+    tg=base;pa+=push
    if FOOT and flat>0:R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);fa=rig_+_wrap(R_[ft]-rig_)*flat
   elif name=='Jump':
    lift=math.sin(math.pi*u)**2
