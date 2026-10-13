@@ -466,6 +466,16 @@ for v in bm.verts:
   # ZK: the press follows the sunken eye (4 mm + EYE_SINK at the rim) and eases out wider (1.35 -> 1.6 r): a real orbit's slope
   _so=_v6('V6_SOCKET_OUT',1.6)
   if ed<_so:v.co.y+=(.004+EYE_SINK)*(1-(max(ed,1)-1)/(_so-1))**2
+  # ZN (codex ROUND-ZM-AUDIT 1: the brow skin sat ~11 mm BEHIND the cornea's apex - the socket press above also pulled the old brow
+  # brushes back): a continuous brow arc over each eye's upper half, 1.0-1.9 eye radii out, pushed V6_BROW_FWD forward - the
+  # overhang a sunken eye sits under. Nothing at the rim (the hole's edge) or below the horizontal; the stop between the eyes stays.
+  _bf=_v6('V6_BROW_FWD',.012)
+  if _bf>0 and p.y<-.33:
+   for s_ in (-1,1):
+    dx,dz=p.x-s_*EYE_X,p.z-EYE_Z;rho=math.hypot(dx,dz)/EYE_R
+    if 1.0<rho<1.9:
+     wa=min(max((dz/(rho*EYE_R)+.15)/1.15,0),1);t1=min(max((rho-1.0)/.15,0),1);t2=min(max((rho-1.45)/.45,0),1)
+     v.co.y-=_bf*wa*(t1*t1*(3-2*t1))*(1-t2*t2*(3-2*t2))
 bm.to_mesh(head.data);bm.free()
 # Muzzle remains divided from lower jaw; dark recessed opening gives a real oral interior.
 # --- Mouth ------------------------------------------------------------------------------------
@@ -1844,7 +1854,7 @@ for o in eyelids:
  # as a smooth pale goggle ring round each eye.
  # The lower lid is coloured where it lies SHUT, like its coat (see the lid groom): open, it sits
  # mostly behind the cheek, and its open-position white showed as a pale strip under the closed eye.
- col=fur_color(lid_turn(co,-1 if o.name.endswith('.L') else 1,'L',1.0) if 'Lower' in o.name else co,'Head');rim=np.clip((ring-(.12 if _v6('V6_EYE_V2',1)>0 else .09))/.12,0,1)[:,None]   # v2: .09 -> .12, a thicker eyeliner (codex: 1.5-2.5 mm). round A's (.16,.18) read as a bold cartoon ring
+ col=fur_color(lid_turn(co,-1 if o.name.endswith('.L') else 1,'L',1.0) if 'Lower' in o.name else co,'Head');rim=np.clip((ring-((.12 if 'Upper' in o.name else .05) if _v6('V6_EYE_V2',1)>0 else .09))/(.12 if 'Upper' in o.name or _v6('V6_EYE_V2',1)<=0 else .07),0,1)[:,None]   # ZN: the lower margin thinner (codex ZM-AUDIT 2: a full black ring round the eye)   # v2: .09 -> .12, a thicker eyeliner (codex: 1.5-2.5 mm). round A's (.16,.18) read as a bold cartoon ring
  # The LOWER lid's skin at .85 (2026-10-01): shut, its band is stretched x5 and shows between its
  # strands, and .62 of the white under-eye coat drew those gaps as grey streaks.
  col=np.array([.05,.035,.03])*(1-rim)+col*(.62 if 'Upper' in o.name else .85)*rim   # skin under the coat is a shade darker than the coat
@@ -2168,7 +2178,7 @@ if _v6('V6_SOLE_FUR',1)>0:
 # rigidly, corners and all; the keys leave the corners where they are.)
 # The lower lid's coat is denser and shorter: at 14000 x 30mm it hung off the shut lid as a pale
 # fringe over the cheek - a curtain under each closed eye (round-h-test h1).
-LID_FUR={'U':(16000,.030),'L':(24000,.020)}
+LID_FUR={'U':(16000,.030),'L':(24000,.020*_v6('V6_LID_FUR_L',.70))}   # ZN: lower x.7 - its white coat stood over the happy eye's shut arc
 for lid in [o for o in eyelids if o.name.startswith('LX_Lid')]:
  s_=-1 if lid.name.endswith('.L') else 1;ul='U' if 'Upper' in lid.name else 'L';r0=LID_RING[ul][0]+LID_RING[ul][1]*LID_MARGIN
  # ZL (the bald strip over every shut eye - user: 「闭眼的时候有眼痕」): the coat starts right past the dark margin on the ALMOND rim
@@ -3621,7 +3631,10 @@ def aim(o,target):o.rotation_euler=(Vector(target)-o.location).to_track_quat('-Z
 # contrast of 56/255 against the reference turnaround's 74 - the pattern was there but
 # read as flat cream. 30/15 keeps the soft wrap and puts contrast back at ~72.
 # (Round L: the Catchlight lamp and its cornea-only light link are gone - the catchlights are painted on the cornea.)
-for n,loc,power,size,col in [('Key',(-1,-1.2,1.7),72,1.6,(1.0,.93,.83)),('Fill',(1.2,-.6,1.0),30,1.4,(.90,.94,1.0)),('Rim',(0,1.3,1.4),58,1.2,(1.0,.86,.76)),('Bounce',(0,-1.6,.35),15,1.8,(1.0,.95,.88))]:
+# ZN (user: 「面部不够立体」; codex ZM-AUDIT 5): a smaller, stronger key and a weaker fill/bounce model the face's planes (the A/B on
+# round-zm: cheeks and brow read; the coat contrast rises a little). V6_LIGHT_FORM 0 = the old soft studio.
+_LF=_v6('V6_LIGHT_FORM',1)>0
+for n,loc,power,size,col in [('Key',(-1,-1.2,1.7),80 if _LF else 72,.8 if _LF else 1.6,(1.0,.93,.83)),('Fill',(1.2,-.6,1.0),12 if _LF else 30,1.4,(.90,.94,1.0)),('Rim',(0,1.3,1.4),58,1.2,(1.0,.86,.76)),('Bounce',(0,-1.6,.35),6 if _LF else 15,1.8,(1.0,.95,.88))]:
  d=bpy.data.lights.new(n,'AREA');d.energy=power;d.shape='DISK';d.size=size;d.color=col;o=bpy.data.objects.new(n,d);scene.collection.objects.link(o);o.location=loc;aim(o,(0,0,.35))
 target=(0,-.03,.42)
 d=bpy.data.cameras.new('Portrait');cam=bpy.data.objects.new('Portrait',d);scene.collection.objects.link(cam)
