@@ -1270,3 +1270,10 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - **坐姿后脚**：正面（新机位 `sit-hindfoot-front`，FOCUS RearPaw.L SPAN .20 front）看得出四颗趾；正侧面机位四趾排成一列，只看到外侧圆头——"≥3 趾"在正侧面受机位限制。
 - ZZQ 审计：步态接触不变（走路前掌打滑 .73 → .74）；片段审查最低点变化 ≤1.2 mm、无穿地；对照 `v6/round-zzq/fc/`。当前模型 = `v6/round-zzq/`。
 - 批次 27 五项至此：2–5 完成，1 基本完成（剩余见上）。下一步：阶段验收（31 机位串行 + codex 审计 + 素材），幼猫比例（含跑 / 跳）最后。
+
+## 阶段验收（2026-10-14 晚，Round ZZQ）
+
+- 31 机位串行渲染（`v6/round-zzq/fc31/`，约 3.5 分钟，一次一个 Blender），对照表 `reviews/stage-zzq/stage-{a,b,c,d}.jpg`。
+- codex 审计 + 幼猫目标图（`reviews/stage-zzq/prompt.md`、`run-codex.sh`）：**额度用尽**，无产出（until 2026-10-15 00:41），已设一次性定时 00:45 重跑。
+- Claude 书面审计 `reviews/STAGE-ZZQ-CHECK-2026-10-15.md`：表情 2.5 → 3.5、动作表演 2.5 → 3.5、治愈与萌 3 → 3.5，身体比例侧面仍 2；阶段验收通过，进入幼猫比例。
+- 幼猫比例的靶子：现有 codex 姿态目标本身是幼猫——先量它们的侧影比值；codex 恢复后补本体型幼猫目标图。
