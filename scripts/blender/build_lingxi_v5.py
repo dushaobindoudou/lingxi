@@ -3883,13 +3883,17 @@ if FACE_V1:
  # pupil / iris: round .62, wide .72, slit .11 x .82, sparkle .60 + extra highlights; lids: half .55, soft .23, tearful lower .08;
  # brow slants furrow +.18, sad -.10; mouth: corner +-.13 nose widths, meow .70 high, hiss 1.8 wide, tongue .25 out; ears back ~71 deg).
  # Jaw angles from the part audit (fur-visible opening / nose width 33.8 mm): .22 rad ~ .7 (the meow); the hiss .45 (.36 rendered ~.9).
- LAYERS={'eye':{'slit':both(Squint=.30,PupilW=.058,PupilH=.35),'round':both(PupilW=.27,PupilH=.29),
-   'wide':{**both(UpperWide=1,PupilW=.35,PupilH=.36),'Sparkle':.4},'side':both(GazeYaw=.55,Blink=.25,PupilW=.25,PupilH=.28),
-   'half':both(Blink=.60,PupilW=.28,PupilH=.30),'happy':both(SmileArc=1),'closed':both(Blink=1),
-   'heart':{**both(PupilW=.30,PupilH=.32),'Sparkle':1.4},'soft':both(Blink=.26,LowerLift=.60,PupilW=.29,PupilH=.31),
+ # Round ZZI (audit A1/A2, user: 极度治愈、非常萌): the pupils of the friendly states ~20% bigger (a kitten's dilated, dark eye - codex's
+ # face refs); 'wide' stays the biggest so the alarm still reads apart. calm / focus are 3D-only states for 安然 / 认真 (EXPR below): the
+ # app's 2D 'slit' on this yellow-green iris read as a hunting stare; slit stays for 生气 only.
+ LAYERS={'eye':{'slit':both(Squint=.30,PupilW=.058,PupilH=.35),'round':both(PupilW=.32,PupilH=.33),
+   'calm':both(Blink=.15,LowerLift=.25,PupilW=.32,PupilH=.33),'focus':both(Squint=.22,PupilW=.26,PupilH=.30),
+   'wide':{**both(UpperWide=1,PupilW=.40,PupilH=.40),'Sparkle':.4},'side':both(GazeYaw=.55,Blink=.25,PupilW=.29,PupilH=.31),
+   'half':both(Blink=.60,PupilW=.31,PupilH=.33),'happy':both(SmileArc=1),'closed':both(Blink=1),
+   'heart':{**both(PupilW=.35,PupilH=.36),'Sparkle':1.4},'soft':both(Blink=.26,LowerLift=.60,PupilW=.34,PupilH=.35),
    'wink-left':{'Blink.L':1,'SmileArc.R':.35,'LowerLift.R':.3},'wink-right':{'Blink.R':1,'SmileArc.L':.35,'LowerLift.L':.3},
-   'sparkle':{**both(PupilW=.27,PupilH=.29,UpperWide=.3),'Sparkle':1.0},
-   'tearful':{**both(LowerLift=.50,LidSlantOut=.8,PupilW=.30,PupilH=.32),'Sparkle':.8}},
+   'sparkle':{**both(PupilW=.32,PupilH=.33,UpperWide=.3),'Sparkle':1.0},
+   'tearful':{**both(LowerLift=.50,LidSlantOut=.8,PupilW=.34,PupilH=.35),'Sparkle':.8}},
   'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1,LidSlantIn=1),'raise':both(BrowInnerUp=.7,BrowOuterUp=1,UpperWide=.45),
    'sad':both(BrowInnerUp=1,BrowOuterUp=-.3,LidSlantOut=1)},
   # ZF: the corners x1.4 (codex ROUND-ZD-AUDIT 3: cat .08-.10, frown .09-.12 nose widths short)
@@ -3917,6 +3921,7 @@ if FACE_V1:
   '警惕':'side raise flat forward exclaim','嫌弃':'half furrow frown airplane none','得意':'half raise cat forward none','左眼眨':'wink-left raise cat neutral none',
   '右眼眨':'wink-right raise cat neutral none','闪亮':'sparkle none cat forward heart'}
  EXPR={k:dict(zip(('eye','brow','mouth','ear','symbol'),v.split())) for k,v in EXPR.items()}
+ EXPR['安然']['eye']='calm';EXPR['认真']['eye']='focus'   # round ZZI: see LAYERS
  FACE_SPEC={'version':1,'controls':C,'layers':LAYERS,'expressions':EXPR,'expression_extras':EXPR_EXTRA,'ear':{'fwd_rad':1.0,'flat_rad':1.0,'swivel_rad':1.0,'tip_rad':1.0},
   'notes':'heart / tearful iris looks are material variants for the app (not built in Blender v1); symbol is a screen effect.'}
  (OUT/'face-controls.json').write_text(json.dumps(FACE_SPEC,indent=1,ensure_ascii=False))
