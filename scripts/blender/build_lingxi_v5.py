@@ -421,7 +421,7 @@ LID_YC=(EYE_R**2-LID_APEX**2)/(2*LID_APEX);LID_R=LID_YC+LID_APEX   # sphere thro
 LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather (24mm read as a long, sad philtrum)
 LIP_DZ=LIP0-.4575   # the mouth assembly MUST ride with the lip line - cavity/floor/tongue/teeth/jaw - or pink skin peeks above the new lip (v6 lesson)
 MOUTH_W=.024*_v6('V6_MOUTH_W',1.0);MW_K=MOUTH_W/.024;MW2=.016*_v6('V6_LOWER_LIP_W',.66)   # round R: the pink lower lip keeps its old .011 half-width when the omega widens (V6_MOUTH_W 1.0) - wide, it read as a pink wavy band under the mouth   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
-LIP_SAG=.0035*_v6('V6_LIP_SAG',.6)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m"); round ZZO: 1.0 -> .6 with the corners up 1.5 -> 4 mm (V6_LIP_CORNER) - the deep sag drew a "人" over a dark wedge, a frown; now a shallow omega with its corners turned up
+LIP_SAG=.0035*_v6('V6_LIP_SAG',1.0)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m"). Round ZZP (user: 「codex 的图是两边是向下的感觉」 - checked on face-closeup / mouth-closed / face-q34: the line runs down and out along the whisker pads' bottoms, a "人", with the pink lower lip in the notch; ZZO's turned-up corners were the wrong way): back to 1.0, no corner rise; what read as a frown was the DARK wedge in the notch - the lower lip now fills it (V6_LOWER_LIP_DZ / _BEVEL)
 GAPE_W=.036*_v6('V6_GAPE_W',.85)   # round R: 1.45 -> 1.0 with the arched lip and a deeper jaw - the yawn rounds into the reference's U instead of a wide box (round-r-test mo0-mo3)
 #   # round L: 1.2 - the yawn's corners open to ~70 mm; past 1.2 the cut does not get wider (round-l-test y3)
 #    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
@@ -433,7 +433,7 @@ def lip_z(x):
  # Round G: the arcs SAG from the philtrum cusp, like the bottoms of the two whisker pads (the
  # reference's "omega", with the lower lip's pink showing in the notch under the cusp). They used
  # to bulge UP from it, which drew an "m" - read on the render as a flat wavy pink line.
- return LIP0-LIP_SAG*np.sin(np.pi*np.minimum(u/.78,1))+_v6('V6_LIP_CORNER',.004)*np.maximum(0,u-.78)/.22   # round ZZO: the corner's rise a knob
+ return LIP0-LIP_SAG*np.sin(np.pi*np.minimum(u/.78,1))+_v6('V6_LIP_CORNER',0.0)*np.maximum(0,u-.78)/.22   # round ZZO: the corner's rise a knob
 def jaw_share(x,y,z,below):
  """How much of a head point the jaw carries: the lip, whisker-pad bottoms and chin in front,
   fading out toward the throat and the mouth corners so the skin there stretches, not tears."""
@@ -666,7 +666,7 @@ for side in (-1,1):
   pts.append((x,-.4515+.020*u*u,z))
  lips.append(lip_curve('LX_LipUpper.'+('L' if side<0 else 'R'),pts,'Lip',radii=[1-_v6('V6_LIP_TAPER',.7)*(j/13)**1.5 for j in range(14)]))   # round R: full under the philtrum, thinning into the corners - one even line read as a drawn emoji   # round J: rides the LipUpper bone with the skin under it
 lipmat_lower=mat('LX_LipLowerPink',(.82,.46,.50),.40)   # round D: the reference's mouth reads as this small pink lower lip under the pads
-lips.append(lip_curve('LX_LipLower',[(x,-.4500+.010*(x/MW2)**2,float(lip_z(x))-.0016) for x in np.linspace(-MW2,MW2,9)],'Jaw',bevel=.0014))   # round R: .0017 -> .0014; round E: thick enough to show a little pink under the pads
+lips.append(lip_curve('LX_LipLower',[(x,-.4500+.010*(x/MW2)**2,float(lip_z(x))-_v6('V6_LOWER_LIP_DZ',.0002)) for x in np.linspace(-MW2,MW2,9)],'Jaw',bevel=.0014*_v6('V6_LOWER_LIP_BEVEL',1.5)))   # round R: .0017 -> .0014; round E: thick enough to show a little pink under the pads
 lips[-1][0].data.materials[0]=lipmat_lower   # the lower lip in pink, the upper crease faint (round D)
 # Skeleton: common bind space shared by body, separate face parts, and fur vertices.
 ad=bpy.data.armatures.new('LingxiSkeleton');rig=bpy.data.objects.new('LX_Rig',ad);scene.collection.objects.link(rig);bpy.context.view_layer.objects.active=rig;rig.select_set(True);bpy.ops.object.mode_set(mode='EDIT')
