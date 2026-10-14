@@ -3767,6 +3767,12 @@ def pose(name,u):
   _tail_wrap(pb,(-1,0),(_fp.x-.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.3))   # round ZZ: .7 -> .3 - round the left the tail's tip ran past the path's end into the floor (-29.5 mm, tl1-tl3)
  if _v6('V6_TAIL_FLOOR',1)>0 and not _SGW and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004)   # a laid tail is already on its path, clear of the floor; round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
+ # Round ZZR (kitten look, measured on stand-side: head / leg / shoulder ratios already match codex's kitten within ~3%, but its crown
+ # stands ~0.28 of the body length above the back against our 0.18 - the head carried low and forward reads as an adult): the standing
+ # clips carry the neck up (- is up, as Curious), the head turned back down by most of it so the face stays level
+ _nc=_v6('V6_NECK_CARRY',.40)   # .25: crown +21 mm, .45: +27 (saturating; the face tips up 5 deg)
+ if _nc and name in ('Idle','Walk','Curious','Happy','Yawn','Bite','Knead','PawPlay','Turn'):
+  pb['Neck'].rotation_euler[0]-=_nc;pb['Head'].rotation_euler[0]+=_nc*_v6('V6_NECK_CARRY_HEAD',.8)
  _forearm_twist(pb)
  if name in SIT_LIKE+('Lick',) and _v6('V6_SIT_SETTLE',1)>0:   # round ZZM
   _sk=_ease(u) if name in SIT_LIKE else min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2));_settle_on_floor(pb,k=_sk)
