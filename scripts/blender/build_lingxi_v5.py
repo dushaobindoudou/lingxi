@@ -1352,13 +1352,16 @@ LID_MARGIN=.20*_v6('V6_LID_MARGIN',1.0)
 # Round ZD (codex ROUND-Z-REMEASURE 5: the happy eye's closed line arched .04 of the eye's width, target .12): the Smile keys turn each
 # point by its own fraction - the upper lid less and the lower one further toward the middle of the eye - so where they meet it is
 # an arch up (^ ^), not the flat line of a blink. V6_SMILE_ARCH 0 gives the old uniform .80 / 1.25.
-SMILE_ARCH=_v6('V6_SMILE_ARCH',.70)   # ZF: .5 -> .7 (codex ROUND-ZD-AUDIT 5: the arch still .04-.06 short under the lid coat)
+SMILE_ARCH=_v6('V6_SMILE_ARCH',.15)   # ZF: .5 -> .7 (codex ROUND-ZD-AUDIT 5: the arch still .04-.06 short under the lid coat)
 def _lid_sin(P,s):L=lid_local(P,s);return np.abs(L[:,2])/np.maximum(np.hypot(L[:,0],L[:,2]),1e-9)
 # Round ZZM (audit A4: the happy eye shut as a pale round dome - the upper lid only .80 shut, the lower lid pushed past the line to 1.25
 # filled the eye with its pale coat and hid the arch under the upper lid's coat; the plain blink, both lids meeting, reads as a clean dark
 # line): V6_SMILE_U / _L set the two lids' base fractions; the arch (SMILE_ARCH) is kept on top. .80 / 1.25 -> .92 / 1.08 (round-zzl-test
-# sm1): the arch line moves to the middle of the eye and reads; the eye's round bulge stays (eye-v2 volume under shut lids - its own task)
-LID_V1={'U':(('Wide',-.25),('Smile',lambda P,s:_v6('V6_SMILE_U',.92)-.6*SMILE_ARCH*_lid_sin(P,s)**1.5)),'L':(('Lift',.45),('Smile',lambda P,s:_v6('V6_SMILE_L',1.08)+SMILE_ARCH*_lid_sin(P,s)**1.5))}
+# sm1): the arch line moves to the middle of the eye and reads; the eye's round bulge stays. Round ZZN: the bulge was the LOWER lid's pale coat -
+# the arch is made by pushing the lower lid past the meeting line in the middle (arch .70: to 1.78 of its travel, covering most of the eye).
+# A blink-like shut (.99 / 1.00) with a gentle arch .15 gives the clean dark line of 闭眼休息 bowed up a little, no pale dome (zzm-test a15;
+# a30 / a45 still domed). codex's target arch is a little higher; the clean line reads better than a higher arch over a pale dome.
+LID_V1={'U':(('Wide',-.25),('Smile',lambda P,s:_v6('V6_SMILE_U',.99)-.6*SMILE_ARCH*_lid_sin(P,s)**1.5)),'L':(('Lift',.45),('Smile',lambda P,s:_v6('V6_SMILE_L',1.00)+SMILE_ARCH*_lid_sin(P,s)**1.5))}
 def _lid_slants(P,s):
  """Round Z (user: 「表情不对，所有表情都一样」): the upper lid shut more on one side - SlantIn lowers its inner half (the frown of
   an angry / intent cat), SlantOut its outer half (the droop of a sad one). Per-point fractions of the same exact turn; the brow
@@ -3937,7 +3940,8 @@ if FACE_V1:
    'back':both(EarForward=-.65,EarFlatten=.65,EarSwivel=.8,EarTipBend=.65)}}
  # per-expression additions over the four layers - the block cat tells some apart only by the screen symbol (放松 / 安心, 闭眼休息 / 陶醉
  # identical; 撒娇 / 期待 / 闪亮, 好奇 / 玩心 / 困惑 ... under 1.3 / 255 apart, codex), which the 3D face cannot show
- EXPR_EXTRA={**({'嫌弃':{'Sneer.L':1.0},'不爽':{'NoseBridgeWrinkle':.35,**both(PadLift=.25,OrbitLift=.3)}} if FACE_V2 else {}),'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(SmileArc=.45,MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},
+ EXPR_EXTRA={**({'嫌弃':{'Sneer.L':1.0},'不爽':{'NoseBridgeWrinkle':.35,**both(PadLift=.25,OrbitLift=.3)}} if FACE_V2 else {}),'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},   # round ZZN: no SmileArc on top of the full blink (the two keys added overshot - a pale ring)
+ 
   '撒娇':both(SmileArc=.2,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
   '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5},'认真':both(LidSlantIn=.6),
   # ZC (codex ROUND-ZB-AUDIT 3: the meow 1.55 x 1.25 nose widths, target .63 x .70): the meow's corners drawn in all the way, the jaw less
