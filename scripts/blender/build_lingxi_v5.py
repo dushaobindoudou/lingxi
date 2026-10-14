@@ -2358,7 +2358,10 @@ for s in [-1,1]:
 # move with their vertices.
 # 1.15 (a bigger skull) made the head read too big once it wore a coat. The skull is back at its
 # authored size and the head's fluffy outline comes from longer fur, the way the body's does.
-HEAD_S=.90;HEAD_SCALE=np.array([HEAD_S*_v6('V6_HEAD_SX',1.0),HEAD_S,HEAD_S*_v6('V6_HEAD_SZ',1.0)]);HEAD_PIVOT=np.array([0,-.16,.48])
+# Round ZZS (codex lingxi-ref-kitten-*: this cat redrawn as a kitten on its own cameras): the skull .90 -> 1.06. Side-on, scaled to the
+# same standing height, the head (crown to chin) is .28 of it against the kitten's .38 (1.0: .32); front-on the kitten's head is wider
+# than its body. 1.15 once read too big - on the longer, deeper body of that time.
+HEAD_S=_v6('V6_HEAD_S',1.06);HEAD_SCALE=np.array([HEAD_S*_v6('V6_HEAD_SX',1.0),HEAD_S,HEAD_S*_v6('V6_HEAD_SZ',1.0)]);HEAD_PIVOT=np.array([0,-.16,.48])
 # Body length. Side-on the torso ran ~3.3 head-lengths where the turnaround's kitten is ~2.2 - a
 # dachshund under a kitten's head, and half of why the head "looked big" from the front. The body
 # (everything but the head) is compressed nose-to-tail about y=.06, and the head rides back with
@@ -2368,6 +2371,9 @@ HEAD_S=.90;HEAD_SCALE=np.array([HEAD_S*_v6('V6_HEAD_SX',1.0),HEAD_S,HEAD_S*_v6('
 # vs .174) - the trunk was 22% too deep for its length. Not the legs, then: the body back out to .90 (head /
 # body .421 -> .402, reference .411) and the neck ruff's top down 40 mm (it WAS the measured withers, and the
 # ridge behind the head side-on). Vertex shoulder / body .761 -> .671 (round-l-test s0-s3).
+# Round ZZS (codex kitten targets): kept at .90. Chest-to-rump over the standing height (v6_kitten_measure.torso): kitten 1.04, head .90
+# 1.10, head 1.06 1.03 - the bigger head alone brings it in. .86 (.93) and .81 bunched the legs under a stubby trunk; the first try
+# took its numbers in units of the fore-hind leg spacing, which reads differently on bald and furred renders.
 BODY_K=_v6('V6_BODY_K',.90);BODY_Y0=.06
 def body_xf(p):p=np.asarray(p,dtype='f');return (float(p[0]),float(BODY_Y0+BODY_K*(p[1]-BODY_Y0)),float(p[2]))
 HEAD_SHIFT=np.array([0,body_xf(HEAD_PIVOT)[1]-HEAD_PIVOT[1],0])
@@ -2646,7 +2652,7 @@ def solve_sit():
    # the hock under the hip): the pelvis gets its own pitch target; the seat-contact form is optional (V6_SIT_SEAT)
    pv0=f('Pelvis').translation;pv1=_tip(f,'Pelvis');c+=12*abs(math.atan2(pv1.z-pv0.z,abs(pv1.y-pv0.y))-math.radians(SIT_PELVIS))
   if SIT_PELVIS>0 and _v6('V6_SIT_SEAT',0)>0:c+=40*abs(_seat_low(rots,locs)-.002)
-  else:c+=25*abs(hip.z-_v6('V6_SIT_HIP',.19))   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
+  else:c+=25*abs(hip.z-_v6('V6_SIT_HIP',.17))   # round ZZS: .19 -> .17 - with the head 1.06 the rump 15 -> 2 mm off the floor, pelvis 70 deg (BODY_K .81 at .19: 35 mm)   # round V: the rump's underside came up 36 mm (LEG_SHOW), so the hip may sit lower and the back stand straighter
   for k,(tg,pa) in _sit_targets(f).items():
    _,off,over=leg_ik(rots,locs,k,tg,pa);c+=(_v6('V6_SIT_FORE_OVER_W',400) if k[0]=='F' else 60)*over   # round ZZ+: the forepaws hung 19 mm off the floor once the span cap lifted the shoulders (codex ROUND-ZZ-AUDIT) - 60 lost to the span's 600
    if k[0]=='F':c+=20*max(0,(LREST[k]['L1']+LREST[k]['L2'])*.62-(tg-f(LEGS[k][1]).translation).length)   # no crouched forelegs
@@ -2655,7 +2661,7 @@ def solve_sit():
   # round ZZ+: the steeper pelvis put the rump 20-30 mm INTO the floor in the solve (seat_mm < 0); _lift_off_floor then raised the whole cat
   # and the forepaws hung 16-19 mm up. Penalise the seat below the floor here, so the solve picks a pose whose rump just touches it.
   if _v6('V6_SIT_SEAT_W',400)>0:c+=_v6('V6_SIT_SEAT_W',400)*max(0,.002-_seat_low(rots,locs))
-  if _v6('V6_SIT_SPAN',.31)>0:_sh=f('FrontUpper.L').translation;c+=_v6('V6_SIT_SPAN_W',600)*max(0,abs(_sh.y-hip.y)-_v6('V6_SIT_SPAN',.31))   # round ZS: 330 -> 283 mm, the pelvis 40 -> 62 deg (round-v-test ss1-ss4) - a bulging rump (codex ROUND-ZR-ZX-AUDIT); round ZY: .31 / 600 -> span 301 mm, pelvis 50.6 deg (the solve is bimodal: weights 100-140 fell back to 40 deg, sw1-sw8)
+  if _v6('V6_SIT_SPAN',.31*BODY_K/.90)>0:_sh=f('FrontUpper.L').translation;c+=_v6('V6_SIT_SPAN_W',600)*max(0,abs(_sh.y-hip.y)-_v6('V6_SIT_SPAN',.31*BODY_K/.90))   # round ZZS: scales with the body (a trial BODY_K .81 under a fixed .31 left the cap slack and the solve crouched: pelvis 32 deg, rump 54 mm up)   # round ZS: 330 -> 283 mm, the pelvis 40 -> 62 deg (round-v-test ss1-ss4) - a bulging rump (codex ROUND-ZR-ZX-AUDIT); round ZY: .31 / 600 -> span 301 mm, pelvis 50.6 deg (the solve is bimodal: weights 100-140 fell back to 40 deg, sw1-sw8)
   sp0=f('Spine').translation;sp1=_tip(f,'Spine');pitch=math.atan2(sp1.z-sp0.z,abs(sp1.y-sp0.y))
   c+=12*abs(pitch-math.radians(_v6('V6_SIT_PITCH',28)))   # round X: 52 -> 58, the split back (codex lingxi-ref-sit-side.png sits upright)   # round V: 41 -> 52 with the hip .170 -> .135: sitting tall, as codex's lingxi-ref-lick-paw.png   # round L: 44 -> 41 for the longer body (BODY_K .90): at 44 the hip could not come up and the sitting rump went 19.7 mm under (Lick)   # 62 deg and a 170 mm hip put the shoulder ~480 mm up, out of a
   # straight foreleg's reach, so the 60-weight `over` term won and the hip stayed down at 107 mm.
