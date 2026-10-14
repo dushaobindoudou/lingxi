@@ -1354,7 +1354,11 @@ LID_MARGIN=.20*_v6('V6_LID_MARGIN',1.0)
 # an arch up (^ ^), not the flat line of a blink. V6_SMILE_ARCH 0 gives the old uniform .80 / 1.25.
 SMILE_ARCH=_v6('V6_SMILE_ARCH',.70)   # ZF: .5 -> .7 (codex ROUND-ZD-AUDIT 5: the arch still .04-.06 short under the lid coat)
 def _lid_sin(P,s):L=lid_local(P,s);return np.abs(L[:,2])/np.maximum(np.hypot(L[:,0],L[:,2]),1e-9)
-LID_V1={'U':(('Wide',-.25),('Smile',lambda P,s:.80-.6*SMILE_ARCH*_lid_sin(P,s)**1.5)),'L':(('Lift',.45),('Smile',lambda P,s:1.25+SMILE_ARCH*_lid_sin(P,s)**1.5))}
+# Round ZZM (audit A4: the happy eye shut as a pale round dome - the upper lid only .80 shut, the lower lid pushed past the line to 1.25
+# filled the eye with its pale coat and hid the arch under the upper lid's coat; the plain blink, both lids meeting, reads as a clean dark
+# line): V6_SMILE_U / _L set the two lids' base fractions; the arch (SMILE_ARCH) is kept on top. .80 / 1.25 -> .92 / 1.08 (round-zzl-test
+# sm1): the arch line moves to the middle of the eye and reads; the eye's round bulge stays (eye-v2 volume under shut lids - its own task)
+LID_V1={'U':(('Wide',-.25),('Smile',lambda P,s:_v6('V6_SMILE_U',.92)-.6*SMILE_ARCH*_lid_sin(P,s)**1.5)),'L':(('Lift',.45),('Smile',lambda P,s:_v6('V6_SMILE_L',1.08)+SMILE_ARCH*_lid_sin(P,s)**1.5))}
 def _lid_slants(P,s):
  """Round Z (user: 「表情不对，所有表情都一样」): the upper lid shut more on one side - SlantIn lowers its inner half (the frown of
   an angry / intent cat), SlantOut its outer half (the droop of a sad one). Per-point fractions of the same exact turn; the brow
@@ -3194,6 +3198,20 @@ def _rest_on_floor(pb,margin=.004):
  z=np.zeros(len(co))
  for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
  pb['Root'].location.y+=margin-float(z.min())
+def _settle_on_floor(pb,margin=-.0005,k=1.0):
+ """Round ZZM: the whole posed cat lowered (the root - the legs' solved turns ride along) until its lowest point - the paws' skin, the
+  trunk, the tail - is `margin` off the floor. The sit family's paw targets only ever got LIFTED clear of the floor, never set down onto
+  it: v6_clip_lowscan + per-part lows found Sit / Lick / WashFace floating 4.4-4.6 mm on every held frame, GroomSide 11.3 mm."""
+ names=[b.name for b in ad.bones];rots={n:tuple(pb[n].rotation_euler) for n in names};locs={n:tuple(pb[n].location) for n in names}
+ lows=[_paw_low(k,rots,locs) for k in LEGS];f=_fk(rots,locs)
+ # not the tail: its sampled estimate sits 6-8 mm under the real mesh (round ZZC) and stopped the drop early (GroomSide 9.2 mm); the margin
+ # is below zero because the paw / trunk samples read ~2 mm under the real skin (Sit: sampled 1.0, real body 3.2 mm, beans 2.3)
+ for co,W in [_trunk_sample()]:
+  z=np.zeros(len(co))
+  for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
+  lows.append(float(z.min()))
+ g=min(lows)
+ if g>margin:pb['Root'].location.y-=(g-margin)*k   # k: how far into the sit - standing up / sitting down frames keep their own contact
 _HEADS2=None
 def _head_off_floor(pb,margin=.004):
  """The whole cat lifted until the head's skin clears the floor (a face turned up from a body on its back went 25 mm under)."""
@@ -3747,6 +3765,8 @@ def pose(name,u):
  if _v6('V6_TAIL_FLOOR',1)>0 and not _SGW and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004)   # a laid tail is already on its path, clear of the floor; round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  _forearm_twist(pb)
+ if name in SIT_LIKE+('Lick',) and _v6('V6_SIT_SETTLE',1)>0:   # round ZZM
+  _sk=_ease(u) if name in SIT_LIKE else min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2));_settle_on_floor(pb,k=_sk)
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint
  # or the lid overshoots through the eye.
  squint=max(squint,.14)     # the upper lid rests just over the iris rim: soft, not a stare (.16 with smaller eyes read as sad)
