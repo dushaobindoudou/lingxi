@@ -302,7 +302,11 @@ for _k in MPAW:
 # round ZZF: lower lobes keep their BOTTOMS on the floor (the centre drops with the height) - lowered about a fixed centre (round ZZE, x.75 / x.6)
 # the soles rose 13 mm and the gait audit found no contact at all. Short lobes at the floor read as the reference's four round toes; tall
 # ones ran up the paw's front as four vertical ridges (codex paw_front_target)
-MTOE_R=(.023,.031,.032*_v6('V6_MTOE_H',.55));MTOE_DX=.035*_v6('V6_MTOE_DX',1.0);MTOE_Z=.035-.032*(1-_v6('V6_MTOE_H',.55));MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
+# Round ZZG (codex ROUND-ZZF-AUDIT #1, measured with v6_head_profile.py FOCUS=FrontPaw.R AZ=90 SCALE=.16 CZ=.062 + v6_paw_valleys.py on codex's
+# paw template camera): the lobes 23 mm half-wide at 35 mm spacing made a 151-153 mm slipper (target 116) whose bottom was one flat edge
+# (clefts 1.7 mm furred, 2.2 bare). Narrower lobes closer together (W .62, DX .78, stiffness 10) + the cleft carving below: 118 mm wide,
+# clefts 2-4 mm furred; the walk's sole slip .91 -> .73 mm, run / jump unchanged.
+MTOE_R=(.023*_v6('V6_MTOE_W',.62),.031,.032*_v6('V6_MTOE_H',.55));MTOE_DX=.035*_v6('V6_MTOE_DX',.78);MTOE_Z=.035-.032*(1-_v6('V6_MTOE_H',.55));MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
 def mtoe_xy(pre,s,i):m=MPAW[pre];return s*m['x']+(i-1.5)*MTOE_DX,m['front']+MTOE_R[1]+MTOE_ARC*(abs(i-1.5)-.5)
 def meta_leg(pre,s):
  """The lower leg and paw of one leg as a metaball (resolution 3 mm), returned as a mesh for merge()."""
@@ -316,7 +320,16 @@ def meta_leg(pre,s):
  a=Vector((X,*m['col'][0]));b=Vector((X,*m['col'][1]));d=b-a
  add('CAPSULE',(a+b)/2,m['col_r']*K,2.0,size=(d.length/2,1,1),rot=Vector((1,0,0)).rotation_difference(d.normalized()))
  add('ELLIPSOID',(X,*m['c']),K,2.0,size=m['r'])
- for i in range(4):tx,ty=mtoe_xy(pre,s,i);add('ELLIPSOID',(tx,ty,MTOE_Z),K,_v6('V6_TOE_STIFF',7.5),size=MTOE_R)
+ for i in range(4):tx,ty=mtoe_xy(pre,s,i);add('ELLIPSOID',(tx,ty,MTOE_Z),K,_v6('V6_TOE_STIFF',10.0),size=MTOE_R)
+ # Round ZZG (codex ROUND-ZZF-AUDIT #1: four toe balls with clefts 6-8 mm deep in the front silhouette): the ball's bottom (9 mm up, as wide
+ # as the toe row) filled the clefts from behind - measured 2.2 mm on the bare skin. A NEGATIVE element between each pair of lobes, from
+ # the floor up, carves the cleft through the lobes and the ball's front edge; the main pad behind keeps its contact.
+ _cl=_v6('V6_TOE_CLEFT',2.0)
+ if _cl>0:
+  for i in range(3):
+   (ax,ay),(bx,by)=mtoe_xy(pre,s,i),mtoe_xy(pre,s,i+1)
+   e=mb.elements.new(type='ELLIPSOID');e.co=((ax+bx)/2,(ay+by)/2-_v6('V6_CLEFT_DY',0.0),_v6('V6_CLEFT_Z',.006));e.radius=K;e.stiffness=_v6('V6_CLEFT_STIFF',4.0);e.use_negative=True
+   e.size_x,e.size_y,e.size_z=_v6('V6_CLEFT_RX',.006)*_cl,_v6('V6_CLEFT_RY',.030),_v6('V6_CLEFT_RZ',.014)*_cl
  bpy.context.view_layer.update();me=bpy.data.meshes.new_from_object(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
  o=bpy.data.objects.new('MetaLeg',me);scene.collection.objects.link(o);bpy.data.objects.remove(ob);bpy.data.metaballs.remove(mb);return o
 if PAW_META:PAW={k:((m['x'],)+m['c'],m['r']) for k,m in MPAW.items()}
@@ -1790,8 +1803,8 @@ def paw_crease(p):
  if not PAW_META:return f
  for pre,m in MPAW.items():
   for s in (-1,1):
-   x0=s*m['x'];zone=np.clip((.050-p[:,2])/.02,0,1)*np.clip(((m['front']+1.6*TOE_R[1])-p[:,1])/.012,0,1)*(np.abs(p[:,0]-x0)<1.6*TOE_DX)   # the toes' front, low: at .070 / 2.3 dx the lines ran up the whole paw (round R first render)
-   for k in (-1,0,1):f*=1-_v6('V6_PAW_CREASE',.25)*zone*np.exp(-((p[:,0]-x0-k*TOE_DX)/.0035)**2)
+   x0=s*m['x'];zone=np.clip((_v6('V6_CREASE_TOP',.030)-p[:,2])/.02,0,1)*np.clip(((m['front']+1.6*TOE_R[1])-p[:,1])/.012,0,1)*(np.abs(p[:,0]-x0)<1.6*TOE_DX)   # the toes' front, low: at .070 / 2.3 dx the lines ran up the whole paw (round R first render)
+   for k in (-1,0,1):f*=1-_v6('V6_PAW_CREASE',.25)*zone*np.exp(-((p[:,0]-x0-k*TOE_DX)/.0035)**2)   # round ZZG: top .050 -> .030 (codex ZZF #1: the lines only in the bottom 14-20 mm; they ran up the paw's front)
  return f
 def fur_color(p,reg):
  # A real mackerel tabby, painted in world space (cat faces -Y, z up).

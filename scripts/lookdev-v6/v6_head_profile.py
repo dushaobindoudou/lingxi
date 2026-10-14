@@ -1,14 +1,15 @@
 """Round ZZG: the furred head's side silhouette on a fixed orthographic camera (0.42 m / 1024 px, like codex's head_side template;
 the cat faces left), transparent, the floor hidden - so variants of one rig compare row by row. Camera centre = the Head bone's middle
 at FRAME (variants that only re-sculpt skin share it). Prints the nose tip's image row. Env: OUT (png), FRAME (1), RES (1024),
-SCALE (.42), SAMPLES (8), AZ (deg, 0 = side), COLOR=1 (opaque, denoised - a look, not a silhouette)."""
+SCALE (.42), SAMPLES (8), AZ (deg, 0 = side, 90 = front), FOCUS (bone, Head), CZ (centre height, m), COLOR=1 (opaque, denoised - a look, not a silhouette)."""
 import bpy, os, math
 from mathutils import Vector
 sc = bpy.context.scene; sc.frame_set(int(os.environ.get('FRAME', 1)))
 for o in sc.objects:
     if o.name == 'Studio ground': o.hide_render = True
 rig = bpy.data.objects['LX_Rig']; W = rig.matrix_world; pb = rig.pose.bones
-c = W @ ((pb['Head'].head + pb['Head'].tail) / 2)
+FB = os.environ.get('FOCUS', 'Head'); c = W @ ((pb[FB].head + pb[FB].tail) / 2)
+if os.environ.get('CZ'): c.z = float(os.environ['CZ'])   # e.g. .062 for codex's paw templates (their floor line at row ~908 of 1024)
 cam = bpy.data.objects.new('ProfileCam', bpy.data.cameras.new('ProfileCam')); sc.collection.objects.link(cam)
 cam.data.type = 'ORTHO'; S = float(os.environ.get('SCALE', .42)); cam.data.ortho_scale = S
 az = math.radians(float(os.environ.get('AZ', 0)))   # 0 = true side (the cat's left); 45 = three-quarter front-left
