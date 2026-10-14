@@ -307,7 +307,7 @@ for _k in MPAW:
 # (clefts 1.7 mm furred, 2.2 bare). Narrower lobes closer together (W .62, DX .78, stiffness 10) + the cleft carving below: 118 mm wide,
 # clefts 2-4 mm furred; the walk's sole slip .91 -> .73 mm, run / jump unchanged.
 MTOE_R=(.023*_v6('V6_MTOE_W',.62),.031,.032*_v6('V6_MTOE_H',.55));MTOE_DX=.035*_v6('V6_MTOE_DX',.78);MTOE_Z=.035-.032*(1-_v6('V6_MTOE_H',.55));MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
-def mtoe_xy(pre,s,i):m=MPAW[pre];return s*m['x']+(i-1.5)*MTOE_DX,m['front']+MTOE_R[1]+MTOE_ARC*(abs(i-1.5)-.5)
+def mtoe_xy(pre,s,i):m=MPAW[pre];return s*m['x']+(i-1.5)*MTOE_DX,m['front']+MTOE_R[1]+MTOE_ARC*(abs(i-1.5)-.5)+_v6('V6_MTOE_BACK',.005)   # round ZZQ: + back (toward the heel, +y on both pairs) - the toe row's wedge
 def meta_leg(pre,s):
  """The lower leg and paw of one leg as a metaball (resolution 3 mm), returned as a mesh for merge()."""
  m=MPAW[pre];X=s*m['x'];K=1/math.sqrt(1-math.sqrt(.6/2.0))   # element radius putting a lone stiffness-2 element's surface at R
