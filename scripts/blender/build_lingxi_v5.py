@@ -387,7 +387,7 @@ SCULPT=[((0,-.418,.528),.022,-.0045*_v6('V6_STOP_K',2.0)),                      
         ((-.105,-.355,.455),.040,+.0070),((.105,-.355,.455),.040,+.0070),   # full lower cheeks
         ((0,-.430,.428),.020,+.0030*_v6('V6_CHIN_K',-1.0)),
         # the skin behind a nose moved forward (V6_NOSE_FWD) and a short bridge up to it, so it stays seated on the face
-        ((0,-.448,.487),.016,+.90*_v6('V6_NOSE_FWD',0.0)),((0,-.443,.505),.014,+.45*_v6('V6_NOSE_FWD',0.0)),                                  # chin (V6_CHIN_K < 0 sets it back - codex head_side_target: the chin's coat 13-18 mm behind ours)
+        ((0,-.448,.487),.016,+.90*_v6('V6_NOSE_FWD',.015)),((0,-.443,.505),.014,+.45*_v6('V6_NOSE_FWD',.015)),                                  # chin (V6_CHIN_K < 0 sets it back - codex head_side_target: the chin's coat 13-18 mm behind ours)
         ((0,-.26,.66),.080,-.0060)]                                    # a lower, flatter crown
 def sculpt(o):
  me=o.data;me.update();bpy.context.view_layer.update();mw=o.matrix_world.copy()   # merged mesh: local != world
@@ -607,7 +607,7 @@ for s in [-1,1]:
 # sides and a groove down its centre - it was a squashed sphere, which read as rubber.
 # head profile (codex ROUND-ZZD-AUDIT: not the whole snout - try the nose's tip alone forward 5 / 10 / 15 mm): V6_NOSE_FWD moves the
 # leather forward, the philtrum's top with it, and the skin behind it (a SCULPT brush) so it does not float off the face
-NOSE_FWD=_v6('V6_NOSE_FWD',0.0)
+NOSE_FWD=_v6('V6_NOSE_FWD',.015)   # round ZZG (user chose +15 of 0 / +5 / +10 / +15; v6_head_profile.py on codex's head-template camera): nose 15.6 -> 4.9 mm behind the target, stop +1.3, chin +0.8 mm
 nose=sphere('LX_Nose',(0,0,0),(1,1,1),nosemat);NC=(0,-.447-NOSE_FWD,.487+_v6('V6_NOSE_DZ',0.0));NW,ND,NH=.0215*_v6('V6_NOSE_W',1.0),.0105*_v6('V6_NOSE_D',1.0),.0135*_v6('V6_NOSE_H',1.0)
 shade=[]
 for v in nose.data.vertices:
