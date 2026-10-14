@@ -1162,3 +1162,13 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - 上轮降趾瓣高度时中心不动，底部抬高 13 mm、掌底离地（步态审计接触归零）。改为中心随高度下移、底部保持在地面（`MTOE_Z` 随 `V6_MTOE_H`）：×.55 时步态审计与原来逐项相同（接触帧数、滑动距离），正面趾缝缩短、四趾成底部鼓包，侧面趾端一颗圆鼓（对 `lingxi-ref-paw-front` / `-side`）。仍比目标宽、四趾不如目标分明。
 - 机器被其他应用（Chrome / Cursor / ChatGPT 渲染进程）占满，负载 80–95：一次构建 59 min、加毛 61 min；全套 31 张对照取消，只渲爪正 / 爪侧 / 坐后脚 / 站正。又一次 zsh 不拆分 `set -- $spec`，三张图白跑——多词循环一律包在 `bash -c` 里。
 - ZZF 审计：无片段穿地；步态不变。
+
+## 暂停（2026-10-14 上午）
+
+用户：「如果确实无法更进一步的话就暂时不做了，整体效果我觉得好像好了很多了」。每小时的 codex 审计 + 迭代循环已取消；当前模型 = Round ZZF（`v6/round-zzf/`，提交 dfd4b25），审阅页 https://claude.ai/artifact/7fLTHVDwCd8pRXEXiiBGiW v37。
+
+恢复时的起点：
+- codex 批次 27 `reviews/ROUND-ZZF-AUDIT-2026-10-14.md` 末尾"ZZF 之后最该先改的 5 项"（四颗底部趾球与趾间沟 6–8 mm、挠耳两前掌压回地面、蜷睡尾环闭合、侧卧后半身放低、鼻端局部前推档位）。
+- 待用户决定：鼻端前推（`V6_NOSE_FWD` 0 / +5 / +10 mm，默认 0）；本 worktree 被误覆盖的 9/29 旧 v5 模型是否从 `bd396f1` 重建。
+- 工具：`scripts/lookdev-v6/fc.sh`（31 机位对照）、透明底同机位侧影量测（头 / 爪对 codex 遮罩）、`scripts/blender/check_swallowed_code.py`（提交前跑，含毛发脚本）；多词循环一律 `bash -c`；每一步都给 `LINGXI_OUT`。
+- 机器负载高时（他人应用占满，负载 80+）一次构建可达 1 小时：先渲关键机位，不跑全套。
