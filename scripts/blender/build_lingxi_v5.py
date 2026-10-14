@@ -2914,7 +2914,14 @@ SIDELIE={k:_v6('V6_SL_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=0,lift=.2047,
 # lingxi-ref-pose-sleep-top.png; the tail is laid round the ring's gap to the chin by _tail_wrap (its per-joint angles here are overridden).
 # Round ZV (final check: the tail never reached the chin - V6_TAIL_DEBUG: a 974 mm path round a 139 deg gap for a 474 mm tail; the ring was
 # too open): the back curls 2.2 -> 3.0 (gap 115 deg; 3.4 threw the paws out) and the tail lies closer (V6_SP_TAIL_GAP 2 mm)
-SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,lift=.2175,spine=3.0,spine_side=0,neck=1.1,neck_side=-.25,head=.5,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=1.2,tail_k=-.15,ear_x=0,ear_z=-.60,
+# Round ZZG (codex ROUND-ZZF-AUDIT #3, tail ring): `yaw` turns the PELVIS, but the legs are placed from the root, so turning it threw the
+# upper hind paw up onto the back (259 -> 381 mm at -3.1). `turn` turns the WHOLE curl on the floor (the root, world up) so that the ring's
+# gap - where the tail crosses from the rump to under the chin - faces the camera, as codex's sleep-app / -top. Measured (round-zzg-test):
+# turn 0 -> -1.45 shortens the tail's path 786 -> ~480 mm (tail 474) - it now crosses the front instead of stopping beside the head.
+# paws: the forepaws under the chin (codex: the chin rests on them, the tail in front), the upper one stacked on the lower (from its shoulder
+# 300 mm up it cannot reach the floor). The head stays at its old height (chin 158 mm): lowered to 101 the paws hid the muzzle from the
+# 20-deg-down camera (s-p4*).
+SLEEP={k:_v6('V6_SP_'+k.upper(),d) for k,d in dict(roll=1.57,yaw=-1.0,turn=-1.45,paws=1.0,paw_fwd=0.0,paw_dx=.035,paw_z=.05,paw_side=1.0,paw_stack=1.0,stack_dz=.055,stack_fwd=.02,lift=.2175,spine=3.0,spine_side=0,neck=1.1,neck_side=-.25,head=.5,head_side=-.1,head_roll=-1.4,tail=-.5,tail_side=1.2,tail_k=-.15,ear_x=0,ear_z=-.60,
  f_dy=0,f_dz=.15,f_pa=1.5,h_dy=-.14,h_dz=.20,h_pa=.3,add_FL=.08,add_FR=.5,add_HL=.08,add_HR=.6).items()}
 # Round Q (user: 「侧躺和躺着姿势不对」): SideLie is the reference's side LOUNGE (lingxi-ref-sidelie.png), not a cat rolled
 # over: the hips go down onto their side with both hind legs laid out beside them, the chest stays nearly upright on its
@@ -2935,9 +2942,16 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # ahead of the shoulders (codex FINAL-CHECK-BODY: 90-150). (Rolling the whole torso, codex's other suggestion, read as a cat flung on its side.)
 # Round ZZ (codex SIDELIE-OWNBODY-JOINTS: chest ~25 deg, lumbar ~55, pelvis ~75 rolled; ZX measured 6.6 / 26 / 78): chest kept .9 -> .78 (16.7 deg,
 # chest still 28 mm off the floor), neck -.55 -> -.80 (head a little higher)
+# Round ZZG (codex ROUND-ZZF-AUDIT #4, measured with round-zzg-test/sidem.py; rolls already in range: pelvis 84, loin 51-67, chest 30 deg):
+# the forepaws 216 mm apart -> side by side (f_half .025: 68 mm, codex 45-70); the under hind paw 15.5 mm up -> 7.3 (h_dz .10 -> 0);
+# the upper hind paw stacked 40 mm up -> laid behind it on the floor (h_stack_dz .065 -> 0, h_stack_dy .02 -> .07: 3.2 mm, codex "layered
+# flat"); forepaws f_floor .088 -> .080 (3.2 / 5.3 mm); rump 4.7, chest 21 mm. The tail, which hung 133-163 mm in the air, is laid on the
+# floor (V6_SG_TAIL_WRAP below).
 SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-1.10,hip_roll=1.5,chest_keep=.78,spine=.65,neck=-.80,head=-.12,head_tilt=.22,head_turn=0,
- tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=.10,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
- h_floor=.045,h_stack_dy=.02,h_stack_dz=.065,f_floor=.088,bend=0.0).items()}
+ tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=0.0,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
+ h_floor=.045,h_stack_dy=.07,h_stack_dz=0.0,f_floor=.080,bend=0.0,f_half=.025).items()}
+if SLEEP['paws']>0:   # round ZZG: the forepaws are placed under the chin; the drape (add_FR .5) threw the upper one 300 mm up
+ for _k in ('add_FL','add_FR'):SLEEP[_k]=_v6('V6_SP_'+_k.upper(),0.0)
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
  for _k in ('add_HL','add_HR','add_FL','add_FR'):SIDELOUNGE[_k]=_v6('V6_SG_'+_k.upper(),0.0)
 K_LOW='HL'   # hips rolled +: the LEFT hind leg is underneath
@@ -3150,7 +3164,11 @@ SIT_LIKE=('Sit','ScratchEar','WashFace','GroomSide')
 def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
 # scratch-ear (round-v-test f2-f7): the head swings down and over to the LEFT side (+ here) and tilts up, the trunk stays upright - a
 # pelvis roll laid the whole cat on its side (the pelvis is the trunk's root), the head bent forward-down left the ear 480 mm from the hip
-SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.10,neck=.10,neck_side=.40,head=-.35,head_roll=.25,foot_dy=.02,foot_dz=-.02,foot_pa=.6).items()}
+# Round ZZG (codex ROUND-ZZF-AUDIT #2, measured with round-zzg-test/sem.py at frame 975): the forepaws hung 16.6 / 44.9 mm (bent over to
+# the left the chest rode up on the right). fore_down presses each to the floor (a bisected drop, scapula following, the leg free to swing
+# out: L 1.4 mm); chest_twist -.35 levels the shoulders so the right one reaches too (R 1.5 mm; -.25: 11.2, +.25 worse). Pelvis side-roll
+# .037 rad, hind foot to ear base 11 mm, head 456 -> 445 mm (codex: <= .10, <= 25, <= 20 lower) - all in.
+SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.10,neck=.10,neck_side=.40,head=-.35,head_roll=.25,foot_dy=.02,foot_dz=-.02,foot_pa=.6,fore_down=1.0,chest_twist=-.35).items()}
 GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65).items()}   # groom-side
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
 BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
@@ -3230,6 +3248,17 @@ def _correctives(pb):
  d=f(cn).translation-f('Pelvis').translation;pitch=math.atan2(d.z,math.hypot(d.x,d.y))
  sit=min(1,max(0,(math.degrees(pitch)-25)/20))*min(1,max(0,(_REST_Z['Pelvis']-zp-.08)/.06))
  return {'LieSpread':lc*lp*upright*fl,'FlankThigh':min(hipf)*max(lp*upright,sit),'SitHaunch':sit}
+def _sleep_paw_target(f,k):
+ """Round ZZG (codex sleep-app: the chin rests on the forepaws, the tail in front of them): the forepaw's WORLD target under the chin,
+  half a paw-spacing to its own side. The chin is where the head will be once _face_world (run after the legs) has turned it."""
+ Rw=Matrix.Rotation(_v6('V6_SP_FACE_YAW',0),3,'Z')@Matrix.Rotation(_v6('V6_SP_FACE_PITCH',.30),3,'X')@Matrix.Rotation(_v6('V6_SP_FACE_ROLL',.35),3,'Y')
+ M=(Rw@ad.bones['Head'].matrix_local.to_3x3()).to_4x4();M.translation=f('Head').translation;chin=M@mouth_l
+ fwd=Rw@Vector((0,-1,0));fwd.z=0;fwd.normalize();side=fwd.cross(Vector((0,0,1)))
+ s=SLEEP['paw_side']*(1 if k=='FL' else -1)   # by name: on its side the two forepaws stack, and their order across the face is not reliable
+ base=Vector((chin.x,chin.y,0))+fwd*SLEEP['paw_fwd']+Vector((0,0,SLEEP['paw_z']))
+ if SLEEP['paw_stack']>0:   # the upper forepaw (R, rolled +) cannot reach the floor from its shoulder 300 mm up: laid on top of the lower one
+  return base+(fwd*SLEEP['stack_fwd']+Vector((0,0,SLEEP['stack_dz'])) if k=='FR' else Vector((0,0,0)))
+ return base+side*(s*SLEEP['paw_dx'])
 def place_legs(name,u,pb,hold=0.0):
  """Solve all four legs for this frame, after the body (root, spine, head) is posed."""
  names=['Root','Pelvis','Loin','Spine','Neck','Head','Scap.L','Scap.R']+list(SPLIT.values())
@@ -3288,7 +3317,7 @@ def place_legs(name,u,pb,hold=0.0):
    if name=='SideLie' and SL_MODE==2:
     # the forearms as in LieDown, from the (yawed) root; the hind legs folded in the PELVIS's plane, which the hip roll lays down
     K=SIDELOUNGE
-    if k[0]=='F':lt,la=Vector((LREST[k]['x'],ad.bones[LEGS[k][1]].head_local.y-K['f_dy'],K['f_z']+K['drop'])),math.radians(K['f_pa']);D_=RD
+    if k[0]=='F':lt,la=Vector((math.copysign(K['f_half'],LREST[k]['x']) if K['f_half']>0 else LREST[k]['x'],ad.bones[LEGS[k][1]].head_local.y-K['f_dy'],K['f_z']+K['drop'])),math.radians(K['f_pa']);D_=RD   # round ZZG: f_half - the forepaws side by side (codex ZZF #4: centres 45-70 mm apart; they were 216)
     else:lt,la=foot+Vector((0,K['h_dy'],K['h_dz'])),pa+K['h_pa'];D_=f('Pelvis')@ad.bones['Pelvis'].matrix_local.inverted()
     tg=D_@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
     if k[0]=='H':pa=pa+_ang(D_.to_3x3()@Vector((0,1,0)))
@@ -3303,9 +3332,12 @@ def place_legs(name,u,pb,hold=0.0):
    # Round P: on its side each pair is placed from the part it hangs from - the forelegs from the chest, the hind legs
    # from the pelvis. From the root, the back's new curve (Loin + Spine) swung the chest away from its forelegs' targets
    # and folded them up against it (round-p-test s2).
-    if name=='SideLie' and _v6('V6_SL_FRAME',1)>0:_bn=('Chest' if RIG_X else 'Spine') if k[0]=='F' else 'Pelvis';D_=f(_bn)@ad.bones[_bn].matrix_local.inverted()
+    # Round ZZG: Sleep too (V6_SP_FRAME) - curled 3 rad, the root-frame foreleg targets lay behind the chest and the lower forepaw stuck out
+    # of the back of the ring (135 mm past the trunk's contour); from the chest they fold in under the chin.
+    if (name=='SideLie' and _v6('V6_SL_FRAME',1)>0) or (name=='Sleep' and _v6('V6_SP_FRAME',1)>0):_bn=('Chest' if RIG_X else 'Spine') if k[0]=='F' else 'Pelvis';D_=f(_bn)@ad.bones[_bn].matrix_local.inverted()
    if not (name=='SideLie' and SL_MODE==2):
     tg=D_@(foot.lerp(lt,fr));pa=pa+(la-pa)*fr
+    if name=='Sleep' and k[0]=='F' and SLEEP['paws']>0:tg=tg.lerp(_sleep_paw_target(f,k),SLEEP['paws'])
     if name in ('SideLie','Sleep'):pa=pa+_ang(D_.to_3x3()@Vector((0,1,0)))
   elif name=='Bite':
    fac=.5-.5*math.cos(u*math.tau*2)      # the same envelope pose() drives the head with
@@ -3364,7 +3396,7 @@ def place_legs(name,u,pb,hold=0.0):
    lt=RD@Vector((LREST[k]['x']-math.copysign(LF['dx'],LREST[k]['x']),hy+LF['dy'],LF['z']+L['drop']))
    tg=tg.lerp(lt,fo);pa=pa+(math.radians(LF['pa'])-pa)*fo
    if FOOT:R_=LREST[k]['ang'];ft=FOOT_OF[k];fa=pa+(R_[ft]-R_[LEGS[k][3]])+LF['fpa']*fo
-  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META) or (name=='LieDown' and k[0]=='H' and LIEDOWN['h_dx']!=0) or name in ('Turn','BellyUp') or (name=='ScratchEar' and k=='HL')
+  _ab=(name=='SideLie' and SL_MODE==2 and PAW_META) or (name=='Sleep' and k[0]=='F' and SLEEP['paws']>0) or (name=='LieDown' and k[0]=='H' and LIEDOWN['h_dx']!=0) or name in ('Turn','BellyUp') or (name=='ScratchEar' and k=='HL')
   if k[0]=='F' and RIG_X:_scap_follow(k,tg,rots,locs);pb['Scap.'+k[1]].rotation_euler=rots['Scap.'+k[1]];pb['Scap.'+k[1]].location=locs['Scap.'+k[1]]
   if fa is None and FOOT and (name=='LieDown' or (name=='Lick' and k!='FR') or (name in SIT_LIKE and not (name=='ScratchEar' and k=='HL') and not (name=='WashFace' and k=='FR'))):
    # round X2: the foot lies flat on the floor (its rest angle) whatever the metatarsus does - blended in with the pose
@@ -3385,6 +3417,23 @@ def place_legs(name,u,pb,hold=0.0):
     if lw>=.0005:break
     tg=tg+Vector((0,0,.0015-lw));lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa,paw_dir=pdir)
     if ko>1e-3:lr=_knee_out(k,lr,rots,locs,ko)
+  if name=='ScratchEar' and k[0]=='F' and SE['fore_down']>0 and hold>1e-3:
+   # Round ZZG (codex ROUND-ZZF-AUDIT #2): bent over to the scratching side the chest rides up and the sit's floor targets leave the
+   # forepaws 17 / 45 mm in the air; pressed down (the scapula following, the leg free to swing out) until the paw's own skin is on it
+   rr=dict(rots);rr.update(lr)
+   if _paw_low(k,rr,locs)>.003:
+    lo,hi,best,t0=0.0,.10*SE['fore_down']*hold,None,tg.copy()   # bisect the drop: the swing-out turns the paw, so the low point is not linear in it
+    for _ in range(9):
+     d_=(lo+hi)/2;t_=t0-Vector((0,0,d_));r2=dict(rots);l2=dict(locs)
+     if RIG_X:_scap_follow(k,t_,r2,l2)
+     lr2,_,_=leg_ik(r2,l2,k,t_,pa,abduct=True,foot_ang=fa,paw_dir=pdir);r3=dict(r2);r3.update(lr2);lw=_paw_low(k,r3,l2)
+     if lw>.003:lo=d_
+     else:
+      hi=d_
+      if lw>=0:best=(t_,lr2,r2,l2)
+    if best is not None:
+     tg,lr,r2,l2=best;rots.update({'Scap.'+k[1]:r2['Scap.'+k[1]]});locs.update({'Scap.'+k[1]:l2.get('Scap.'+k[1],locs.get('Scap.'+k[1]))})
+     if RIG_X:pb['Scap.'+k[1]].rotation_euler=rots['Scap.'+k[1]];pb['Scap.'+k[1]].location=locs['Scap.'+k[1]]
   for n,rv in lr.items():pb[n].rotation_euler=rv
   if name in ('SideLie','Sleep'):pb[LEGS[k][1]].rotation_euler[2]+=((SIDELOUNGE if SL_MODE==2 else SIDELIE)['add_'+k]*_settle(u) if name=='SideLie' else SLEEP['add_'+k])   # round R: += (on top of the solve's own plane swing)   # out of the leg's plane: the upper pair drapes onto the lower
 def pose(name,u):
@@ -3474,6 +3523,7 @@ def pose(name,u):
   elif name in ('SideLie','Sleep'):
    S=SIDELIE if name=='SideLie' else SLEEP
    pb['Root'].rotation_euler[2]=S['roll']*f;pb['Root'].location.y=S['lift']*f
+   if name=='Sleep' and S['turn']:pb['Root'].rotation_euler=(Matrix.Rotation(S['turn']*f,3,'Y')@Euler(tuple(pb['Root'].rotation_euler),'XYZ').to_matrix()).to_euler('XYZ')   # Root's own y is world up; applied AFTER the roll
    pb['Pelvis'].rotation_euler[0]=S['yaw']*f   # rolled a quarter turn, the pelvis's pitch is a turn on the floor (Root's own y would be applied before the roll)
    pb['Spine'].rotation_euler[0]=S['spine']*f;pb['Spine'].rotation_euler[2]=S['spine_side']*f
    pb['Neck'].rotation_euler[0]=S['neck']*fh;pb['Neck'].rotation_euler[2]=S['neck_side']*fh
@@ -3579,7 +3629,7 @@ def pose(name,u):
   pb['Root'].location.y+=LICK_HIND[3]*hold
   if name=='ScratchEar':
    # the head comes down and over to the raised hind foot: the back bends to that side, the hip on it lifts
-   pb['Spine'].rotation_euler[2]+=SE['spine_side']*hold;pb['Pelvis'].rotation_euler[1]+=SE['hip_roll']*hold
+   pb['Spine'].rotation_euler[2]+=SE['spine_side']*hold;pb['Pelvis'].rotation_euler[1]+=SE['hip_roll']*hold;pb['Spine'].rotation_euler[1]+=SE['chest_twist']*hold   # round ZZG: chest_twist levels the shoulders
    pb['Neck'].rotation_euler[0]+=SE['neck']*hold;pb['Neck'].rotation_euler[2]+=SE['neck_side']*hold
    pb['Head'].rotation_euler[1]+=SE['head_roll']*hold;pb['Head'].rotation_euler[0]+=SE['head']*hold;blink=.7*hold
   if name=='GroomSide':
@@ -3633,6 +3683,13 @@ def pose(name,u):
  if name=='WashFace':_wash_reach(pb,_ease(u),u)
  if name=='SideLie' and SL_MODE==2 and _v6('V6_SG_FACE',1)>0:_face_world(pb,_v6('V6_SG_FACE_YAW',0),_v6('V6_SG_FACE_PITCH',.05),_v6('V6_SG_FACE_ROLL',-.22),k=_settle(u,.06,LIE_T+.10))   # round W: the face to the camera, upright with a tilt, however far the chest leans over
  if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
+ # Round ZZG: SideLie's tail, left straight back with the hips rolled over, hung 133-163 mm in the air the whole length (round-zzg-test g-G);
+ # laid on the floor round the rump toward the camera side, ending ahead of the under hind paw (codex sidelie-ownbody-app: curled on the floor). Via +x, the short way (110 deg) and the side the camera sees; via -y it went the long way
+ # (250 deg, a 1980 mm path) and the 474 mm tail ended behind the body, out of view.
+ _SGW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name=='SideLie' and SL_MODE==2 and _v6('V6_SG_TAIL_WRAP',1)>0
+ if _SGW:
+  _hp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})(LEGS[K_LOW][3]).translation
+  _tail_wrap(pb,(1,0),(_hp.x+_v6('V6_SG_TAIL_END_X',0.0),_hp.y-_v6('V6_SG_TAIL_END_Y',.06)),k=_settle(u,.10,LIE_T+.20),lead=_v6('V6_SG_TAIL_LEAD',.7))
  if RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep'):
   # LieDown: round the +x flank (the camera's right, as codex's liedown-app) to beside that forepaw; Sleep: round the front (the camera
   # side, -y) to under the chin
@@ -3648,7 +3705,7 @@ def pose(name,u):
   # near hind paw (codex ROUND-ZR-ZX-AUDIT: sit-hindfoot all coat)
   _fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.L').translation
   _tail_wrap(pb,(-1,0),(_fp.x-.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.3))   # round ZZ: .7 -> .3 - round the left the tail's tip ran past the path's end into the floor (-29.5 mm, tl1-tl3)
- if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004)   # a laid tail is already on its path, clear of the floor; round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
+ if _v6('V6_TAIL_FLOOR',1)>0 and not _SGW and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004)   # a laid tail is already on its path, clear of the floor; round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  _forearm_twist(pb)
  # Squint and Blink are additive off the same basis, so a full blink must cancel the squint

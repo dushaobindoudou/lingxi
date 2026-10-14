@@ -2,12 +2,12 @@
 # Final check (2026-10-13; tracked copy - the working copy lives in v6/round-v-test): $1 = model dir, $2 = out dir. Renders ours from the camera of every body / pose / action ref codex made,
 # at the current clip frames (animations.json: Run 121-152, Jump 153-200, LieDown 201-248, SideLie 249-296, Sleep 297-368, Lick 525-572,
 # Stretch 669-728, Sit 777-824, Loaf 825-884, BellyUp 885-944, ScratchEar 945-1004, WashFace 1005-1064, GroomSide 1065-1124, Turn 1125-1172),
-# four at a time. Each line: key frame view [focus span].
+# PAR at a time (default 1: each furred render holds ~2.6 GB; six at once froze the 16 GB machine on 2026-10-14). Each line: key frame view [focus span].
 M=$1/lingxi-short-fur-rig-v5.blend; O=$2; mkdir -p $O; B=/Applications/Blender.app/Contents/MacOS/Blender; RT=$(cd $(dirname $0) && pwd)/render_target.py
 run(){ local k=$1 f=$2 v=$3 fo=${4:-} sp=${5:-}; if [ -n "$fo" ]; then FOCUS=$fo SPAN=$sp FRAME=$f VIEW=$v OUT=$O/$k.png RES=${RES:-420} SAMPLES=${SAMPLES:-24} $B -b $M --python $RT > $O/$k.log 2>&1
  else FRAME=$f VIEW=$v OUT=$O/$k.png RES=${RES:-420} SAMPLES=${SAMPLES:-24} $B -b $M --python $RT > $O/$k.log 2>&1; fi; grep -q "^Traceback" $O/$k.log && echo "FAIL $k"; }
 n=0
-while read k f v fo sp; do [ -z "$k" ] && continue; run $k $f $v $fo $sp & n=$((n+1)); [ $((n%4)) -eq 0 ] && wait; done <<LIST
+while read k f v fo sp; do [ -z "$k" ] && continue; run $k $f $v $fo $sp & n=$((n+1)); [ $((n%${PAR:-1})) -eq 0 ] && wait; done <<LIST
 stand-side 1 side
 stand-app 1 app
 paw-front 1 front FrontPaw.R .14
