@@ -2,7 +2,7 @@
 missed Turn going 10-14 mm under the floor (round ZZG / ZZH). Env FRAMES=a,b,step. Prints LOW frame:mm ..."""
 import bpy, os, numpy as np
 sc = bpy.context.scene; dg = bpy.context.evaluated_depsgraph_get()
-obs = [o for o in sc.objects if o.type == 'MESH' and not o.hide_render and any(m.type == 'ARMATURE' for m in o.modifiers)]
+obs = [o for o in sc.objects if o.type == 'MESH' and not o.hide_render and any(m.type == 'ARMATURE' for m in o.modifiers) and 'Whisker' not in o.name]   # whiskers (thin, rigid) reported apart: belly-up pushes them 43 mm through the floor
 a, b, st = [int(x) for x in os.environ['FRAMES'].split(',')]; out = []
 for f in range(a, b + 1, st):
     sc.frame_set(f); dg = bpy.context.evaluated_depsgraph_get(); low = 9

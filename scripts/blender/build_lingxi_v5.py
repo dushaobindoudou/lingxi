@@ -3184,7 +3184,7 @@ def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
 SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.10,neck=.10,neck_side=.40,head=-.35,head_roll=.25,foot_dy=.02,foot_dz=-.02,foot_pa=.6,fore_down=1.0,chest_twist=-.35).items()}
 GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65).items()}   # groom-side
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
-BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
+BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,turn=-1.3,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
 LF={k:_v6('V6_LF_'+k.upper(),d) for k,d in dict(dx=-.015,dy=.03,z=.050,pa=-20,fpa=.35).items()}   # loaf: forepaws folded under the chest
 TURN=_v6('V6_TURN',math.pi/2);TURN_STEPS={'FL':(.08,.34),'HR':(.24,.50),'FR':(.42,.68),'HL':(.58,.84)}
 _LOAF=False
@@ -3420,7 +3420,7 @@ def place_legs(name,u,pb,hold=0.0):
   if RIG_X and k[0]=='H':
    ko={'LieDown':LIEDOWN['knee_out']*_settle(u),'Lick':_v6('V6_SIT_KNEE_OUT',.2)*hold}.get(name,_v6('V6_SIT_KNEE_OUT',.2)*hold if (name in SIT_LIKE and not (name=='ScratchEar' and k=='HL')) else 0.0)
    if ko>1e-3:lr=_knee_out(k,lr,rots,locs,ko)
-  if (name in ('LieDown','SideLie','Sleep','Stretch') or (FACE_V1 and name in SIT_LIKE+('Lick','PawPlay'))) and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:   # Z4: + PawPlay (its planted forepaw's beans -4.4 mm)
+  if (name in ('LieDown','SideLie','Sleep','Stretch') or (FACE_V1 and name in SIT_LIKE+('Lick','PawPlay')) or (name=='Turn' and _v6('V6_TURN_GROUND',1)>0) or name=='BellyUp') and PAW_META and _v6('V6_LIFT_OFF_FLOOR',1)>0:   # round ZZH: + Turn (6-14 mm under on most frames), + BellyUp (forepaws 15-23 mm under while rolling over)   # Z4: + PawPlay (its planted forepaw's beans -4.4 mm)
    # round U: the paw's own skin stays on / above the floor all through the lie-down (R's under hind paw swept 41 mm
    # through it at frame 259 while its angle blended from standing to lying)
    # Round Z4 (codex CAT-REALISM-GAP P0/P1: lick -7.9, loaf / lie-down -2.7 mm - all the hind heel's skin, RearPaw .8): checked
@@ -3657,6 +3657,10 @@ def pose(name,u):
   # less (a twist down the back), the paws up and folded, the face turned to the camera; a small wiggle once over
   r=min(1,u/.35);r=r*r*(3-2*r);wig=max(0,(u-.45)/.55)
   pb['Root'].rotation_euler[2]=BU['roll']*r+BU['wiggle']*math.sin(u*math.tau*2)*wig*r
+  # Round ZZH (audit: lying along the camera's axis, head nearest, the belly-up read from the app camera as a face with a pile of legs
+  # behind it - "a cat that fell over"): `turn` lays the whole cat across the view (world up, after the roll), as codex's act-belly-up;
+  # -1.3 shows the belly and the folded paws to the camera, head left (+1.3 turned its striped back to it)
+  if BU['turn']:pb['Root'].rotation_euler=(Matrix.Rotation(BU['turn']*r,3,'Y')@Euler(tuple(pb['Root'].rotation_euler),'XYZ').to_matrix()).to_euler('XYZ')
   pb['Spine'].rotation_euler[1]=BU['twist']*r;pb['Spine'].rotation_euler[0]=BU['spine']*r;pb['Neck'].rotation_euler[0]=BU['neck']*r
   for i,tb in enumerate(('Tail0','Tail1','Tail2')):pb[tb].rotation_euler[2]=.35*r
  if name=='Turn':
@@ -3693,6 +3697,15 @@ def pose(name,u):
  if name=='BellyUp':_rest_on_floor(pb)
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else _ease(u) if name in SIT_LIKE else min(1,u/.35)**2*(3-2*min(1,u/.35)) if name=='BellyUp' else 0.0)
  if name=='BellyUp':_face_world(pb,0,BU['face_pitch'],BU['face_roll'],k=min(1,u/.35));_head_off_floor(pb)
+ if name=='Turn' and _v6('V6_TURN_GROUND',1)>0:
+  # Round ZZH (v6_clip_lowscan.py: Turn went 6-14 mm under the floor on most frames - now lifted per paw in place_legs - and floated
+  # 12-25 mm at the hand-over, frame 1149: half way round, the paws stepped ahead / still behind the body's yaw stretch the stance legs
+  # past their reach). The planted paws' lowest skin is brought down onto the floor: the body crouches by the gap, the legs re-solved.
+  for _ in range(int(_v6('V6_TURN_GROUND_IT',6))):
+   _r={b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones};_l={b.name:tuple(pb[b.name].location) for b in ad.bones}
+   _gap=min(_paw_low(k,_r,_l) for k,(a_,b_) in TURN_STEPS.items() if not (a_<u<b_))
+   if _gap<=.002:break
+   pb['Root'].location.y-=_gap-.001;place_legs(name,u,pb,hold=0.0)
  if name=='WashFace':_wash_reach(pb,_ease(u),u)
  if name=='SideLie' and SL_MODE==2 and _v6('V6_SG_FACE',1)>0:_face_world(pb,_v6('V6_SG_FACE_YAW',0),_v6('V6_SG_FACE_PITCH',.05),_v6('V6_SG_FACE_ROLL',-.22),k=_settle(u,.06,LIE_T+.10))   # round W: the face to the camera, upright with a tilt, however far the chest leans over
  if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
