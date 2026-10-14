@@ -3211,7 +3211,11 @@ def _wash_reach(pb,hold,u):
  up,lo,pw='FrontUpper.R','FrontLower.R','FrontPaw.R'
  if _PADL is None:
   P=np.array([v.co[:] for v in bpy.data.objects['LX_FrontPad.R'].data.vertices]).mean(0);_PADL=ad.bones[pw].matrix_local.inverted()@Vector(P)
- if _WASHP is None:_WASHP=[ad.bones['Head'].matrix_local.inverted()@Vector(head_xf(p)) for p in ((.115,-.24,.56),(.10,-.34,.50),(.06,-.42,.47))]
+ # Round ZZJ (audit: in the app camera the paw never showed - it touched the face 0-2 mm all stroke long, but on the far side of the cheek,
+ # 60-115 mm off the midline; codex act-wash-face holds it IN FRONT of the face over the mouth): V6_WASH_FRONT pulls the stroke toward the
+ # midline and forward - eye side, cheek front, beside the mouth
+ _wf=_v6('V6_WASH_FRONT',1.0);_WP=[tuple(o+(n-o)*_wf for o,n in zip(op,np_)) for op,np_ in zip(((.115,-.24,.56),(.10,-.34,.50),(.06,-.42,.47)),((.09,-.31,.55),(.06,-.40,.50),(.03,-.455,.475)))]
+ if _WASHP is None:_WASHP=[ad.bones['Head'].matrix_local.inverted()@Vector(head_xf(p)) for p in _WP]
  names=[b.name for b in ad.bones];rots={n:tuple(pb[n].rotation_euler) for n in names};locs={n:tuple(pb[n].location) for n in names}
  f=_fk(rots,locs);H=f('Head');ph=(u*2.2)%1;ph=ph*ph*(3-2*ph)
  a,b=(_WASHP[0],_WASHP[1]) if ph<.5 else (_WASHP[1],_WASHP[2]);t=ph*2 if ph<.5 else ph*2-1
@@ -3554,7 +3558,11 @@ def pose(name,u):
   # near the floor between forelegs laid out flat in front, the hind legs stand, the head comes up to look ahead, the tail goes up.
   # Before, the root dropped 4 cm and the forepaws slid 11 cm: a standing cat leaning a little.
   b=math.sin(math.pi*u);b=b*b*(3-2*b)
-  pb['Pelvis'].rotation_euler[0]=_v6('V6_BOW_PITCH',.42)*b;pb['Spine'].rotation_euler[0]=-.10*b
+  # Round ZZJ (audit: the bow read flat - back slope 8 deg, chest 31 mm and forearms 30 mm up; target ~30 deg, chest on the floor): pitch
+  # .42 -> .73 with the back sagging back up (spine -.10 -> -.52) so the deep chest stops just above the floor: slope 13.3 deg, chest 1-15 mm.
+  # This chest is ~220 mm deep below the shoulder joint, so ~15 deg is the limit before it goes under (.85: chest -105 mm) - the kitten
+  # proportions (last task) are what gives the reference's steeper bow.
+  pb['Pelvis'].rotation_euler[0]=_v6('V6_BOW_PITCH',.73)*b;pb['Spine'].rotation_euler[0]=_v6('V6_BOW_SPINE',-.52)*b
   pb['Neck'].rotation_euler[0]=-.35*b;pb['Head'].rotation_euler[0]=-.15*b
   pb['Tail0'].rotation_euler[0]=.5*b;pb['Tail1'].rotation_euler[0]=.4*b;pb['Tail2'].rotation_euler[0]=.25*b
  if name=='Stretch' and _v6('V6_STRETCH_BOW',1)<=0:

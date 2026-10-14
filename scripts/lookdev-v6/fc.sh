@@ -36,7 +36,7 @@ sit-hindfoot 805 side RearPaw.L .16
 loaf 860 app
 belly-up 915 app
 scratch-ear 975 app
-wash-face 1035 app
+wash-face 1056 app
 groom-side 1095 app
 turn 1150 app
 LIST
