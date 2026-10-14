@@ -421,7 +421,7 @@ LID_YC=(EYE_R**2-LID_APEX**2)/(2*LID_APEX);LID_R=LID_YC+LID_APEX   # sphere thro
 LIP0=.4575*_v6('V6_LIP',1.0)      # lip-line centre: 16mm under the nose leather (24mm read as a long, sad philtrum)
 LIP_DZ=LIP0-.4575   # the mouth assembly MUST ride with the lip line - cavity/floor/tongue/teeth/jaw - or pink skin peeks above the new lip (v6 lesson)
 MOUTH_W=.024*_v6('V6_MOUTH_W',1.0);MW_K=MOUTH_W/.024;MW2=.016*_v6('V6_LOWER_LIP_W',.66)   # round R: the pink lower lip keeps its old .011 half-width when the omega widens (V6_MOUTH_W 1.0) - wide, it read as a pink wavy band under the mouth   # half-width of the mouth: about the nose's width, as in the references (was .046, .036)
-LIP_SAG=.0035*_v6('V6_LIP_SAG',1.0)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m")
+LIP_SAG=.0035*_v6('V6_LIP_SAG',.6)   # how far each upper-lip arc dips below the cusp (round G; negative = the old "m"); round ZZO: 1.0 -> .6 with the corners up 1.5 -> 4 mm (V6_LIP_CORNER) - the deep sag drew a "人" over a dark wedge, a frown; now a shallow omega with its corners turned up
 GAPE_W=.036*_v6('V6_GAPE_W',.85)   # round R: 1.45 -> 1.0 with the arched lip and a deeper jaw - the yawn rounds into the reference's U instead of a wide box (round-r-test mo0-mo3)
 #   # round L: 1.2 - the yawn's corners open to ~70 mm; past 1.2 the cut does not get wider (round-l-test y3)
 #    # half-width of the actual cut: closed at rest (so the drawn omega stays small), but a
@@ -433,7 +433,7 @@ def lip_z(x):
  # Round G: the arcs SAG from the philtrum cusp, like the bottoms of the two whisker pads (the
  # reference's "omega", with the lower lip's pink showing in the notch under the cusp). They used
  # to bulge UP from it, which drew an "m" - read on the render as a flat wavy pink line.
- return LIP0-LIP_SAG*np.sin(np.pi*np.minimum(u/.78,1))+.0015*np.maximum(0,u-.78)/.22
+ return LIP0-LIP_SAG*np.sin(np.pi*np.minimum(u/.78,1))+_v6('V6_LIP_CORNER',.004)*np.maximum(0,u-.78)/.22   # round ZZO: the corner's rise a knob
 def jaw_share(x,y,z,below):
  """How much of a head point the jaw carries: the lip, whisker-pad bottoms and chin in front,
   fading out toward the throat and the mouth corners so the skin there stretches, not tears."""
@@ -3936,8 +3936,10 @@ if FACE_V1:
   'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1.4),'open':{'JawOpen':.18,'TongueUp':.8,'MouthO':1.0},
    'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1.4)},
    'hiss':({'SnarlMouth':1.0,'TongueUp':.4} if FACE_V2 else {'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)}),'tongue':{'JawOpen':.06,'TongueBlep':1.0,'LowerLipDown':.8,**both(UpperLipRaise=-.8,MouthCornerUp=.2)}},   # Z4: the lips close round the tip - at jaw .12 the upper fangs showed (codex blep: no teeth)
-  'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=1.0,EarSwivel=.7,EarForward=-.1,EarTipBend=-.2),
-   'back':both(EarForward=-.65,EarFlatten=.65,EarSwivel=.8,EarTipBend=.65)}}
+  # round ZZO (audit: the negative faces' ears lay out as two flat pink plates, a sheep's): flattened and swivelled less - still read as ears
+  # laid back, a triangle each, not plates
+  'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=.55,EarSwivel=.45,EarForward=-.25,EarTipBend=0.0),
+   'back':both(EarForward=-.55,EarFlatten=.45,EarSwivel=.5,EarTipBend=.3)}}
  # per-expression additions over the four layers - the block cat tells some apart only by the screen symbol (放松 / 安心, 闭眼休息 / 陶醉
  # identical; 撒娇 / 期待 / 闪亮, 好奇 / 玩心 / 困惑 ... under 1.3 / 255 apart, codex), which the 3D face cannot show
  EXPR_EXTRA={**({'嫌弃':{'Sneer.L':1.0},'不爽':{'NoseBridgeWrinkle':.35,**both(PadLift=.25,OrbitLift=.3)}} if FACE_V2 else {}),'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},   # round ZZN: no SmileArc on top of the full blink (the two keys added overshot - a pale ring)
