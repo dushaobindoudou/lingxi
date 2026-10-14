@@ -299,7 +299,10 @@ for _k in MPAW:
  MPAW[_k]['r']=(_r[0]*_v6('V6_PAW_RX',.88),_r[1],_r[2]*_kz);MPAW[_k]['c']=(_c[0],_c[1]+_r[2]*(_kz-1))
 # (lobes x1.1 tall / x.92 apart, with the stiffer 7.5 lobes, rolled the front soles 0.9 -> 3.5 mm per walking stance - round-v-test pz0-pz8:
 # the ball's shape changed nothing; the lobes keep their size, only the stiffness stays)
-MTOE_R=(.023,.031,.032*_v6('V6_MTOE_H',1.0));MTOE_DX=.035*_v6('V6_MTOE_DX',1.0);MTOE_Z=.035;MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
+# round ZZF: lower lobes keep their BOTTOMS on the floor (the centre drops with the height) - lowered about a fixed centre (round ZZE, x.75 / x.6)
+# the soles rose 13 mm and the gait audit found no contact at all. Short lobes at the floor read as the reference's four round toes; tall
+# ones ran up the paw's front as four vertical ridges (codex paw_front_target)
+MTOE_R=(.023,.031,.032*_v6('V6_MTOE_H',.55));MTOE_DX=.035*_v6('V6_MTOE_DX',1.0);MTOE_Z=.035-.032*(1-_v6('V6_MTOE_H',.55));MTOE_ARC=.010   # round-r-test n3: a paw wider than its column (x1.27), four distinct lobes
 def mtoe_xy(pre,s,i):m=MPAW[pre];return s*m['x']+(i-1.5)*MTOE_DX,m['front']+MTOE_R[1]+MTOE_ARC*(abs(i-1.5)-.5)
 def meta_leg(pre,s):
  """The lower leg and paw of one leg as a metaball (resolution 3 mm), returned as a mesh for merge()."""
