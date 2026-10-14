@@ -3182,7 +3182,7 @@ def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
 # out: L 1.4 mm); chest_twist -.35 levels the shoulders so the right one reaches too (R 1.5 mm; -.25: 11.2, +.25 worse). Pelvis side-roll
 # .037 rad, hind foot to ear base 11 mm, head 456 -> 445 mm (codex: <= .10, <= 25, <= 20 lower) - all in.
 SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.10,neck=.10,neck_side=.40,head=-.35,head_roll=.25,foot_dy=.02,foot_dz=-.02,foot_pa=.6,fore_down=1.0,chest_twist=-.35).items()}
-GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65).items()}   # groom-side
+GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65,face=1.0,fyaw=1.45,fpitch=.90,froll=0.0).items()}   # groom-side
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
 BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,turn=-1.3,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
 LF={k:_v6('V6_LF_'+k.upper(),d) for k,d in dict(dx=-.015,dy=.03,z=.050,pa=-20,fpa=.35).items()}   # loaf: forepaws folded under the chest
@@ -3715,6 +3715,11 @@ def pose(name,u):
    if _gap<=.002:break
    pb['Root'].location.y-=_gap-.001;place_legs(name,u,pb,hold=0.0)
  if name=='WashFace':_wash_reach(pb,_ease(u),u)
+ # Round ZZK (audit: the head buried in the chest - v6 gsm.py: head yaw 19 deg off the body, face 42 deg down, nose 125 mm from the right
+ # flank; codex act-groom-side turns the head back over the shoulder): the face set in the WORLD, turned to the flank the back curls toward
+ # (the cat's LEFT: -yaw turned it outward, nose 240 mm off). ~90 deg + face down keeps a profile for the front camera (gsm.py: yaw 86 deg,
+ # nose 41 mm from the flank); 110-135 deg reached the shoulder but showed the camera only the back of the head.
+ if name=='GroomSide' and GS['face']>0:_face_world(pb,GS['fyaw'],GS['fpitch'],GS['froll'],k=_ease(u))
  if name=='SideLie' and SL_MODE==2 and _v6('V6_SG_FACE',1)>0:_face_world(pb,_v6('V6_SG_FACE_YAW',0),_v6('V6_SG_FACE_PITCH',.05),_v6('V6_SG_FACE_ROLL',-.22),k=_settle(u,.06,LIE_T+.10))   # round W: the face to the camera, upright with a tilt, however far the chest leans over
  if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
  # Round ZZG: SideLie's tail, left straight back with the hips rolled over, hung 133-163 mm in the air the whole length (round-zzg-test g-G);
