@@ -9,6 +9,8 @@
 import './styles.css';
 import { createTauriDesktopHost } from './desktop-host.ts';
 import { createThreeRenderer } from './renderer.ts';
+import { createRealisticRenderer } from './realistic-renderer.ts';
+import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
@@ -63,7 +65,24 @@ async function main() {
   dlog('main() start');
   const host = createTauriDesktopHost();
   // Fitted: the canvas follows the cat instead of covering the screen - see the renderer.
-  const renderer = createThreeRenderer({ fitCanvasToCat: true });
+  // 风格: one facade for the life of the window; the voxel or the realistic cat behind it (renderer-switcher.ts).
+  const renderer = createRendererSwitcher({
+    voxel: () => createThreeRenderer({ fitCanvasToCat: true }),
+    realistic: () => createRealisticRenderer({
+      assetUrl: `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`,
+      fitCanvasToCat: true,
+      shells: 10,
+    }),
+  });
+  function applyRenderStyle(style: string | undefined): void {
+    const wanted: RenderStyle = style === 'realistic' ? 'realistic' : 'voxel';
+    if (wanted === renderer.activeStyle) return;
+    void renderer.switchStyle(wanted).then((result) => {
+      dlog(`render style ${wanted}: ${JSON.stringify(result)}`);
+      // the two cats draw different heights, and the margins follow what is drawn
+      if (result.applied) syncMargins();
+    });
+  }
   const engineRecorder = createActivityRecorder();
   const stage = document.getElementById('stage');
   if (!stage) throw new Error('index.html must contain #stage');
@@ -181,6 +200,7 @@ async function main() {
     avoidRadius: number;
     skin: string;
     camera: string;
+    renderStyle?: string;
     /** The five sliders from 主界面. The engine reads these - see applyStatus. */
     personalityTraits?: Partial<Personality>;
   }
@@ -202,6 +222,7 @@ async function main() {
     renderer.setSkin?.(status.skin);
     userCamera = status.camera;
     renderer.setCameraPreset?.(status.camera);
+    applyRenderStyle(status.renderStyle);
     // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
     syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
@@ -414,6 +435,7 @@ async function main() {
     renderer.setSkin?.(event.payload);
     syncMargins();
   });
+  void listen<string>('set-render-style', (event) => applyRenderStyle(event.payload));
   void listen<string>('set-camera', (event) => {
     userCamera = event.payload;
     renderer.setCameraPreset?.(event.payload);
@@ -911,7 +933,7 @@ async function main() {
         updateSuspension();
         // Compare before applying: setSkin rebuilds the rig and repaints both atlases, so
         // calling it every 1.5s because nothing changed would be genuinely expensive.
-        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius]);
+        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius, status.renderStyle]);
         if (json === lastStatusJson) return;
         const missed = lastStatusJson !== '';
         lastStatusJson = json;

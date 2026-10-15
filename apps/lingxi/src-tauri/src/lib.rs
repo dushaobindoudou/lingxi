@@ -124,6 +124,12 @@ const DEFAULT_SKIN: &str = "honey-mittens";
 const KNOWN_CAMERAS: [&str; 6] = ["look-up", "eye-level", "game", "shoulder", "overhead", "auto"];
 const DEFAULT_CAMERA: &str = "game";
 
+/// "外观 / 风格": which character renderer draws the cat - the voxel cat (renderer.ts) or the realistic, Blender-built
+/// one (realistic-renderer.ts). Separate from the theme on purpose: the voxel themes do not apply to the realistic cat,
+/// and switching back must find the user's theme where they left it.
+const KNOWN_RENDER_STYLES: [&str; 2] = ["voxel", "realistic"];
+const DEFAULT_RENDER_STYLE: &str = "voxel";
+
 /// Toys ("玩具"). Ids must match packages/life-engine's TOY_KINDS - that module owns the
 /// simulation (rolling, bouncing, batting); Rust only routes the request. Unlike the theme and
 /// camera settings these are deliberately NOT persisted: a toy left on the desktop across a
@@ -221,6 +227,8 @@ struct PersistedSettings {
     skin: String,
     #[serde(default = "default_camera")]
     camera: String,
+    #[serde(default = "default_render_style")]
+    render_style: String,
 }
 
 fn default_cat_name() -> String {
@@ -243,6 +251,10 @@ fn default_camera() -> String {
     DEFAULT_CAMERA.to_string()
 }
 
+fn default_render_style() -> String {
+    DEFAULT_RENDER_STYLE.to_string()
+}
+
 impl PersistedSettings {
     fn defaults() -> Self {
         Self {
@@ -257,6 +269,7 @@ impl PersistedSettings {
             behavior_preset: default_behavior_preset(),
             skin: default_skin(),
             camera: default_camera(),
+            render_style: default_render_style(),
         }
     }
 }
@@ -290,6 +303,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
     // ignored by setSkin, which leaves the built-in default showing anyway.
     let skin = if settings.skin.trim().is_empty() { default_skin() } else { settings.skin };
     let camera = if KNOWN_CAMERAS.contains(&settings.camera.as_str()) { settings.camera } else { default_camera() };
+    let render_style = if KNOWN_RENDER_STYLES.contains(&settings.render_style.as_str()) { settings.render_style } else { default_render_style() };
     PersistedSettings {
         version: 1,
         scale: if known_scale { settings.scale } else { SCALE_LARGE },
@@ -302,6 +316,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
         behavior_preset,
         skin,
         camera,
+        render_style,
     }
 }
 
@@ -337,6 +352,7 @@ struct TrayState {
     behavior_preset: Mutex<String>,
     skin: Mutex<String>,
     camera: Mutex<String>,
+    render_style: Mutex<String>,
     /// Where PersistedSettings is written; None only if the OS config dir is
     /// unavailable, in which case settings simply don't persist (app still works).
     settings_path: Option<PathBuf>,
@@ -470,6 +486,15 @@ impl TrayState {
         self.persist();
     }
 
+    /// "外观 / 风格": voxel or realistic. Live - the companion prepares the other renderer while the current one keeps
+    /// drawing and swaps once it is ready (renderer-switcher.ts).
+    fn apply_render_style(&self, app: &tauri::AppHandle, style: &str) {
+        let style = if KNOWN_RENDER_STYLES.contains(&style) { style } else { DEFAULT_RENDER_STYLE };
+        *self.render_style.lock().unwrap() = style.to_string();
+        let _ = app.emit("set-render-style", style);
+        self.persist();
+    }
+
     /// Snapshot the current state to disk. tmp-file + rename so a crash mid-write
     /// can never leave a half-written settings.json behind.
     fn persist(&self) {
@@ -486,6 +511,7 @@ impl TrayState {
             behavior_preset: self.behavior_preset.lock().unwrap().clone(),
             skin: self.skin.lock().unwrap().clone(),
             camera: self.camera.lock().unwrap().clone(),
+            render_style: self.render_style.lock().unwrap().clone(),
         };
         let Ok(body) = serde_json::to_string_pretty(&settings) else { return };
         if let Some(parent) = path.parent() {
@@ -572,6 +598,11 @@ fn set_camera(app: tauri::AppHandle, state: State<TrayState>, camera: String) {
     state.apply_camera(&app, &camera);
 }
 
+#[tauri::command]
+fn set_render_style(app: tauri::AppHandle, state: State<TrayState>, style: String) {
+    state.apply_render_style(&app, &style);
+}
+
 /// "重置位置": recenter the cat and drop whatever it was doing. A recovery action, not
 /// persisted state - just forwarded to the frontend's LifeEngine.resetPosition().
 #[tauri::command]
@@ -603,6 +634,8 @@ fn get_status(state: State<TrayState>, power: State<PowerState>) -> serde_json::
         "knownSkins": KNOWN_SKINS,
         "camera": *state.camera.lock().unwrap(),
         "knownCameras": KNOWN_CAMERAS,
+        "renderStyle": *state.render_style.lock().unwrap(),
+        "knownRenderStyles": KNOWN_RENDER_STYLES,
     })
 }
 
@@ -6376,6 +6409,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         current_scale: Mutex::new(SCALE_LARGE),
         skin: Mutex::new(DEFAULT_SKIN.to_string()),
         camera: Mutex::new(DEFAULT_CAMERA.to_string()),
+        render_style: Mutex::new(DEFAULT_RENDER_STYLE.to_string()),
         cat_name: Mutex::new(DEFAULT_CAT_NAME.to_string()),
         cat_personality: Mutex::new(String::new()),
         active_agent: Mutex::new(default_active_agent()),
@@ -6697,6 +6731,7 @@ pub fn run() {
             set_behavior_preset,
             set_skin,
             set_camera,
+            set_render_style,
             report_capabilities,
             get_capabilities,
             play_action,
@@ -6832,6 +6867,7 @@ pub fn run() {
                 state.apply_behavior_preset(handle, &saved.behavior_preset);
                 state.apply_skin(handle, &saved.skin);
                 state.apply_camera(handle, &saved.camera);
+                state.apply_render_style(handle, &saved.render_style);
                 if !saved.visible {
                     // Same code path as the runtime tray toggle. The companion window
                     // must still be created visible (see the compositing note above);
@@ -8323,6 +8359,7 @@ command = "node"
         let settings = load_persisted_settings(Some(&path));
         assert_eq!(settings.skin, "rainbow-dragon", "a user-authored theme must survive a restart");
         assert_eq!(settings.camera, DEFAULT_CAMERA);
+        assert_eq!(settings.render_style, DEFAULT_RENDER_STYLE, "a settings file from before 风格 existed opens on the voxel cat");
 
         // ...but a blank one is still a blank one.
         let body = serde_json::json!({
@@ -8364,6 +8401,7 @@ command = "node"
             behavior_preset: "quiet".to_string(),
             skin: "silver-brook".to_string(),
             camera: "eye-level".to_string(),
+            render_style: "realistic".to_string(),
         };
         // Serialize the same way TrayState::persist does (tmp file + rename) and load
         // it back through the same loader the app startup uses.

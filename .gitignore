@@ -48,6 +48,9 @@ previews/threejs/
 
 # v5 look-dev export for the three.js preview (rebuilt by scripts/blender/export_lingxi_v5_glb.py)
 apps/lingxi/public/v5/
+# 风格「真实猫」: the realistic cat's GLB, exported from the look-dev model (lingxi-v5fix round dirs) by
+# scripts/blender/export_lingxi_v5_glb.py with LINGXI_GLB set; local builds bundle it, git does not carry it
+apps/lingxi/public/characters/lingxi-realistic/
 
 # --- local WorkBuddy artefacts ---------------------------------------------------------------
 # Handwritten notes under .workbuddy/memory/ are part of the project and stay versioned; these

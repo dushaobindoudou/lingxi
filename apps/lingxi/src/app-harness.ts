@@ -5,6 +5,8 @@
 //
 // Dev-only entry: not in vite.config.ts's build inputs.
 import { createThreeRenderer } from './renderer.ts';
+import { createRealisticRenderer } from './realistic-renderer.ts';
+import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx } from './fx/stage-fx.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { createLifeEngine } from '../../../packages/life-engine/src/index.mjs';
@@ -22,7 +24,15 @@ window.addEventListener('unhandledrejection', (e) => say(`unhandled rejection: $
 
 const stage = document.getElementById('stage')!;
 const t0 = performance.now();
-const renderer = createThreeRenderer();
+const params = new URLSearchParams(location.search);
+const REALISTIC_URL = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
+const renderer = createRendererSwitcher({
+  voxel: () => createThreeRenderer(),
+  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 10) }),
+});
+if (params.get('style') === 'realistic') {
+  void renderer.switchStyle('realistic').then((r) => { say(`style realistic: ${JSON.stringify(r)}`); const d = (renderer.describeCapabilities?.() as { debug?: { restHeight: number; box: number[][]; tallest: [string, number][] } }).debug; if (d) { say(`rest ${d.restHeight} box ${JSON.stringify(d.box)}`); for (const t of d.tallest) say(`  ${t[0]} ${t[1]}`); } });
+}
 say(`renderer created in ${(performance.now() - t0).toFixed(0)}ms`);
 renderer.mount(stage);
 const fx = createStageFx();
@@ -33,7 +43,8 @@ const width = stage.clientWidth;
 const height = stage.clientHeight;
 renderer.resize(width, height);
 say(`resized ${width}x${height}`);
-renderer.setScale(0.5);
+renderer.setScale(Number(params.get('scale') ?? 0.5));
+if (params.get('camera')) renderer.setCameraPreset?.(params.get('camera')!);
 say('scale 0.5 applied');
 
 const engine = createLifeEngine({
@@ -83,4 +94,7 @@ const performances = createPerformanceRunner({
   restoreCamera: () => renderer.setCameraPreset?.('game'),
   now: () => performance.now(),
 });
-(window as unknown as Record<string, unknown>).__lingxi = { renderer, engine, stage, fx, performances };
+(window as unknown as Record<string, unknown>).__lingxi = {
+  renderer, engine, stage, fx, performances,
+  switchStyle: (style: RenderStyle) => renderer.switchStyle(style),
+};
