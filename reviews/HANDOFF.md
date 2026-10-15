@@ -1372,3 +1372,16 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - **逐帧扫描发现的插值尖刺**（本次提交）：每 2 帧打一次关键帧的动作，在插值帧上有旋转翻转导致的单帧穿地——翻肚 904 帧 -41 mm、趴下 216 帧 -20 mm、揣手 844 帧 -18.7 mm（以前每 4 帧采样都漏了）。翻肚 / 趴下 / 揣手 / 玩爪子改为逐帧打关键帧；翻肚的躯干贴地随翻身渐入（u/.10，开头仍站着时不把躯干压到地上——LEG_SHOW 加大后它把后腿压进地 8 mm）。
 - **验证**（`v6/round-zzz3/`）：步态与 ZZZ2 相同；片段审查无 < -2.5；**逐帧**扫描 1173 帧：剩 23 帧持续性轻微下沉（趴下 3 帧 -4.5、揣手 5 帧 -5.1、玩爪子 15 帧 -5.6，都是前脚趾压地），无尖刺；后脚 站 1.0 / 坐 3.8 mm；侧卧 ≥ -0.9；胡须 ≥ +4.5。31 机位 `fc31/`，对照 `reviews/round-zzz3/zzz3-{a,b,c,d}.jpg`。
 - 下一步：材质 / 光照 / 渲染效果（治愈系）→ App 集成与风格切换（codex 调研 `reviews/integration/codex-integration-plan.md`）。
+
+## App 集成 P0（Claude 主会话，2026-10-16 凌晨）——主界面「风格」：方块猫 / 真实猫
+
+- 用户：「调整材质和光照各种渲染效果，就可以集成进来测试了，在主界面中支持切换风格，当前我们的方块和真实猫咪风格」。codex 调研 `reviews/integration/codex-integration-plan.md`（P0 切换 + 透明待机 → P1 动作 / 根运动 → P2 30 表情 → P3 性能）。
+- **集成在独立工作区** `/Users/liepin/workspace/lingxi-realcat`，分支 `feat/realcat-style`，从 main（07a427d）开出——App 代码 main 比本分支新 42 个提交，main 的检出里有别人的未提交改动。`node_modules`、`src-tauri/target` 软链接到主检出（已加 info/exclude）。
+- **提交**：eccf07f（风格切换 P0）、ec64216（毛边 alpha-to-coverage、调试页 still=1）。
+  - `src/realistic-renderer.ts`：GLB + 壳毛（默认 10 层）+ 暖色柔光（AgX 1.08、暖主光 / 奶油色天地光 / 暖轮廓光）+ 接地软阴影、透明背景；相机 / 反投影摆位 / 画布贴合 / 朝向照抄 renderer.ts；站高按方块猫画面对齐（TARGET_HEIGHT 1.0：方块猫头身实测比相机注释的 0.8 大 1.24 倍）；Walk / Run / Jump 去掉沿位移方向的 Root 平移、按地速匹配步幅；动作 id → 片段映射（未知返回 false）；表情暂返回 false。
+  - `src/renderer-switcher.ts`：稳定门面，后台加载、首帧成功后原子替换，失败保留旧猫，过期请求丢弃。
+  - Rust：`render_style`（默认 voxel，旧存档自动默认，测试已加）、`set_render_style` / `set-render-style`、`get_status.renderStyle`。主界面外观页「风格」卡片。正式 CSP `connect-src` 加 `'self'`。
+  - GLB 路径 `apps/lingxi/public/characters/lingxi-realistic/current/cat.glb`（.gitignore，本地构建会打包）。
+- **验证**：tsc 无错；npm test 251/251；check-project OK；cargo test settings 4/4；无头 Chrome（SwiftShader）调试页两种风格同位置同大小、切换 `applied:true`。
+- **进行中**：ZZZ3 导出 GLB（`round-zzz3/export/lingxi-realcat.glb`，1172 帧逐帧采样，> 25 分钟）；之后换新模型调材质，打包 .app（替换 /Applications 前问用户）。
+- **后续**：P1 动作调度细化 / 根运动；P2 表情移植（`v6_face_apply.py` 语义：key / loc / loc_local / rot / rotarm / ear / mat / catch / sparkx；GLTFLoader 去掉名字里的点号；形变目标名在 extras.targetNames 里）；P3 性能实测。
