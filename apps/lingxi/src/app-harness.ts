@@ -25,6 +25,7 @@ window.addEventListener('unhandledrejection', (e) => say(`unhandled rejection: $
 const stage = document.getElementById('stage')!;
 const t0 = performance.now();
 const params = new URLSearchParams(location.search);
+if (params.has('nolog')) log.style.display = 'none';
 const REALISTIC_URL = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
 const renderer = createRendererSwitcher({
   voxel: () => createThreeRenderer(),

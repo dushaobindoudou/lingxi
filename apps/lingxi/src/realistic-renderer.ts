@@ -43,9 +43,10 @@ const RUN_SPEED_PX = 300;
 const CROSSFADE_SECONDS = 0.28;
 
 // Coat meshes that get shells: strand length (m, model space) and strand cells per metre.
+// Longer on the head than the old v5 demo (.022): the look-dev kitten's round head is mostly cheek and crown fluff.
 const FUR: Record<string, { len: number; den: number }> = {
-  LX_Head: { len: 0.020, den: 520 },
-  LX_Body: { len: 0.042, den: 380 },
+  LX_Head: { len: 0.035, den: 520 },
+  LX_Body: { len: 0.050, den: 380 },
   LX_Legs: { len: 0.030, den: 420 },
   LX_Tail: { len: 0.058, den: 360 },
 };
@@ -81,7 +82,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // Gentle, film-like roll-off: the white chest and paws keep their texture instead of clipping.
   renderer.toneMapping = THREE.AgXToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMappingExposure = 1.2;
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -97,7 +98,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const rim = new THREE.DirectionalLight(0xffe0c4, 1.5);
   rim.position.set(0.6, 1.6, -2.0);
   scene.add(rim);
-  scene.add(new THREE.HemisphereLight(0xfff7ee, 0xe9d8c6, 1.0));
+  scene.add(new THREE.HemisphereLight(0xfff7ee, 0xe9d8c6, 1.15));
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 200);
   const camForward = new THREE.Vector3();
@@ -204,10 +205,39 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let debugInfo: unknown = null;
   let disposed = false;
 
+  // The Cycles iris draws its pupil procedurally (face-controls 'mat' PupilW/H), which glTF cannot carry: drawn here on
+  // the iris map's UV disc - a big, soft kitten pupil and a dark limbal ring.
+  const PUPIL = 0.33;
   function irisMaterial(src: THREE.MeshStandardMaterial) {
-    const m = new THREE.MeshStandardMaterial({ map: src.map ?? null, roughness: 0.42, color: src.map ? 0xffffff : src.color });
+    const m = new THREE.MeshStandardMaterial({ map: src.map ?? null, roughness: 0.35, color: src.map ? 0xffffff : src.color });
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uPupil = { value: PUPIL };
+      sh.fragmentShader = 'uniform float uPupil;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
+        #include <map_fragment>
+        #ifdef USE_MAP
+          float irisD = distance(vMapUv, vec2(0.5));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.085, 0.04), smoothstep(0.46, 0.50, irisD));
+          diffuseColor.rgb = mix(vec3(0.004), diffuseColor.rgb, smoothstep(uPupil - 0.012, uPupil + 0.010, irisD));
+        #endif`);
+    };
+    m.customProgramCacheKey = () => 'realcat-iris';
     ownedMaterials.push(m);
     return m;
+  }
+  // Blender writes the coat's color attribute as display (sRGB) values; glTF readers take COLOR_0 as linear, which
+  // washes the caramel out to grey-cream. Converted once at load (?srgbcolors=0 in the harness skips it to compare).
+  const convertVertexColors = !/[?&]srgbcolors=0/.test(globalThis.location?.search ?? '');
+  const converted = new WeakSet<THREE.BufferAttribute>();
+  function vertexColorsToLinear(geometry: THREE.BufferGeometry) {
+    const c = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    if (!c || converted.has(c) || !convertVertexColors) return;
+    const col = new THREE.Color();
+    for (let i = 0; i < c.count; i++) {
+      col.setRGB(c.getX(i), c.getY(i), c.getZ(i), THREE.SRGBColorSpace);
+      c.setXYZ(i, col.r, col.g, col.b);
+    }
+    c.needsUpdate = true;
+    converted.add(c);
   }
   function shellMaterial(len: number, den: number, t: number) {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, alphaToCoverage: true });
@@ -320,6 +350,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         m.material = c;
         m.renderOrder = 2;
       } else if (m.geometry.getAttribute('color')) {
+        vertexColorsToLinear(m.geometry);
         const s = new THREE.MeshStandardMaterial({
           vertexColors: true, roughness: /Lid/i.test(name) ? 0.85 : 0.9, map: mat?.map ?? null, side: THREE.DoubleSide,
         });
