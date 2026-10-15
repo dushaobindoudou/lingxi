@@ -580,7 +580,7 @@ planar_uv(tongue,0,1,flip_v=True)  # tip at v=1
 # so the lick pushed the tongue out through the chin skin (179 polygon pairs with LX_Head, REPORT A4).
 # Up lifts the blade (not the root) over the lower canines and lip; Out then slides it 58 mm forward,
 # widening a little, the free end drooping toward the paw. pose() eases Up in ahead of Out.
-tongue.shape_key_add(name='Basis');tu=tongue.shape_key_add(name='Up');tk=tongue.shape_key_add(name='Out');tu.slider_max=2.5   # round O: the yawn lifts it past 1 (V6_YT_UP)
+tongue.shape_key_add(name='Basis');tu=tongue.shape_key_add(name='Up');tk=tongue.shape_key_add(name='Out');tu.slider_max=2.5;tk.slider_max=1.5   # round ZZZ: the lick's reach past 1 (V6_LICK_OUT)   # round O: the yawn lifts it past 1 (V6_YT_UP)
 TONGUE_CURL=_v6('V6_TONGUE_CURL',.007)   # the free end (past the lips) curls down onto the paw, like the reference's tongue on the pad
 TONGUE_UP=.017   # tongue bottom .4331 -> .4501 (authored, V6_LIP .98): over the lip line .4484 and the lower canines' tips .4421
 for v,u_,k in zip(tongue.data.vertices,tu.data,tk.data):
@@ -3682,7 +3682,7 @@ def pose(name,u):
    pb['Jaw'].rotation_euler[0]=JAW_OPEN['Lick']*fac;pb['LipUpper'].location=LIP_AX@(Vector(LIP_LIFT['Lick'])*fac)
    pb['Tongue'].rotation_euler=tuple(c*fac for c in TONGUE_LICK)
    # Up leads Out: the blade clears the lower canines and lip before it slides forward over them.
-   kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(1,fac/.35);e=min(1,max(0,(fac-.15)/.85));kb['Out'].value=e*e*(3-2*e)
+   kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=min(1,fac/.35);e=min(1,max(0,(fac-.15)/.85));kb['Out'].value=_v6('V6_LICK_OUT',1.25)*e*e*(3-2*e)   # round ZZZ (codex STAGE-ZZQ-AUDIT #5): the arm cannot bring the pad the last few mm (gap 3 -> -1 mm moved it <1 mm), so the tongue reaches - the sweep's closest 2.2-3.3 -> 0.8 / 2.3 mm (v6_lick_contact.py)
    squint=0          # eyes open on the viewer, as in the reference
   if name=='Bite':
    # Airplane ears. The ears are the clearest mood signal a cat has, and Bite previously

@@ -27,7 +27,7 @@ sidelie-app 288 app
 sidelie-top 288 top
 sleep-app 330 app
 sleep-top 330 top
-lick-paw 550 app
+lick-paw 541 app
 stretch 700 side
 sit-front 805 front
 sit-side 805 side
