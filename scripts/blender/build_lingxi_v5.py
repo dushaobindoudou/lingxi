@@ -3209,7 +3209,9 @@ def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
 # out: L 1.4 mm); chest_twist -.35 levels the shoulders so the right one reaches too (R 1.5 mm; -.25: 11.2, +.25 worse). Pelvis side-roll
 # .037 rad, hind foot to ear base 11 mm, head 456 -> 445 mm (codex: <= .10, <= 25, <= 20 lower) - all in.
 SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.10,neck=.10,neck_side=.40,head=-.35,head_roll=.25,foot_dy=.02,foot_dz=-.02,foot_pa=.6,fore_down=1.0,chest_twist=-.35).items()}
-GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65,face=1.0,fyaw=1.45,fpitch=.90,froll=0.0).items()}   # groom-side
+GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65,face=1.0,fyaw=1.45,fpitch=.90,froll=0.0,turn=-.70).items()}   # groom-side; turn (round ZZX, codex STAGE-ZZQ-AUDIT #5: the front camera saw only the crown): the whole seated cat yawed
+# about the root (legs, face and tail with it) so the licked flank faces the camera - an eye and the nose show, the nose still 2.4 mm off the flank
+# (+.7 turned the face away; turning the face itself back, fyaw .95, left the nose 65 mm off the flank). Blink .5 -> .15 opens that eye.
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
 BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,turn=-1.3,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
 LF={k:_v6('V6_LF_'+k.upper(),d) for k,d in dict(dx=-.015,dy=.03,z=.050,pa=-20,fpa=.35).items()}   # loaf: forepaws folded under the chest
@@ -3425,6 +3427,7 @@ def place_legs(name,u,pb,hold=0.0):
    st,sa=SIT[2][k]
    if k[0]=='H':st=st+Vector((0,LICK_HIND[0],LICK_HIND[1]));sa=sa+LICK_HIND[2]
    tg=foot.lerp(st,hold);pa=pa+(sa-pa)*hold
+   if name=='GroomSide' and GS['turn']:_pv=f('Root').translation;_R=Matrix.Rotation(GS['turn']*hold,3,'Z');tg=_pv+_R@(tg-_pv);pa=pa+GS['turn']*hold   # round ZZX: the sit's floor targets turn with the root
    if name=='ScratchEar' and k=='HL':
     # the left hind foot behind the left ear, scratching (6 strokes)
     ph=math.sin(u*math.tau*6);et=f('Ear.L').translation+Vector((-.01,SE['foot_dy']+.012*ph,SE['foot_dz']+.008*ph))
@@ -3694,6 +3697,7 @@ def pose(name,u):
   for bn,rv in SIT[0].items():pb[bn].rotation_euler=tuple(c*hold for c in rv)
   for bn,lc in SIT[1].items():pb[bn].location=tuple(c*hold for c in lc)
   pb['Root'].location.y+=LICK_HIND[3]*hold
+  if name=='GroomSide' and GS['turn']:pb['Root'].rotation_euler=(Matrix.Rotation(GS['turn']*hold,3,'Y')@Euler(tuple(pb['Root'].rotation_euler),'XYZ').to_matrix()).to_euler('XYZ')   # round ZZX: Root's own y is world up
   if name=='ScratchEar':
    # the head comes down and over to the raised hind foot: the back bends to that side, the hip on it lifts
    pb['Spine'].rotation_euler[2]+=SE['spine_side']*hold;pb['Pelvis'].rotation_euler[1]+=SE['hip_roll']*hold;pb['Spine'].rotation_euler[1]+=SE['chest_twist']*hold   # round ZZG: chest_twist levels the shoulders
@@ -3704,7 +3708,7 @@ def pose(name,u):
    pb['Spine'].rotation_euler[2]+=GS['spine_side']*hold;pb['Spine'].rotation_euler[1]+=GS['twist']*hold
    pb['Neck'].rotation_euler[2]+=GS['neck_side']*hold;pb['Neck'].rotation_euler[0]+=GS['neck']*hold
    pb['Head'].rotation_euler[2]+=GS['head_yaw']*hold;pb['Head'].rotation_euler[0]+=GS['head']*hold
-   lk=hold*(.5+.5*math.sin(u*math.tau*4));kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=lk;kb['Out'].value=.4*lk;pb['Jaw'].rotation_euler[0]=.12*hold;blink=.5*hold
+   lk=hold*(.5+.5*math.sin(u*math.tau*4));kb=tongue.data.shape_keys.key_blocks;kb['Up'].value=lk;kb['Out'].value=.4*lk;pb['Jaw'].rotation_euler[0]=.12*hold;blink=_v6('V6_GS_BLINK',.15)*hold
   if name=='WashFace':pb['Head'].rotation_euler[1]+=WF['head_roll']*hold;pb['Head'].rotation_euler[0]+=WF['head']*hold;blink=hold
  if name=='BellyUp':
   # rig v1: rolled onto its back (codex lingxi-ref-act-belly-up.png) - the root turns ~155 deg about the long axis, the chest a little
@@ -3765,7 +3769,7 @@ def pose(name,u):
  # flank; codex act-groom-side turns the head back over the shoulder): the face set in the WORLD, turned to the flank the back curls toward
  # (the cat's LEFT: -yaw turned it outward, nose 240 mm off). ~90 deg + face down keeps a profile for the front camera (gsm.py: yaw 86 deg,
  # nose 41 mm from the flank); 110-135 deg reached the shoulder but showed the camera only the back of the head.
- if name=='GroomSide' and GS['face']>0:_face_world(pb,GS['fyaw'],GS['fpitch'],GS['froll'],k=_ease(u))
+ if name=='GroomSide' and GS['face']>0:_face_world(pb,GS['fyaw']+GS['turn']*_ease(u),GS['fpitch'],GS['froll'],k=_ease(u))
  if name=='SideLie' and SL_MODE==2 and _v6('V6_SG_FACE',1)>0:_face_world(pb,_v6('V6_SG_FACE_YAW',0),_v6('V6_SG_FACE_PITCH',.05),_v6('V6_SG_FACE_ROLL',-.22),k=_settle(u,.06,LIE_T+.10))   # round W: the face to the camera, upright with a tilt, however far the chest leans over
  if name=='Sleep' and _v6('V6_SP_FACE',1)>0:_face_world(pb,_v6('V6_SP_FACE_YAW',0),_v6('V6_SP_FACE_PITCH',.30),_v6('V6_SP_FACE_ROLL',.35))
  # Round ZZG: SideLie's tail, left straight back with the hips rolled over, hung 133-163 mm in the air the whole length (round-zzg-test g-G);
@@ -3789,7 +3793,8 @@ def pose(name,u):
   # round ZY: round the cat's LEFT (-x) - where lingxi-ref-sit-front / -back have it; on the right it lay between the side camera and the
   # near hind paw (codex ROUND-ZR-ZX-AUDIT: sit-hindfoot all coat)
   _fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.L').translation
-  _tail_wrap(pb,(-1,0),(_fp.x-.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.3))   # round ZZ: .7 -> .3 - round the left the tail's tip ran past the path's end into the floor (-29.5 mm, tl1-tl3)
+  _tv=(-1,0) if not (name=='GroomSide' and GS['turn']) else (-math.cos(GS['turn']*_ease(u,.18,.18)),-math.sin(GS['turn']*_ease(u,.18,.18)))   # round ZZX: round the turned left side
+  _tail_wrap(pb,_tv,(_fp.x-.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.3))   # round ZZ: .7 -> .3 - round the left the tail's tip ran past the path's end into the floor (-29.5 mm, tl1-tl3)
  if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004,translate=_SGW)   # SideLie's wrapped tail can cut through the floor during entry (frame 265: -20.5 mm); lift without changing its path. Round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  # Round ZZR (kitten look, measured on stand-side: head / leg / shoulder ratios already match codex's kitten within ~3%, but its crown
