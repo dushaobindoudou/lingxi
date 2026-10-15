@@ -3604,7 +3604,11 @@ def pose(name,u):
   # .42 -> .73 with the back sagging back up (spine -.10 -> -.52) so the deep chest stops just above the floor: slope 13.3 deg, chest 1-15 mm.
   # This chest is ~220 mm deep below the shoulder joint, so ~15 deg is the limit before it goes under (.85: chest -105 mm) - the kitten
   # proportions (last task) are what gives the reference's steeper bow.
-  pb['Pelvis'].rotation_euler[0]=_v6('V6_BOW_PITCH',.73)*b;pb['Spine'].rotation_euler[0]=_v6('V6_BOW_SPINE',-.52)*b
+  # Round ZZX (codex STAGE-ZZQ-AUDIT #7: back 25-35 deg): pitching further only drove the deep chest into the floor (.85: -19.6 mm, .95: -37);
+  # a real bow puts the RUMP up on straightened hind legs. Lift .07 + pitch .95: back 13.3 -> 25.8 deg, hips 295 -> 362 mm, chest 17.7 mm,
+  # paws 2.5 / 3.3 mm, the clip >= -0.4 mm. (Reach .26 lifted the forepaws 14 mm.) The forearms still slope up to the elbow (87 mm) - the chest.
+  pb['Pelvis'].rotation_euler[0]=_v6('V6_BOW_PITCH',.95)*b;pb['Spine'].rotation_euler[0]=_v6('V6_BOW_SPINE',-.52)*b
+  if _v6('V6_BOW_LIFT',.07):pb['Root'].location.y+=_v6('V6_BOW_LIFT',.07)*b   # the hind legs straighten and the rump goes up (Root's own y is world up)
   pb['Neck'].rotation_euler[0]=-.35*b;pb['Head'].rotation_euler[0]=-.15*b
   pb['Tail0'].rotation_euler[0]=.5*b;pb['Tail1'].rotation_euler[0]=.4*b;pb['Tail2'].rotation_euler[0]=.25*b
  if name=='Stretch' and _v6('V6_STRETCH_BOW',1)<=0:

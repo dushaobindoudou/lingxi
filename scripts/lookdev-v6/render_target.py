@@ -38,6 +38,7 @@ cam = sc.camera; cam.data.type = 'ORTHO'; cam.data.dof.use_dof = False
 view = os.environ.get('VIEW', 'app'); fill = float(os.environ.get('FILL', .78))
 d = {'side': Vector((1, 0, math.tan(math.radians(3)))).normalized(), 'sidel': Vector((-1, 0, math.tan(math.radians(3)))).normalized(), 'top': Vector((0, 0, 1)), 'front': Vector((0, -1, math.tan(math.radians(4)))).normalized(),
      'q34': Vector((.64, -.77, math.tan(math.radians(12)))).normalized(),
+     'high': Vector((0, -1, math.tan(math.radians(float(os.environ.get('ELEV', 60)))))).normalized(),   # round ZZX: codex's belly-up is shot from high above
      'back': Vector((0, 1, math.tan(math.radians(8)))).normalized()}.get(view, Vector((0, -1, math.tan(math.radians(20)))).normalized())
 # frame on the cat's projected extent (8 bbox corners of every part, on the camera's right / up axes)
 if view == 'top': right = Vector((1, 0, 0)); upv = Vector((0, 1, 0))   # straight down, the head (-y) at the bottom, as codex's *-top refs
