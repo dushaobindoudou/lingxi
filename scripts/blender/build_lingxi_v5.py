@@ -262,7 +262,7 @@ RUFF=((0,-.205,.405-RUFF_DROP/2),(.155,.14,.115-RUFF_DROP/2))   # top comes down
 # standing cat showed ~12% of its shoulder height as leg (side view) against the turnaround's ~29% - four white balls
 # stuck under a barrel. The trunk's UNDERSIDE comes up LEG_SHOW (tops, joints and bones stay): a shallower trunk on legs
 # you can see, the forearm running down into the paw.
-LEG_SHOW=_v6('V6_LEG_SHOW',.045)
+LEG_SHOW=_v6('V6_LEG_SHOW',.065)   # round ZZZ3 (user: 「后腿是不是太短了」): .045 -> .065, the belly / rump underside up 20 mm more - the hind legs show longer
 def _lift(c,r,k=1.0):return (c[0],c[1],c[2]+LEG_SHOW*k/2),(r[0],r[1],r[2]-LEG_SHOW*k/2)   # bottom up by LEG_SHOW*k, top fixed
 TORSO_DEPTH=_v6('V6_TORSO_DEPTH',.88);RUMP_WIDTH=_v6('V6_RUMP_WIDTH',.92)   # Round ZZU: furred stand-side mid-trunk 98 -> 90 px (kitten target 91), without changing body length or leg rig
 def _depth(c,r):return c,(r[0],r[1],r[2]*TORSO_DEPTH)
@@ -1596,6 +1596,16 @@ def load_coat():
   w,h=im.size;a=np.empty(w*h*4,dtype='f');im.pixels.foreach_get(a)
   # Blender stores rows bottom-up; byte images come back as the stored (display) values.
   maps[n]=a.reshape(h,w,4)[::-1,:,:3].copy();bpy.data.images.remove(im)
+  # Round ZZZ3 (user: 「腿上的毛是不是过渡不对」): the painted white / tabby edges are hard in the maps and stair-step on the
+  # 4.5 mm skin vertices - the thigh's white patch read as a cut-out. A gaussian (3 box passes) softens every edge and the stripes with it.
+  _bl=int(_v6('V6_COAT_BLUR',6))   # 12 washed the stripes out
+  if _bl>0:
+   img=maps[n]
+   for _ax in (0,1):
+    for _ in range(3):
+     pad=np.concatenate([np.repeat(img.take([0],axis=_ax),_bl+1,axis=_ax),img,np.repeat(img.take([-1],axis=_ax),_bl,axis=_ax)],axis=_ax)
+     cs=np.cumsum(pad,axis=_ax);img=(cs.take(range(2*_bl+1,cs.shape[_ax]),axis=_ax)-cs.take(range(0,cs.shape[_ax]-2*_bl-1),axis=_ax))/(2*_bl+1)
+   maps[n]=img.astype('f')
  return maps
 COAT=load_coat()
 # Round ZD: codex's paint-over masks (batch 13, reviews/ASSET-BATCH13-2026-10-13.md) - grey 0..1, rows top to bottom, sampled
@@ -1687,7 +1697,7 @@ def face_white(p,col,white):
  low=np.clip((.085+.8*np.maximum(0,.505-z)-np.abs(x))/.035,0,1)*np.clip((.512-z)/.035,0,1)
  m=(np.maximum(vee,low)*front*FACE_WHITE).clip(0,1)[:,None]
  return col*(1-m)+white[None,:]*m
-SOCK_Z=_v6('V6_SOCK_Z',.088)   # 0 = the painted coat's white legs
+SOCK_Z=_v6('V6_SOCK_Z',.110)   # 0 = the painted coat's white legs; round ZZZ3: .088 -> .110, the socks up toward the hock as the kitten targets
 def chest_bib(p,col):
  """Round Z: the white on the front of the chest is a bib down the middle (codex stand-app / sit-front: about half the head's width
   under the chin, narrowing between the forelegs), the tabby of the flanks either side. The side painting projected onto the chest's
@@ -1717,7 +1727,7 @@ def chest_bib(p,col):
   else:
    tw=(np.clip((m-.5)*2,0,1)*fw)[:,None];tf=(np.clip((.5-m)*2,0,1)*fw)[:,None]
    col=col*(1-tw-tf)+white*tw+flank*tf
-  side=(np.clip((np.abs(x)-_v6('V6_BELLY_WHITE_W',.055))/.02,0,1)*uw)[:,None]
+  side=(np.clip((np.abs(x)-_v6('V6_BELLY_WHITE_W',.055))/_v6('V6_BELLY_WHITE_SOFT',.045),0,1)*uw)[:,None]
   return col*(1-side)+tabby*side
  x,y,z=p.T;front=np.clip((-.06-y)/.06,0,1)*np.clip((.47-z)/.05,0,1)*np.clip((z-.15)/.04,0,1)
  if not front.any():return col
@@ -1740,7 +1750,7 @@ def leg_socks(p,col):
    m=np.clip((.062*LEG_K-d)/.016,0,1)*np.clip((s*x-.040)/.025,0,1)   # round Q: the skin of the thicker leg (LEG_K)
    a,b=_bseg(pre+'Paw.'+suf);fwd=np.clip((a[1]-y)/.05,0,1) if pre=='Front' else 0   # the white climbs the front of the wrist
    # round Q: a soft, uneven cuff (30 mm, +-6 mm wobble round the leg) - the straight 18 mm cut read as a white tube slid onto the leg
-   sock=np.where(m>leg,np.clip((SOCK_Z+.016*fwd+.006*np.sin(x*170+y*130)-z)/.030+.5,0,1),sock);leg=np.maximum(leg,m)
+   sock=np.where(m>leg,np.clip((SOCK_Z+.016*fwd+_v6('V6_SOCK_WOB',.010)*np.sin(x*170+y*130)-z)/_v6('V6_SOCK_SOFT',.050)+.5,0,1),sock);leg=np.maximum(leg,m)
  leg*=np.clip((.215-z)/.05,0,1)
  # rings round the leg, slanting a little, in the coat grade's ramp (light caramel / dark brown)
  band=((np.sin(z*98+np.sin(y*40+x*25)*.9)+1)/2)**1.7
@@ -3255,6 +3265,35 @@ def _head_off_floor(pb,margin=.004):
  rots={b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones};locs={b.name:tuple(pb[b.name].location) for b in ad.bones}
  M=np.array(_fk(rots,locs)('Head')@ad.bones['Head'].matrix_local.inverted());low=float((_HEADS2@M[2,:3]+M[2,3]).min())
  if low<margin:pb['Root'].location.y+=margin-low
+_WHISK=None
+def _whisker_off_floor(pb,margin=.003):
+ """Round ZZZ3 (codex STAGE-ZZQ-AUDIT: belly-up whiskers 43-66 mm under the floor): the head lies on its side, so the under side's whiskers
+  are swept back / up along the face - the least turn of the Whisker bone (searched over its own back and up axes) that keeps every
+  whisker point `margin` over the floor. The head's pose is solved once; the whisker bone's own turn is applied on top."""
+ global _WHISK
+ if _WHISK is None:
+  _WHISK={}
+  for o in bpy.data.objects:
+   if o.name.startswith('LX_Whisker') and o.type=='MESH':
+    co=np.array([v.co[:] for v in o.data.vertices]);M=np.array(o.matrix_world);co=co@M[:3,:3].T+M[:3,3]
+    _WHISK.setdefault('L' if co[:,0].mean()<0 else 'R',[]).append(co[::3])
+  _WHISK={k:np.concatenate(v) for k,v in _WHISK.items()}
+ rots={b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones};locs={b.name:tuple(pb[b.name].location) for b in ad.bones};f=_fk(rots,locs)
+ for suf,P in _WHISK.items():
+  bn='Whisker.'+suf;bb=ad.bones[bn];s_=-1 if suf=='L' else 1
+  base=f('Head')@(ad.bones['Head'].matrix_local.inverted()@bb.matrix_local)   # the whisker bone's pose with no turn of its own
+  inv=bb.matrix_local.inverted();R0=Euler(rots[bn],'XYZ').to_matrix()
+  def low(a,b):
+   R=(Matrix.Rotation(s_*a,3,'Z')@Matrix.Rotation(b,3,'Y')@R0).to_4x4();M=np.array(base@R@inv);return float((P@M[2,:3]+M[2,3]).min()),R
+  z0,_=low(0,0)
+  if z0>=margin:continue
+  best=None
+  for a in np.linspace(0,1.4,15):
+   for b in np.linspace(-1.0,1.0,11):
+    z,R=low(a,b)
+    if z>=margin and (best is None or a*a+b*b<best[0]):best=(a*a+b*b,R)
+  if best is None:best=(0,max(((low(a,b)) for a in np.linspace(0,1.4,15) for b in np.linspace(-1,1,11)),key=lambda t:t[0])[1])
+  pb[bn].rotation_euler=best[1].to_3x3().to_euler('XYZ')
 _WASHP=None
 def _wash_reach(pb,hold,u):
  """The right forepaw strokes the face: twice, from behind the ear down the cheek to the muzzle's side, the pad turned to the face
@@ -3768,6 +3807,7 @@ def pose(name,u):
  if name=='BellyUp':_rest_on_floor(pb)
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else _ease(u) if name in SIT_LIKE else min(1,u/_v6('V6_BU_LEG_T',.15))**2*(3-2*min(1,u/_v6('V6_BU_LEG_T',.15))) if name=='BellyUp' else 0.0)
  if name=='BellyUp':_face_world(pb,0,BU['face_pitch'],BU['face_roll'],k=min(1,u/.35));_head_off_floor(pb)
+ if name=='BellyUp' and _v6('V6_BU_WHISKER',1)>0:_whisker_off_floor(pb)
  if name=='Turn' and _v6('V6_TURN_GROUND',1)>0:
   # Round ZZH (v6_clip_lowscan.py: Turn went 6-14 mm under the floor on most frames - now lifted per paw in place_legs - and floated
   # 12-25 mm at the hand-over, frame 1149: half way round, the paws stepped ahead / still behind the body's yaw stretch the stance legs
