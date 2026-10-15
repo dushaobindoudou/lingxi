@@ -3216,7 +3216,10 @@ GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.3
 # about the root (legs, face and tail with it) so the licked flank faces the camera - an eye and the nose show, the nose still 2.4 mm off the flank
 # (+.7 turned the face away; turning the face itself back, fyaw .95, left the nose 65 mm off the flank). Blink .5 -> .15 opens that eye.
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
-BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.7,turn=-1.3,twist=-.45,spine=.25,neck=.15,wiggle=.12,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.13,f_pa=1.2,h_dy=-.06,h_dz=.15,h_pa=.8).items()}   # belly-up
+# Round ZZX (codex wave research #4, against codex lingxi-ref-ourcam-belly-up - the belly-up redrawn on the front camera): rolled LESS, 2.7 -> 2.20,
+# turns the white belly to the low camera (nearer pi it faces the ceiling); twist -.45 -> -.25, spine .25 -> .35, paws up a little (f_dz .16, h_dz .17),
+# wiggle .07. Rolling over the legs before they folded put the under shin 5-11 mm through the floor mid-roll: they tuck first (V6_BU_LEG_T .15).
+BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.20,turn=-1.3,twist=-.25,spine=.35,neck=.15,wiggle=.07,face_pitch=.15,face_roll=-.35,f_dy=.03,f_dz=.16,f_pa=1.2,h_dy=-.06,h_dz=.17,h_pa=.8).items()}   # belly-up
 LF={k:_v6('V6_LF_'+k.upper(),d) for k,d in dict(dx=-.015,dy=.03,z=.050,pa=-20,fpa=.35).items()}   # loaf: forepaws folded under the chest
 TURN=_v6('V6_TURN',math.pi/2);TURN_STEPS={'FL':(.08,.34),'HR':(.24,.50),'FR':(.42,.68),'HL':(.58,.84)}
 _LOAF=False
@@ -3756,7 +3759,7 @@ def pose(name,u):
  _back(pb,name);_spread(pb)
  if (name in ('LieDown','SideLie','Sleep') or (FACE_V1 and name in SIT_LIKE+('Lick',))) and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
  if name=='BellyUp':_rest_on_floor(pb)
- place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else _ease(u) if name in SIT_LIKE else min(1,u/.35)**2*(3-2*min(1,u/.35)) if name=='BellyUp' else 0.0)
+ place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else _ease(u) if name in SIT_LIKE else min(1,u/_v6('V6_BU_LEG_T',.15))**2*(3-2*min(1,u/_v6('V6_BU_LEG_T',.15))) if name=='BellyUp' else 0.0)
  if name=='BellyUp':_face_world(pb,0,BU['face_pitch'],BU['face_roll'],k=min(1,u/.35));_head_off_floor(pb)
  if name=='Turn' and _v6('V6_TURN_GROUND',1)>0:
   # Round ZZH (v6_clip_lowscan.py: Turn went 6-14 mm under the floor on most frames - now lifted per paw in place_legs - and floated
