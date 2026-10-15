@@ -62,6 +62,11 @@ const ACTION_CLIPS: Record<string, string> = {
   hiss: 'Bite', sit: 'Sit', loaf: 'Loaf', 'belly-up': 'BellyUp', 'scratch-ear': 'ScratchEar',
   'wash-face': 'WashFace', 'groom-side': 'GroomSide',
 };
+// What a settled cat does on its own between the host's requests (weights). Loops are held for a while, then released.
+const IDLE_PICKS: [string, number][] = [
+  ['Curious', 3], ['Yawn', 1.5], ['Lick', 2], ['WashFace', 1.5], ['GroomSide', 1.2], ['ScratchEar', 1], ['Stretch', 1],
+  ['Knead', 0.8], ['Sit', 1.5], ['Loaf', 1.2],
+];
 // Loops: held until something else is asked for.
 const LOOPING = new Set(['Idle', 'Walk', 'Run', 'Sleep', 'SideLie', 'Loaf', 'Sit', 'LieDown']);
 // Clips that carry the body across the floor; the engine owns position, so their horizontal travel is removed.
@@ -189,6 +194,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let current: THREE.AnimationAction | null = null;
   let currentName = '';
   let oneShot: { id: string; clip: string; endsAt: number } | null = null;
+  let idleSince = 0;
+  let nextIdlePick = 6 + Math.random() * 6;
   const bones: THREE.Bone[] = [];
   let headBone: THREE.Bone | null = null;
   const shellMaterials: THREE.Material[] = [];
@@ -574,6 +581,20 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         const moving = (state.state === 'wander' || state.state === 'ai_directed' || state.state === 'play_toy' || state.state === 'follow_cursor')
           && speed > FACING_SPEED_THRESHOLD * 0.35;
         if (moving) oneShot = null;
+        // a settled cat picks something to do now and then (the voxel director's job on the other style)
+        if (moving || state.state !== 'idle' || oneShot) idleSince = elapsed;
+        else if (elapsed - idleSince > nextIdlePick) {
+          const picks = IDLE_PICKS.filter(([c]) => actions[c]);
+          let r = Math.random() * picks.reduce((t, [, w]) => t + w, 0);
+          const pick = picks.find(([, w]) => (r -= w) < 0)?.[0];
+          if (pick) {
+            const loop = LOOPING.has(pick);
+            play(pick, !loop);
+            oneShot = { id: pick, clip: pick, endsAt: elapsed + (loop ? 6 + Math.random() * 6 : actions[pick].getClip().duration) };
+          }
+          idleSince = elapsed;
+          nextIdlePick = 6 + Math.random() * 6;
+        }
         let want = currentName;
         if (oneShot) want = oneShot.clip;
         else if (state.state === 'sleep') want = 'Sleep';
