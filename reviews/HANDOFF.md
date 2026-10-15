@@ -1324,3 +1324,16 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - **改动**（`build_lingxi_v5.py`）：`SIDELOUNGE` yaw -1.10 → **+1.35**、hip_roll 1.5 → **-1.5**（右侧着地）；`K_LOW` 随 hip_roll 符号选下侧后腿；侧卧时下侧后腿先摆（`placed` 依赖顺序）。
 - **验证**：步态与 ZZV 相同；逐帧扫描与 ZZV 逐帧相同、无新增；侧卧 249–296 最深 -0.2 mm。带毛对照 `reviews/sidelie-zzw/zzw-sidelie.jpg`：头右身左、白胸腹朝镜头、前后爪各可见；俯视布局与目标一致。
 - **剩余**：身体比目标短、团；后腿折起未伸展；目标俯视是 45° 斜线而正面是横贯，1.35 偏向正面。当前模型 = `v6/round-zzw/`。下一步：翻肚画幅与白腹（codex #4 后半）。
+
+## Round ZZX（Claude 主会话 + codex 调研，2026-10-15 傍晚）——codex 审计一波：伸懒腰、舔侧身、侧卧舒展、翻肚、局部毛、趾缝
+
+- 用户：「清理没有用的空间，然后继续吧，能不能一波改到底？codex 审计的问题改完一波」「你需要调用 codex 帮你调研和生成资源」。
+- **清理**：`v6/` 下除 ZZU / ZZV / ZZW 外的 79 个 .blend 全删（渲染与 json 保留），19 → 2.5 GB，磁盘 14 → 30 GB。
+- **codex**（`reviews/wave-zzx/`：prompt、run-codex.sh、`codex-research.md`）：三张**同机位**目标图（以我们的渲染为模板重画，`reference/lingxi-ref-ourcam-{belly-up,groom-side,sidelie}.png`）+ 逐项根因 / 旋钮 / 门槛的调研 + 表情提案 `face-controls-proposal.json`。表情提案改 152 个数值，渲染 30 格与现状几乎无差（`sheets/expr-proposal.jpg` vs `expr-zzw.jpg`），**未采用**。
+- **伸懒腰**（4d8cce4）：新 `V6_BOW_LIFT` .07（臀 295 → 362 mm）+ `BOW_PITCH` .73 → .95：背线 13.3 → 25.8°（门槛 25–35），胸 17.7 mm、爪 2.4 / 3.2 mm、整段 ≥ -0.4。单加前倾胸穿地（.85：-19.6）；伸展 .26 前爪悬 14 mm。
+- **舔侧身**（171f5db）：新 `V6_GS_TURN` -.70——根骨骼、坐姿四脚目标、脸世界朝向、尾巴绕行一起转，被舔侧腹朝镜头；鼻尖离侧腹 2.4 mm，可见一眼（只把脸转回 fyaw .95 会离开侧腹 65 mm；+.7 脸背向镜头）。`V6_GS_BLINK` .5 → .15。整段 ≥ -2.2。仍是前倾而非目标的坐直回头。
+- **侧卧舒展**（c032183）：spine .65 → .35、chest_keep .78 → .55、h_dy -.10 → .02、h_pa .3 → .15、stack .07 → .05、f_floor .080 → .065、f_half .025 → .030；全程 ≥ -1.2。
+- **翻肚**（6da207c）：codex 指出旧目标是俯拍、桌宠是正面机位——按 ourcam 目标：roll 2.7 → **2.20**（滚得少，白腹朝低机位）、twist -.25、spine .35、f_dz .16、h_dz .17、wiggle .07；同时收腿会在翻身中途压穿下侧小腿 5–11 mm（2.20 / 2.32 / 2.45 都有），新 `V6_BU_LEG_T` .15 让腿先收：整段 ≥ -0.7。（整体 `_settle_on_floor` 更糟：它的采样不含小腿。）评审渲染加 `VIEW=high`。
+- **局部毛 + 趾缝**（5eb2cfa，codex 值）：CHEEK_FLUFF .60、CHEST_TRIM .38、BIB .10、HEAD_BIB .24、LEN_TAIL 1.10；CLEFT_RZ .017、CLEFT_Z .009、CLEFT_DY .003、PAW_COAT .105。带毛趾缝 3.6/1.7/2.7 → 3.7/2.3/3.4 mm（门槛 6–8，未达）。
+- **ZZX 全套验证**（`v6/round-zzx/`）：步态与 ZZW 相同；片段审查无 < -2.5（翻肚审查帧 3.9 → 0.1 mm）；逐帧扫描剩 6 帧老问题、无新增；后脚 站 0.6 / 坐 3.5 mm；侧卧 ≥ -1.2。31 机位 `fc31/`，对照 `reviews/wave-zzx/sheets/`。
+- **剩余**：表情区分度与笑眼拱（提案无效，需几何：codex 报告 §1 的共享闭眼接缝）；舔侧身坐直回头；舔爪舌爪接触（需读真实舌尖的接触求解）；趾缝 6–8 mm；起跳后蹬 ≥60 mm（需改蓄力→离地轨迹）；翻肚时胡须穿地（老问题）。
