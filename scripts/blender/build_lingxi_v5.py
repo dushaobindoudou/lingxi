@@ -3973,26 +3973,31 @@ if FACE_V1:
    'wink-left':{'Blink.L':1,'SmileArc.R':.35,'LowerLift.R':.3},'wink-right':{'Blink.R':1,'SmileArc.L':.35,'LowerLift.L':.3},
    'sparkle':{**both(PupilW=.32,PupilH=.33,UpperWide=.3),'Sparkle':1.0},
    'tearful':{**both(LowerLift=.50,LidSlantOut=.8,PupilW=.34,PupilH=.35),'Sparkle':.8}},
-  'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1,LidSlantIn=1),'raise':both(BrowInnerUp=.7,BrowOuterUp=1,UpperWide=.45),
-   'sad':both(BrowInnerUp=1,BrowOuterUp=-.3,LidSlantOut=1)},
+  # Round ZZY (codex STAGE-ZZQ-AUDIT #2, layer sheet round-zzx/layers: all five brow states rendered IDENTICAL - the open eye's upper lid sits
+  # above the iris, so its slant never shows): furrow / sad close the lid .30 so the slant lands on the iris (angry / droopy). raise stays
+  # (UpperWide on an open eye shows nothing either).
+  'brow':{'flat':{},'none':{},'furrow':both(BrowInnerDown=1,LidSlantIn=1,Blink=.30),'raise':both(BrowInnerUp=.7,BrowOuterUp=1,UpperWide=.45),
+   'sad':both(BrowInnerUp=1,BrowOuterUp=-.3,LidSlantOut=1,Blink=.30)},
   # ZF: the corners x1.4 (codex ROUND-ZD-AUDIT 3: cat .08-.10, frown .09-.12 nose widths short)
   'mouth':{'flat':both(MouthCornerDown=.15),'cat':both(MouthCornerUp=1.4),'open':{'JawOpen':.18,'TongueUp':.8,'MouthO':1.0},
    'frown':{'LowerLipDown':.35,**both(MouthCornerDown=1.4)},
    'hiss':({'SnarlMouth':1.0,'TongueUp':.4} if FACE_V2 else {'JawOpen':.45,'TongueUp':.4,'LowerLipDown':.8,**both(UpperLipRaise=1,NoseWrinkle=1,MouthWide=1.3)}),'tongue':{'JawOpen':.06,'TongueBlep':1.0,'LowerLipDown':.8,**both(UpperLipRaise=-.8,MouthCornerUp=.2)}},   # Z4: the lips close round the tip - at jaw .12 the upper fangs showed (codex blep: no teeth)
   # round ZZO (audit: the negative faces' ears lay out as two flat pink plates, a sheep's): flattened and swivelled less - still read as ears
   # laid back, a triangle each, not plates
-  'ear':{'neutral':{},'forward':both(EarForward=.40),'airplane':both(EarFlatten=.55,EarSwivel=.45,EarForward=-.25,EarTipBend=0.0),
+  'ear':{'neutral':{},'forward':both(EarForward=.75),   # round ZZY: .40 read the same as neutral (1.0 folded them)
+  'airplane':both(EarFlatten=.55,EarSwivel=.45,EarForward=-.25,EarTipBend=0.0),
    'back':both(EarForward=-.55,EarFlatten=.45,EarSwivel=.5,EarTipBend=.3)}}
  # per-expression additions over the four layers - the block cat tells some apart only by the screen symbol (放松 / 安心, 闭眼休息 / 陶醉
  # identical; 撒娇 / 期待 / 闪亮, 好奇 / 玩心 / 困惑 ... under 1.3 / 255 apart, codex), which the 3D face cannot show
- EXPR_EXTRA={**({'嫌弃':{'Sneer.L':1.0},'不爽':{'NoseBridgeWrinkle':.35,**both(PadLift=.25,OrbitLift=.3)}} if FACE_V2 else {}),'安心':both(MouthCornerUp=.45,LowerLift=.25),'陶醉':{**both(MouthCornerUp=.5,EarFlatten=.3,EarForward=-.15)},   # round ZZN: no SmileArc on top of the full blink (the two keys added overshot - a pale ring)
+ EXPR_EXTRA={**({'嫌弃':{'Sneer.L':1.0},'不爽':{'NoseBridgeWrinkle':.35,**both(PadLift=.25,OrbitLift=.3)}} if FACE_V2 else {}),'安心':both(MouthCornerUp=.45,LowerLift=.25,SmileArc=.20),'陶醉':{**both(MouthCornerUp=.5,EarFlatten=.55,EarSwivel=.35,EarForward=-.15)},   # round ZZY: 安心 a half smile-eye over 放松's soft; 陶醉 smile-eyed (EXPR below) with the ears eased out sideways, apart from 闭眼休息   # round ZZN: no SmileArc on top of the full blink (the two keys added overshot - a pale ring)
  
-  '撒娇':both(SmileArc=.2,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
-  '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5},'认真':both(LidSlantIn=.6),
+  '撒娇':both(SmileArc=.45,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
+  '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5,'Blink.R':.30},'认真':both(LidSlantIn=.6),   # round ZZY: 困惑 one eye narrowed - the doubt reads lopsided
   # ZC (codex ROUND-ZB-AUDIT 3: the meow 1.55 x 1.25 nose widths, target .63 x .70): the meow's corners drawn in all the way, the jaw less
   '喵喵':{'JawOpen':.24,'MouthO':1.0,'TongueUp':.9,'LowerLipDown':.3},'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
-  '温柔':both(EarForward=.12,MouthCornerUp=.25),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35)},
-  '得意':{'MouthCornerUp.L':.7,'SmileArc.R':.2},'清醒':both(UpperWide=.25),'警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15)}
+  '温柔':both(EarForward=.12,MouthCornerUp=.25),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35,Blink=-.25)},   # round ZZY: with the sad brow's .30 close 害羞 shut like 困困; opened .25, looking away
+  '得意':{'MouthCornerUp.L':.7,'SmileArc.R':.2},'清醒':both(UpperWide=.25,PupilW=-.08,PupilH=-.06),'好奇':both(GazePitch=.35,PupilW=.06,PupilH=.06),   # round ZZY (extras ADD to the layer): 清醒 small bright pupils, 好奇 big ones looking up - both were 安然's round eye
+  '警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15)}
  # apps/lingxi/src/rig/art.ts BUILT_IN_EXPRESSIONS (symbol: a screen effect, carried through for the app)
  EXPR={'安然':'slit none cat neutral none','好奇':'round raise flat forward question','满足':'happy none cat neutral none','警觉':'wide raise flat forward exclaim',
   '不爽':'side furrow frown airplane none','惊吓':'wide raise open back sweat','困困':'half sad flat neutral sleep','玩心':'round raise tongue forward none',
@@ -4004,6 +4009,7 @@ if FACE_V1:
   '右眼眨':'wink-right raise cat neutral none','闪亮':'sparkle none cat forward heart'}
  EXPR={k:dict(zip(('eye','brow','mouth','ear','symbol'),v.split())) for k,v in EXPR.items()}
  EXPR['安然']['eye']='calm';EXPR['认真']['eye']='focus'   # round ZZI: see LAYERS
+ EXPR['陶醉']['eye']='happy'   # round ZZY: 3D only - 闭眼休息 and 陶醉 had the same four layers
  FACE_SPEC={'version':1,'controls':C,'layers':LAYERS,'expressions':EXPR,'expression_extras':EXPR_EXTRA,'ear':{'fwd_rad':1.0,'flat_rad':1.0,'swivel_rad':1.0,'tip_rad':1.0},
   'notes':'heart / tearful iris looks are material variants for the app (not built in Blender v1); symbol is a screen effect.'}
  (OUT/'face-controls.json').write_text(json.dumps(FACE_SPEC,indent=1,ensure_ascii=False))
