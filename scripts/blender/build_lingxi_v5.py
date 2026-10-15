@@ -3226,7 +3226,10 @@ def _ease(u,a=.2,b=.2):h=min(1,u/a,(1-u)/b);return h*h*(3-2*h)
 # out: L 1.4 mm); chest_twist -.35 levels the shoulders so the right one reaches too (R 1.5 mm; -.25: 11.2, +.25 worse). Pelvis side-roll
 # .037 rad, hind foot to ear base 11 mm, head 456 -> 445 mm (codex: <= .10, <= 25, <= 20 lower) - all in.
 SE={k:_v6('V6_SE_'+k.upper(),d) for k,d in dict(spine_side=.40,hip_roll=.10,neck=.10,neck_side=.40,head=-.35,head_roll=.25,foot_dy=.02,foot_dz=-.02,foot_pa=.6,fore_down=1.0,chest_twist=-.35).items()}
-GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.35,neck=.30,neck_side=.55,head=.25,head_yaw=.65,face=1.0,fyaw=1.45,fpitch=.90,froll=0.0,turn=-.70).items()}   # groom-side; turn (round ZZX, codex STAGE-ZZQ-AUDIT #5: the front camera saw only the crown): the whole seated cat yawed
+# Round ZZZ3 (user list: 「舔侧身改成坐直了回头舔」): the neck up (.30 -> -.10) and the face near level (fpitch .90 -> .55) sit it up; the chest twists
+# round (.35 -> .70) and the neck bends over (.55 -> .75) to bring the flank to the mouth, the face turned less (fyaw 1.45 -> 1.30: more turn
+# pushed the nose 57-61 mm off, 1.0 44 mm) - nose 4.0 mm off the flank, 84 mm higher than the hunched lick.
+GS={k:_v6('V6_GS_'+k.upper(),d) for k,d in dict(spine_side=.55,twist=.70,neck=-.10,neck_side=.75,head=.25,head_yaw=.65,face=1.0,fyaw=1.30,fpitch=.55,froll=0.0,turn=-.70).items()}   # groom-side; turn (round ZZX, codex STAGE-ZZQ-AUDIT #5: the front camera saw only the crown): the whole seated cat yawed
 # about the root (legs, face and tail with it) so the licked flank faces the camera - an eye and the nose show, the nose still 2.4 mm off the flank
 # (+.7 turned the face away; turning the face itself back, fyaw .95, left the nose 65 mm off the flank). Blink .5 -> .15 opens that eye.
 WF={k:_v6('V6_WF_'+k.upper(),d) for k,d in dict(head_roll=.25,head=.12,turn=.85).items()}   # wash-face
@@ -4039,12 +4042,12 @@ if FACE_V1:
  EXPR_EXTRA={**({'嫌弃':{'Sneer.L':1.0},'不爽':{'NoseBridgeWrinkle':.35,**both(PadLift=.25,OrbitLift=.3)}} if FACE_V2 else {}),'安心':both(MouthCornerUp=.45,LowerLift=.25,SmileArc=.20),'陶醉':{**both(MouthCornerUp=.5,EarFlatten=.55,EarSwivel=.35,EarForward=-.15)},   # round ZZY: 安心 a half smile-eye over 放松's soft; 陶醉 smile-eyed (EXPR below) with the ears eased out sideways, apart from 闭眼休息   # round ZZN: no SmileArc on top of the full blink (the two keys added overshot - a pale ring)
  
   '撒娇':both(SmileArc=.45,MouthCornerUp=.35),'期待':both(EarForward=.25,UpperWide=.35),'闪亮':{'Sparkle':1.0},
-  '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5,'Blink.R':.30},'认真':both(LidSlantIn=.6),   # round ZZY: 困惑 one eye narrowed - the doubt reads lopsided
+  '困惑':{'EarSwivel.R':.9,'EarFlatten.R':.45,'BrowInnerUp.L':.7,'LidSlantIn.R':.5,'Blink.R':.30},'认真':both(LidSlantIn=.6,Blink=.15,Squint=.12,WhiskerForward=.6),   # round ZZY: 困惑 one eye narrowed - the doubt reads lopsided
   # ZC (codex ROUND-ZB-AUDIT 3: the meow 1.55 x 1.25 nose widths, target .63 x .70): the meow's corners drawn in all the way, the jaw less
-  '喵喵':{'JawOpen':.24,'MouthO':1.0,'TongueUp':.9,'LowerLipDown':.3},'开心':both(MouthCornerUp=.35),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
-  '温柔':both(EarForward=.12,MouthCornerUp=.25),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35,Blink=-.25)},   # round ZZY: with the sad brow's .30 close 害羞 shut like 困困; opened .25, looking away
+  '喵喵':{'JawOpen':.24,'MouthO':1.0,'TongueUp':.9,'LowerLipDown':.3},'开心':both(MouthCornerUp=.35,WhiskerForward=.8,WhiskerUp=.7,CheekLift=.5),'求抱抱':both(LidSlantOut=.4,UpperWide=.2),
+  '温柔':both(EarForward=.12,MouthCornerUp=.25,SmileArc=.25,WhiskerUp=-.3),'害羞':{**both(LowerLift=.3,MouthCornerUp=.3,GazeYaw=-.35,Blink=-.25)},   # round ZZY: with the sad brow's .30 close 害羞 shut like 困困; opened .25, looking away
   '得意':{'MouthCornerUp.L':.7,'SmileArc.R':.2},'清醒':both(UpperWide=.25,PupilW=-.08,PupilH=-.06),'好奇':both(GazePitch=.35,PupilW=.06,PupilH=.06),   # round ZZY (extras ADD to the layer): 清醒 small bright pupils, 好奇 big ones looking up - both were 安然's round eye
-  '警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15)}
+  '警惕':both(LidSlantIn=.35),'满足':both(EarFlatten=.15,WhiskerUp=-.4),'警觉':both(WhiskerForward=1.0,EarForward=.25)}   # round ZZZ3: the four near pairs - 开心 whiskers up / forward against 满足's lowered; 温柔 a half smile-eye; 认真 narrowed so its slant shows; 警觉 whiskers and ears forward
  # apps/lingxi/src/rig/art.ts BUILT_IN_EXPRESSIONS (symbol: a screen effect, carried through for the app)
  EXPR={'安然':'slit none cat neutral none','好奇':'round raise flat forward question','满足':'happy none cat neutral none','警觉':'wide raise flat forward exclaim',
   '不爽':'side furrow frown airplane none','惊吓':'wide raise open back sweat','困困':'half sad flat neutral sleep','玩心':'round raise tongue forward none',
