@@ -2975,14 +2975,18 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # the upper hind paw stacked 40 mm up -> laid behind it on the floor (h_stack_dz .065 -> 0, h_stack_dy .02 -> .07: 3.2 mm, codex "layered
 # flat"); forepaws f_floor .088 -> .080 (3.2 / 5.3 mm); rump 4.7, chest 21 mm. The tail, which hung 133-163 mm in the air, is laid on the
 # floor (V6_SG_TAIL_WRAP below).
-SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=-1.10,hip_roll=1.5,chest_keep=.78,spine=.65,neck=-.80,head=-.12,head_tilt=.22,head_turn=0,
+# Round ZZW (codex STAGE-ZZQ-AUDIT #4: the lounge read as a twisted crouch): it was the MIRROR of both codex targets (pose-sidelie-app and
+# sidelie-ownbody-app: tail left, head right, belly and all four paws to the camera) - turned -1.10 with the left hip down it showed the camera
+# its back and ran into depth. Mirrored: yaw +1.35 (more side-on than 1.10, the body across the frame as in -app), hips rolled -1.5 (right
+# side down, K_LOW follows); the world-set face and tilt stay as they were (the -app head leans toward the body either way).
+SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=1.35,hip_roll=-1.5,chest_keep=.78,spine=.65,neck=-.80,head=-.12,head_tilt=.22,head_turn=0,
  tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=0.0,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
  h_floor=.045,h_stack_dy=.07,h_stack_dz=0.0,f_floor=.080,bend=0.0,f_half=.025).items()}
 if SLEEP['paws']>0:   # round ZZG: the forepaws are placed under the chin; the drape (add_FR .5) threw the upper one 300 mm up
  for _k in ('add_FL','add_FR'):SLEEP[_k]=_v6('V6_SP_'+_k.upper(),0.0)
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
  for _k in ('add_HL','add_HR','add_FL','add_FR'):SIDELOUNGE[_k]=_v6('V6_SG_'+_k.upper(),0.0)
-K_LOW='HL'   # hips rolled +: the LEFT hind leg is underneath
+K_LOW='HL' if SIDELOUNGE['hip_roll']>=0 else 'HR'   # hips rolled +: the LEFT hind leg is underneath (round ZZW: rolled - for the mirrored lounge, the right)
 # Round P: a lying pose's back bend is shared between the loin and the thoracic joint (_back; 0 = all at the loin, the
 # old one-hinge back, .5 = an even curve). The other clips keep their solved / tuned single bend.
 BACK_CURVE={'LieDown':_v6('V6_BACK_LD',.5),'SideLie':_v6('V6_BACK_SL',.5),'Sleep':_v6('V6_BACK_SP',.5)}
@@ -3328,7 +3332,7 @@ def place_legs(name,u,pb,hold=0.0):
   # to lose its height when the cat lies down.
   L=LIEDOWN;lie[k]=(Vector((LREST[k]['x'],hy-L['f_dy'],L['f_z']+L['drop'])),math.radians(L['f_pa'])) if k[0]=='F' else (Vector((LREST[k]['x']+math.copysign(L['h_dx'],LREST[k]['x']),hy+L['h_dy'],L['h_z']+L['drop'])),math.radians(L['h_pa']))
  placed={}   # round R: the world targets already given out this frame (the upper hind paw lies on the under one)
- for k in LEGS:
+ for k in (sorted(LEGS,key=lambda k:k!=K_LOW) if name=='SideLie' else LEGS):   # round ZZW: the under hind leg first, whichever side it is
   foot=LREST[k]['foot'].copy();pa=_paw_rest(k);tg=foot;fa=None;pdir=None
   if name in ('Walk','Run'):
    g=WALK if name=='Walk' else RUN;dy,dz,flex=_gait(g,u,k)
@@ -3766,7 +3770,7 @@ def pose(name,u):
  _SGW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name=='SideLie' and SL_MODE==2 and _v6('V6_SG_TAIL_WRAP',1)>0
  if _SGW:
   _hp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})(LEGS[K_LOW][3]).translation
-  _tail_wrap(pb,(1,0),(_hp.x+_v6('V6_SG_TAIL_END_X',0.0),_hp.y-_v6('V6_SG_TAIL_END_Y',.06)),k=_settle(u,0,.25),lead=_v6('V6_SG_TAIL_LEAD',.7),shortest=True)   # start the sweep before the rump reaches the floor; a late half-blend flipped the tail out from under it at frame 264
+  _tail_wrap(pb,(_v6('V6_SG_TAIL_VIA',1.0),0),(_hp.x+_v6('V6_SG_TAIL_END_X',0.0),_hp.y-_v6('V6_SG_TAIL_END_Y',.06)),k=_settle(u,0,.25),lead=_v6('V6_SG_TAIL_LEAD',.7),shortest=True)   # start the sweep before the rump reaches the floor; a late half-blend flipped the tail out from under it at frame 264
  if RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep'):
   # LieDown: round the +x flank (the camera's right, as codex's liedown-app) to beside that forepaw; Sleep: round the front (the camera
   # side, -y) to under the chin
