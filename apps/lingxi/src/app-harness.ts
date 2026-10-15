@@ -63,7 +63,10 @@ function frame(now: number) {
   try {
     const dt = lastFrameAt == null ? 0 : Math.min(0.1, (now - lastFrameAt) / 1000);
     lastFrameAt = now;
-    const snapshot = engine.tick(now, cursor);
+    // ?still=1: a fixed, centred, idle cat for look-dev comparisons (no wandering between screenshots)
+    const snapshot = params.has('still')
+      ? ({ ...engine.tick(now, null), state: 'idle', position: { x: width / 2, y: height * 0.62 }, facing: 1 } as ReturnType<typeof engine.tick>)
+      : engine.tick(now, cursor);
     renderer.render(snapshot, dt, cursor);
     fx.anchorEffects(snapshot.position.x, snapshot.position.y);
     if (fx.speaking) {

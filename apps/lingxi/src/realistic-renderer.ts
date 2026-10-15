@@ -203,7 +203,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     return m;
   }
   function shellMaterial(len: number, den: number, t: number) {
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, alphaToCoverage: true });
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uShell = { value: t };
       sh.uniforms.uLen = { value: len };
@@ -221,7 +221,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             vec3 q = vRest * uDen;
             float strand = furHash(floor(q));
             float r = length(fract(q) - 0.5);
-            if (vScale < 0.02 || strand < uShell * 0.85 || r > 0.62 * (1.0 - uShell) + 0.06) discard;
+            // A strand's cross-section fades out over its edge instead of being cut (alpha to coverage on the MSAA
+            // buffer): hard discards made the outline a grain of single pixels.
+            float edge = 0.62 * (1.0 - uShell) + 0.06;
+            float a = smoothstep(edge + 0.08, edge - 0.04, r) * step(uShell * 0.85, strand) * step(0.02, vScale);
+            if (a < 0.02) discard;
+            diffuseColor.a = a;
             // roots a little deeper, tips catching the light: soft, not spiky
             diffuseColor.rgb *= mix(0.70, 1.10, uShell);`);
     };
