@@ -2873,6 +2873,10 @@ JUMP_PHASED=_v6('V6_JUMP_PHASED',1)>0
 # reach for the floor - and the legs in the air are placed in the trunk's own frame (JUMP_LEGS), blended into their floor marks at
 # lift-off and touch-down. Without the pitch every phase was a standing cat at a different height (round-v-test r1/r2).
 JUMP_T=(_v6('V6_JUMP_F_OFF',.22),.30,.74,.80)   # Z5: forepaws off .27 -> .22 - from .23 the rising, nose-up trunk had the forelegs at full stretch and dragged the paws 3.3 mm a frame sideways before they tore off the floor (77 mm in one frame at 165)
+# Round ZZZ+1 (codex STAGE-ZZQ-AUDIT #7: at take-off the hind toes were 34 mm AHEAD of the hip - the in-place jump pushed straight up,
+# legs vertical): the body travels - forward over the planted hind feet through the push (V6_JUMP_PUSH_FWD), on through the air, a little
+# more as the landing gives - so the straightened hind legs trail behind it; the landing marks move with it (Root's local z is the world's -y)
+def _jump_fwd(u):return _jump_key(u,[(0,0),(.20,0),(.30,_v6('V6_JUMP_PUSH_FWD',.10)),(.80,_v6('V6_JUMP_PUSH_FWD',.10)+_v6('V6_JUMP_AIR_FWD',.35)),(.88,_v6('V6_JUMP_PUSH_FWD',.10)+_v6('V6_JUMP_AIR_FWD',.35)+.04),(1,_v6('V6_JUMP_PUSH_FWD',.10)+_v6('V6_JUMP_AIR_FWD',.35)+.04)])
 def _jump_root(u):
  _cd=_v6('V6_JUMP_CROUCH_DROP',.10)
  if u<.20:e=u/.20;return -_cd*e*e*(3-2*e)
@@ -3355,6 +3359,8 @@ def place_legs(name,u,pb,hold=0.0):
     # tipping onto its front edge round the hock)
     push=.6*((min(u,off_)-.20)/(off_-.20))**2
     if FOOT:mtp=Vector(ad.bones[FOOT_OF[k]].head_local);Lp=ad.bones[LEGS[k][3]].length;base=mtp-Lp*Vector((0,math.cos(pa+push),math.sin(pa+push)));flat=1.0
+   _land=Vector((0,-_jump_fwd(on_),0))   # round ZZZ+1: the paws come down where the body has carried them
+   if u>(off_+on_)/2:base=base+_land
    if off_<u<on_:
     keys=JUMP_LEGS[k[0]];bn='Chest' if k[0]=='F' else 'Pelvis';D=f(bn)@ad.bones[bn].matrix_local.inverted()
     tb=D@(foot+Vector((0,_jump_key(u,[(c[0],c[1]) for c in keys]),_jump_key(u,[(c[0],c[2]) for c in keys]))))
@@ -3374,6 +3380,7 @@ def place_legs(name,u,pb,hold=0.0):
     pa+=push*(1-wa)+_jump_key(u,[(c[0],c[3]) for c in keys])*wa+_ang(D.to_3x3()@Vector((0,1,0)))*wa;flat*=1-wa
    elif u<=off_:
     tg=base;pa+=push
+   else:tg=base   # landed: on the moved mark
    if FOOT and flat>0:R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);fa=rig_+_wrap(R_[ft]-rig_)*flat
   elif name=='Jump':
    lift=math.sin(math.pi*u)**2
@@ -3539,7 +3546,7 @@ def pose(name,u):
    # Round X: the walking trunk sways - the back bends a little toward the side whose hind paw is down, the hips roll over it
    sw=math.sin(phase+math.tau*.25);pb['Spine'].rotation_euler[2]=.035*sw;pb['Pelvis'].rotation_euler[1]=.03*sw;pb['Tail2'].rotation_euler[2]=-.10*sw
  if name=='Jump' and JUMP_PHASED:
-  pb['Root'].location.y=_jump_root(u)
+  pb['Root'].location.y=_jump_root(u);pb['Root'].location.z=_jump_fwd(u)
   pb['Spine'].rotation_euler[0]=_jump_key(u,[(0,0),(.20,.10),(.30,-.12),(.45,.08),(.60,.06),(.72,-.05),(.82,.12),(.90,.05),(1,0)])   # + flexed
   pb['Pelvis'].rotation_euler[0]=_jump_key(u,JUMP_PITCH)-.5*pb['Spine'].rotation_euler[0]
   pb['Neck'].rotation_euler[0]=_jump_key(u,[(0,0),(.18,.15),(.30,-.25),(.52,0),(.74,.10),(.84,.12),(1,0)])
