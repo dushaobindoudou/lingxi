@@ -264,8 +264,10 @@ RUFF=((0,-.205,.405-RUFF_DROP/2),(.155,.14,.115-RUFF_DROP/2))   # top comes down
 # you can see, the forearm running down into the paw.
 LEG_SHOW=_v6('V6_LEG_SHOW',.045)
 def _lift(c,r,k=1.0):return (c[0],c[1],c[2]+LEG_SHOW*k/2),(r[0],r[1],r[2]-LEG_SHOW*k/2)   # bottom up by LEG_SHOW*k, top fixed
-CHEST=_lift(*CHEST)
-parts=[sphere('Belly',*_lift((0,.045,.235),(.13,.28,.125))),sphere('NeckRuff',*RUFF),sphere('Torso',*_lift((0,.075,.305),(.135,.325,.150))),sphere('Chest',*CHEST),sphere('Rump',*_lift((0,.28,.312),(.145,.17,.155),.8))]
+TORSO_DEPTH=_v6('V6_TORSO_DEPTH',.88);RUMP_WIDTH=_v6('V6_RUMP_WIDTH',.92)   # Round ZZU: furred stand-side mid-trunk 98 -> 90 px (kitten target 91), without changing body length or leg rig
+def _depth(c,r):return c,(r[0],r[1],r[2]*TORSO_DEPTH)
+CHEST=_lift(*_depth(*CHEST))
+parts=[sphere('Belly',*_lift(*_depth((0,.045,.235),(.13,.28,.125)))),sphere('NeckRuff',*RUFF),sphere('Torso',*_lift(*_depth((0,.075,.305),(.135,.325,.150)))),sphere('Chest',*CHEST),sphere('Rump',*_lift(*_depth((0,.28,.312),(.145*RUMP_WIDTH,.17,.155)),.8))]
 PAW_LOW=_v6('V6_PAW_LOW',.010)   # round O: .024 -> .010 - lowered 24 mm the ball read as a box over the toes; the reference's paw is a round mitten
 #   # round N: the paw ball's top comes down this much, bottom (ground contact) stays
 PAW_RYK=_v6('V6_PAW_RYK',.90)    # ...and it is 10% shorter: lowered, its low front bulged 6.5 mm further out and dipped through the floor when the paw pitched (LieDown / Stretch)
@@ -3114,10 +3116,11 @@ def _tail_chain():
   TAIL_CHAIN=c
  return TAIL_CHAIN
 _HEADS=None
-def _tail_wrap(pb,via,end,k=1.0,margin=None,lead=0.0):
+def _tail_wrap(pb,via,end,k=1.0,margin=None,lead=0.0,shortest=False):
  """via: a floor direction (x,y) the path passes on its way round, or None - through the gap between the tail's root and `end` (a curled
   cat closes its ring with its tail); end: the world point (x,y) it ends beside; lead: the path leaves the rump this far (rad) round
-  toward its way, so the tail drops to the floor on the diagonal instead of spending its length straight behind."""
+  toward its way, so the tail drops to the floor on the diagonal instead of spending its length straight behind.
+  shortest keeps a changing endpoint from flipping the sweep across a full turn during SideLie entry."""
  global _HEADS
  if k<1e-3:return
  margin=_v6('V6_TAIL_WRAP_GAP',.012) if margin is None else margin
@@ -3138,7 +3141,8 @@ def _tail_wrap(pb,via,end,k=1.0,margin=None,lead=0.0):
  if via is None:g=(R0[:2]+np.array(end[:2]))/2-C;via=(g[0],g[1])
  tv=math.atan2(via[1],via[0])
  sweep=(th1-th0)%math.tau;sv=(tv-th0)%math.tau
- if sv>sweep:sweep-=math.tau   # go the other way round, through `via`
+ if shortest:sweep=(th1-th0+math.pi)%math.tau-math.pi   # SideLie: the endpoint crosses `via` during entry; forcing passage through it flips a short sweep into a full turn
+ elif sv>sweep:sweep-=math.tau   # go the other way round, through `via`
  th0+=math.copysign(min(lead,abs(sweep)*.5),sweep);sweep-=math.copysign(min(lead,abs(sweep)*.5),sweep)
  L=sum(ad.bones[n].length for n in chain);path=[R0];s_=0.0
  for th in th0+sweep*np.linspace(0,1,361):
@@ -3164,9 +3168,9 @@ def _tail_wrap(pb,via,end,k=1.0,margin=None,lead=0.0):
   f=_fk(rots,locs);print('TAIL_WRAP',json.dumps({'C':[round(1000*c) for c in C],'R0':[round(1000*c) for c in R0],'th0':round(math.degrees(th0)),'th1':round(math.degrees(th1)),'sweep':round(math.degrees(sweep)),
    'path_mm':round(1000*cum[-1]),'tail_mm':round(1000*L),'tips':[[round(1000*c) for c in _tip(f,n)] for n in chain[1::2]],'k':round(k,2)}))
 _TAILS=None
-def _tail_off_floor(pb,margin=.004):
- """Round V: the tail's real skin stays on / above the floor - lifted at its root (Tail1 up) when a pose (a straighter sit,
-  a lie-down) puts its tip through it. The sitting lick's tail went 31.5 mm under once the hips came down."""
+def _tail_off_floor(pb,margin=.004,translate=False):
+ """Keep the tail's sampled skin above the floor. Rotating its root works for sitting; a wrapped SideLie tail
+  uses a small chain translation to preserve the path during entry."""
  global _TAILS
  if _TAILS is None:
   me=tail.data;gn={g.index:g.name for g in tail.vertex_groups};rows=[]
@@ -3177,10 +3181,16 @@ def _tail_off_floor(pb,margin=.004):
   W={n:np.array([ws.get(n,0) for _,ws in rows]) for n in names};tot=sum(W.values());_TAILS=(co,{n:w/np.maximum(tot,1e-9) for n,w in W.items()})
  co,W=_TAILS;names=[b.name for b in ad.bones]
  for _ in range(20):
-  rots={n:tuple(pb[n].rotation_euler) for n in names};f=_fk(rots,{'Root':tuple(pb['Root'].location)});z=np.zeros(len(co))
+  rots={n:tuple(pb[n].rotation_euler) for n in names};f=_fk(rots,{'Root':tuple(pb['Root'].location),'Tail0':tuple(pb['Tail0'].location)});z=np.zeros(len(co))
   for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
   low=float(z.min())
   if low>=margin:break
+  if translate:
+   # A floor correction on the wrapped SideLie tail must preserve its path: rotating Tail0/Tail1 to clear the floor
+   # flipped the entire tail out from below the rump in one frame. Lift the chain by the small contact shortfall instead.
+   b=ad.bones['Tail0'];base=f(b.parent.name)@(b.parent.matrix_local.inverted()@b.matrix_local)
+   pb['Tail0'].location+=base.to_3x3().inverted()@Vector((0,0,margin-low))
+   break
   # round ZS: lift at the joint the lowest skin hangs from - with the upright sit's pelvis at 62 deg the tail's ROOT went 48.6 mm under,
   # which turning Tail1 never reaches (Tail0 when the lowest point is Tail0's, else Tail1 as before)
   i0=int(np.argmin(z));lb=max(W,key=lambda n:W[n][i0]);jb='Tail0' if lb.startswith('Tail0') and 'Tail0' in pb else 'Tail1'
@@ -3755,7 +3765,7 @@ def pose(name,u):
  _SGW=RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name=='SideLie' and SL_MODE==2 and _v6('V6_SG_TAIL_WRAP',1)>0
  if _SGW:
   _hp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})(LEGS[K_LOW][3]).translation
-  _tail_wrap(pb,(1,0),(_hp.x+_v6('V6_SG_TAIL_END_X',0.0),_hp.y-_v6('V6_SG_TAIL_END_Y',.06)),k=_settle(u,.10,LIE_T+.20),lead=_v6('V6_SG_TAIL_LEAD',.7))
+  _tail_wrap(pb,(1,0),(_hp.x+_v6('V6_SG_TAIL_END_X',0.0),_hp.y-_v6('V6_SG_TAIL_END_Y',.06)),k=_settle(u,0,.25),lead=_v6('V6_SG_TAIL_LEAD',.7),shortest=True)   # start the sweep before the rump reaches the floor; a late half-blend flipped the tail out from under it at frame 264
  if RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep'):
   # LieDown: round the +x flank (the camera's right, as codex's liedown-app) to beside that forepaw; Sleep: round the front (the camera
   # side, -y) to under the chin
@@ -3771,7 +3781,7 @@ def pose(name,u):
   # near hind paw (codex ROUND-ZR-ZX-AUDIT: sit-hindfoot all coat)
   _fp=_fk({b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones},{b.name:tuple(pb[b.name].location) for b in ad.bones})('FrontPaw.L').translation
   _tail_wrap(pb,(-1,0),(_fp.x-.07,_fp.y-.01),k=_ease(u,.18,.18),lead=_v6('V6_SIT_TAIL_LEAD',.3))   # round ZZ: .7 -> .3 - round the left the tail's tip ran past the path's end into the floor (-29.5 mm, tl1-tl3)
- if _v6('V6_TAIL_FLOOR',1)>0 and not _SGW and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004)   # a laid tail is already on its path, clear of the floor; round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
+ if _v6('V6_TAIL_FLOOR',1)>0 and not (RIG_X and _v6('V6_TAIL_WRAP',1)>0 and name in ('LieDown','Sleep')):_tail_off_floor(pb,margin=_v6('V6_SIT_TAIL_MARGIN',.012) if _SITW else .004,translate=_SGW)   # SideLie's wrapped tail can cut through the floor during entry (frame 265: -20.5 mm); lift without changing its path. Round ZZC: the sit family's wrapped tail sat 6-8 mm lower on the real mesh than this estimate
  if name=='Lick' and _v6('V6_LICK_REACH',1)>0:_lick_reach(pb,min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2)))
  # Round ZZR (kitten look, measured on stand-side: head / leg / shoulder ratios already match codex's kitten within ~3%, but its crown
  # stands ~0.28 of the body length above the back against our 0.18 - the head carried low and forward reads as an adult): the standing
@@ -3804,7 +3814,7 @@ for name,duration in clips:
   if o.data.shape_keys:o.data.shape_keys.animation_data_clear()
  # Every 2nd frame, Bezier between - except the gaits: there a planted paw is held by three joint angles
  # whose in-betweens do not hold it (round J: 3-4 mm wobble on the unkeyed frames of a planted run paw).
- for f in range(1,duration+1,1 if name in ('Walk','Run','Jump','Lick')+SIT_LIKE else 2):   # round ZS: + the sit family - standing back up, the tail swung through the floor between two keys (frame 820: -16 mm)
+ for f in range(1,duration+1,1 if name in ('Walk','Run','Jump','Lick','SideLie')+SIT_LIKE else 2):   # SideLie's floor-corrected wrapped tail must not swing through the floor between sparse keys (frame 264); round ZS: + the sit family
   pose(name,(f-1)/(duration-1))
   for p in rig.pose.bones:
    p.keyframe_insert('location',frame=f);p.keyframe_insert('rotation_euler',frame=f)
