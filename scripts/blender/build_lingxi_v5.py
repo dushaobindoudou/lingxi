@@ -3254,12 +3254,12 @@ BU={k:_v6('V6_BU_'+k.upper(),d) for k,d in dict(roll=2.20,turn=-1.3,twist=-.25,s
 LF={k:_v6('V6_LF_'+k.upper(),d) for k,d in dict(dx=-.015,dy=.03,z=.050,pa=-20,fpa=.35).items()}   # loaf: forepaws folded under the chest
 TURN=_v6('V6_TURN',math.pi/2);TURN_STEPS={'FL':(.08,.34),'HR':(.24,.50),'FR':(.42,.68),'HL':(.58,.84)}
 _LOAF=False
-def _rest_on_floor(pb,margin=.004):
+def _rest_on_floor(pb,margin=.004,k=1.0):
  """The trunk set down so its lowest skin is just `margin` off the floor - raised or LOWERED (a rolled-over body floats otherwise)."""
  co,W=_trunk_sample();rots={b.name:tuple(pb[b.name].rotation_euler) for b in ad.bones};f=_fk(rots,{'Root':tuple(pb['Root'].location)})
  z=np.zeros(len(co))
  for n,w in W.items():M=np.array(f(n)@ad.bones[n].matrix_local.inverted());z+=w*(co@M[2,:3]+M[2,3])
- pb['Root'].location.y+=margin-float(z.min())
+ pb['Root'].location.y+=(margin-float(z.min()))*k
 def _settle_on_floor(pb,margin=-.0005,k=1.0):
  """Round ZZM: the whole posed cat lowered (the root - the legs' solved turns ride along) until its lowest point - the paws' skin, the
   trunk, the tail - is `margin` off the floor. The sit family's paw targets only ever got LIFTED clear of the floor, never set down onto
@@ -3821,7 +3821,7 @@ def pose(name,u):
    pb['Tail1'].rotation_euler[0]=-.40;pb['Tail2'].rotation_euler[2]=.55*math.sin(phase*3)
  _back(pb,name);_spread(pb)
  if (name in ('LieDown','SideLie','Sleep') or (FACE_V1 and name in SIT_LIKE+('Lick',))) and _v6('V6_LIFT_OFF_FLOOR',1)>0:_lift_off_floor(pb)
- if name=='BellyUp':_rest_on_floor(pb)
+ if name=='BellyUp':_e=min(1,u/.10);_rest_on_floor(pb,k=_e*_e*(3-2*_e))   # round ZZZ3: in with the roll - at u=0 the cat still stands, and setting its trunk (20 mm higher underneath now, LEG_SHOW) down on the floor pushed the hind legs 8 mm under
  place_legs(name,u,pb,hold=(min(1,u/.25,(1-u)/.2)**2*(3-2*min(1,u/.25,(1-u)/.2))) if name=='Lick' else _ease(u) if name in SIT_LIKE else min(1,u/_v6('V6_BU_LEG_T',.15))**2*(3-2*min(1,u/_v6('V6_BU_LEG_T',.15))) if name=='BellyUp' else 0.0)
  if name=='BellyUp':_face_world(pb,0,BU['face_pitch'],BU['face_roll'],k=min(1,u/.35));_head_off_floor(pb)
  if name=='BellyUp' and _v6('V6_BU_WHISKER',1)>0:_whisker_off_floor(pb)
@@ -3898,7 +3898,7 @@ for name,duration in clips:
   if o.data.shape_keys:o.data.shape_keys.animation_data_clear()
  # Every 2nd frame, Bezier between - except the gaits: there a planted paw is held by three joint angles
  # whose in-betweens do not hold it (round J: 3-4 mm wobble on the unkeyed frames of a planted run paw).
- for f in range(1,duration+1,1 if name in ('Walk','Run','Jump','Lick','SideLie')+SIT_LIKE else 2):   # SideLie's floor-corrected wrapped tail must not swing through the floor between sparse keys (frame 264); round ZS: + the sit family
+ for f in range(1,duration+1,1 if name in ('Walk','Run','Jump','Lick','SideLie','BellyUp','LieDown','Loaf','PawPlay')+SIT_LIKE else 2):   # SideLie's floor-corrected wrapped tail must not swing through the floor between sparse keys (frame 264); round ZS: + the sit family
   pose(name,(f-1)/(duration-1))
   for p in rig.pose.bones:
    p.keyframe_insert('location',frame=f);p.keyframe_insert('rotation_euler',frame=f)
