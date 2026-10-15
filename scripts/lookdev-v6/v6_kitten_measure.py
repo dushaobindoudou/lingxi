@@ -7,7 +7,10 @@ import sys, numpy as np
 # mid-body column crosses a mask gap (the white belly) - prefer torso(), in units of the standing height, and check by eye.
 from PIL import Image, ImageFilter
 def mask(p, ours=True):
-    im=Image.open(p).convert('RGB').resize((420,420)); a=np.asarray(im).astype(float); H,W,_=a.shape
+    raw=Image.open(p).convert('RGBA').resize((420,420)); rgba=np.asarray(raw); a=rgba[:,:,:3].astype(float); H,W,_=a.shape
+    if ours and rgba[:,:,3].min()<255:
+        alpha=Image.fromarray(rgba[:,:,3]).filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5)).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
+        return np.asarray(alpha)>127   # an alpha render keeps the photographed floor and contact shadow out of the silhouette
     mx=a.max(2); mn=a.min(2); sat=(mx-mn)/np.maximum(mx,1); bri=a.mean(2)
     bg=np.median(np.concatenate([a[:H//10,:W//10].reshape(-1,3),a[:H//10,-W//10:].reshape(-1,3)]),0)
     m=(sat>.20)|(bri>bg.mean()+30)|(np.linalg.norm(a-bg,axis=2)>45)

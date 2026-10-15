@@ -8,6 +8,24 @@ sc = bpy.context.scene
 sc.frame_set(int(os.environ['FRAME']))
 R = int(os.environ.get('RES', 640)); sc.render.resolution_x = sc.render.resolution_y = R
 sc.render.engine = 'CYCLES'; sc.cycles.samples = int(os.environ.get('SAMPLES', 64)); sc.cycles.use_denoising = True
+# The old 200 m flattened sphere puts the side camera inside its dark rim, drawing a
+# thick black strip across the paws. A plane gives the toes a readable contact shadow.
+ground = bpy.data.objects.get('Studio ground')
+transparent = os.environ.get('V6_TRANSPARENT', '0') == '1'
+if transparent:
+    sc.render.film_transparent = True
+    sc.render.image_settings.color_mode = 'RGBA'
+    if ground:
+        ground.hide_render = True
+elif ground and ground.dimensions.z > .01:  # older builds used a flattened sphere
+    ground.hide_render = True
+    bpy.ops.mesh.primitive_plane_add(size=200, location=(0, 0, -.002))
+    plate = bpy.context.object
+    plate.name = 'Studio floor for review'
+    if ground.data.materials:
+        material = ground.data.materials[0].copy()
+        material.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (.43, .41, .40, 1)
+        plate.data.materials.append(material)
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
 pts = []
 for o in sc.objects:
@@ -18,7 +36,7 @@ hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)
 c = (lo + hi) / 2; span = hi - lo
 cam = sc.camera; cam.data.type = 'ORTHO'; cam.data.dof.use_dof = False
 view = os.environ.get('VIEW', 'app'); fill = float(os.environ.get('FILL', .78))
-d = {'side': Vector((1, 0, 0)), 'sidel': Vector((-1, 0, 0)), 'top': Vector((0, 0, 1)), 'front': Vector((0, -1, math.tan(math.radians(4)))).normalized(),
+d = {'side': Vector((1, 0, math.tan(math.radians(3)))).normalized(), 'sidel': Vector((-1, 0, math.tan(math.radians(3)))).normalized(), 'top': Vector((0, 0, 1)), 'front': Vector((0, -1, math.tan(math.radians(4)))).normalized(),
      'q34': Vector((.64, -.77, math.tan(math.radians(12)))).normalized(),
      'back': Vector((0, 1, math.tan(math.radians(8)))).normalized()}.get(view, Vector((0, -1, math.tan(math.radians(20)))).normalized())
 # frame on the cat's projected extent (8 bbox corners of every part, on the camera's right / up axes)

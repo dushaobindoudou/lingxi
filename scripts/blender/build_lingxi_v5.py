@@ -2063,7 +2063,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # instead of a clipped sphere - uniform length is what made it read as a ball.
   tq=root*np.array([41.,37.,43.]);tuft=.5+.5*np.sin(tq[:,0]+1.7*np.sin(tq[:,2]))*np.sin(tq[:,1]*1.3+tq[:,2]*.7)
   ln*=(.78+.44*tuft)[:,None,None]
-  ruff=1+_v6('V6_CHEEK_FLUFF',.30)*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # cheek fluff widens the lower face; round N (「脸是不是胖了」): .75 -> .30, the face 3-5% narrower below the eyes (face view rows at the eye / mouth / chin)
+  ruff=1+_v6('V6_CHEEK_FLUFF',.45)*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # fuller outer cheeks for the kitten target, while the eye and muzzle coat stay short
   bib=1+_v6('V6_HEAD_BIB',.20)*np.clip((.50-root[:,2])/.08,0,1)   # round Z (user: 「胸前的毛是不是太多了」): .5 -> .2 - the chin and throat's coat hung over the chest as a white apron
   # ...but not on the whisker pads (round G): the bib lengthened the upper-lip coat by ~1.3x and
   # that is what hung over the mouth. Below the lip the chin keeps its fluff.
@@ -2363,7 +2363,7 @@ for s in [-1,1]:
 # Round ZZS (codex lingxi-ref-kitten-*: this cat redrawn as a kitten on its own cameras): the skull .90 -> 1.06. Side-on, scaled to the
 # same standing height, the head (crown to chin) is .28 of it against the kitten's .38 (1.0: .32); front-on the kitten's head is wider
 # than its body. 1.15 once read too big - on the longer, deeper body of that time.
-HEAD_S=_v6('V6_HEAD_S',1.06);HEAD_SCALE=np.array([HEAD_S*_v6('V6_HEAD_SX',1.0),HEAD_S,HEAD_S*_v6('V6_HEAD_SZ',1.0)]);HEAD_PIVOT=np.array([0,-.16,.48])
+HEAD_S=_v6('V6_HEAD_S',1.10);HEAD_SCALE=np.array([HEAD_S*_v6('V6_HEAD_SX',1.0),HEAD_S,HEAD_S*_v6('V6_HEAD_SZ',1.0)]);HEAD_PIVOT=np.array([0,-.16,.48])   # sit-side crown above rump: ZZU .397, kitten target .414
 # Body length. Side-on the torso ran ~3.3 head-lengths where the turnaround's kitten is ~2.2 - a
 # dachshund under a kitten's head, and half of why the head "looked big" from the front. The body
 # (everything but the head) is compressed nose-to-tail about y=.06, and the head rides back with
@@ -3456,6 +3456,7 @@ def place_legs(name,u,pb,hold=0.0):
    # round X2: the foot lies flat on the floor (its rest angle) whatever the metatarsus does - blended in with the pose
    R_=LREST[k]['ang'];ft=FOOT_OF[k];rig_=pa+(R_[ft]-R_[LEGS[k][3]]);wf=_settle(u) if name=='LieDown' else hold
    fa=rig_+_wrap(R_[ft]-rig_)*wf
+   if k[0]=='H' and name in SIT_LIKE+('Lick',):fa-=_v6('V6_SIT_FOOT_TIP',.30)*hold   # pitch the toes toward the floor without lowering the hock or rump (round ZZV: the seated hind toes 8.1 -> 3.5 mm off the floor; .45 got them to .9 mm but put six sit-like frames at -2.7 mm, .35-.38 still ScratchEar 953)
   lr,_,_=leg_ik(rots,locs,k,tg,pa,abduct=_ab,foot_ang=fa,paw_dir=pdir)
   ko=0.0
   if RIG_X and k[0]=='H':
@@ -3846,7 +3847,8 @@ scene.frame_start=1;scene.frame_end=offset-1;scene.render.fps=24
 # shallow depth of field so the floor falls away and the kitten sits in its own soft pool
 # of light. An orthographic camera cannot do DOF, which is why this is a portrait lens.
 world=bpy.data.worlds.new('Warm studio');scene.world=world;world.use_nodes=True;world.node_tree.nodes['Background'].inputs[0].default_value=(.78,.70,.60,1);world.node_tree.nodes['Background'].inputs[1].default_value=.55
-floor=sphere('Studio ground',(0,0,-.045),(200,200,.04),mat('Ground',(.96,.87,.77),.95))
+bpy.ops.mesh.primitive_plane_add(size=200,location=(0,0,-.002))
+floor=bpy.context.object;floor.name='Studio ground';floor.data.materials.append(mat('Ground',(.43,.41,.40),.95))   # a true floor: the old flattened 200 m sphere made a black strip across the paws in side renders
 def aim(o,target):o.rotation_euler=(Vector(target)-o.location).to_track_quat('-Z','Y').to_euler()
 # Fill/Bounce were 40/22W: they lifted the dark tabby bands until the coat measured a
 # contrast of 56/255 against the reference turnaround's 74 - the pattern was there but
