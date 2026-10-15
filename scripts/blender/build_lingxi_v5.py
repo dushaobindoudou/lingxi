@@ -2979,9 +2979,12 @@ SL_MODE=int(_v6('V6_SL_MODE',2))
 # sidelie-ownbody-app: tail left, head right, belly and all four paws to the camera) - turned -1.10 with the left hip down it showed the camera
 # its back and ran into depth. Mirrored: yaw +1.35 (more side-on than 1.10, the body across the frame as in -app), hips rolled -1.5 (right
 # side down, K_LOW follows); the world-set face and tilt stay as they were (the -app head leans toward the body either way).
-SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=1.35,hip_roll=-1.5,chest_keep=.78,spine=.65,neck=-.80,head=-.12,head_tilt=.22,head_turn=0,
- tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=-.10,h_dz=0.0,h_pa=.3,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
- h_floor=.045,h_stack_dy=.07,h_stack_dz=0.0,f_floor=.080,bend=0.0,f_half=.025).items()}
+# Round ZZX (codex wave research #4, against codex lingxi-ref-ourcam-sidelie - the lounge redrawn on this camera, long and low): spine .65 -> .35
+# and chest_keep .78 -> .55 open the curl and lay the chest over; the hind feet back (h_dy -.10 -> .02, h_pa .3 -> .15, stack .07 -> .05);
+# forepaws f_floor .080 -> .065, f_half .025 -> .030. Clip worst -1.1 mm.
+SIDELOUNGE={k:_v6('V6_SG_'+k.upper(),d) for k,d in dict(drop=.10,yaw=1.35,hip_roll=-1.5,chest_keep=.55,spine=.35,neck=-.80,head=-.12,head_tilt=.22,head_turn=0,
+ tail=0,tail_side=0,f_dy=.15,f_z=.073,f_pa=-145,h_dy=.02,h_dz=0.0,h_pa=.15,add_HL=-.2,add_HR=.7,add_FL=0,add_FR=0,
+ h_floor=.045,h_stack_dy=.05,h_stack_dz=0.0,f_floor=.065,bend=0.0,f_half=.030).items()}
 if SLEEP['paws']>0:   # round ZZG: the forepaws are placed under the chin; the drape (add_FR .5) threw the upper one 300 mm up
  for _k in ('add_FL','add_FR'):SLEEP[_k]=_v6('V6_SP_'+_k.upper(),0.0)
 if PAW_META:   # round R: the spatial solve places the paws (h_floor / h_stack / f_floor, world); add_* would only throw them off again
