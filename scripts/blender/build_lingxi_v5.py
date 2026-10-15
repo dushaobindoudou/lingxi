@@ -330,8 +330,8 @@ def meta_leg(pre,s):
  if _cl>0:
   for i in range(3):
    (ax,ay),(bx,by)=mtoe_xy(pre,s,i),mtoe_xy(pre,s,i+1)
-   e=mb.elements.new(type='ELLIPSOID');e.co=((ax+bx)/2,(ay+by)/2-_v6('V6_CLEFT_DY',0.0),_v6('V6_CLEFT_Z',.006));e.radius=K;e.stiffness=_v6('V6_CLEFT_STIFF',4.0);e.use_negative=True
-   e.size_x,e.size_y,e.size_z=_v6('V6_CLEFT_RX',.006)*_cl,_v6('V6_CLEFT_RY',.030),_v6('V6_CLEFT_RZ',.014)*_cl
+   e=mb.elements.new(type='ELLIPSOID');e.co=((ax+bx)/2,(ay+by)/2-_v6('V6_CLEFT_DY',.003),_v6('V6_CLEFT_Z',.009));e.radius=K;e.stiffness=_v6('V6_CLEFT_STIFF',4.0);e.use_negative=True
+   e.size_x,e.size_y,e.size_z=_v6('V6_CLEFT_RX',.006)*_cl,_v6('V6_CLEFT_RY',.030),_v6('V6_CLEFT_RZ',.017)*_cl
  bpy.context.view_layer.update();me=bpy.data.meshes.new_from_object(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
  o=bpy.data.objects.new('MetaLeg',me);scene.collection.objects.link(o);bpy.data.objects.remove(ob);bpy.data.metaballs.remove(mb);return o
 if PAW_META:PAW={k:((m['x'],)+m['c'],m['r']) for k,m in MPAW.items()}
@@ -2063,8 +2063,8 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # instead of a clipped sphere - uniform length is what made it read as a ball.
   tq=root*np.array([41.,37.,43.]);tuft=.5+.5*np.sin(tq[:,0]+1.7*np.sin(tq[:,2]))*np.sin(tq[:,1]*1.3+tq[:,2]*.7)
   ln*=(.78+.44*tuft)[:,None,None]
-  ruff=1+_v6('V6_CHEEK_FLUFF',.45)*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # fuller outer cheeks for the kitten target, while the eye and muzzle coat stay short
-  bib=1+_v6('V6_HEAD_BIB',.20)*np.clip((.50-root[:,2])/.08,0,1)   # round Z (user: 「胸前的毛是不是太多了」): .5 -> .2 - the chin and throat's coat hung over the chest as a white apron
+  ruff=1+_v6('V6_CHEEK_FLUFF',.60)*np.clip((np.abs(root[:,0])-.080)/.060,0,1)*np.clip((.54-root[:,2])/.075,0,1)   # fuller outer cheeks for the kitten target, while the eye and muzzle coat stay short
+  bib=1+_v6('V6_HEAD_BIB',.24)*np.clip((.50-root[:,2])/.08,0,1)   # round Z (user: 「胸前的毛是不是太多了」): .5 -> .2 - the chin and throat's coat hung over the chest as a white apron
   # ...but not on the whisker pads (round G): the bib lengthened the upper-lip coat by ~1.3x and
   # that is what hung over the mouth. Below the lip the chin keeps its fluff.
   bib=np.where((root[:,1]<-.40)&(np.abs(root[:,0])<.050)&(root[:,2]>LIP0-.004),1,bib)
@@ -2074,10 +2074,10 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
    # the coat; front-facing roots only (the projection runs through the head)
    mf=mask_sample(MUZZLE_FUR,root,0,(-.21,.21),2,(.76,.34));ln*=(1-np.clip(-hn[:,1]*1.6,0,1)*(1-np.clip(mf,0,1)))[:,None,None]
  elif reg=='body':
-  bib=1+_v6('V6_BIB',0.0)*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)   # round Z: .45 -> 0
+  bib=1+_v6('V6_BIB',.10)*np.clip((-.10-root[:,1])/.14,0,1)*np.clip((.42-root[:,2])/.17,0,1)*np.clip((root[:,2]-.18)/.08,0,1)   # round Z: .45 -> 0
   # Round Z (user: 「胸前的毛是不是太多了」; codex stand-app / sit-front: a bib down the middle, the forelegs showing): the coat on the
   # front of the chest V6_CHEST_TRIM shorter - full length it stood out as a white apron as wide as the head over the forelegs
-  bib=bib*(1-_v6('V6_CHEST_TRIM',.50)*np.clip((-.08-root[:,1])/.08,0,1)*np.clip((.46-root[:,2])/.10,0,1)*np.clip((root[:,2]-.14)/.05,0,1)*np.clip(-normal[:,1]*1.4,0,1))
+  bib=bib*(1-_v6('V6_CHEST_TRIM',.38)*np.clip((-.08-root[:,1])/.08,0,1)*np.clip((.46-root[:,2])/.10,0,1)*np.clip((root[:,2]-.14)/.05,0,1)*np.clip(-normal[:,1]*1.4,0,1))
   # Short on the paws, full by mid-leg. At .30 the paw still wore 2.5cm of an 8.5cm coat and read
   # as a pom-pom with no toes (round C, 2026-09-30); ~1cm lets the foot and its toes show.
   # Round D: the pom-pom was the LEG coat hanging over the paw (8.5cm strands rooted at mid-leg),
@@ -2086,7 +2086,7 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   # measured (round h, front leg, median strand) paw 8.9 mm, leg 12.4 / 21.7 / 50.0 mm at z
   # .075-.14 / .14-.21 / .21-.28, torso 51: short for half the leg, then a jump. The paw keeps its
   # length; above it the coat grows smoothly from the wrist to the body's.
-  legs=np.interp(root[:,2],[.070,.100,.150,.220,.300],[_v6('V6_PAW_COAT',.12),.24,.48,.80,1.0])   # round P: .14 -> .12, sleek   # round L: .10 -> .14 at the paw - the reference's paws are fluffy; at .10 (4.4 mm median) the paw read as a smooth glove
+  legs=np.interp(root[:,2],[.070,.100,.150,.220,.300],[_v6('V6_PAW_COAT',.105),.24,.48,.80,1.0])   # round P: .14 -> .12, sleek   # round L: .10 -> .14 at the paw - the reference's paws are fluffy; at .10 (4.4 mm median) the paw read as a smooth glove
   ln*=(bib*legs)[:,None,None]
   # Round Q: the belly's underside coat hung 50+ mm straight down over the legs; a third shorter where the skin faces the floor
   _uz=np.clip(-normal[:,2],0,1)**2*np.clip((.27-root[:,2])/.08,0,1)*np.clip((root[:,2]-.09)/.03,0,1)
@@ -2183,7 +2183,7 @@ SCALE={'preview':.25,'standard':1.0,'hero':1.0}.get(QUALITY,1.0)
 # Lengths matched to the long-haired reference: the coat must VISIBLY cover the whole
 # body with a fluffy silhouette, not tint the skin. Face stays shorter so the features
 # survive; belly/tail carry the longest hair, like a real long-haired kitten.
-GUARD=[(body,int(80000*_v6('V6_N',1.0)),.085*_v6('V6_LEN_BODY',1.0),'body'),(head,int(90000*_v6('V6_N',1.0)),.064*_v6('V6_LEN_HEAD',1.0),'Head'),(tail,int(24000*_v6('V6_N',1.0)),.150*_v6('V6_LEN_TAIL',1.0),'tail')]
+GUARD=[(body,int(80000*_v6('V6_N',1.0)),.085*_v6('V6_LEN_BODY',1.0),'body'),(head,int(90000*_v6('V6_N',1.0)),.064*_v6('V6_LEN_HEAD',1.0),'Head'),(tail,int(24000*_v6('V6_N',1.0)),.150*_v6('V6_LEN_TAIL',1.10),'tail')]
 # Coat density x1.5 (the user accepted up to 2x cost for a softer, denser coat).
 DENSITY=1.5*_v6('V6_DENSITY',1.0)
 for o,n,l,r in GUARD:groom(o,max(1,int(n*SCALE*DENSITY)),l,r,'guard')
