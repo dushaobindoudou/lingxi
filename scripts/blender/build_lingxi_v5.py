@@ -2017,6 +2017,20 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
   root=root[keep];normal=normal[keep];n=len(root)
  if root_filter is not None:
   m=root_filter(root);root=root[m];normal=normal[m];n=len(root)
+ # Round ZZZ3 (codex STAGE-ZZQ-AUDIT #6: the furred toe clefts 2-4 mm deep against 6-8 - the coat filled them): no strands along each cleft,
+ # the line between two neighbouring toes' bones, within V6_CLEFT_FUR_W of it on the paw. (Cutting their length to 15% instead stalled
+ # the strand generation on 1 mm strands until the system killed Blender.)
+ if _v6('V6_CLEFT_FUR',0)>0 and n:   # off: the codex paw refs show soft, shallow clefts - ours already read deeper (3.7 / 2.3 / 3.4 mm); removing the cleft roots gave 3.5 / 2.0 / 4.0
+  _pi=np.where(root[:,2]<.065)[0]
+  if len(_pi):
+   _rp=root[_pi];_cut=np.zeros(len(_pi),dtype=bool)
+   for _pre in ('Front','Rear'):
+    for _sf in ('L','R'):
+     _tb=sorted((nm for nm in (f'{_pre}Toe{t}.{_sf}' for t in range(4)) if nm in ad.bones),key=lambda nm:ad.bones[nm].head_local.x)
+     for _a,_b in zip(_tb,_tb[1:]):
+      A=np.array(((ad.bones[_a].head_local+ad.bones[_b].head_local)/2)[:]);B=np.array(((ad.bones[_a].tail_local+ad.bones[_b].tail_local)/2)[:])
+      AB=B-A;t=np.clip(((_rp-A)@AB)/max(AB@AB,1e-9),-.2,1.3);_cut|=np.linalg.norm(_rp-(A+t[:,None]*AB),axis=1)<_v6('V6_CLEFT_FUR_W',.0035)
+   keep=np.ones(n,dtype=bool);keep[_pi[_cut]]=False;root=root[keep];normal=normal[keep];n=len(root)
  if reg.startswith('Ear'):normal*=np.where(normal[:,1]<0,-1,1)[:,None]
  if o.name.startswith('LX_Lid'):normal*=np.where(normal[:,1]>0,-1,1)[:,None]
  direction=fur_direction(root,reg)
