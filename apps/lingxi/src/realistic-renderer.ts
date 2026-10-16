@@ -17,6 +17,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
+import { comfortableWalkPace, locomotionClip, locomotionRate } from './realistic-motion.ts';
 
 export interface RealisticRendererOptions {
   /** URL of the exported GLB. */
@@ -39,12 +40,10 @@ const TARGET_HEIGHT = 1.0;
 const MIN_HIT_RADIUS_PX = 40;
 const MAX_FACING_YAW = Math.PI * 0.42;
 const VELOCITY_SMOOTHING_SECONDS = 0.22;
-const FACING_SPEED_THRESHOLD = 26;
 const TURN_RATE = 5.2;
 const SETTLE_DELAY_SECONDS = 0.5;
 const CAMERA_EASE_SECONDS = 0.55;
 const CAMERA_DISTANCE = 6;
-const RUN_SPEED_PX = 300;
 const CROSSFADE_SECONDS = 0.28;
 
 // Coat meshes that get shells: strand length (m, model space) and strand cells per metre.
@@ -241,6 +240,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const ownedMaterials: THREE.Material[] = [];
   let loaded = false;
   let debugInfo: unknown = null;
+  let textureAudit: { material: string; texture: string | null }[] = [];
+  let groundSpeed = 0;
   const autonomous = options.autonomous ?? true;
   // the face (realistic-face.ts): what is held, what shows, eased per control
   let faceRig: FaceRig | null = null;
@@ -317,7 +318,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // the roots (the coat's own occlusion) and lit through at the rim where the eye grazes the coat - the soft halo the
   // Cycles renders have.
   function shellMaterial(len: number, den: number, t: number) {
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, alphaToCoverage: true });
+    // Coverage must not overwrite an already opaque body pixel with fractional framebuffer alpha.
+    // Alpha hashing discards strand gaps, while every surviving sample stays opaque on the desktop.
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, alphaHash: true });
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uShell = { value: t };
       sh.uniforms.uLen = { value: len };
@@ -367,7 +370,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
             #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => 'realcat-fur-shell-v2';
+    m.customProgramCacheKey = () => 'realcat-fur-shell-opaque-v3';
     shellMaterials.push(m);
     return m;
   }
@@ -482,6 +485,19 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (disposed) return;
     const root = gltf.scene;
     root.updateMatrixWorld(true);
+    const required = /^(LX_IrisLayer\.[LR]|LX_Tex_Nose|LX_Tex_Ear)$/;
+    const seenMaterials = new Set<THREE.Material>();
+    root.traverse((o) => {
+      if (!(o as THREE.Mesh).isMesh) return;
+      for (const material of ([] as THREE.Material[]).concat((o as THREE.Mesh).material)) {
+        if (seenMaterials.has(material) || !required.test(material.name)) continue;
+        seenMaterials.add(material);
+        const map = (material as THREE.MeshStandardMaterial).map;
+        textureAudit.push({ material: material.name, texture: map?.name ?? null });
+      }
+    });
+    const missingTextures = textureAudit.filter((m) => m.texture == null);
+    if (missingTextures.length) throw new Error(`真实猫贴图加载失败：${missingTextures.map((m) => m.material).join('、')}`);
     if (lids) {
       const byName = new Map<string, THREE.Mesh>();
       root.traverse((o) => { if ((o as THREE.Mesh).isMesh) byName.set((o.userData.name as string | undefined) ?? o.name, o as THREE.Mesh); });
@@ -712,6 +728,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     ready,
     capabilities,
     mount(target: HTMLElement) {
+      renderer.domElement.dataset.renderStyle = 'realistic';
       target.appendChild(renderer.domElement);
       const st = renderer.domElement.style;
       st.position = 'absolute';
@@ -789,15 +806,30 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       };
     },
     describeCapabilities() {
+      const torso = model?.getObjectByName('Spine')?.getWorldPosition(new THREE.Vector3());
       return {
         style: 'realistic',
         debug: debugInfo,
+        textures: textureAudit,
+        torsoScreenPoint: torso ? worldToScreen(torso) : null,
+        // live gait numbers: the engine's ground speed against what the playing clip covers at natural speed
+        gait: {
+          clip: currentName, timeScale: current ? +current.timeScale.toFixed(2) : null,
+          speedPx: +Math.hypot(velocityX, velocityY).toFixed(1),
+          groundSpeed: +groundSpeed.toFixed(4),
+          animatedGroundSpeed: current && strides[currentName] ? +(strides[currentName] * effectiveScale() / current.getClip().duration * current.timeScale).toFixed(4) : 0,
+          worldPerPixel: [+worldPerPixelX.toFixed(5), +worldPerPixelZ.toFixed(5)], effectiveScale: +effectiveScale().toFixed(4),
+          strides: Object.fromEntries(Object.entries(strides).map(([k, v]) => [k, { metres: +v.toFixed(3), seconds: +(actions[k]?.getClip().duration ?? 0).toFixed(3) }])),
+        },
         clips: Object.keys(actions),
         actions: Object.keys(ACTION_CLIPS).filter((id) => actions[ACTION_CLIPS[id]]),
         expressions: faceRig && faceSpec ? Object.keys(faceSpec.expressions) : [],
         faceProblems,
         cameras: CAMERA_PRESETS.map((p) => ({ id: p.id, name: p.name })),
       };
+    },
+    locomotionPace() {
+      return comfortableWalkPace(strides.Walk ?? 0, actions.Walk?.getClip().duration ?? 0, effectiveScale(), worldPerPixelX, worldPerPixelZ, facingAngle);
     },
     render(state, deltaSeconds, cursor) {
       elapsed += deltaSeconds;
@@ -827,13 +859,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         velocityX += (dx / deltaSeconds - velocityX) * ease;
         velocityY += (dy / deltaSeconds - velocityY) * ease;
       }
-      const speed = Math.hypot(velocityX, velocityY);
+      const groundDistance = Math.hypot(dx * worldPerPixelX, dy * worldPerPixelZ);
+      groundSpeed = deltaSeconds > 0 ? groundDistance / deltaSeconds : 0;
+      const moving = (state.state === 'wander' || state.state === 'ai_directed' || state.state === 'play_toy' || state.state === 'follow_cursor')
+        && groundSpeed > 1e-4;
 
       // --- which clip ---
       if (loaded) {
         if (oneShot && elapsed >= oneShot.endsAt) oneShot = null;
-        const moving = (state.state === 'wander' || state.state === 'ai_directed' || state.state === 'play_toy' || state.state === 'follow_cursor')
-          && speed > FACING_SPEED_THRESHOLD * 0.35;
         if (moving) oneShot = null;
         // a settled cat picks something to do now and then (the voxel director's job on the other style)
         if (moving || state.state !== 'idle' || oneShot) idleSince = elapsed;
@@ -852,15 +885,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         let want = currentName;
         if (oneShot) want = oneShot.clip;
         else if (state.state === 'sleep') want = 'Sleep';
-        else if (moving) want = speed > RUN_SPEED_PX && actions.Run ? 'Run' : 'Walk';
+        else if (moving) {
+          const naturalWalk = (strides.Walk ?? 0) * effectiveScale() / (actions.Walk?.getClip().duration || 1);
+          want = locomotionClip(groundSpeed, naturalWalk, currentName === 'Run', Boolean(actions.Run));
+        }
         else want = 'Idle';
         if (want !== currentName && !(oneShot && want === oneShot.clip && currentName === want)) play(want, oneShot != null && !LOOPING.has(want));
         // stride-matched playback: one clip cycle per stride of ground actually covered
         if (current && (currentName === 'Walk' || currentName === 'Run') && strides[currentName] > 0) {
-          const groundSpeed = Math.hypot(velocityX * worldPerPixelX, velocityY * worldPerPixelZ); // world units / s
-          const cycle = strides[currentName] * effectiveScale(); // world units per cycle
-          const natural = cycle / current.getClip().duration;
-          current.timeScale = THREE.MathUtils.clamp(groundSpeed / Math.max(1e-6, natural), 0.35, 2.5);
+          current.timeScale = locomotionRate(groundDistance, deltaSeconds, strides[currentName], effectiveScale(), current.getClip().duration);
         } else if (current) current.timeScale = 1;
         faceRig?.beforeMixer();
         mixer!.update(deltaSeconds);
@@ -901,10 +934,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       shadowCatcher.scale.setScalar(reach * 2.5);
 
       const headingScreen = (state as { heading?: number }).heading;
-      if (headingScreen !== undefined && speed > FACING_SPEED_THRESHOLD) {
+      if (headingScreen !== undefined && moving) {
         facingAngle = Math.atan2(Math.cos(headingScreen) * worldPerPixelX, Math.sin(headingScreen) * worldPerPixelZ);
         settledSince = null;
-      } else if (headingScreen === undefined && speed > FACING_SPEED_THRESHOLD) {
+      } else if (headingScreen === undefined && moving) {
         facingAngle = Math.atan2(velocityX * worldPerPixelX, velocityY * worldPerPixelZ);
         settledSince = null;
       } else {

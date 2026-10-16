@@ -167,6 +167,23 @@ test('setAvoidRadius ignores non-positive/non-finite values instead of breaking 
   assert.equal(snap.state, 'wander');
 });
 
+test('setPace scales how far the cat wanders per second, and ignores nonsense', () => {
+  const walked = (pace) => {
+    const engine = createLifeEngine({ bounds: { width: 4000, height: 4000 }, position: { x: 2000, y: 2000 }, idleDurationMsRange: [50, 50], speed: 200, random: seeded(7) });
+    if (pace !== undefined) engine.setPace(pace);
+    engine.tick(0, null);
+    const from = engine.tick(1000, null).position;
+    let last = from;
+    for (let t = 1016; t <= 1500; t += 16) last = engine.tick(t, null).position;
+    return distance(from, last);
+  };
+  const full = walked();
+  assert.ok(full > 20, `sanity: the cat should have walked (${full.toFixed(1)}px)`);
+  const quarter = walked(0.25) / full;
+  assert.ok(Math.abs(quarter - 0.25) < 0.05, `a quarter pace should walk a quarter as far, walked ${quarter.toFixed(3)}x`);
+  for (const bad of [0, -1, NaN, Infinity]) assert.ok(Math.abs(walked(bad) - full) < 1e-6, `setPace(${bad}) should be ignored`);
+});
+
 test('"auto" mode: idle wandering targets a point ON a work-area edge, not a nearby hop', () => {
   const engine = createLifeEngine({
     bounds: { width: 3000, height: 2000 },

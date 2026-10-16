@@ -119,6 +119,8 @@ export interface LifeEngine {
   readonly position: Vec2;
   readonly mode: InteractionMode;
   setBounds(bounds: { width: number; height: number }): void;
+  /** Scale movement to the renderer's stride at the current size. */
+  setPace(multiplier: number): void;
   beginDrag(cursor: Vec2): void;
   updateDrag(cursor: Vec2): void;
   endDrag(now: number): void;
@@ -208,6 +210,7 @@ export interface LifeEngine {
   tick(now: number, cursor: Vec2 | null, pointerOnPet?: boolean): LifeEngineSnapshot;
 }
 export function createLifeEngine(config?: LifeEngineConfig): LifeEngine;
+export const DEFAULT_WANDER_SPEED: number;
 export const BEHAVIOR_STATES: readonly BehaviorState[];
 export const PERSONALITY_TRAITS: readonly PersonalityTrait[];
 export const INTERACTION_MODES: readonly InteractionMode[];

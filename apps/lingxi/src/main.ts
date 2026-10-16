@@ -15,7 +15,7 @@ import { createStageFx } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
-import { createLifeEngine, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
+import { createLifeEngine, DEFAULT_WANDER_SPEED, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
 import type { Personality } from '../../../packages/life-engine/src/index.d.mts';
 import { createActivityRecorder } from '../../../packages/perception/src/index.mjs';
 import type { WorkArea } from '../../../packages/desktop-host-contract/index.d.ts';
@@ -642,11 +642,13 @@ async function main() {
   let perceptionTimer: ReturnType<typeof setInterval> | null = null;
   function pushPerception() {
     const now = performance.now();
+    const renderState = renderer.describeCapabilities?.() as { style?: string; gait?: unknown; textures?: unknown } | undefined;
     const snapshot = {
       observedAt: Date.now(),
       cursor,
       petPosition: engine.position,
       petState: engine.state,
+      renderDiagnostics: renderState?.style === 'realistic' ? { gait: renderState.gait, textures: renderState.textures } : null,
       mode: engine.mode,
       // What the cat is doing right now, beyond where it is: which clip is playing and what it
       // is playing with. Both are things an agent (or the debug console, or a person watching
@@ -754,6 +756,9 @@ async function main() {
       // The engine's radial fallback is useful in headless tests, but the live cat has an
       // actual silhouette. Use that for touch so approaching from below cannot trigger early.
       const pointerOnPet = cursor ? renderer.hitTest(cursor, true) : false;
+      // the realistic cat's legs set its pace (a small one strolls, it does not skate); the voxel cat's legs follow any
+      const pace = renderer.locomotionPace?.();
+      engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
       const snapshot = engine.tick(now, cursor, pointerOnPet);
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the
