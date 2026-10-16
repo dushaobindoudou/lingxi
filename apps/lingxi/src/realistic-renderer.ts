@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { loadGroom, createGroom } from './realistic-groom.ts';
+import { loadGroom, createGroom, HAIR_KEY, HAIR_SPECULAR_GLSL } from './realistic-groom.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -57,9 +57,11 @@ const FUR: Record<string, { len: number; den: number }> = {
 };
 // the lids' short coat (see lidCoat)
 const LID_FUR = { len: 0.007, den: 650 };
-// With the original groom: solid shells out to this share of the coat's length.
+// With the original groom: solid shells out to this share of the coat's length, then stranded shells to its tip (the
+// solid coat alone read smooth, a plush toy, and the user still saw too little fur).
 const UNDERCOAT_LAYERS = 8;
 const UNDERCOAT_REACH = 0.62;
+const OUTER_LAYERS = 12;
 
 // The host's action ids (data/actions.json, main.ts) -> the GLB's clips. Approximate where the look-dev cat has no
 // exact clip; everything not listed is reported unsupported (false), never silently "played".
@@ -343,7 +345,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       sh.uniforms.uLen = { value: len };
       sh.uniforms.uDen = { value: den };
       sh.uniforms.uRim = { value: new THREE.Color(0xffd9b8) };
-      sh.vertexShader = 'uniform float uShell; uniform float uLen; attribute float furScale; varying vec3 vRest; varying float vScale;\n'
+      sh.uniforms.uHairKey = { value: HAIR_KEY };
+      sh.vertexShader = 'uniform float uShell; uniform float uLen; attribute float furScale; varying vec3 vRest; varying float vScale; varying vec3 vHairT;\n'
         + sh.vertexShader
           .replace('#include <begin_vertex>', '#include <begin_vertex>\n vScale = furScale;')
           // strands sit on the surface as its shape keys move it (a closing lid's coat would otherwise smear)
@@ -359,8 +362,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
               comb = (skinMatrix * vec4(comb, 0.0)).xyz;
             #endif
             vec3 dir = normalize(nrm + normalize(comb) * 0.55 * uShell);
-            transformed += dir * h;`);
-      sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; varying vec3 vRest; varying float vScale;\n'
+            transformed += dir * h;
+            // the strands' direction for the hair highlight: out and combed back
+            vHairT = normalize(mat3(modelViewMatrix) * normalize(nrm * 0.35 + normalize(comb)));`);
+      sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; varying vec3 vRest; varying float vScale; varying vec3 vHairT;\n' + HAIR_SPECULAR_GLSL + '\n'
         + 'vec3 furHash3(vec3 p){ p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }\n'
         + sh.fragmentShader
           .replace('#include <color_fragment>', `#include <color_fragment>
@@ -387,9 +392,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             // light through the coat's edge where the view grazes it
             float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
             outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
+            outgoingLight += hairSpecular(normalize(vHairT), normalize(normal), normalize(vViewPosition), diffuseColor.rgb) * uShell;
             #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v1' : 'realcat-fur-shell-opaque-v3');
+    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v2' : 'realcat-fur-shell-opaque-v4');
     shellMaterials.push(m);
     return m;
   }
@@ -613,8 +619,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     for (const base of coat) {
       const f = FUR[base.name.split('.')[0].replace(/_\d+$/, '')];
       furScaleAttribute(base, bonePos);
-      for (let i = 1; i <= layers; i++) {
-        const s = new THREE.SkinnedMesh(base.geometry, groom ? shellMaterial(f.len, f.den, UNDERCOAT_REACH * i / layers, true) : shellMaterial(f.len, f.den, i / shellCount));
+      const total = groom ? layers + OUTER_LAYERS : layers;
+      for (let i = 1; i <= total; i++) {
+        const outer = groom && i > layers;
+        const t = !groom ? i / shellCount : outer ? UNDERCOAT_REACH + (1 - UNDERCOAT_REACH) * (i - layers) / OUTER_LAYERS : UNDERCOAT_REACH * i / layers;
+        const s = new THREE.SkinnedMesh(base.geometry, shellMaterial(f.len, f.den, t, groom != null && !outer));
         s.bind(base.skeleton, base.bindMatrix);
         s.morphTargetInfluences = base.morphTargetInfluences;
         s.morphTargetDictionary = base.morphTargetDictionary;

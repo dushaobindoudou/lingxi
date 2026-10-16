@@ -12,6 +12,27 @@ export interface GroomSpec {
 }
 export interface GroomAsset { spec: GroomSpec; bytes: ArrayBuffer }
 
+/**
+ * Hair highlights (Kajiya-Kay, two lobes) - what made the review render's coat read as hair rather than felt: Cycles'
+ * Principled Hair puts a thin bright line ACROSS each strand, along its direction, and a second, coat-coloured one
+ * shifted toward the tip. A plain surface material (roughness .86) had neither. `T` view-space strand direction,
+ * `N` view-space normal, `V` toward the eye; the key light's direction (world) comes in as uHairKey.
+ */
+export const HAIR_SPECULAR_GLSL = `
+  uniform vec3 uHairKey;
+  vec3 hairSpecular(vec3 T, vec3 N, vec3 V, vec3 base) {
+    vec3 L = normalize((viewMatrix * vec4(uHairKey, 0.0)).xyz);
+    vec3 H = normalize(L + V);
+    float lit = clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0);
+    vec3 T1 = normalize(T + N * 0.08);
+    vec3 T2 = normalize(T - N * 0.22);
+    float d1 = dot(T1, H), d2 = dot(T2, H);
+    float s1 = pow(sqrt(max(0.0, 1.0 - d1 * d1)), 90.0);
+    float s2 = pow(sqrt(max(0.0, 1.0 - d2 * d2)), 22.0);
+    return (vec3(1.0, 0.97, 0.92) * s1 * 0.22 + base * s2 * 0.32) * lit;
+  }`;
+export const HAIR_KEY = new THREE.Vector3(-1.3, 2.4, 2.2).normalize();
+
 export async function loadGroom(directory: string): Promise<GroomAsset | null> {
   const response = await fetch(`${directory}groom.json`);
   if (response.status === 404) return null;
@@ -27,7 +48,7 @@ export async function loadGroom(directory: string): Promise<GroomAsset | null> {
 
 /** Original curved strands, camera-facing only across their width. No procedural re-grooming. */
 export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: THREE.Object3D = base.parent!) {
-  const uniforms = { uGroomTime: { value: 0 }, uGroomMotion: { value: 0 }, uGroomHeight: { value: 1 } };
+  const uniforms = { uGroomTime: { value: 0 }, uGroomMotion: { value: 0 }, uGroomHeight: { value: 1 }, uHairKey: { value: HAIR_KEY } };
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: .86, metalness: 0, side: THREE.DoubleSide,
     alphaToCoverage: true, transparent: false, depthWrite: true,
@@ -43,7 +64,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     shader.vertexShader = `attribute vec3 groomTangent;
 attribute vec4 groomData;
 uniform float uGroomTime, uGroomMotion, uGroomHeight;
-varying float vGroomEdge, vGroomCoverage;\n` + shader.vertexShader;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong;
+varying vec3 vHairT;\n` + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
       // Roots stay fixed. Slow breathing and movement bend only the outer part of each strand.
       float phase = groomData.w;
@@ -57,6 +79,8 @@ varying float vGroomEdge, vGroomCoverage;\n` + shader.vertexShader;
         hairTangent = (skinMatrix * vec4(hairTangent, 0.0)).xyz;
       #endif
       vec3 tangentView = normalize(mat3(modelViewMatrix) * hairTangent);
+      vHairT = tangentView;
+      vGroomAlong = groomData.z;
       vec2 across = vec2(-tangentView.y, tangentView.x);
       across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
       float radiusView = groomData.y * length(modelViewMatrix[0].xyz);
@@ -69,9 +93,11 @@ varying float vGroomEdge, vGroomCoverage;\n` + shader.vertexShader;
       mvPosition.xy += across * groomData.x * drawnRadius;
       gl_Position = projectionMatrix * mvPosition;
     `);
-    shader.fragmentShader = 'varying float vGroomEdge, vGroomCoverage;\n' + shader.fragmentShader;
+    shader.fragmentShader = 'varying float vGroomEdge, vGroomCoverage, vGroomAlong;\nvarying vec3 vHairT;\n' + HAIR_SPECULAR_GLSL + '\n' + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       diffuseColor.a *= vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
+      // roots in the coat's own shade, tips in the light (groomData.z runs root 0 -> tip 1, squared)
+      diffuseColor.rgb *= mix(0.62, 1.05, sqrt(vGroomAlong));
     `);
     // Use the groom's outward surface normal on both sides of the thin ribbon.
     shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
@@ -81,10 +107,11 @@ varying float vGroomEdge, vGroomCoverage;\n` + shader.vertexShader;
     `);
     shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
       outgoingLight += diffuseColor.rgb * 0.055 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);
+      outgoingLight += hairSpecular(normalize(vHairT), normal, normalize(vViewPosition), diffuseColor.rgb) * sqrt(vGroomAlong);
       #include <opaque_fragment>
     `);
   };
-  material.customProgramCacheKey = () => 'original-groom-v1';
+  material.customProgramCacheKey = () => 'original-groom-v2-hairspec';
   const boneIndex = new Map(base.skeleton.bones.map((b, i) => [(b.userData.name as string | undefined) ?? b.name, i]));
   const jointMap = asset.spec.jointNames.map((name) => {
     const index = boneIndex.get(name);

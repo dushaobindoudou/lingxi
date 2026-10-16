@@ -109,6 +109,10 @@ agent_id() {
   if [ "${CLAUDECODE:-}" = 1 ]; then printf 'claude'; return; fi
   # Codex marks the shells it runs the same way, with the thread they belong to.
   if [ -n "${CODEX_THREAD_ID:-}" ]; then printf 'codex'; return; fi
+  # And Cursor sets CURSOR_AGENT=1 in the shells its agent runs commands in. Without it a Cursor
+  # session's `lingxi say` fell through to the machine file - WorkBuddy's, the last host installed -
+  # and the bubble showed the penguin instead of Cursor's mark.
+  if [ "${CURSOR_AGENT:-}" = 1 ]; then printf 'cursor'; return; fi
   [ -r "$AGENT_FILE" ] || return 0
   # jq first, but NOT only jq: it is not preinstalled on macOS, and silently reporting no
   # identity on a machine without it is how the file and the tool disagree. python3 is
