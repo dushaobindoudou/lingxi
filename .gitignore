@@ -28,6 +28,10 @@ assets/characters/**/v5/
 assets/characters/**/v5-texdev/
 assets/characters/**/v6/
 assets/characters/**/model-evaluation/
+# Downloaded third-party humanoids and derived Blender/GLB previews are local working assets.
+assets/characters/human/downloads/
+assets/characters/human/work/
+assets/characters/human/preview/
 assets/characters/**/materials/
 assets/characters/**/reference/daily-life/
 assets/characters/**/reference/short-fur/

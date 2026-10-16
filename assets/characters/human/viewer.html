@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>人形骨架 · 本机资源预览</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;background:#e9ecef;color:#26313b;font:14px system-ui,sans-serif}
+  main{display:grid;grid-template-columns:300px 1fr;height:100vh}aside{padding:28px 22px;background:#fafbfc;border-right:1px solid #d0d6dc;overflow:auto}
+  h1{font-size:22px;font-weight:650;margin:0 0 10px}p{line-height:1.6;color:#596875}label{display:block;margin:22px 0 8px;font-weight:600}
+  select,button{font:inherit;border:1px solid #cbd3db;border-radius:5px;background:white;padding:9px;width:100%;color:inherit}
+  button{cursor:pointer;margin-top:9px}button:hover{background:#eef3f7}input[type=range]{width:100%;accent-color:#40738c}input[type=checkbox]{accent-color:#40738c}
+  .toggle{display:flex;gap:8px;align-items:center;font-weight:400}.axis{display:flex;justify-content:space-between;margin-top:12px;font-size:12px;font-weight:500}
+  #status{font-size:12px;line-height:1.6;padding:12px 0;color:#51636f}#stage{position:relative;min-width:0}canvas{display:block;width:100%;height:100%}
+  footer{position:absolute;bottom:18px;left:22px;color:#506472;font-size:12px;pointer-events:none}.source{font-size:12px;margin-top:24px}.source a{color:#315f76}
+  @media(max-width:650px){main{grid-template-columns:220px 1fr}aside{padding:20px 14px}h1{font-size:18px}}
+</style>
+<script type="importmap">{"imports":{"three":"../../../apps/lingxi/node_modules/three/build/three.module.js","three/addons/":"../../../apps/lingxi/node_modules/three/examples/jsm/"}}</script>
+<main><aside>
+  <h1>人形骨架</h1>
+  <p id="intro">复用现成人物、蒙皮和动作。可以播放动画，也可以暂停后转动关节，观察父子骨骼的联动。</p>
+  <p id="render-links" hidden><a href="./preview/yinyue-three-quarter.png" target="_blank">查看模型实渲图</a> · <a href="./preview/yinyue-portrait.png" target="_blank">脸部近照</a></p>
+  <label for="model">角色</label><select id="model"><option value="male">男性基础模型</option><option value="female">女性基础模型</option><option value="yinyue">银月 · 女性模型换装测试</option></select>
+  <label for="animation">动作</label><select id="animation" disabled></select>
+  <button id="play" disabled>暂停动画</button>
+  <label class="toggle"><input id="skeleton" type="checkbox" checked>显示骨架</label>
+  <label for="bone">关节 · 局部旋转</label><select id="bone" disabled></select>
+  <div id="axes"></div><button id="reset" disabled>还原当前动作</button>
+  <div id="status" role="status">正在读取本机模型…</div>
+  <p class="source">角色：<a href="https://quaternius.itch.io/universal-base-characters" target="_blank" rel="noreferrer">Quaternius</a><br>动作：<a href="https://quaternius.itch.io/universal-animation-library" target="_blank" rel="noreferrer">Universal Animation Library</a><br>本页是独立资产预览，旋转滑块用于观察 FK，尚未接入桌宠的双足运动与锁脚系统。</p>
+</aside><section id="stage"><footer>拖动旋转视角 · 滚轮缩放 · 右键平移</footer></section></main>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const stage=document.querySelector('#stage'),status=document.querySelector('#status');
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor(0xe9ecef);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.1;stage.append(renderer.domElement);
+const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(35,1,.01,100);camera.position.set(2.4,1.8,3.4);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,.9,0);controls.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xffffff,0x5a6670,2.2));
+for(const [position,power] of [[[3,5,4],3],[[-3,3,1],1.5],[[0,4,-3],2]]){const light=new THREE.DirectionalLight(0xffffff,power);light.position.set(...position);scene.add(light)}
+const grid=new THREE.GridHelper(6,30,0x8b9aa4,0xc6ced4);scene.add(grid);
+let asset,mixer,helper,action,clips=[],bones=[],playing=true,selected,referenceRotation,requestId=0;
+const nodes={model:document.querySelector('#model'),animation:document.querySelector('#animation'),bone:document.querySelector('#bone'),play:document.querySelector('#play'),reset:document.querySelector('#reset'),skeleton:document.querySelector('#skeleton')};
+const initialModel=new URLSearchParams(location.search).get('model');if(['male','female','yinyue'].includes(initialModel))nodes.model.value=initialModel;if(initialModel==='yinyue')nodes.skeleton.checked=false;
+const modelPaths={male:'./work/human-male.glb',female:'./work/human-female.glb',yinyue:'./work/yinyue/yinyue-study.glb'};
+function describeModel(){const isYinyue=nodes.model.value==='yinyue';document.querySelector('h1').textContent=isYinyue?'银月 · 造型测试':'人形骨架';document.title=isYinyue?'银月 · 3D 模型预览':'人形骨架 · 本机资源预览';document.querySelector('#intro').textContent=isYinyue?'参照动画版的银发、兽耳银环、毛领和红腰封，在女性基础模型上换装。可转动视角、播放动作；脸型仍带有基础模型特征，长发和衣服暂用骨骼变形。':'复用现成人物、蒙皮和动作。可以播放动画，也可以暂停后转动关节，观察父子骨骼的联动。';document.querySelector('#render-links').hidden=!isYinyue;renderer.setClearColor(isYinyue?0x0d1721:0xe9ecef);}
+const ranges=['X','Y','Z'].map(axis=>{const box=document.createElement('div');box.innerHTML=`<div class="axis"><span>${axis} 偏转</span><output>0°</output></div><input aria-label="${axis} 关节偏转" type="range" min="-90" max="90" step="1" value="0" disabled>`;document.querySelector('#axes').append(box);return {input:box.querySelector('input'),output:box.querySelector('output')};});
+function resize(){renderer.setSize(stage.clientWidth,stage.clientHeight,false);camera.aspect=stage.clientWidth/stage.clientHeight;camera.updateProjectionMatrix()}new ResizeObserver(resize).observe(stage);resize();
+function setPlaying(value){playing=value;nodes.play.textContent=playing?'暂停动画':'播放动画'}
+function selectBone(){selected=bones.find(b=>b.name===nodes.bone.value);referenceRotation=selected?.rotation.clone();for(const range of ranges){range.input.value=0;range.output.value='0°';range.input.disabled=!selected}}
+function playClip(){if(!mixer)return;mixer.stopAllAction();const clip=clips.find(c=>c.name===nodes.animation.value)||clips[0];action=mixer.clipAction(clip);action.reset().play();mixer.update(0);setPlaying(true);selectBone();status.textContent=`65 个骨骼节点 · ${clips.length} 段动画 · ${clip.name} (${clip.duration.toFixed(2)} 秒)`}
+async function load(){const id=++requestId;describeModel();for(const control of [nodes.animation,nodes.bone,nodes.play,nodes.reset])control.disabled=true;status.textContent='正在读取模型与内嵌贴图…';try{const gltf=await new GLTFLoader().loadAsync(modelPaths[nodes.model.value]);if(id!==requestId){gltf.scene.traverse(o=>{o.geometry?.dispose();for(const m of [].concat(o.material||[]))m.dispose()});return}if(asset){mixer.stopAllAction();mixer.uncacheRoot(asset);scene.remove(asset);asset.traverse(o=>{o.geometry?.dispose();for(const m of [].concat(o.material||[])){for(const value of Object.values(m))if(value?.isTexture)value.dispose();m.dispose()}});helper.geometry.dispose();helper.material.dispose();scene.remove(helper)}asset=gltf.scene;scene.add(asset);clips=gltf.animations;mixer=new THREE.AnimationMixer(asset);bones=[];asset.traverse(o=>{if(o.isBone)bones.push(o)});helper=new THREE.SkeletonHelper(asset);helper.material.depthTest=false;helper.renderOrder=100;helper.visible=nodes.skeleton.checked;scene.add(helper);nodes.animation.replaceChildren(...clips.map(c=>new Option(c.name,c.name)));nodes.animation.value='Idle_Loop';nodes.bone.replaceChildren(...bones.filter(b=>!b.name.includes('leaf')).map(b=>new Option(b.name,b.name)));nodes.bone.value='lowerarm_l';for(const control of [nodes.animation,nodes.bone,nodes.play,nodes.reset])control.disabled=false;playClip();document.body.dataset.loaded='true';document.body.dataset.boneCount=String(bones.length);document.body.dataset.animationCount=String(clips.length)}catch(error){status.textContent=`模型读取失败：${error.message}。请通过本机 HTTP 服务打开本页。`;document.body.dataset.error=error.message}}
+nodes.model.addEventListener('change',load);nodes.animation.addEventListener('change',playClip);nodes.bone.addEventListener('change',()=>{setPlaying(false);selectBone()});nodes.play.addEventListener('click',()=>{if(!playing)playClip();else setPlaying(false)});nodes.reset.addEventListener('click',playClip);nodes.skeleton.addEventListener('change',()=>{if(helper)helper.visible=nodes.skeleton.checked});
+for(const range of ranges)range.input.addEventListener('input',()=>{if(!selected)return;if(playing){setPlaying(false);referenceRotation=selected.rotation.clone()}for(let i=0;i<3;i++){const axis=['x','y','z'][i];selected.rotation[axis]=referenceRotation[axis]+THREE.MathUtils.degToRad(Number(ranges[i].input.value));ranges[i].output.value=`${ranges[i].input.value}°`}asset.updateMatrixWorld(true)});
+const clock=new THREE.Clock();renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),.05);if(playing)mixer?.update(dt);controls.update();renderer.render(scene,camera)});load();
+</script>
+</html>
