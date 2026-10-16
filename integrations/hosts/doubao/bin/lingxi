@@ -24,10 +24,11 @@ CLI="${PLUGIN_DIR}/scripts/lingxi-cli"
 # ~/.local/bin is on EVERY shell's PATH, not only Doubao's: Claude Code and Codex run this wrapper
 # too when they call `lingxi`. So it claims Doubao's identity only when nothing else has - an
 # explicit LINGXI_AGENT (a host layer tells its model to set one), or a host that marks its own
-# shells (CLAUDECODE=1, CODEX_THREAD_ID), passes straight through to the plain client, which knows
-# those marks. Before this, `LINGXI_AGENT=codex lingxi task ...` came out as 豆包.
+# shells (CLAUDECODE=1, CODEX_THREAD_ID, Cursor's CURSOR_AGENT=1), passes straight through to the plain
+# client, which knows those marks. Before this, `LINGXI_AGENT=codex lingxi task ...` came out as 豆包 - and
+# until 2026-10-16 so did every `lingxi` a Cursor agent ran: its bubbles wore no Cursor mark.
 if [ -z "${LINGXI_DOUBAO_AGENT:-}" ] \
-   && { [ -n "${LINGXI_AGENT:-}" ] || [ "${CLAUDECODE:-}" = 1 ] || [ -n "${CODEX_THREAD_ID:-}" ]; }; then
+   && { [ -n "${LINGXI_AGENT:-}" ] || [ "${CLAUDECODE:-}" = 1 ] || [ -n "${CODEX_THREAD_ID:-}" ] || [ "${CURSOR_AGENT:-}" = 1 ]; }; then
   exec "${CLI}" "$@"
 fi
 
