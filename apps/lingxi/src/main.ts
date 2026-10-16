@@ -68,19 +68,24 @@ async function main() {
   // 风格: one facade for the life of the window; the voxel or the realistic cat behind it (renderer-switcher.ts).
   const renderer = createRendererSwitcher({
     voxel: () => createThreeRenderer({ fitCanvasToCat: true }),
-    realistic: () => createRealisticRenderer({
-      assetUrl: `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`,
-      fitCanvasToCat: true,
-      shells: 10,
-    }),
+    realistic: () => {
+      const trace = (message: string) => void invoke('debug_log', { message: `[realcat] ${message}` }).catch(() => {});
+      const url = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
+      trace(`creating, asset ${url}`);
+      const next = createRealisticRenderer({ assetUrl: url, fitCanvasToCat: true, shells: 32 });
+      next.ready.then(() => trace('model ready'), (error) => trace(`model failed: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`));
+      return next;
+    },
   });
   function applyRenderStyle(style: string | undefined): void {
     const wanted: RenderStyle = style === 'realistic' ? 'realistic' : 'voxel';
+    void invoke('debug_log', { message: `[realcat] style requested ${style} -> ${wanted}, active ${renderer.activeStyle}` }).catch(() => {});
     if (wanted === renderer.activeStyle) return;
     void renderer.switchStyle(wanted).then((result) => {
-      dlog(`render style ${wanted}: ${JSON.stringify(result)}`);
+      // Not dlog (dev only): a style that fails to load in the shipped app must leave a trace.
+      void invoke('debug_log', { message: `render style ${wanted}: ${JSON.stringify(result)}` }).catch(() => {});
       // the two cats draw different heights, and the margins follow what is drawn
-      if (result.applied) syncMargins();
+      if (result.applied) { syncMargins(); publishCapabilities(); }
     });
   }
   const engineRecorder = createActivityRecorder();

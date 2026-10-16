@@ -45,10 +45,9 @@ const CROSSFADE_SECONDS = 0.28;
 // Coat meshes that get shells: strand length (m, model space) and strand cells per metre.
 // Longer on the head than the old v5 demo (.022): the look-dev kitten's round head is mostly cheek and crown fluff.
 const FUR: Record<string, { len: number; den: number }> = {
-  LX_Head: { len: 0.035, den: 520 },
-  LX_Body: { len: 0.050, den: 380 },
-  LX_Legs: { len: 0.030, den: 420 },
-  LX_Tail: { len: 0.058, den: 360 },
+  LX_Head: { len: 0.045, den: 500 },
+  LX_Body: { len: 0.050, den: 420 },
+  LX_Tail: { len: 0.060, den: 380 },
 };
 
 // The host's action ids (data/actions.json, main.ts) -> the GLB's clips. Approximate where the look-dev cat has no
@@ -72,9 +71,14 @@ const IDLE_PICKS: [string, number][] = [
 const LOOPING = new Set(['Idle', 'Walk', 'Run', 'Sleep', 'SideLie', 'Loaf', 'Sit', 'LieDown']);
 // Clips that carry the body across the floor; the engine owns position, so their horizontal travel is removed.
 const TRAVELLING = ['Walk', 'Run', 'Jump'];
+// The coat's color attribute is the SKIN under the Cycles hair, darker and duller than the golden caramel the hair
+// shader makes of it: richer and a touch warmer here, on the shells and the bare skin alike.
+const COAT_GRADE = `
+  { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+    diffuseColor.rgb = max(mix(vec3(lumC), diffuseColor.rgb, 1.25) * vec3(1.06, 1.0, 0.90), 0.0); }`;
 
 export function createRealisticRenderer(options: RealisticRendererOptions): ReadyRenderer {
-  const shellCount = Math.max(0, Math.min(32, options.shells ?? 10));
+  const shellCount = Math.max(0, Math.min(64, options.shells ?? 32));
   const fitCanvas = options.fitCanvasToCat === true;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true });
@@ -82,7 +86,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // Gentle, film-like roll-off: the white chest and paws keep their texture instead of clipping.
   renderer.toneMapping = THREE.AgXToneMapping;
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1.3;
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -92,13 +96,30 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
 
   // Soft, warm studio light - the "治愈" look: a broad warm key from the front-left, a creamy sky / ground fill so no
   // side goes cold or dark, and a warm rim from behind that lights the coat's edge into a soft halo.
-  const key = new THREE.DirectionalLight(0xfff0e0, 2.1);
-  key.position.set(-1.3, 2.4, 2.2);
-  scene.add(key);
-  const rim = new THREE.DirectionalLight(0xffe0c4, 1.5);
+  // Soft shadows, from the key only: the cat grounded on the floor and shaded under its own chin and between its legs.
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const KEY_OFFSET = new THREE.Vector3(-1.3, 2.4, 2.2);
+  const key = new THREE.DirectionalLight(0xffe9d2, 2.4);
+  key.position.copy(KEY_OFFSET);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.radius = 6;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.02;
+  scene.add(key, key.target);
+  const rim = new THREE.DirectionalLight(0xffe0c4, 1.6);
   rim.position.set(0.6, 1.6, -2.0);
   scene.add(rim);
-  scene.add(new THREE.HemisphereLight(0xfff7ee, 0xe9d8c6, 1.15));
+  // a soft fill from the viewer's side lifts the face, the way the review renders' front fill does
+  const fill = new THREE.DirectionalLight(0xfff8f0, 0.55);
+  fill.position.set(0.2, 0.9, 3.0);
+  scene.add(fill);
+  scene.add(new THREE.HemisphereLight(0xfff7ee, 0xe9d8c6, 1.1));
+  const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.22 }));
+  shadowCatcher.rotation.x = -Math.PI / 2;
+  shadowCatcher.receiveShadow = true;
+  scene.add(shadowCatcher);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 200);
   const camForward = new THREE.Vector3();
@@ -207,7 +228,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
 
   // The Cycles iris draws its pupil procedurally (face-controls 'mat' PupilW/H), which glTF cannot carry: drawn here on
   // the iris map's UV disc - a big, soft kitten pupil and a dark limbal ring.
-  const PUPIL = 0.33;
+  const PUPIL = 0.38;
   function irisMaterial(src: THREE.MeshStandardMaterial) {
     const m = new THREE.MeshStandardMaterial({ map: src.map ?? null, roughness: 0.35, color: src.map ? 0xffffff : src.color });
     m.onBeforeCompile = (sh) => {
@@ -218,6 +239,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           float irisD = distance(vMapUv, vec2(0.5));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.085, 0.04), smoothstep(0.46, 0.50, irisD));
           diffuseColor.rgb = mix(vec3(0.004), diffuseColor.rgb, smoothstep(uPupil - 0.012, uPupil + 0.010, irisD));
+          // catchlights: a big soft one up-left, a small one down-right - most of a kitten's 'wet', alive look
+          float catchL = smoothstep(0.085, 0.050, distance(vMapUv, vec2(0.37, 0.36))) + 0.7 * smoothstep(0.035, 0.018, distance(vMapUv, vec2(0.63, 0.64)));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), clamp(catchL, 0.0, 1.0) * 0.92);
         #endif`);
     };
     m.customProgramCacheKey = () => 'realcat-iris';
@@ -239,35 +263,60 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     c.needsUpdate = true;
     converted.add(c);
   }
+  // Shell fur, tuned for looks first (performance comes later): fine jittered strands that taper and end at their own
+  // length, combed back and down along the body (the comb turns with the bones), anti-aliased in screen space, dark at
+  // the roots (the coat's own occlusion) and lit through at the rim where the eye grazes the coat - the soft halo the
+  // Cycles renders have.
   function shellMaterial(len: number, den: number, t: number) {
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, alphaToCoverage: true });
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, alphaToCoverage: true });
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uShell = { value: t };
       sh.uniforms.uLen = { value: len };
       sh.uniforms.uDen = { value: den };
+      sh.uniforms.uRim = { value: new THREE.Color(0xffd9b8) };
       sh.vertexShader = 'uniform float uShell; uniform float uLen; attribute float furScale; varying vec3 vRest; varying float vScale;\n'
         + sh.vertexShader
           .replace('#include <begin_vertex>', '#include <begin_vertex>\n vRest = position; vScale = furScale;')
           .replace('#include <skinning_vertex>', `#include <skinning_vertex>
             float h = uShell * uLen * furScale;
-            transformed += normalize(objectNormal) * h;
-            transformed.y -= 0.3 * h * uShell;`);
-      sh.fragmentShader = 'uniform float uShell; uniform float uDen; varying vec3 vRest; varying float vScale;\n'
-        + 'float furHash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }\n'
-        + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+            vec3 nrm = normalize(objectNormal);
+            // combed toward the tail (-z in the model) and down, more at the tip; turned with the bones
+            vec3 comb = vec3(0.0, -0.55, -1.0);
+            #ifdef USE_SKINNING
+              comb = (skinMatrix * vec4(comb, 0.0)).xyz;
+            #endif
+            vec3 dir = normalize(nrm + normalize(comb) * 0.55 * uShell);
+            transformed += dir * h;`);
+      sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; varying vec3 vRest; varying float vScale;\n'
+        + 'vec3 furHash3(vec3 p){ p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }\n'
+        + sh.fragmentShader
+          .replace('#include <color_fragment>', `#include <color_fragment>
             vec3 q = vRest * uDen;
-            float strand = furHash(floor(q));
-            float r = length(fract(q) - 0.5);
-            // A strand's cross-section fades out over its edge instead of being cut (alpha to coverage on the MSAA
-            // buffer): hard discards made the outline a grain of single pixels.
-            float edge = 0.62 * (1.0 - uShell) + 0.06;
-            float a = smoothstep(edge + 0.08, edge - 0.04, r) * step(uShell * 0.85, strand) * step(0.02, vScale);
-            if (a < 0.02) discard;
+            vec3 cell = floor(q);
+            vec3 rnd = furHash3(cell);
+            // the strand's own length: most reach 60-100% of the coat, a few stop short
+            float strandLen = 0.55 + 0.45 * rnd.x;
+            vec3 centre = 0.5 + (rnd - 0.5) * 0.55;
+            float d = length(fract(q) - centre);
+            float radius = mix(0.46, 0.10, clamp(uShell / strandLen, 0.0, 1.0));
+            float fw = max(fwidth(d), 1e-4);
+            // an opaque undercoat through the inner half (at desktop size single strands are sub-pixel: thinning every
+            // shell turned the whole coat to fog), strands only toward the outside, where they make the soft outline
+            float strand = (1.0 - smoothstep(radius - fw, radius + fw, d)) * step(uShell, strandLen);
+            float undercoat = 1.0 - smoothstep(0.40, 0.70, uShell);
+            float a = max(undercoat, strand) * step(0.02, vScale);
+            if (a < 0.03) discard;
             diffuseColor.a = a;
-            // roots a little deeper, tips catching the light: soft, not spiky
-            diffuseColor.rgb *= mix(0.70, 1.10, uShell);`);
+            // the coat's occlusion: roots deep, tips light
+            diffuseColor.rgb *= mix(0.60, 1.08, smoothstep(0.0, 0.85, uShell));
+            ${COAT_GRADE}`)
+          .replace('#include <opaque_fragment>', `
+            // light through the coat's edge where the view grazes it
+            float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
+            outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
+            #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => 'realcat-fur-shell';
+    m.customProgramCacheKey = () => 'realcat-fur-shell-v2';
     shellMaterials.push(m);
     return m;
   }
@@ -280,9 +329,20 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const local = (p?: THREE.Vector3) => (p ? p.clone().applyMatrix4(inv) : null);
       const eyes = [local(bonePos.EyeL), local(bonePos.EyeR)].filter(Boolean) as THREE.Vector3[];
       const nose = local(bonePos.Nose);
+      const nrm = mesh.geometry.getAttribute('normal');
+      const nv = new THREE.Vector3();
+      const toWorldDir = new THREE.Matrix3().setFromMatrix4(mesh.matrixWorld);
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
         let s = 1;
+        // the front of the face keeps a short coat (the review renders' features are crisp); cheeks and crown stay full
+        if (nrm) {
+          nv.fromBufferAttribute(nrm, i).applyMatrix3(toWorldDir).normalize();
+          s = Math.min(s, THREE.MathUtils.lerp(1, 0.3, THREE.MathUtils.smoothstep(nv.z, 0.35, 0.8)));
+          // the cheeks: the sides of the lower head carry the long fluff that makes the kitten's head round
+          const side = THREE.MathUtils.smoothstep(Math.abs(nv.x), 0.45, 0.85) * THREE.MathUtils.smoothstep(-nv.y, -0.2, 0.3);
+          s *= 1 + 0.4 * side;
+        }
         for (const e of eyes) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(e) - 0.036) / 0.03, 0, 1));
         if (nose) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(nose) - 0.012) / 0.05, 0.25, 1));
         out[i] = s;
@@ -338,6 +398,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
       m.frustumCulled = false;
+      m.castShadow = !/Whisker|Cornea/.test(m.name);
+      m.receiveShadow = true;
       const mat = m.material as THREE.MeshStandardMaterial;
       const name = mat?.name ?? '';
       if (/Iris/i.test(name)) m.material = irisMaterial(mat);
@@ -354,6 +416,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         const s = new THREE.MeshStandardMaterial({
           vertexColors: true, roughness: /Lid/i.test(name) ? 0.85 : 0.9, map: mat?.map ?? null, side: THREE.DoubleSide,
         });
+        s.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>${COAT_GRADE}`); };
+        s.customProgramCacheKey = () => 'realcat-skin';
         ownedMaterials.push(s);
         m.material = s;
       } else if (mat?.isMaterial) {
@@ -374,6 +438,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         s.quaternion.copy(base.quaternion);
         s.scale.copy(base.scale);
         s.frustumCulled = false;
+        s.receiveShadow = true;
         base.parent!.add(s);
       }
     }
@@ -501,7 +566,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     resize(w: number, h: number) {
       width = Math.max(1, w);
       height = Math.max(1, h);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       if (fitCanvas) canvasRect.width = canvasRect.height = 0;
       else renderer.setSize(width, height, true);
       unitsPerPixel = 2.6 / Math.max(width, height);
@@ -648,6 +713,16 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       shadow.position.copy(screenToWorld(state.position.x, state.position.y, 0.004));
       const spread = TARGET_HEIGHT * (performanceScale ?? modelScale) * 0.95;
       shadow.scale.set(spread, spread * 0.62, 1);
+      // the key light and its shadow frustum ride with the cat, sized to it
+      const reach = TARGET_HEIGHT * (performanceScale ?? modelScale) * 1.4;
+      key.target.position.set(stand.x, 0, stand.z);
+      key.position.set(stand.x, 0, stand.z).addScaledVector(KEY_OFFSET, reach);
+      const sc = key.shadow.camera;
+      sc.left = -reach; sc.right = reach; sc.top = reach; sc.bottom = -reach;
+      sc.near = 0.01; sc.far = reach * 6;
+      sc.updateProjectionMatrix();
+      shadowCatcher.position.set(stand.x, 0.002, stand.z);
+      shadowCatcher.scale.setScalar(reach * 2.5);
 
       const headingScreen = (state as { heading?: number }).heading;
       if (headingScreen !== undefined && speed > FACING_SPEED_THRESHOLD) {
@@ -724,6 +799,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       });
       for (const m of [...shellMaterials, ...ownedMaterials]) m.dispose();
       shadow.geometry.dispose();
+      shadowCatcher.geometry.dispose();
+      (shadowCatcher.material as THREE.Material).dispose();
       (shadow.material as THREE.Material).dispose();
       shadowTexture.dispose();
       envTarget.dispose();

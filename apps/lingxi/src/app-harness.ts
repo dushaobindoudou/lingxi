@@ -29,7 +29,7 @@ if (params.has('nolog')) log.style.display = 'none';
 const REALISTIC_URL = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
 const renderer = createRendererSwitcher({
   voxel: () => createThreeRenderer(),
-  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 10) }),
+  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32) }),
 });
 if (params.get('style') === 'realistic') {
   void renderer.switchStyle('realistic').then((r) => { say(`style realistic: ${JSON.stringify(r)}`); const d = (renderer.describeCapabilities?.() as { debug?: { restHeight: number; box: number[][]; tallest: [string, number][] } }).debug; if (d) { say(`rest ${d.restHeight} box ${JSON.stringify(d.box)}`); for (const t of d.tallest) say(`  ${t[0]} ${t[1]}`); } });
