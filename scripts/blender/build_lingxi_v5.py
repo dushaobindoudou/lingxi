@@ -2471,7 +2471,7 @@ if _v6('V6_ROUND_S_LOOK',1)>0:
     co=co[:,:1,:]+(co-co[:,:1,:])*(1-k_*w[:,None,None]);data.foreach_set('co',co.astype('f').ravel())
    ob.data.update()
 # Named actions with synchronized shape key actions. One timeline demonstrates all clips.
-clips=[('Idle',72),('Walk',48),('Run',32),('Jump',48),('LieDown',48),('SideLie',48),('Sleep',72),('Curious',48),('Happy',48),('Yawn',60),('Lick',48),('Bite',48),('Knead',48),('Stretch',60),('PawPlay',48)]
+clips=[('Idle',72),('Walk',int(_v6('V6_WALK_FRAMES',48))),('Run',32),('Jump',48),('LieDown',48),('SideLie',48),('Sleep',72),('Curious',48),('Happy',48),('Yawn',60),('Lick',48),('Bite',48),('Knead',48),('Stretch',60),('PawPlay',48)]
 if FACE_V1:clips+=[('Sit',48),('Loaf',60),('BellyUp',60),('ScratchEar',60),('WashFace',60),('GroomSide',60),('Turn',48)]   # rig v1: the block cat's sit / loaf / belly-up / scratch-ear / wash-face / groom-side / turn
 eyelids=[o for o in eyelids if o.data.shape_keys];eye_shapes=[o for o in eye_shapes if o.data.shape_keys];claws=[o for o in claws if o.data.shape_keys];breathers=[o for o in breathers if o.data.shape_keys]
 tongues=[tongue];shapeobs=eyelids+eye_shapes+claws+breathers+tongues;offset=1;manifest=[]
@@ -2877,7 +2877,9 @@ else:
 # stride and the root moves forward stride/duty per cycle (ROOT_TRAVEL), so a planted paw stays put
 # on the ground. Run: a trot (diagonal pairs) at duty .55 - each pair lands before the other lifts, so
 # no frame has all four paws up (it had 9, and the forepaws never reached the floor).
-WALK=dict(duty=.76,stride=.12,lift=.035,off={'FL':0,'HR':.75,'FR':.5,'HL':.25},bob=.008,dip=.30,nod=.045)   # dips just after each hind paw lands (u .25 / .75)
+# Round ZZZ4 (user: 「走路速度和步态不匹配，姿势太差了」): .12 m a stance at duty .76 over 48 frames is .08 m/s - a quarter body length a
+# step, a shuffle; V6_WALK_* lengthen and quicken it (a cat's stroll: about a body length a stride, duty ~.6)
+WALK=dict(duty=_v6('V6_WALK_DUTY',.76),stride=_v6('V6_WALK_STRIDE',.12),lift=_v6('V6_WALK_LIFT',.035),off={'FL':0,'HR':.75,'FR':.5,'HL':.25},bob=.008,dip=.30,nod=.045)   # dips just after each hind paw lands (u .25 / .75)
 RUN=dict(duty=.55,stride=.19,lift=.055,off={'FL':0,'HR':0,'FR':.5,'HL':.5},bob=.012,dip=.275,nod=.07)     # dips mid-stance of each diagonal pair
 # Round X (user: 「跑 跳 走…联动关系」; codex guide 8): the run was a trot - diagonal pairs, the back a rigid plank, the walk sped up. A
 # running cat gallops: a rotary gallop, left lead - left hind, right hind, flight, right fore, left fore, flight (UMN vet. anatomy, gaits)

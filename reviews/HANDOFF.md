@@ -1405,3 +1405,11 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - 工具：`scripts/install-realcat-asset.mjs <round>`（cat.glb + lids.glb + face.json = face-controls + rig.json 的静止头尾）；`scripts/realcat-face-sheet.mjs <out>`（DevTools 协议，一次加载截 30 张，约 1 分钟）；harness `expr` / `clip` / `noblink`，still 模式不自主挑动作。
 - 验证：tsc 干净，npm test 251/251，check-project OK；30 张对照 Round ZZY 表情图（审计页 v31）；打包 App 装到 /Applications，`lingxi_express 开心` → 感知接口 `开心 / held true`。屏幕当时休眠（power stalled、screencapture 失败），真机画面待用户看。
 - 下一步：眼睑边缘比 Cycles 硬；张嘴口腔比 Blender 亮；耳朵姿态未在特写里核对（裁切太近）；性能（P3）。
+
+## Round ZZZ4：走路加大步幅（Claude 主会话，2026-10-16 下午）
+
+- 用户实测：「走路速度和步态不匹配，姿势太差了」。App 侧的滑步与步速匹配已由另一会话完成（lingxi-realcat 81b7e44 / 29dfd78，见其 docs/evidence/realcat-*-2026-10-16.md）；剩下的是片段本身是碎步：着地扫动 .12 m、着地占比 .76、48 帧 → 每周期 .158 m、.08 m/s，约四分之一身长一步。
+- `build_lingxi_v5.py`：`V6_WALK_STRIDE / V6_WALK_DUTY / V6_WALK_LIFT / V6_WALK_FRAMES`（默认不变）。`round-zzz4/run.sh` = zzz3 + `.17 / .62 / .045 / 36`。
+- 构建 196 s、长毛 167 s、gait 审计：每周期前进 157.9 → **274.2 mm**（.18 m/s）；着地爪最大滑移 1.05 → 1.42 mm；脚掌 4.09 → 4.92 mm；四爪同时离地 0 帧；最低 −1.23 mm；同侧前后爪同时离地 左 3 / 右 4 帧（对侧两爪支撑）。
+- 侧面四相位对照 codex 侧面站姿目标（reviews/compare/B1-gait-walk.png 左）：`round-zzz4/walk/walk-cmp.jpg`。腿前后分开、能看到抬爪迈步；躯干仍僵直（无起伏 / 扭转）。
+- 未做：zzz4 的 GLB 整体导出约 28 分钟，超过前台 10 分钟上限；App 正由另一会话改动，接入前需协调。可选办法：导出脚本加「只导 Walk 片段」的补丁导出，App 载入后替换 Walk。
