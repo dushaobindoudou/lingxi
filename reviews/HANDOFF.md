@@ -1394,3 +1394,14 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - **打包后的 App 实测**：`[realcat] model ready` → `render style realistic: {"applied":true}`；主进程 CPU 0.3%，WebContent 422 MB。已替换 /Applications/灵犀.app（用户同意；0.4.0 备份在 `/Users/liepin/workspace/lingxi-realcat-build/灵犀-0.4.0-备份.app`），设置已切到真实猫。
 - 截图管线：无头 Google Chrome `--use-angle=metal --enable-gpu --force-device-scale-factor=2`（SwiftShader 没有真 MSAA，不代表真机）；模型加载慢时会截到方块猫，加长 `--virtual-time-budget`。
 - 下一步：按用户在桌面上的反馈继续调；表情移植（P2）；胸口 / 脸颊厚绒感还不如 Cycles。
+
+## App 集成 P2：真实猫的 30 个表情（Claude 主会话，2026-10-16 中午）
+
+- **lingxi-realcat 43d75bd**：`apps/lingxi/src/realistic-face.ts` 逐条照搬 `v6_face_apply.py`（key / loc / loc_local / rot / rotarm / ear / mat / catch / sparkx）。Blender 骨架空间 (x,y,z) = glTF (x,z,-y)，LX_Rig 导出为单位变换（Head (0,-.259,.48) ↔ (0,.48,.259) 已核对）；`loc` 偏移换到父骨骼的静止空间，`rotarm`/耳朵旋转在动画姿态前左乘。表情名与方块猫一致，`playExpression` 默认保持 4 s；片段隐含表情（Sleep→闭眼休息、Happy→开心、Curious→好奇、Bite→生气、Lick/WashFace→满足、Knead→陶醉…）。
+- **眼睑丢形变键**：主 GLB 的 4 片眼睑带 Solidify，导出器对有修改器的网格走 `to_mesh()`，形变键全丢（10 个）。**d61c587**：`export_lingxi_v5_glb.py` 对带形变键的网格关掉非骨架修改器；`LINGXI_GLB_ONLY` / `LINGXI_GLB_ANIM=0` 做补丁导出——`round-zzz3/export-lids/lids.glb`（4 s，0.2 MB，关节顺序与主 GLB 相同）。App 加载时换入几何 + `morphTargetDictionary`（`updateMorphTargets()` 只给序号名）。
+- **片段自带的眨眼**：眼球 / 角膜的 Blink、Squint 与基础形状相同（只为让片段按名字驱动），所以 GLB 里它们的权重 = 片段要给眼睑的开合（Idle 眨眼到 .97、Sleep/Happy 全程 1、Knead 眯眼）→ 每帧转给眼睑；笑眼 / 闭眼 / 单眼眨的表情接管时不叠加。
+- **眼睑的毛**：Cycles 里眼睑有自己的毛；App：每片眼睑取眼上方 2.5–4.5 cm 圆环的平均毛色 ×1.4（逐点取色会把额头竖纹或下方白口鼻画成竖条 / 白块），7 mm 短壳毛，眼线（亮度 < .012）不长毛；头部毛只剃眼球本身 `(d-.042)/.014`（原 `(d-.036)/.03` 露出一圈棕色秃皮）。壳毛网格单元改在形变之后取位置（闭眼不再拉成竖条）。
+- 口腔 / 舌头压暗、不接收阴影贴图（实时没有口腔遮蔽，张嘴亮成粉白；舌头上有阴影贴图噪点）。
+- 工具：`scripts/install-realcat-asset.mjs <round>`（cat.glb + lids.glb + face.json = face-controls + rig.json 的静止头尾）；`scripts/realcat-face-sheet.mjs <out>`（DevTools 协议，一次加载截 30 张，约 1 分钟）；harness `expr` / `clip` / `noblink`，still 模式不自主挑动作。
+- 验证：tsc 干净，npm test 251/251，check-project OK；30 张对照 Round ZZY 表情图（审计页 v31）；打包 App 装到 /Applications，`lingxi_express 开心` → 感知接口 `开心 / held true`。屏幕当时休眠（power stalled、screencapture 失败），真机画面待用户看。
+- 下一步：眼睑边缘比 Cycles 硬；张嘴口腔比 Blender 亮；耳朵姿态未在特写里核对（裁切太近）；性能（P3）。
