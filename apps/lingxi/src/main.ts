@@ -10,6 +10,7 @@ import './styles.css';
 import { createTauriDesktopHost } from './desktop-host.ts';
 import { createThreeRenderer } from './renderer.ts';
 import { createRealisticRenderer } from './realistic-renderer.ts';
+import { frameDelta } from './animation-clock.ts';
 import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
@@ -748,7 +749,7 @@ async function main() {
 
   function step(now: number) {
     try {
-      const deltaSeconds = lastFrameAt == null ? 0 : Math.min(0.1, (now - lastFrameAt) / 1000);
+      const deltaSeconds = frameDelta(lastFrameAt, now, renderer.activeStyle);
       lastFrameAt = now;
 
       // Drag position updates now come from the native mousemove listener above (faster,

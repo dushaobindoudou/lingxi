@@ -12,7 +12,8 @@
 //   face-controls.json          the face: controls, layers and the 30 expressions (build_lingxi_v5.py)
 // Writes current/cat.glb, current/lids.glb and current/face.json (face-controls + the rest heads / tails, Blender
 // armature space, that the ear turns are taken about).
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,6 +30,17 @@ if (missing.length) {
   console.error(`missing in ${src}: ${missing.join(', ')}`);
   process.exit(1);
 }
+// Export original Blender strands into <round>/export-groom first. Verify the pairing
+// before touching the installed asset; never leave a previous round's groom on a new cat.
+const groomDir = process.argv[3] ? resolve(process.argv[3]) : join(src, 'export-groom');
+const hasGroom = existsSync(join(groomDir, 'groom.json'));
+if (hasGroom) {
+  const groom = JSON.parse(readFileSync(join(groomDir, 'groom.json'), 'utf8'));
+  const hash = createHash('sha256').update(readFileSync(join(src, need[0]))).digest('hex');
+  if (groom.modelSha256 !== hash || readFileSync(join(groomDir, 'groom.bin')).byteLength !== groom.bytes) {
+    throw new Error('Groom does not match this model, or groom.bin is incomplete');
+  }
+}
 mkdirSync(out, { recursive: true });
 copyFileSync(join(src, 'export/lingxi-realcat.glb'), join(out, 'cat.glb'));
 copyFileSync(join(src, 'export-lids/lids.glb'), join(out, 'lids.glb'));
@@ -36,4 +48,9 @@ const face = JSON.parse(readFileSync(join(src, 'face-controls.json'), 'utf8'));
 const rig = JSON.parse(readFileSync(join(src, 'export-lids/rig.json'), 'utf8'));
 face.rest = Object.fromEntries(rig.bones.map((b) => [b.name, { head: b.head, tail: b.tail }]));
 writeFileSync(join(out, 'face.json'), JSON.stringify(face));
-console.log(`installed ${src} -> ${out}: cat.glb, lids.glb, face.json (${Object.keys(face.expressions).length} expressions)`);
+for (const file of ['groom.json', 'groom.bin']) {
+  if (hasGroom) {
+    if (resolve(groomDir, file) !== resolve(out, file)) copyFileSync(join(groomDir, file), join(out, file));
+  } else rmSync(join(out, file), { force: true });
+}
+console.log(`installed ${src} -> ${out}: cat.glb, lids.glb, face.json (${Object.keys(face.expressions).length} expressions), ${hasGroom ? 'original groom' : 'legacy shell fallback (no export-groom)'}`);

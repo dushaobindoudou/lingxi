@@ -6,6 +6,7 @@
 // Dev-only entry: not in vite.config.ts's build inputs.
 import { createThreeRenderer } from './renderer.ts';
 import { createRealisticRenderer } from './realistic-renderer.ts';
+import { frameDelta } from './animation-clock.ts';
 import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx } from './fx/stage-fx.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
@@ -34,7 +35,7 @@ if (params.get('bg')) document.documentElement.style.background = document.body.
 const REALISTIC_URL = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
 const renderer = createRendererSwitcher({
   voxel: () => createThreeRenderer(),
-  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32), autonomous: !params.has('still'), clipBlinks: !params.has('noblink') }),
+  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32), originalGroom: params.get('fur') !== 'shells', autonomous: !params.has('still'), clipBlinks: !params.has('noblink') }),
 });
 if (params.get('style') === 'realistic') {
   void renderer.switchStyle('realistic').then((r) => { say(`style realistic: ${JSON.stringify(r)}`);
@@ -75,7 +76,7 @@ let first = true;
 let errors = 0;
 function frame(now: number) {
   try {
-    const dt = lastFrameAt == null ? 0 : Math.min(0.1, (now - lastFrameAt) / 1000);
+    const dt = frameDelta(lastFrameAt, now, renderer.activeStyle);
     lastFrameAt = now;
     const pace = renderer.locomotionPace?.();
     engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
@@ -94,7 +95,7 @@ function frame(now: number) {
     renderer.render(snapshot, dt, cursor);
     if (params.has('audit') && readyAt != null && now >= nextAuditAt) {
       nextAuditAt = now + 2000;
-      const d = renderer.describeCapabilities?.() as { textures?: unknown; torsoScreenPoint?: { x: number; y: number }; gait?: unknown };
+      const d = renderer.describeCapabilities?.() as { textures?: unknown; torsoScreenPoint?: { x: number; y: number }; gait?: unknown; fur?: unknown; animation?: unknown };
       const canvas = stage.querySelector<HTMLCanvasElement>('canvas[data-render-style="realistic"]');
       let alpha: number | null = null;
       if (canvas && d.torsoScreenPoint) {
@@ -103,7 +104,7 @@ function frame(now: number) {
         g.drawImage(canvas, d.torsoScreenPoint.x * canvas.width / width, d.torsoScreenPoint.y * canvas.height / height, 1, 1, 0, 0, 1, 1);
         alpha = g.getImageData(0, 0, 1, 1).data[3];
       }
-      say(`runtime ${JSON.stringify({ torsoAlpha: alpha, textures: d.textures, gait: d.gait })}`);
+      say(`runtime ${JSON.stringify({ torsoAlpha: alpha, textures: d.textures, gait: d.gait, fur: d.fur, animation: d.animation })}`);
     }
     fx.anchorEffects(snapshot.position.x, snapshot.position.y);
     if (fx.speaking) {

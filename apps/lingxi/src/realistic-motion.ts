@@ -13,5 +13,7 @@ export function locomotionClip(groundSpeed: number, walkSpeed: number, running: 
 export function comfortableWalkPace(stride: number, duration: number, scale: number, pixelX: number, pixelZ: number, yaw: number): number | null {
   if (stride <= 0 || duration <= 0 || scale <= 0) return null;
   const pixelsPerMetre = Math.hypot(Math.sin(yaw) / Math.abs(pixelX), Math.cos(yaw) / Math.abs(pixelZ));
-  return stride * scale / duration * pixelsPerMetre * 1.3;
+  // The life engine applies gentleness and arrival/turn easing afterwards. 1.3 produced
+  // ~0.8x playback for the default personality: a small kitten crept at 3 px/s.
+  return stride * scale / duration * pixelsPerMetre * 2.1;
 }

@@ -8,12 +8,12 @@
 // the host measures (where the cat stands, how big it draws, where its head is) therefore lands in the same place
 // in either style, and a switch does not move the cat.
 //
-// The coat: the Cycles render uses ~500k curve hairs, which a desktop pet cannot draw; here every coat mesh is drawn
-// a few more times pushed out along its skinned normal (shell fur), with a cell noise cutting strands out of each
-// shell. Soft, warm light and a contact shadow - no shadow map - keep it cheap and gentle.
+// The coat: groom.json/bin preserve sampled original Blender curves as skinned ribbons.
+// Shells remain the compatibility fallback and the morph-aware eyelids' short undercoat.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { loadGroom, createGroom } from './realistic-groom.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -30,6 +30,8 @@ export interface RealisticRendererOptions {
   autonomous?: boolean;
   /** Keep the clips' own blinks (false: face sheets show the expression alone, as Blender's mute the clips). Default true. */
   clipBlinks?: boolean;
+  /** Look-dev comparison only: draw the legacy shell approximation. */
+  originalGroom?: boolean;
 }
 
 export type ReadyRenderer = Renderer & { readonly ready: Promise<void> };
@@ -98,6 +100,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const fitCanvas = options.fitCanvasToCat === true;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true });
+  renderer.debug.onShaderError = (gl, program, vertex, fragment) => {
+    throw new Error(`真实猫着色器编译失败: ${gl.getProgramInfoLog(program)} ${gl.getShaderInfoLog(vertex)} ${gl.getShaderInfoLog(fragment)}`);
+  };
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // Gentle, film-like roll-off: the white chest and paws keep their texture instead of clipping.
@@ -132,7 +137,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   fill.position.set(0.2, 0.9, 3.0);
   scene.add(fill);
   scene.add(new THREE.HemisphereLight(0xfff7ee, 0xe9d8c6, 1.1));
-  const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.22 }));
+  const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.055 }));
   shadowCatcher.rotation.x = -Math.PI / 2;
   shadowCatcher.receiveShadow = true;
   scene.add(shadowCatcher);
@@ -239,7 +244,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const shellMaterials: THREE.Material[] = [];
   const ownedMaterials: THREE.Material[] = [];
   let loaded = false;
+  let frameSeconds = 1 / 60;
   let debugInfo: unknown = null;
+  let groom: ReturnType<typeof createGroom> | null = null;
   let textureAudit: { material: string; texture: string | null }[] = [];
   let groundSpeed = 0;
   const autonomous = options.autonomous ?? true;
@@ -481,7 +488,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     fetch(`${assetDir}face.json`)
       .then((r) => (r.ok ? (r.json() as Promise<FaceSpec>) : Promise.reject(new Error(`HTTP ${r.status}`))))
       .catch((e: unknown) => { faceProblems.push(`face.json: ${String(e)}`); return null; }),
-  ]).then(([gltf, lids, spec]) => {
+    options.originalGroom === false ? Promise.resolve(null) : loadGroom(assetDir),
+  ]).then(([gltf, lids, spec, groomAsset]) => {
     if (disposed) return;
     const root = gltf.scene;
     root.updateMatrixWorld(true);
@@ -577,7 +585,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const base = m.name.split('.')[0].replace(/_\d+$/, '');
       if ((m as THREE.SkinnedMesh).isSkinnedMesh && FUR[base]) coat.push(m as THREE.SkinnedMesh);
     });
-    for (const base of coat) {
+    if (groomAsset) {
+      if (!coat.length) throw new Error('Groom needs a skinned coat mesh');
+      groom = createGroom(groomAsset, coat[0], root);
+      ownedMaterials.push(groom.material);
+      for (const mesh of groom.meshes) coat[0].parent!.add(mesh);
+    }
+    for (const base of groom ? [] : coat) {
       const f = FUR[base.name.split('.')[0].replace(/_\d+$/, '')];
       furScaleAttribute(base, bonePos);
       for (let i = 1; i <= shellCount; i++) {
@@ -593,7 +607,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         base.parent!.add(s);
       }
     }
-    for (const lid of lidFur) {
+    for (const lid of groom ? [] : lidFur) {
       for (let i = 1; i <= Math.ceil(shellCount / 2); i++) {
         const s = new THREE.SkinnedMesh(lid.geometry, shellMaterial(LID_FUR.len, LID_FUR.den, i / Math.ceil(shellCount / 2)));
         s.bind(lid.skeleton, lid.bindMatrix);
@@ -811,6 +825,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         style: 'realistic',
         debug: debugInfo,
         textures: textureAudit,
+        fur: groom ? { mode: 'original-curves', strands: groom.meshes.reduce((n, m) => n + m.geometry.getAttribute('position').count / 12, 0), parts: groom.meshes.length }
+          : { mode: 'shells', layers: shellCount },
+        animation: { elapsed: +elapsed.toFixed(3), clipTime: current ? +current.time.toFixed(3) : null, fps: +(1 / frameSeconds).toFixed(1), drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
         torsoScreenPoint: torso ? worldToScreen(torso) : null,
         // live gait numbers: the engine's ground speed against what the playing clip covers at natural speed
         gait: {
@@ -833,6 +850,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     },
     render(state, deltaSeconds, cursor) {
       elapsed += deltaSeconds;
+      if (deltaSeconds > 0) frameSeconds += (deltaSeconds - frameSeconds) * .08;
+      groom?.update(elapsed, Math.hypot(velocityX, velocityY) / 60, renderer.domElement.height);
       lastAnchor = { x: state.position.x, y: state.position.y };
 
       if (performanceScale != null) {
