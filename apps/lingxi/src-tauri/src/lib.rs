@@ -375,10 +375,16 @@ impl TrayState {
     fn refresh_status(&self, app: &tauri::AppHandle) {
         let name = self.cat_name.lock().unwrap().clone();
         let text = tray_status_text(&name, self.visible.load(Ordering::SeqCst), &working_agent_names(app));
-        let mut last = self.status_text.lock().unwrap();
-        if *last != text {
+        // The lock is released BEFORE the menu is touched. A menu setter called off the main thread waits for the main
+        // thread to run it, and report_perception (a sync command, so ON the main thread) comes through here too: an HTTP
+        // thread holding this lock across set_text and the main thread waiting for the lock froze the whole app - no
+        // bridge, no events, no bubbles - until it was killed.
+        let changed = {
+            let mut last = self.status_text.lock().unwrap();
+            if *last == text { false } else { *last = text.clone(); true }
+        };
+        if changed {
             let _ = self.status_summary.set_text(&text);
-            *last = text;
         }
     }
 
@@ -5687,11 +5693,14 @@ fn update_tray_attention(app: &tauri::AppHandle) {
         .count();
     let tray = app.state::<TrayState>();
     tray.refresh_status(app);
-    let mut previous_count = tray.attention_count.lock().unwrap();
-    if *previous_count == attention_count {
-        return;
+    // Same rule as refresh_status: decide under the lock, touch the tray after it is released.
+    {
+        let mut previous_count = tray.attention_count.lock().unwrap();
+        if *previous_count == attention_count {
+            return;
+        }
+        *previous_count = attention_count;
     }
-    *previous_count = attention_count;
     let text = if attention_count == 0 {
         "目前没有未读提醒".to_string()
     } else {
@@ -6911,6 +6920,40 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    /// A tray/menu setter called off the main thread blocks until the main thread runs it, and sync commands such as
+    /// report_perception run ON the main thread. So a setter reached while a Mutex guard is still alive is a deadlock
+    /// waiting for the right interleaving (it froze 0.4.0: bridge, events and bubbles all stopped). Source scan: within
+    /// a block, a `let x = ….lock()` guard must be out of scope (or dropped) before any setter at the same or deeper level.
+    #[test]
+    fn no_tray_or_menu_setter_runs_while_a_lock_is_held() {
+        let source = include_str!("lib.rs");
+        let lines: Vec<&str> = source.lines().take_while(|line| !line.starts_with("mod tests")).collect();
+        let indent = |line: &str| line.len() - line.trim_start().len();
+        let setters = [".set_text(", ".set_title(", ".set_checked(", ".set_enabled(", ".set_icon(", ".set_tooltip("];
+        let mut problems = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            if !setters.iter().any(|setter| line.contains(setter)) { continue; }
+            let depth = indent(line);
+            for j in (0..i).rev() {
+                let earlier = lines[j];
+                if earlier.trim().is_empty() { continue; }
+                // Left the enclosing block or the function: nothing above can still be alive here.
+                if indent(earlier) < depth && (earlier.trim_end().ends_with('{') && earlier.contains("fn ")) { break; }
+                if indent(earlier) < depth.saturating_sub(4) && earlier.contains("fn ") { break; }
+                let trimmed = earlier.trim_start();
+                if indent(earlier) <= depth && trimmed.starts_with("let ") && trimmed.contains(".lock()") && trimmed.ends_with(';')
+                    && !trimmed.contains(").clone()") && !trimmed.contains(".clone();") && !trimmed.contains(".count();") {
+                    let name = trimmed.trim_start_matches("let ").trim_start_matches("mut ").split([' ', ':']).next().unwrap_or("");
+                    let dropped = lines[j..i].iter().any(|l| l.contains(&format!("drop({name})")));
+                    // A guard inside a block that closed before the setter is out of scope.
+                    let closed = lines[j + 1..i].iter().any(|l| indent(l) < indent(earlier) && l.trim_start().starts_with('}'));
+                    if !dropped && !closed { problems.push(format!("lib.rs:{}: `{}` while `{name}` (line {}) is held", i + 1, line.trim(), j + 1)); }
+                }
+            }
+        }
+        assert!(problems.is_empty(), "tray/menu setter under a lock:\n{}", problems.join("\n"));
+    }
+
     #[test]
     fn concurrent_task_logs_remain_complete_json_lines() {
         let dir = std::env::temp_dir().join(format!("lingxi-task-log-{}", std::process::id()));
