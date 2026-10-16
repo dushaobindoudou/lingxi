@@ -30,6 +30,22 @@ rig = next(o for o in scene.objects if o.type == 'ARMATURE')
 keep = [o for o in scene.objects
         if o.type == 'MESH' and not o.hide_render and o.name.startswith('LX_')
         and not o.name.startswith('LX_Fur_')]
+# LINGXI_GLB_ONLY: a comma list of objects - a patch export (e.g. the four lids with their keys), joined to the main GLB's
+# skeleton in the app. LINGXI_GLB_ANIM=0 leaves the clips out (the main export's 28 minutes are almost all clip sampling).
+only = [n for n in os.environ.get('LINGXI_GLB_ONLY', '').split(',') if n]
+if only:
+    keep = [o for o in keep if o.name in only]
+with_anim = os.environ.get('LINGXI_GLB_ANIM', '1') != '0'
+
+# A mesh with any modifier but its Armature is exported as its evaluated copy, which has no shape keys: the lids' 2 mm
+# Solidify cost them Blink / Squint / Smile / Wide / Slant (the app's eyes could not close). Shape keys outrank a
+# modifier the app does not need (the lids draw double-sided), so those modifiers are switched off for the export.
+for o in keep:
+    if o.data.shape_keys:
+        for m in o.modifiers:
+            if m.type != 'ARMATURE' and m.show_viewport:
+                m.show_viewport = False
+                print('GLB_KEEP_KEYS', o.name, 'without', m.type)
 
 # The coat lives in color attributes; make the one each material reads the active/render one so
 # the exporter writes it as COLOR_0.
@@ -56,7 +72,7 @@ bpy.ops.export_scene.gltf(
     export_skins=True,
     export_morph=True,
     export_morph_normal=False,
-    export_animations=True,
+    export_animations=with_anim,
     export_animation_mode='NLA_TRACKS',
     export_anim_slide_to_zero=True,
     export_force_sampling=True,
@@ -69,5 +85,5 @@ bpy.ops.export_scene.gltf(
     export_cameras=False,
 )
 size = OUT.stat().st_size
-clips = [t.name for t in rig.animation_data.nla_tracks]
+clips = [t.name for t in rig.animation_data.nla_tracks] if with_anim else []
 print('GLB_EXPORT', json.dumps({'file': str(OUT), 'mb': round(size / 1e6, 1), 'meshes': len(keep), 'clips': clips}))
