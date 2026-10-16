@@ -2879,7 +2879,7 @@ else:
 # no frame has all four paws up (it had 9, and the forepaws never reached the floor).
 # Round ZZZ4 (user: 「走路速度和步态不匹配，姿势太差了」): .12 m a stance at duty .76 over 48 frames is .08 m/s - a quarter body length a
 # step, a shuffle; V6_WALK_* lengthen and quicken it (a cat's stroll: about a body length a stride, duty ~.6)
-WALK=dict(duty=_v6('V6_WALK_DUTY',.76),stride=_v6('V6_WALK_STRIDE',.12),lift=_v6('V6_WALK_LIFT',.035),off={'FL':0,'HR':.75,'FR':.5,'HL':.25},bob=.008,dip=.30,nod=.045)   # dips just after each hind paw lands (u .25 / .75)
+WALK=dict(duty=_v6('V6_WALK_DUTY',.76),stride=_v6('V6_WALK_STRIDE',.12),lift=_v6('V6_WALK_LIFT',.035),off={'FL':0,'HR':.75,'FR':.5,'HL':.25},bob=_v6('V6_WALK_BOB',.008),dip=.30,nod=_v6('V6_WALK_NOD',.045))   # dips just after each hind paw lands (u .25 / .75)
 RUN=dict(duty=.55,stride=.19,lift=.055,off={'FL':0,'HR':0,'FR':.5,'HL':.5},bob=.012,dip=.275,nod=.07)     # dips mid-stance of each diagonal pair
 # Round X (user: 「跑 跳 走…联动关系」; codex guide 8): the run was a trot - diagonal pairs, the back a rigid plank, the walk sped up. A
 # running cat gallops: a rotary gallop, left lead - left hind, right hind, flight, right fore, left fore, flight (UMN vet. anatomy, gaits)
@@ -3602,7 +3602,8 @@ def pose(name,u):
    for suf in ('L','R'):pb['Ear.'+suf].rotation_euler[0]=.25
   if name=='Walk' and RIG_X:
    # Round X: the walking trunk sways - the back bends a little toward the side whose hind paw is down, the hips roll over it
-   sw=math.sin(phase+math.tau*.25);pb['Spine'].rotation_euler[2]=.035*sw;pb['Pelvis'].rotation_euler[1]=.03*sw;pb['Tail2'].rotation_euler[2]=-.10*sw
+   # Round ZZZ4 (the trunk read as a plank: 1.2 deg of spine, 1.1 of head a cycle): V6_WALK_SWAY scales the sway
+   sw=math.sin(phase+math.tau*.25)*_v6('V6_WALK_SWAY',1.0);pb['Spine'].rotation_euler[2]=.035*sw;pb['Pelvis'].rotation_euler[1]=.03*sw;pb['Tail2'].rotation_euler[2]=-.10*sw
  if name=='Jump' and JUMP_PHASED:
   pb['Root'].location.y=_jump_root(u);pb['Root'].location.z=_jump_fwd(u)
   pb['Spine'].rotation_euler[0]=_jump_key(u,[(0,0),(.20,.10),(.30,-.12),(.45,.08),(.60,.06),(.72,-.05),(.82,.12),(.90,.05),(1,0)])   # + flexed
