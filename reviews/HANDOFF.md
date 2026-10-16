@@ -1385,3 +1385,12 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - **验证**：tsc 无错；npm test 251/251；check-project OK；cargo test settings 4/4；无头 Chrome（SwiftShader）调试页两种风格同位置同大小、切换 `applied:true`。
 - **进行中**：ZZZ3 导出 GLB（`round-zzz3/export/lingxi-realcat.glb`，1172 帧逐帧采样，> 25 分钟）；之后换新模型调材质，打包 .app（替换 /Applications 前问用户）。
 - **后续**：P1 动作调度细化 / 根运动；P2 表情移植（`v6_face_apply.py` 语义：key / loc / loc_local / rot / rotarm / ear / mat / catch / sparkx；GLTFLoader 去掉名字里的点号；形变目标名在 extras.targetNames 里）；P3 性能实测。
+
+## App 集成：真实猫「画质优先」重做（Claude 主会话，2026-10-16 上午）
+
+- 用户实测后：「效果好差，极差，跟我看到的效果一点也不一样」；选「继续改实时渲染」（不走预渲染）；「先用最好的效果展示出来，然后再考虑优化性能」。
+- 第一版问题：10 层稀疏壳毛（每层都切成毛丝）——毛边颗粒、整体发灰；顶点色是 sRGB 被当线性读（已在 d7134db 换算）；瞳孔缺失（Cycles 程序化瞳孔导不出，已补画）。
+- **dee182d**（feat/realcat-style）：32 层壳毛，内半层不透明厚绒、外层才分出随机错开 / 渐细 / 长短不一的毛丝（毛丝 1–2 px 宽：密度头 500、身 420、尾 380——1100 时毛丝细于像素，整层成雾）；`fwidth` 抗锯齿；毛尖顺向后下（随骨骼）；根部遮蔽 .60；边缘暖色透光；头毛 4.5 cm、脸正面 ×0.3、两颊下侧 ×1.4；主光 PCFSoft 软阴影（跟随猫）+ ShadowMaterial 接地；镜头补光；DPR 2；瞳孔 .38 + 两个眼神光；毛与皮肤统一 饱和 ×1.25、偏暖校正（顶点色是皮肤色，比 Cycles 毛发暗淡）。
+- **打包后的 App 实测**：`[realcat] model ready` → `render style realistic: {"applied":true}`；主进程 CPU 0.3%，WebContent 422 MB。已替换 /Applications/灵犀.app（用户同意；0.4.0 备份在 `/Users/liepin/workspace/lingxi-realcat-build/灵犀-0.4.0-备份.app`），设置已切到真实猫。
+- 截图管线：无头 Google Chrome `--use-angle=metal --enable-gpu --force-device-scale-factor=2`（SwiftShader 没有真 MSAA，不代表真机）；模型加载慢时会截到方块猫，加长 `--virtual-time-budget`。
+- 下一步：按用户在桌面上的反馈继续调；表情移植（P2）；胸口 / 脸颊厚绒感还不如 Cycles。
