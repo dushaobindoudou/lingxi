@@ -29,16 +29,23 @@ if (params.has('nolog')) log.style.display = 'none';
 const REALISTIC_URL = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
 const renderer = createRendererSwitcher({
   voxel: () => createThreeRenderer(),
-  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32) }),
+  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32), autonomous: !params.has('still'), clipBlinks: !params.has('noblink') }),
 });
 if (params.get('style') === 'realistic') {
-  void renderer.switchStyle('realistic').then((r) => { say(`style realistic: ${JSON.stringify(r)}`); const d = (renderer.describeCapabilities?.() as { debug?: { restHeight: number; box: number[][]; tallest: [string, number][] } }).debug; if (d) { say(`rest ${d.restHeight} box ${JSON.stringify(d.box)}`); for (const t of d.tallest) say(`  ${t[0]} ${t[1]}`); } });
+  void renderer.switchStyle('realistic').then((r) => { say(`style realistic: ${JSON.stringify(r)}`);
+    // ?expr=<name>: hold that expression (look-dev face sheets); ?clip=<host action id> plays one first
+    if (params.get('clip')) say(`clip ${params.get('clip')}: ${renderer.playAction?.(params.get('clip')!)}`);
+    if (params.get('expr')) say(`expr ${params.get('expr')}: ${renderer.playExpression?.(params.get('expr')!, 1e9)}`);
+    const problems = (renderer.describeCapabilities?.() as { faceProblems?: string[] }).faceProblems;
+    if (problems?.length) say(`face: ${problems.join('; ')}`); const d = (renderer.describeCapabilities?.() as { debug?: { restHeight: number; box: number[][]; tallest: [string, number][] } }).debug; if (d) { say(`rest ${d.restHeight} box ${JSON.stringify(d.box)}`); for (const t of d.tallest) say(`  ${t[0]} ${t[1]}`); } });
 }
 say(`renderer created in ${(performance.now() - t0).toFixed(0)}ms`);
 renderer.mount(stage);
 const fx = createStageFx();
 fx.mount(stage);
 say('renderer + fx mounted');
+// for scripted look-dev captures (Chrome DevTools protocol): the renderer, to hold expressions and find the head
+(window as unknown as { __harness: unknown }).__harness = { renderer };
 
 const width = stage.clientWidth;
 const height = stage.clientHeight;

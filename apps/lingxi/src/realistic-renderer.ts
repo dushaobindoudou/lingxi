@@ -16,6 +16,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
+import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 
 export interface RealisticRendererOptions {
   /** URL of the exported GLB. */
@@ -24,6 +25,10 @@ export interface RealisticRendererOptions {
   fitCanvasToCat?: boolean;
   /** Fur shells per coat mesh (0 = bare skin). */
   shells?: number;
+  /** Let a settled cat pick things to do on its own (false: the look-dev harness's still frames). Default true. */
+  autonomous?: boolean;
+  /** Keep the clips' own blinks (false: face sheets show the expression alone, as Blender's mute the clips). Default true. */
+  clipBlinks?: boolean;
 }
 
 export type ReadyRenderer = Renderer & { readonly ready: Promise<void> };
@@ -49,6 +54,8 @@ const FUR: Record<string, { len: number; den: number }> = {
   LX_Body: { len: 0.050, den: 420 },
   LX_Tail: { len: 0.060, den: 380 },
 };
+// the lids' short coat (see lidCoat)
+const LID_FUR = { len: 0.007, den: 650 };
 
 // The host's action ids (data/actions.json, main.ts) -> the GLB's clips. Approximate where the look-dev cat has no
 // exact clip; everything not listed is reported unsupported (false), never silently "played".
@@ -73,6 +80,16 @@ const LOOPING = new Set(['Idle', 'Walk', 'Run', 'Sleep', 'SideLie', 'Loaf', 'Sit
 const TRAVELLING = ['Walk', 'Run', 'Jump'];
 // The coat's color attribute is the SKIN under the Cycles hair, darker and duller than the golden caramel the hair
 // shader makes of it: richer and a touch warmer here, on the shells and the bare skin alike.
+// The face a clip implies while it plays and nothing is held (the voxel cat's actions carry theirs in actions.json).
+const CLIP_EXPRESSION: Record<string, string> = {
+  Sleep: '闭眼休息', SideLie: '放松', Happy: '开心', Curious: '好奇', Yawn: '困困', Lick: '满足', WashFace: '满足',
+  GroomSide: '满足', ScratchEar: '满足', Knead: '陶醉', Stretch: '放松', PawPlay: '玩心', Jump: '期待', Bite: '生气',
+  BellyUp: '撒娇', Loaf: '安心',
+};
+const DEFAULT_EXPRESSION = '安然';
+const EXPRESSION_HOLD_MS = 4000;
+// how fast the face eases to a new expression (time constant)
+const FACE_EASE_SECONDS = 0.09;
 const COAT_GRADE = `
   { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     diffuseColor.rgb = max(mix(vec3(lumC), diffuseColor.rgb, 1.25) * vec3(1.06, 1.0, 0.90), 0.0); }`;
@@ -224,27 +241,59 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const ownedMaterials: THREE.Material[] = [];
   let loaded = false;
   let debugInfo: unknown = null;
+  const autonomous = options.autonomous ?? true;
+  // the face (realistic-face.ts): what is held, what shows, eased per control
+  let faceRig: FaceRig | null = null;
+  let faceSpec: FaceSpec | null = null;
+  const faceProblems: string[] = [];
+  let heldExpression: { name: string; until: number } | null = null;
+  let faceName = '';
+  let faceTarget: Record<string, number> = {};
+  const faceNow: Record<string, number> = {};
+  const faceControls = new Set<string>();
+  let clipLids = options.clipBlinks === false ? 0 : 1;
+  let clipLidsTarget = 1;
+  function wantedExpression() {
+    if (heldExpression && elapsed < heldExpression.until && faceSpec?.expressions[heldExpression.name]) return { name: heldExpression.name, held: true };
+    const implied = CLIP_EXPRESSION[currentName];
+    return { name: implied && faceSpec?.expressions[implied] ? implied : DEFAULT_EXPRESSION, held: false };
+  }
   let disposed = false;
 
-  // The Cycles iris draws its pupil procedurally (face-controls 'mat' PupilW/H), which glTF cannot carry: drawn here on
-  // the iris map's UV disc - a big, soft kitten pupil and a dark limbal ring.
-  const PUPIL = 0.38;
-  function irisMaterial(src: THREE.MeshStandardMaterial) {
+  // The Cycles iris draws its pupil procedurally (face-controls 'mat' PupilW/H, GazeX/Y), which glTF cannot carry: drawn
+  // here on the iris map's UV disc, per eye, from the face (realistic-face.ts) - the pupil an ellipse that closes to a
+  // pointed lens as it gets tall (a slit), the look moving the iris pattern across the lens over a pale sclera, a dark
+  // limbal ring, and catchlights that stay put on the lens.
+  const irisUniforms: Record<'L' | 'R', IrisUniforms> = {
+    L: { uPupil: { value: new THREE.Vector2(APP_PUPIL, APP_PUPIL) }, uGaze: { value: new THREE.Vector2() }, uCatch: { value: 1 }, uSpark: { value: 0 } },
+    R: { uPupil: { value: new THREE.Vector2(APP_PUPIL, APP_PUPIL) }, uGaze: { value: new THREE.Vector2() }, uCatch: { value: 1 }, uSpark: { value: 0 } },
+  };
+  function irisMaterial(src: THREE.MeshStandardMaterial, side: 'L' | 'R') {
     const m = new THREE.MeshStandardMaterial({ map: src.map ?? null, roughness: 0.35, color: src.map ? 0xffffff : src.color });
     m.onBeforeCompile = (sh) => {
-      sh.uniforms.uPupil = { value: PUPIL };
-      sh.fragmentShader = 'uniform float uPupil;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
-        #include <map_fragment>
+      Object.assign(sh.uniforms, irisUniforms[side]);
+      sh.fragmentShader = 'uniform vec2 uPupil; uniform vec2 uGaze; uniform float uCatch; uniform float uSpark;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
         #ifdef USE_MAP
-          float irisD = distance(vMapUv, vec2(0.5));
+          vec2 guv = vMapUv - uGaze;
+          diffuseColor *= texture2D(map, guv);
+          float irisD = distance(guv, vec2(0.5));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.085, 0.04), smoothstep(0.46, 0.50, irisD));
-          diffuseColor.rgb = mix(vec3(0.004), diffuseColor.rgb, smoothstep(uPupil - 0.012, uPupil + 0.010, irisD));
-          // catchlights: a big soft one up-left, a small one down-right - most of a kitten's 'wet', alive look
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.757, 0.686), smoothstep(0.495, 0.515, irisD));
+          vec2 pe = (guv - 0.5) / uPupil;
+          float pey = abs(pe.y);
+          float lensD = max(pey, abs(pe.x) / max(1.0 - pey * pey, 0.05));
+          float lens = clamp((uPupil.y / uPupil.x - 1.8) / 2.5, 0.0, 1.0);
+          float pd = mix(length(pe), lensD, lens);
+          float pw = max(fwidth(pd), 0.02);
+          diffuseColor.rgb = mix(vec3(0.004), diffuseColor.rgb, smoothstep(1.0 - pw, 1.0 + pw, pd));
+          // a big soft catchlight up-left, a small one down-right - most of a kitten's 'wet', alive look - and, for
+          // 闪亮 / 期待, two more small sparkles
           float catchL = smoothstep(0.085, 0.050, distance(vMapUv, vec2(0.37, 0.36))) + 0.7 * smoothstep(0.035, 0.018, distance(vMapUv, vec2(0.63, 0.64)));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), clamp(catchL, 0.0, 1.0) * 0.92);
+          catchL += uSpark * 0.22 * (smoothstep(0.03, 0.012, distance(vMapUv, vec2(0.62, 0.33))) + smoothstep(0.022, 0.008, distance(vMapUv, vec2(0.33, 0.62))));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), clamp(catchL * 0.92 * uCatch, 0.0, 1.0));
         #endif`);
     };
-    m.customProgramCacheKey = () => 'realcat-iris';
+    m.customProgramCacheKey = () => 'realcat-iris-v2';
     ownedMaterials.push(m);
     return m;
   }
@@ -276,7 +325,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       sh.uniforms.uRim = { value: new THREE.Color(0xffd9b8) };
       sh.vertexShader = 'uniform float uShell; uniform float uLen; attribute float furScale; varying vec3 vRest; varying float vScale;\n'
         + sh.vertexShader
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\n vRest = position; vScale = furScale;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\n vScale = furScale;')
+          // strands sit on the surface as its shape keys move it (a closing lid's coat would otherwise smear)
+          .replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n vRest = transformed;')
           .replace('#include <skinning_vertex>', `#include <skinning_vertex>
             float h = uShell * uLen * furScale;
             vec3 nrm = normalize(objectNormal);
@@ -320,6 +371,49 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     shellMaterials.push(m);
     return m;
   }
+  // The lids' own skin is dark brown (lid_color); in the Cycles render they carry their own short hair, in the coat's
+  // colour, so a closed or half-closed eye reads as fur with a dark lash line. Here: every lid vertex but the lash
+  // line takes the coat's colour round the eye - the average over a ring above it (per-vertex samples drew the
+  // forehead's stripes, or below the eye the white muzzle, as streaks and blocks on a closed eye) - and grows a short
+  // shell coat (furScale 0 on the lash line).
+  const LID_COAT_LIFT = 1.4;
+  function lidCoat(lids: THREE.SkinnedMesh[], head: THREE.Mesh | undefined, root: THREE.Object3D) {
+    const hc = head?.geometry.getAttribute('color');
+    if (!head || !hc || !lids.length) return [];
+    const hp = head.geometry.getAttribute('position');
+    const v = new THREE.Vector3();
+    const radial = new THREE.Vector3();
+    for (const m of lids) {
+      const lc = m.geometry.getAttribute('color');
+      const eye = root.getObjectByName(((m.userData.name as string | undefined) ?? '').endsWith('.R') ? 'EyeR' : 'EyeL');
+      if (!lc || !eye) continue;
+      const centre = eye.getWorldPosition(new THREE.Vector3());
+      const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(eye.getWorldQuaternion(new THREE.Quaternion()));
+      const sum = [0, 0, 0];
+      let n = 0;
+      for (let i = 0; i < hp.count; i++) {
+        v.fromBufferAttribute(hp, i).applyMatrix4(head.matrixWorld);
+        radial.subVectors(v, centre);
+        radial.addScaledVector(axis, -radial.dot(axis));
+        const r = radial.length();
+        if (r < 0.025 || r > 0.045 || radial.y < 0.3 * r) continue;
+        sum[0] += hc.getX(i); sum[1] += hc.getY(i); sum[2] += hc.getZ(i); n++;
+      }
+      if (!n) continue;
+      // the vertex colour is the skin under the coat; the shells' lit tips draw the coat ~1.4x brighter
+      for (let c = 0; c < 3; c++) sum[c] = Math.min(1, (sum[c] / n) * LID_COAT_LIFT) * n;
+      const scale = new Float32Array(lc.count);
+      for (let i = 0; i < lc.count; i++) {
+        const lum = 0.2126 * lc.getX(i) + 0.7152 * lc.getY(i) + 0.0722 * lc.getZ(i);
+        const coat = THREE.MathUtils.smoothstep(lum, 0.012, 0.05);
+        lc.setXYZ(i, THREE.MathUtils.lerp(lc.getX(i), sum[0] / n, coat), THREE.MathUtils.lerp(lc.getY(i), sum[1] / n, coat), THREE.MathUtils.lerp(lc.getZ(i), sum[2] / n, coat));
+        scale[i] = coat;
+      }
+      lc.needsUpdate = true;
+      m.geometry.setAttribute('furScale', new THREE.BufferAttribute(scale, 1));
+    }
+    return lids;
+  }
   function furScaleAttribute(mesh: THREE.SkinnedMesh, bonePos: Record<string, THREE.Vector3>) {
     const pos = mesh.geometry.getAttribute('position');
     const out = new Float32Array(pos.count).fill(1);
@@ -343,7 +437,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           const side = THREE.MathUtils.smoothstep(Math.abs(nv.x), 0.45, 0.85) * THREE.MathUtils.smoothstep(-nv.y, -0.2, 0.3);
           s *= 1 + 0.4 * side;
         }
-        for (const e of eyes) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(e) - 0.036) / 0.03, 0, 1));
+        // bare only over the eye itself (the Eye bone sits ~2 cm behind the lens; the lids, 4.1-6.7 cm out, have their own
+        // short coat, which the head's overhangs at its outer edge)
+        for (const e of eyes) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(e) - 0.042) / 0.014, 0, 1));
         if (nose) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(nose) - 0.012) / 0.05, 0.25, 1));
         out[i] = s;
       }
@@ -372,10 +468,41 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     return travel;
   }
 
-  const ready = new GLTFLoader().loadAsync(options.assetUrl).then((gltf) => {
+  // Next to the model: lids.glb (the four lids with their shape keys, which the main export loses to their Solidify) and
+  // face.json (the face controls and expressions). Either missing leaves a cat with a resting face, and says why.
+  const assetDir = options.assetUrl.replace(/[^/]*$/, '');
+  const loader = new GLTFLoader();
+  const ready = Promise.all([
+    loader.loadAsync(options.assetUrl),
+    loader.loadAsync(`${assetDir}lids.glb`).catch((e: unknown) => { faceProblems.push(`lids.glb: ${String(e)}`); return null; }),
+    fetch(`${assetDir}face.json`)
+      .then((r) => (r.ok ? (r.json() as Promise<FaceSpec>) : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .catch((e: unknown) => { faceProblems.push(`face.json: ${String(e)}`); return null; }),
+  ]).then(([gltf, lids, spec]) => {
     if (disposed) return;
     const root = gltf.scene;
     root.updateMatrixWorld(true);
+    if (lids) {
+      const byName = new Map<string, THREE.Mesh>();
+      root.traverse((o) => { if ((o as THREE.Mesh).isMesh) byName.set((o.userData.name as string | undefined) ?? o.name, o as THREE.Mesh); });
+      lids.scene.traverse((o) => {
+        const patch = o as THREE.Mesh;
+        if (!patch.isMesh) return;
+        const target = byName.get((patch.userData.name as string | undefined) ?? patch.name);
+        // same armature, same joint order (both exports skin all 95 bones): the patch geometry drops straight in
+        if (target) {
+          target.geometry.dispose();
+          target.geometry = patch.geometry;
+          // the key names come from the GLB's extras.targetNames (GLTFLoader), not from the geometry
+          target.morphTargetDictionary = { ...patch.morphTargetDictionary };
+          target.morphTargetInfluences = (patch.morphTargetInfluences ?? []).slice();
+        }
+        for (const mat of ([] as THREE.Material[]).concat(patch.material)) { (mat as THREE.MeshStandardMaterial).map?.dispose(); mat.dispose(); }
+      });
+    }
+    const lidMeshes: THREE.SkinnedMesh[] = [];
+    root.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && /^LX_Lid(Upper|Lower)\./.test((o.userData.name as string | undefined) ?? '')) lidMeshes.push(o as THREE.SkinnedMesh); });
+    const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root);
     // Rest pose stands: its height sets the metres -> world units factor, so either style draws the same size.
     const box = new THREE.Box3().setFromObject(root);
     restHeight = Math.max(0.2, box.max.y - box.min.y);
@@ -402,7 +529,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       m.receiveShadow = true;
       const mat = m.material as THREE.MeshStandardMaterial;
       const name = mat?.name ?? '';
-      if (/Iris/i.test(name)) m.material = irisMaterial(mat);
+      if (/Iris/i.test(name)) m.material = irisMaterial(mat, name.endsWith('.R') ? 'R' : 'L');
       else if (/Cornea/i.test(name)) {
         const c = new THREE.MeshPhysicalMaterial({
           color: 0x000000, roughness: 0.04, transparent: true, opacity: 0.0, specularIntensity: 1,
@@ -422,6 +549,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         m.material = s;
       } else if (mat?.isMaterial) {
         mat.side = THREE.DoubleSide;
+        // the mouth's inside: Cycles shades it dark (little light gets in); here it would glow pink when the mouth opens
+        if (/MouthPink|Tongue/.test(name) && !mat.userData.shaded) {
+          mat.color.multiply(/Tongue/.test(name) ? new THREE.Color(0.62, 0.5, 0.52) : new THREE.Color(0.34, 0.2, 0.22));
+          mat.envMapIntensity = 0.3;
+          mat.userData.shaded = true;
+        }
+        // that darkening is the mouth's shadow; the shadow map's own speckles it inside
+        if (/Mouth|Tongue|Teeth/.test(name)) m.receiveShadow = false;
       }
       const base = m.name.split('.')[0].replace(/_\d+$/, '');
       if ((m as THREE.SkinnedMesh).isSkinnedMesh && FUR[base]) coat.push(m as THREE.SkinnedMesh);
@@ -442,7 +577,27 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         base.parent!.add(s);
       }
     }
+    for (const lid of lidFur) {
+      for (let i = 1; i <= Math.ceil(shellCount / 2); i++) {
+        const s = new THREE.SkinnedMesh(lid.geometry, shellMaterial(LID_FUR.len, LID_FUR.den, i / Math.ceil(shellCount / 2)));
+        s.bind(lid.skeleton, lid.bindMatrix);
+        // the same influences array: a blink closes the lid's coat with it
+        s.morphTargetInfluences = lid.morphTargetInfluences;
+        s.morphTargetDictionary = lid.morphTargetDictionary;
+        s.position.copy(lid.position);
+        s.quaternion.copy(lid.quaternion);
+        s.scale.copy(lid.scale);
+        s.frustumCulled = false;
+        lid.parent!.add(s);
+      }
+    }
 
+    if (spec) {
+      // before any clip has posed the bones: the face reads their rest frames
+      faceRig = createFaceRig(spec, root, irisUniforms);
+      faceSpec = spec;
+      if (faceRig.missing.length) faceProblems.push(`not in the model: ${faceRig.missing.join(', ')}`);
+    }
     mixer = new THREE.AnimationMixer(root);
     for (const clip of gltf.animations) {
       if (TRAVELLING.includes(clip.name)) strides[clip.name] = stripTravel(clip);
@@ -600,8 +755,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       oneShot = { id, clip, endsAt: elapsed + ms / 1000 };
       return true;
     },
-    playExpression() {
-      return false; // P2: face-controls.json through the GLB's shape keys and face bones
+    playExpression(name: string, holdMs = EXPRESSION_HOLD_MS) {
+      if (!faceRig || !faceSpec?.expressions[name]) return false;
+      heldExpression = { name, until: elapsed + Math.max(0, holdMs) / 1000 };
+      return true;
     },
     get playingAction() {
       if (!oneShot) return null;
@@ -609,7 +766,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       return remainingMs > 0 ? { id: oneShot.id, remainingMs, legFree: false } : null;
     },
     get currentExpression() {
-      return { name: '安然', held: false };
+      return faceRig ? wantedExpression() : { name: DEFAULT_EXPRESSION, held: false };
     },
     get headYaw() {
       return 0;
@@ -637,7 +794,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         debug: debugInfo,
         clips: Object.keys(actions),
         actions: Object.keys(ACTION_CLIPS).filter((id) => actions[ACTION_CLIPS[id]]),
-        expressions: [],
+        expressions: faceRig && faceSpec ? Object.keys(faceSpec.expressions) : [],
+        faceProblems,
         cameras: CAMERA_PRESETS.map((p) => ({ id: p.id, name: p.name })),
       };
     },
@@ -679,7 +837,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (moving) oneShot = null;
         // a settled cat picks something to do now and then (the voxel director's job on the other style)
         if (moving || state.state !== 'idle' || oneShot) idleSince = elapsed;
-        else if (elapsed - idleSince > nextIdlePick) {
+        else if (autonomous && elapsed - idleSince > nextIdlePick) {
           const picks = IDLE_PICKS.filter(([c]) => actions[c]);
           let r = Math.random() * picks.reduce((t, [, w]) => t + w, 0);
           const pick = picks.find(([, w]) => (r -= w) < 0)?.[0];
@@ -704,7 +862,25 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           const natural = cycle / current.getClip().duration;
           current.timeScale = THREE.MathUtils.clamp(groundSpeed / Math.max(1e-6, natural), 0.35, 2.5);
         } else if (current) current.timeScale = 1;
+        faceRig?.beforeMixer();
         mixer!.update(deltaSeconds);
+        if (faceRig && faceSpec) {
+          const want = wantedExpression();
+          if (want.name !== faceName) {
+            faceName = want.name;
+            faceTarget = expressionValues(faceSpec, faceName) ?? {};
+            for (const c of Object.keys(faceTarget)) faceControls.add(c);
+            clipLidsTarget = eyesOwnLids(faceSpec, faceName) || options.clipBlinks === false ? 0 : 1;
+          }
+          // no time passed (a first frame) snaps to the face rather than never reaching it
+          const k = deltaSeconds > 0 ? 1 - Math.exp(-deltaSeconds / FACE_EASE_SECONDS) : 1;
+          for (const c of faceControls) {
+            const from = faceNow[c] ?? restValue(c);
+            faceNow[c] = from + ((faceTarget[c] ?? restValue(c)) - from) * k;
+          }
+          clipLids += (clipLidsTarget - clipLids) * k;
+          faceRig.apply(faceNow, clipLids);
+        }
       }
 
       // --- placement and facing (as renderer.ts) ---
