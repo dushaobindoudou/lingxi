@@ -2,7 +2,7 @@
 // Install the realistic cat ("真实猫") from a look-dev round of lingxi-v5fix into the app's public folder (git-ignored;
 // a local `tauri build` bundles whatever is there).
 //
-//   node scripts/install-realcat-asset.mjs <round dir>      e.g. ../lingxi-v5fix/assets/characters/lingxi/v6/round-zzz3
+//   node scripts/install-realcat-asset.mjs <round dir> [groom dir] [clips round]   e.g. .../v6/round-zzz3 "" .../v6/round-zzz4
 //
 // From the round:
 //   export/lingxi-realcat.glb   the model and its clips      (scripts/blender/export_lingxi_v5_glb.py)
@@ -44,6 +44,11 @@ if (hasGroom) {
 mkdirSync(out, { recursive: true });
 copyFileSync(join(src, 'export/lingxi-realcat.glb'), join(out, 'cat.glb'));
 copyFileSync(join(src, 'export-lids/lids.glb'), join(out, 'lids.glb'));
+// export-clips/clips.glb (optional): clips re-made after the model was exported (LINGXI_GLB_CLIPS=Walk LINGXI_GLB_ONLY=-),
+// swapped in by name; a third argument may name another round to take them from (the model's own round has none)
+const clipsFrom = process.argv[4] ? resolve(process.argv[4]) : src;
+if (existsSync(join(clipsFrom, 'export-clips/clips.glb'))) copyFileSync(join(clipsFrom, 'export-clips/clips.glb'), join(out, 'clips.glb'));
+else rmSync(join(out, 'clips.glb'), { force: true });
 const face = JSON.parse(readFileSync(join(src, 'face-controls.json'), 'utf8'));
 const rig = JSON.parse(readFileSync(join(src, 'export-lids/rig.json'), 'utf8'));
 face.rest = Object.fromEntries(rig.bones.map((b) => [b.name, { head: b.head, tail: b.tail }]));

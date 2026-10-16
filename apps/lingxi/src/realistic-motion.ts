@@ -19,6 +19,8 @@ export function comfortableWalkPace(stride: number, duration: number, scale: num
   if (stride <= 0 || duration <= 0 || scale <= 0) return null;
   const pixelsPerMetre = Math.hypot(Math.sin(yaw) / Math.abs(pixelX), Math.cos(yaw) / Math.abs(pixelZ));
   // The life engine applies gentleness and arrival/turn easing afterwards. 1.3 produced
-  // ~0.8x playback for the default personality: a small kitten crept at 3 px/s.
-  return stride * scale / duration * pixelsPerMetre * 2.1;
+  // ~0.8x playback for the default personality: a small kitten crept at 3 px/s. 2.1 suited the
+  // old .158 m shuffle; the round ZZZ4 walk (.274 m a cycle) at 2.1 hurried at ~2x - 1.4 plays it
+  // at ~1.3x, an unhurried stroll.
+  return stride * scale / duration * pixelsPerMetre * 1.4;
 }

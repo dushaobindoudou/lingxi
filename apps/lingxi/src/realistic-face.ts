@@ -32,10 +32,10 @@ export interface IrisUniforms {
   uSpark: { value: number };
 }
 
-// Blender's resting pupil (build_lingxi_v5.py PUPIL) and this renderer's: a little bigger reads cuter at desktop size,
-// so every pupil value the face asks for is scaled by the same factor.
+// Blender's resting pupil (build_lingxi_v5.py PUPIL) and this renderer's, about the same: .38 left only a thin rim of the
+// golden iris the review render shows round the pupil, and the eyes read dark and blank at desktop size.
 const BLENDER_PUPIL = 0.33;
-export const APP_PUPIL = 0.38;
+export const APP_PUPIL = 0.34;
 // Iris-UV shift per unit of look (V6_GAZE_UV): Blender subtracts (x, -y) from its UV; glTF's v runs the other way.
 const GAZE_UV = 0.30;
 // Shape keys allowed past 1 (build_lingxi_v5.py slider_max): the lick's tongue reach.

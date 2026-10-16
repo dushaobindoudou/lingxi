@@ -57,6 +57,9 @@ const FUR: Record<string, { len: number; den: number }> = {
 };
 // the lids' short coat (see lidCoat)
 const LID_FUR = { len: 0.007, den: 650 };
+// With the original groom: solid shells out to this share of the coat's length.
+const UNDERCOAT_LAYERS = 8;
+const UNDERCOAT_REACH = 0.62;
 
 // The host's action ids (data/actions.json, main.ts) -> the GLB's clips. Approximate where the look-dev cat has no
 // exact clip; everything not listed is reported unsupported (false), never silently "played".
@@ -140,6 +143,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.055 }));
   shadowCatcher.rotation.x = -Math.PI / 2;
   shadowCatcher.receiveShadow = true;
+  // no cast shadow on the desktop: a cat-shaped silhouette lying on the screen read as a cut-out; the soft contact blob
+  // under the paws grounds it (the self-shadowing of the coat stays)
+  shadowCatcher.visible = false;
   scene.add(shadowCatcher);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 200);
@@ -283,9 +289,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       sh.fragmentShader = 'uniform vec2 uPupil; uniform vec2 uGaze; uniform float uCatch; uniform float uSpark;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
         #ifdef USE_MAP
           vec2 guv = vMapUv - uGaze;
+          // the review render's golden iris round the pupil: the map is lifted (it read dark olive at desktop size), the
+          // dark limbal ring kept thin
           diffuseColor *= texture2D(map, guv);
+          diffuseColor.rgb *= 1.35;
           float irisD = distance(guv, vec2(0.5));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.085, 0.04), smoothstep(0.46, 0.50, irisD));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.085, 0.04), smoothstep(0.475, 0.50, irisD));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.757, 0.686), smoothstep(0.495, 0.515, irisD));
           vec2 pe = (guv - 0.5) / uPupil;
           float pey = abs(pe.y);
@@ -324,10 +333,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // length, combed back and down along the body (the comb turns with the bones), anti-aliased in screen space, dark at
   // the roots (the coat's own occlusion) and lit through at the rim where the eye grazes the coat - the soft halo the
   // Cycles renders have.
-  function shellMaterial(len: number, den: number, t: number) {
+  function shellMaterial(len: number, den: number, t: number, solid = false) {
     // Coverage must not overwrite an already opaque body pixel with fractional framebuffer alpha.
     // Alpha hashing discards strand gaps, while every surviving sample stays opaque on the desktop.
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, alphaHash: true });
+    // `solid`: an opaque layer of undercoat (no strands), under the original curves.
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, alphaHash: !solid });
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uShell = { value: t };
       sh.uniforms.uLen = { value: len };
@@ -339,7 +349,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           // strands sit on the surface as its shape keys move it (a closing lid's coat would otherwise smear)
           .replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n vRest = transformed;')
           .replace('#include <skinning_vertex>', `#include <skinning_vertex>
-            float h = uShell * uLen * furScale;
+            // the solid undercoat shrinks faster toward the eyes (furScale squared): out at full height round the eye it
+            // bulged over the rim and made the eyes small
+            float h = uShell * uLen * ${solid ? 'furScale * furScale' : 'furScale'};
             vec3 nrm = normalize(objectNormal);
             // combed toward the tail (-z in the model) and down, more at the tip; turned with the bones
             vec3 comb = vec3(0.0, -0.55, -1.0);
@@ -365,7 +377,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             // shell turned the whole coat to fog), strands only toward the outside, where they make the soft outline
             float strand = (1.0 - smoothstep(radius - fw, radius + fw, d)) * step(uShell, strandLen);
             float undercoat = 1.0 - smoothstep(0.40, 0.70, uShell);
-            float a = max(undercoat, strand) * step(0.02, vScale);
+            float a = (${solid ? '1.0' : 'max(undercoat, strand)'}) * step(0.02, vScale);
             if (a < 0.03) discard;
             diffuseColor.a = a;
             // the coat's occlusion: roots deep, tips light
@@ -377,7 +389,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
             #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => 'realcat-fur-shell-opaque-v3';
+    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v1' : 'realcat-fur-shell-opaque-v3');
     shellMaterials.push(m);
     return m;
   }
@@ -489,7 +501,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       .then((r) => (r.ok ? (r.json() as Promise<FaceSpec>) : Promise.reject(new Error(`HTTP ${r.status}`))))
       .catch((e: unknown) => { faceProblems.push(`face.json: ${String(e)}`); return null; }),
     options.originalGroom === false ? Promise.resolve(null) : loadGroom(assetDir),
-  ]).then(([gltf, lids, spec, groomAsset]) => {
+    // clips.glb: clips re-made after the model's export (the round ZZZ4 walk), same skeleton - swapped in by name
+    fetch(`${assetDir}clips.glb`, { method: 'HEAD' })
+      .then((r) => (r.ok ? loader.loadAsync(`${assetDir}clips.glb`) : null))
+      .catch((e: unknown) => { faceProblems.push(`clips.glb: ${String(e)}`); return null; }),
+  ]).then(([gltf, lids, spec, groomAsset, clipPatch]) => {
     if (disposed) return;
     const root = gltf.scene;
     root.updateMatrixWorld(true);
@@ -591,11 +607,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       ownedMaterials.push(groom.material);
       for (const mesh of groom.meshes) coat[0].parent!.add(mesh);
     }
-    for (const base of groom ? [] : coat) {
+    // With the original curves the shells are only their solid undercoat: the review render's round, dense volume (the
+    // curves alone are too sparse at desktop size - a grey haze round a thin body), the curves drawing the outline.
+    const layers = groom ? UNDERCOAT_LAYERS : shellCount;
+    for (const base of coat) {
       const f = FUR[base.name.split('.')[0].replace(/_\d+$/, '')];
       furScaleAttribute(base, bonePos);
-      for (let i = 1; i <= shellCount; i++) {
-        const s = new THREE.SkinnedMesh(base.geometry, shellMaterial(f.len, f.den, i / shellCount));
+      for (let i = 1; i <= layers; i++) {
+        const s = new THREE.SkinnedMesh(base.geometry, groom ? shellMaterial(f.len, f.den, UNDERCOAT_REACH * i / layers, true) : shellMaterial(f.len, f.den, i / shellCount));
         s.bind(base.skeleton, base.bindMatrix);
         s.morphTargetInfluences = base.morphTargetInfluences;
         s.morphTargetDictionary = base.morphTargetDictionary;
@@ -629,7 +648,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (faceRig.missing.length) faceProblems.push(`not in the model: ${faceRig.missing.join(', ')}`);
     }
     mixer = new THREE.AnimationMixer(root);
-    for (const clip of gltf.animations) {
+    const patched = new Set((clipPatch?.animations ?? []).map((c) => c.name));
+    for (const clip of [...gltf.animations.filter((c) => !patched.has(c.name)), ...(clipPatch?.animations ?? [])]) {
       if (TRAVELLING.includes(clip.name)) strides[clip.name] = stripTravel(clip);
       actions[clip.name] = mixer.clipAction(clip);
     }
