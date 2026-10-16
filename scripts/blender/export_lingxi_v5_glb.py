@@ -36,6 +36,16 @@ only = [n for n in os.environ.get('LINGXI_GLB_ONLY', '').split(',') if n]
 if only:
     keep = [o for o in keep if o.name in only]
 with_anim = os.environ.get('LINGXI_GLB_ANIM', '1') != '0'
+# LINGXI_GLB_CLIPS: a comma list of clips - a clip patch (the rig and those NLA tracks only, no meshes when
+# LINGXI_GLB_ONLY names none): the app swaps them in by name over the main GLB's, on the same skeleton.
+clips_only = [n for n in os.environ.get('LINGXI_GLB_CLIPS', '').split(',') if n]
+if clips_only:
+    for data in [rig] + [o.data.shape_keys for o in scene.objects if o.type == 'MESH' and o.data.shape_keys]:
+        if data and data.animation_data:
+            for t in [t for t in data.animation_data.nla_tracks if t.name not in clips_only]:
+                data.animation_data.nla_tracks.remove(t)
+if os.environ.get('LINGXI_GLB_ONLY') == '-':
+    keep = []
 
 # A mesh with any modifier but its Armature is exported as its evaluated copy, which has no shape keys: the lids' 2 mm
 # Solidify cost them Blink / Squint / Smile / Wide / Slant (the app's eyes could not close). Shape keys outrank a

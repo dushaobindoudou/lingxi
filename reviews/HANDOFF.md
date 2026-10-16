@@ -1414,3 +1414,4 @@ codex 批次 26：`reviews/ROUND-ZZD-AUDIT-2026-10-14.md`（无回归；建议�
 - 侧面四相位对照 codex 侧面站姿目标（reviews/compare/B1-gait-walk.png 左）：`round-zzz4/walk/walk-cmp.jpg`。腿前后分开、能看到抬爪迈步；躯干仍僵直（无起伏 / 扭转）。
 - 未做：zzz4 的 GLB 整体导出约 28 分钟，超过前台 10 分钟上限；App 正由另一会话改动，接入前需协调。可选办法：导出脚本加「只导 Walk 片段」的补丁导出，App 载入后替换 Walk。
 - **ZZZ4 第二步（躯干）**：量测 ZZZ3/ZZZ4 走路一周期 脊柱俯仰只变 1.2°、头 1.1°、起伏 8 mm——像木板平移。新参数 `V6_WALK_BOB / V6_WALK_NOD / V6_WALK_SWAY`（默认不变）。ZZZ4 = 起伏 .014、点头 .065、摆动 ×1.5（×2 时后爪实际滑移 3.15 mm、穿地 −2.23 mm，退回 1.5）。最终：起伏 14 mm、爪骨骼滑移 2.08 mm、脚掌实际滑移 2.37 mm、最低 −1.66 mm、无四爪离地。对照图 `round-zzz4/walk2/walk-cmp.jpg`（ZZZ3 侧面 / ZZZ4 侧面 / ZZZ4 正面，四相位，对 codex 侧面目标）。机器较忙：构建 409 s、长毛 298 s。
+- **ZZZ4 走路接入 App**：`export_lingxi_v5_glb.py` 加 `LINGXI_GLB_CLIPS=<clip,...>`（只留这些 NLA 轨）与 `LINGXI_GLB_ONLY=-`（不带网格）→ `round-zzz4/export-clips/clips.glb`（30 s，0.1 MB，96 节点与主 GLB 同名、静止姿势 0 差异）。App（lingxi-realcat，见其提交「原版毛丝下加实心厚绒…」）按名替换 Walk；真机诊断 Walk .274 m / 1.458 s、动画地速 = 实际地速。
