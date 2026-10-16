@@ -30,6 +30,8 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
+mod tray_badge;
+
 /// Read-only Accessibility trust check. NEVER shows the system permission dialog.
 ///
 /// This is the ONLY form of the check the app has, and that is deliberate: **nothing here
@@ -5445,12 +5447,20 @@ fn keep_turn_summary(previous: &str, previous_state: &str, incoming: &str, age_m
 /// in `<app config>/logs/task-events.log`. Rotated to `.1` past this size, so it never grows
 /// without bound on a machine that runs the cat all day.
 const TASK_EVENT_LOG_CAP_BYTES: u64 = 1024 * 1024;
+// Bridge and native hook callbacks can log simultaneously. Rotation and the entire
+// JSON line must share one lock; formatted writes otherwise interleave their fragments.
+static TASK_EVENT_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 /// Without it, "the cat said nothing useful" could only be debugged by guessing what the host
 /// sent: the in-memory ring holds 50 normalized events and none of the raw payload's shape.
 fn log_task_event(app: &tauri::AppHandle, mut entry: serde_json::Value) {
-    use std::io::Write;
     let Some(dir) = app.path().app_config_dir().ok().map(|d| d.join("logs")) else { return };
+    append_task_event(&dir, &mut entry);
+}
+
+fn append_task_event(dir: &std::path::Path, entry: &mut serde_json::Value) {
+    use std::io::Write;
+    let _guard = TASK_EVENT_LOG_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
@@ -5461,11 +5471,12 @@ fn log_task_event(app: &tauri::AppHandle, mut entry: serde_json::Value) {
     if let Some(object) = entry.as_object_mut() {
         object.insert("at".into(), serde_json::json!(now_millis()));
     }
+    let line = format!("{entry}\n");
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .and_then(|mut file| writeln!(file, "{entry}"));
+        .and_then(|mut file| file.write_all(line.as_bytes()));
 }
 
 /// What a raw payload carried, without what it said: every key with its type, and for text its
@@ -5690,7 +5701,7 @@ fn update_tray_attention(app: &tauri::AppHandle) {
     // The count next to the menu-bar icon: visible without opening anything, and it stays until
     // read. The task's actual waiting/failed state stays visible in the home surface.
     if let Some(icon) = app.tray_by_id("main-tray") {
-        let _ = icon.set_title(if attention_count == 0 { None } else { Some(attention_count.to_string()) });
+        let _ = icon.set_title(tray_badge::attention_title(attention_count));
     }
 }
 
@@ -6900,6 +6911,45 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn concurrent_task_logs_remain_complete_json_lines() {
+        let dir = std::env::temp_dir().join(format!("lingxi-task-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::append_task_event(&dir, &mut serde_json::json!({
+            "dir": "before-rotation", "payload": "x".repeat(super::TASK_EVENT_LOG_CAP_BYTES as usize),
+        }));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
+        std::thread::scope(|scope| {
+            for worker in 0..12 {
+                let dir = &dir;
+                let barrier = barrier.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    for sequence in 0..10 {
+                        super::append_task_event(dir, &mut serde_json::json!({
+                            "dir": "in", "worker": worker, "sequence": sequence,
+                            "payload": "x".repeat(4096),
+                        }));
+                    }
+                });
+            }
+        });
+        let text = std::fs::read_to_string(dir.join("task-events.log")).unwrap();
+        let rotated = std::fs::read_to_string(dir.join("task-events.log.1")).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let rows: Vec<serde_json::Value> = text.lines().map(|line| {
+            serde_json::from_str(line).expect("concurrent writers must not interleave JSON records")
+        }).collect();
+        assert_eq!(rows.len(), 120);
+        let ids: std::collections::HashSet<_> = rows.iter().map(|row| {
+            (row["worker"].as_u64().unwrap(), row["sequence"].as_u64().unwrap())
+        }).collect();
+        assert_eq!(ids.len(), 120, "every event is written exactly once");
+        assert_eq!(rotated.lines().count(), 1, "rotation keeps the entire previous record");
+        let previous: serde_json::Value = serde_json::from_str(rotated.trim()).unwrap();
+        assert_eq!(previous["dir"], "before-rotation");
+    }
+
     use super::*;
 
     /// A throwaway unique path under the system temp dir; no external temp-dir crate
