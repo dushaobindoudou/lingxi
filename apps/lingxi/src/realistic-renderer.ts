@@ -906,7 +906,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         else if (state.state === 'sleep') want = 'Sleep';
         else if (moving) {
           const naturalWalk = (strides.Walk ?? 0) * effectiveScale() / (actions.Walk?.getClip().duration || 1);
-          want = locomotionClip(groundSpeed, naturalWalk, currentName === 'Run', Boolean(actions.Run));
+          const naturalRun = (strides.Run ?? 0) * effectiveScale() / (actions.Run?.getClip().duration || 1);
+          want = locomotionClip(groundSpeed, naturalWalk, currentName === 'Run', Boolean(actions.Run), naturalRun);
         }
         else want = 'Idle';
         if (want !== currentName && !(oneShot && want === oneShot.clip && currentName === want)) play(want, oneShot != null && !LOOPING.has(want));

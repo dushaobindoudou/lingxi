@@ -23,6 +23,11 @@ test('a stopped cat does not keep stepping and a fast small cat uses its run str
   assert.equal(locomotionClip(.54, walk.stride * .63 / walk.seconds, false, true), 'Run');
   assert.equal(locomotionClip(.08, .05, true, true), 'Run');
   assert.equal(locomotionClip(.08, .05, false, true), 'Walk');
+  // installed app, user size .25: 0.0498 world/s, walk .0254, run .228 - it ran at .22x
+  assert.equal(locomotionClip(.0498, .0254, false, true, .228), 'Walk');
+  assert.equal(locomotionClip(.16, .0254, false, true, .228), 'Run');
+  assert.equal(locomotionClip(.12, .0254, true, true, .228), 'Run');
+  assert.equal(locomotionClip(.10, .0254, true, true, .228), 'Walk');
 });
 
 test('preferred wander speed scales with the cat and the projected direction', () => {

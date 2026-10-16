@@ -4,9 +4,14 @@ export function locomotionRate(distance: number, seconds: number, stride: number
   return Math.max(0, distance) * duration / (seconds * stride * scale);
 }
 
-/** Use the run's longer stride before the walk turns into frantic tiny steps. Hysteresis avoids toggling. */
-export function locomotionClip(groundSpeed: number, walkSpeed: number, running: boolean, hasRun: boolean): 'Walk' | 'Run' {
-  return hasRun && groundSpeed > walkSpeed * (running ? 1.55 : 1.9) ? 'Run' : 'Walk';
+/**
+ * Use the run's longer stride before the walk turns into frantic tiny steps. Hysteresis avoids toggling.
+ * `runSpeed` (the run's natural ground speed): the run is only chosen once it can play at a believable rate - the
+ * look-dev Run covers 9x the Walk, so switching at 1.9x the walk played a .22x slow-motion run on the desktop.
+ */
+export function locomotionClip(groundSpeed: number, walkSpeed: number, running: boolean, hasRun: boolean, runSpeed?: number): 'Walk' | 'Run' {
+  const runFloor = runSpeed && runSpeed > 0 ? runSpeed * (running ? 0.5 : 0.65) : 0;
+  return hasRun && groundSpeed > Math.max(walkSpeed * (running ? 1.55 : 1.9), runFloor) ? 'Run' : 'Walk';
 }
 
 /** Project a comfortable walk into logical screen pixels, including the current heading and camera. */
