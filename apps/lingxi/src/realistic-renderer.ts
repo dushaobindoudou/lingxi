@@ -49,6 +49,15 @@ const MIN_HIT_RADIUS_PX = 40;
 const MAX_FACING_YAW = Math.PI * 0.42;
 const VELOCITY_SMOOTHING_SECONDS = 0.22;
 const TURN_RATE = 5.2;
+// Standing still the cat turns by stepping round (the walk cycle, in place), and slower: spun at TURN_RATE on the spot
+// its legs swept round the floor rigidly. Starts past the first angle, stops inside the second.
+const PIVOT_TURN_RATE = 2.4;
+const PIVOT_START = 0.35;
+const PIVOT_STOP = 0.05;
+const PIVOT_CADENCE = 1.1;
+// Standing, it shows itself three-quarter on, never square on: square on its body hid the hind legs - a double-click
+// (the pointer on the cat, straight in front of it) turned it to face the user and its hind legs seemed to vanish.
+const MIN_PRESENT_YAW = 0.5;
 const SETTLE_DELAY_SECONDS = 0.5;
 const CAMERA_EASE_SECONDS = 0.55;
 const CAMERA_DISTANCE = 6;
@@ -902,6 +911,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let velocityY = 0;
   let facingAngle = 0;
   let bodyYaw = 0;
+  let pivoting = false;
   let settledSince: number | null = null;
   let lastAnchor = { x: 0, y: 0 };
   let contextLost = false;
@@ -1081,7 +1091,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         settledSince = null;
       } else {
         settledSince ??= elapsed;
-        if (elapsed - settledSince > SETTLE_DELAY_SECONDS) {
+        // not while it plays an action (a head bump, a stretch): the body would spin rigidly under it - it holds still
+        if (oneShot) facingAngle = bodyYaw;
+        else if (elapsed - settledSince > SETTLE_DELAY_SECONDS) {
           let presentation = 0;
           if (cursor) {
             const tx = cursor.x - state.position.x;
@@ -1092,14 +1104,20 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
               presentation = Math.max(-MAX_FACING_YAW, Math.min(MAX_FACING_YAW, folded));
             }
           }
+          if (Math.abs(presentation) < MIN_PRESENT_YAW) {
+            // the side it already shows, unless the pointer is clearly to one side
+            const side = Math.abs(presentation) > 0.15 ? Math.sign(presentation) : Math.sign(bodyYaw) || 1;
+            presentation = side * MIN_PRESENT_YAW;
+          }
           facingAngle = presentation;
         }
       }
       const previousYaw = bodyYaw;
-      if (state.state === 'dragged') bodyYaw = facingAngle;
+      if (state.state === 'dragged') { bodyYaw = facingAngle; pivoting = false; }
       else {
         const toTurn = Math.atan2(Math.sin(facingAngle - bodyYaw), Math.cos(facingAngle - bodyYaw));
-        const maxStep = TURN_RATE * deltaSeconds;
+        pivoting = !moving && !oneShot && state.state !== 'sleep' && Math.abs(toTurn) > (pivoting ? PIVOT_STOP : PIVOT_START);
+        const maxStep = (moving ? TURN_RATE : PIVOT_TURN_RATE) * deltaSeconds;
         bodyYaw += Math.abs(toTurn) <= maxStep ? toTurn : Math.sign(toTurn) * maxStep;
       }
       catRoot.rotation.y = bodyYaw;
@@ -1133,7 +1151,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           const naturalRun = (strides.Run ?? 0) * effectiveScale() / (actions.Run?.getClip().duration || 1);
           want = locomotionClip(groundSpeed, naturalWalk, currentName === 'Run', Boolean(actions.Run), naturalRun);
         }
-        else want = 'Idle';
+        else want = pivoting ? 'Walk' : 'Idle';
         if (want !== currentName && !(oneShot && want === oneShot.clip && currentName === want)) play(want, oneShot != null && !LOOPING.has(want));
         // stride-matched playback: one clip cycle per stride of ground actually covered
         // Both sides of a crossfade must advance by the same ground distance.
@@ -1141,7 +1159,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           const action = actions[name];
           if (action?.isRunning() && strides[name] > 0) {
             const rate = locomotionRate(groundDistance, deltaSeconds, strides[name] * (name === 'Walk' ? walkStrideScale : 1), effectiveScale(), action.getClip().duration);
-            action.timeScale = name === 'Walk' && moving ? walkCadence(rate) : rate;
+            action.timeScale = name === 'Walk' && pivoting ? PIVOT_CADENCE : name === 'Walk' && moving ? walkCadence(rate) : rate;
           }
         }
         locomotion?.beforeMixer();
