@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { loadGroom, createGroom, type GroomAsset } from './realistic-groom.ts';
+import { loadGroom, createGroom, shutLidLift, type GroomAsset } from './realistic-groom.ts';
 import { createFurWind } from './realistic-wind.ts';
 import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
@@ -721,6 +721,19 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
    * over the eye, gone past it (LID_TUCK), by the distance from the nearer eye's axis. The lids, face and groom share
    * one rest space (their nodes carry no transform), so one function serves the lids' skin, undercoat and strands.
    */
+  /** A lid's Blink key lifted onto the closed eye's dome (realistic-groom LID_DOME): shut, it sat in a hollow. */
+  function raiseShutLid(lid: THREE.Mesh, eye: { centre: THREE.Vector3; axis: THREE.Vector3 }) {
+    const index = lid.morphTargetDictionary?.Blink;
+    const blink = index == null ? undefined : lid.geometry.morphAttributes.position?.[index];
+    if (!blink || !lid.geometry.morphTargetsRelative) return;
+    const pos = lid.geometry.getAttribute('position');
+    const frame = { centre: eye.centre.toArray(), axis: eye.axis.toArray() };
+    for (let i = 0; i < pos.count; i++) {
+      const lift = shutLidLift(pos.getX(i) + blink.getX(i), pos.getY(i) + blink.getY(i), pos.getZ(i) + blink.getZ(i), frame);
+      if (lift > 0) blink.setXYZ(i, blink.getX(i) + eye.axis.x * lift, blink.getY(i) + eye.axis.y * lift, blink.getZ(i) + eye.axis.z * lift);
+    }
+    blink.needsUpdate = true;
+  }
   /** The eyes (left, right) in a lid's rest space - the face's and the groom's too (their nodes carry no transform). */
   function eyeFrames(root: THREE.Object3D, lid: THREE.Object3D) {
     const eyes = ['EyeL', 'EyeR'].map((name) => root.getObjectByName(name)).filter((e): e is THREE.Object3D => !!e);
@@ -1134,6 +1147,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root, groomAsset ? LID_UNDERCOAT_LIFT : LID_COAT_LIFT);
     const eyes = lidMeshes.length ? eyeFrames(root, lidMeshes[0]) : null;
     lidTuckGlsl = lidTuck(eyes);
+    if (eyes) for (const lid of lidMeshes) raiseShutLid(lid, eyes[/\.L$/.test((lid.userData.name as string | undefined) ?? '') ? 0 : 1]);
     const head = root.getObjectByName('LX_Head') as THREE.Mesh | undefined;
     if (head) {
       cleanMouthPaint(head, groomAsset);

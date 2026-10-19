@@ -87,16 +87,37 @@ const LID_DENSITY_LEAD = 0.35;
 // lids instead - each strand laid from its root toward the eye's middle, along the closed lid's dome - leaving the lash
 // line between. Strands rooted within `near` of the eye's axis go all the way, fading out by `far`, only on the face's
 // front (`depth` in front of the eye's centre, back to minus this); laid over this share of their length, never under
-// the shut lid (its dome, measured off lids.glb with Blink on: `crown` in front of the eye's centre on its axis,
-// falling as `fall` times the square of the distance from it, out to `rim`; the face round it stands 1-1.6 cm proud of
-// the lid's edge - the closed eye sits in a hollow, whose wall was the pad's hard edge) and this far above it (model
-// units). `shut`: how much each of the upper lid's keys closes the eye; followed over `settle` seconds and from `from`
-// shut on, so a blink leaves the coat alone (the fur round the eye twitched with every one) and a sleeping, slow-blinking
-// or petted cat's closed eye gets it.
+// the shut lid (LID_DOME) and this far above it (model units). `shut`: how much each of the upper lid's keys closes the
+// eye; followed over `settle` seconds and from `from` shut on, so a blink leaves the coat alone (the fur round the eye
+// twitched with every one) and a sleeping, slow-blinking or petted cat's closed eye gets it.
 const EYE_LEAN = {
-  near: 0.056, far: 0.072, depth: 0.012, comb: 0.9, crown: 0.0245, fall: 10.4, rim: 0.045, lift: 0.0015,
+  near: 0.056, far: 0.072, depth: 0.012, comb: 0.9, lift: 0.0015,
   shut: { Blink: 1, Smile: 0.5, Squint: 0.25 }, settle: 0.35, from: 0.45,
 };
+// A closed eye sat in a hollow (lids.glb, Blink on): its lids 24.5 mm in front of the eye's centre on its axis but only
+// 7-8 mm at their edge, 40-48 mm off it, where the face round them stands at 17-24 mm - the hollow's wall was the hard
+// edge round a closed eye, a pad sunk in the face. Shut, the lids are lifted onto this dome instead: `crown` in front of
+// the eye's centre on its axis, falling to `edge` (level with the face) at `rim` off it, lifted no more from `rim` to
+// `fade` (where LID_TUCK has them gone). On the Blink key only, the lids' skin and undercoat (the renderer) and their
+// strands (createGroom) alike: an open eye is untouched, and a closing lid rises onto the dome as it shuts.
+export const LID_DOME = { crown: 0.027, edge: 0.02, rim: 0.044, fade: 0.05 };
+export interface EyeFrame { centre: readonly [number, number, number]; axis: readonly [number, number, number] }
+// The lids' strands are rooted on lids.glb's lid surface, the skin drawn this much further out (the renderer's
+// LID_SOLIDIFY_OUT): lifted as though on the skin, they keep under it - lifted onto the dome themselves, they rose over
+// the bare lash line and a shut eye lost its one dark line.
+export const LID_STRAND_UNDER = 0.0022;
+/**
+ * How far out along the eye's axis a lid point, where it lies shut, is lifted onto LID_DOME (rest space); `under`: how
+ * far beneath the lid's skin the point lies.
+ */
+export function shutLidLift(x: number, y: number, z: number, eye: EyeFrame, under = 0): number {
+  const d = [x - eye.centre[0], y - eye.centre[1], z - eye.centre[2]];
+  const al = Math.hypot(eye.axis[0], eye.axis[1], eye.axis[2]) || 1;
+  const depth = (d[0] * eye.axis[0] + d[1] * eye.axis[1] + d[2] * eye.axis[2]) / al + under;
+  const r = Math.sqrt(Math.max(0, d[0] * d[0] + d[1] * d[1] + d[2] * d[2] - depth * depth));
+  const dome = LID_DOME.crown - (LID_DOME.crown - LID_DOME.edge) * (r / LID_DOME.rim) ** 2;
+  return Math.max(0, dome - depth) * (1 - THREE.MathUtils.smoothstep(r, LID_DOME.rim, LID_DOME.fade));
+}
 
 const GROOM_VERTEX = /* glsl */ `
 #include <common>
@@ -184,8 +205,8 @@ void main() {
       float laid = max(0.0, groomLean.y - groomStrand.x * sqrt(groomData.z) * ${EYE_LEAN.comb});
       float r2 = mix(r, laid, shut);
       // over the eye: across the hollow at the face's height, never into the shut lid's dome
-      float dome = ${EYE_LEAN.crown} - ${EYE_LEAN.fall} * r2 * r2 + ${EYE_LEAN.lift};
-      float depth2 = r2 < ${EYE_LEAN.rim} ? max(depth, mix(depth, dome, shut)) : depth;
+      float dome = ${LID_DOME.crown} - ${LID_DOME.crown - LID_DOME.edge} * (r2 / ${LID_DOME.rim}) * (r2 / ${LID_DOME.rim}) + ${EYE_LEAN.lift};
+      float depth2 = r2 < ${LID_DOME.rim} ? max(depth, mix(depth, dome, shut)) : depth;
       transformed = eye + axis * depth2 - inward * r2;
       groomT = mix(groomTangent, inward * length(groomTangent), shut);
     }
@@ -378,7 +399,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   /** The Breath shape key's offset at a rest-pose point (the skin under a strand's root), or null where it has none. */
   breath?: (x: number, y: number, z: number) => readonly [number, number, number] | null;
   /** The eyes in the rest pose, left then right: their centres and the way they look (see EYE_LEAN). */
-  eyes?: readonly { centre: readonly [number, number, number]; axis: readonly [number, number, number] }[];
+  eyes?: readonly EyeFrame[];
 } = {}) {
   const uniforms = {
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
@@ -548,7 +569,18 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       geometry.morphTargetsRelative = true;
       geometry.morphAttributes.position = [];
       for (const [name, index] of Object.entries(lid.morphTargetDictionary)) {
-        const delta = part.morphs?.[name] ? floats(part.morphs[name]) : null;
+        let delta = part.morphs?.[name] ? floats(part.morphs[name]) : null;
+        // shutting, onto the dome (LID_DOME), as the lid's own skin is in the renderer
+        const eye = eyes && name === 'Blink' ? eyes[/\.L$/.test(part.morphTarget ?? '') ? 0 : 1] : null;
+        if (delta && eye) {
+          const al = Math.hypot(eye.axis[0], eye.axis[1], eye.axis[2]) || 1;
+          delta = delta.slice();
+          for (let s = 0; s < part.strands; s++) {
+            const r = s * part.points * 3;
+            const lift = shutLidLift(source[r] + delta[s * 3], source[r + 1] + delta[s * 3 + 1], source[r + 2] + delta[s * 3 + 2], eye, LID_STRAND_UNDER) / al;
+            for (let c = 0; c < 3; c++) delta[s * 3 + c] += eye.axis[c] * lift;
+          }
+        }
         const values = new Float32Array(count * 3);
         if (delta) for (let v = 0; v < count; v++) {
           const strand = order[Math.floor(v / (part.points * 2))];
