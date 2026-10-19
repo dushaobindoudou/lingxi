@@ -126,6 +126,12 @@ const DEFAULT_SKIN: &str = "honey-mittens";
 const KNOWN_CAMERAS: [&str; 6] = ["look-up", "eye-level", "game", "shoulder", "overhead", "auto"];
 const DEFAULT_CAMERA: &str = "game";
 
+/// "外观 / 风格": which character renderer draws the cat - the voxel cat (renderer.ts) or the realistic, Blender-built
+/// one (realistic-renderer.ts). Separate from the theme on purpose: the voxel themes do not apply to the realistic cat,
+/// and switching back must find the user's theme where they left it.
+const KNOWN_RENDER_STYLES: [&str; 2] = ["voxel", "realistic"];
+const DEFAULT_RENDER_STYLE: &str = "voxel";
+
 /// Toys ("玩具"). Ids must match packages/life-engine's TOY_KINDS - that module owns the
 /// simulation (rolling, bouncing, batting); Rust only routes the request. Unlike the theme and
 /// camera settings these are deliberately NOT persisted: a toy left on the desktop across a
@@ -218,6 +224,8 @@ struct PersistedSettings {
     skin: String,
     #[serde(default = "default_camera")]
     camera: String,
+    #[serde(default = "default_render_style")]
+    render_style: String,
 }
 
 fn default_cat_name() -> String {
@@ -240,6 +248,10 @@ fn default_camera() -> String {
     DEFAULT_CAMERA.to_string()
 }
 
+fn default_render_style() -> String {
+    DEFAULT_RENDER_STYLE.to_string()
+}
+
 impl PersistedSettings {
     fn defaults() -> Self {
         Self {
@@ -254,6 +266,7 @@ impl PersistedSettings {
             behavior_preset: default_behavior_preset(),
             skin: default_skin(),
             camera: default_camera(),
+            render_style: default_render_style(),
         }
     }
 }
@@ -287,6 +300,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
     // ignored by setSkin, which leaves the built-in default showing anyway.
     let skin = if settings.skin.trim().is_empty() { default_skin() } else { settings.skin };
     let camera = if KNOWN_CAMERAS.contains(&settings.camera.as_str()) { settings.camera } else { default_camera() };
+    let render_style = if KNOWN_RENDER_STYLES.contains(&settings.render_style.as_str()) { settings.render_style } else { default_render_style() };
     PersistedSettings {
         version: 1,
         scale: if known_scale { settings.scale } else { SCALE_LARGE },
@@ -299,6 +313,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
         behavior_preset,
         skin,
         camera,
+        render_style,
     }
 }
 
@@ -334,6 +349,7 @@ struct TrayState {
     behavior_preset: Mutex<String>,
     skin: Mutex<String>,
     camera: Mutex<String>,
+    render_style: Mutex<String>,
     /// Where PersistedSettings is written; None only if the OS config dir is
     /// unavailable, in which case settings simply don't persist (app still works).
     settings_path: Option<PathBuf>,
@@ -473,6 +489,15 @@ impl TrayState {
         self.persist();
     }
 
+    /// "外观 / 风格": voxel or realistic. Live - the companion prepares the other renderer while the current one keeps
+    /// drawing and swaps once it is ready (renderer-switcher.ts).
+    fn apply_render_style(&self, app: &tauri::AppHandle, style: &str) {
+        let style = if KNOWN_RENDER_STYLES.contains(&style) { style } else { DEFAULT_RENDER_STYLE };
+        *self.render_style.lock().unwrap() = style.to_string();
+        let _ = app.emit("set-render-style", style);
+        self.persist();
+    }
+
     /// Snapshot the current state to disk. tmp-file + rename so a crash mid-write
     /// can never leave a half-written settings.json behind.
     fn persist(&self) {
@@ -489,6 +514,7 @@ impl TrayState {
             behavior_preset: self.behavior_preset.lock().unwrap().clone(),
             skin: self.skin.lock().unwrap().clone(),
             camera: self.camera.lock().unwrap().clone(),
+            render_style: self.render_style.lock().unwrap().clone(),
         };
         let Ok(body) = serde_json::to_string_pretty(&settings) else { return };
         if let Some(parent) = path.parent() {
@@ -575,6 +601,11 @@ fn set_camera(app: tauri::AppHandle, state: State<TrayState>, camera: String) {
     state.apply_camera(&app, &camera);
 }
 
+#[tauri::command]
+fn set_render_style(app: tauri::AppHandle, state: State<TrayState>, style: String) {
+    state.apply_render_style(&app, &style);
+}
+
 /// "重置位置": recenter the cat and drop whatever it was doing. A recovery action, not
 /// persisted state - just forwarded to the frontend's LifeEngine.resetPosition().
 #[tauri::command]
@@ -606,6 +637,8 @@ fn get_status(state: State<TrayState>, power: State<PowerState>) -> serde_json::
         "knownSkins": KNOWN_SKINS,
         "camera": *state.camera.lock().unwrap(),
         "knownCameras": KNOWN_CAMERAS,
+        "renderStyle": *state.render_style.lock().unwrap(),
+        "knownRenderStyles": KNOWN_RENDER_STYLES,
     })
 }
 
@@ -1146,11 +1179,36 @@ const TRANSCRIPT_TAIL_BYTES: u64 = 512 * 1024;
 /// first sentence is usually the result. Code blocks, tables, headings and horizontal rules are
 /// skipped: none of them reads as a line a cat could say.
 fn turn_line(text: &str) -> Option<String> {
-    prose_lines(text)
-        .iter()
-        .map(|line| first_sentence(line))
-        .find(|sentence| sentence.chars().count() >= 4)
-        .map(|sentence| fit_bubble(&sentence))
+    let lines = prose_lines(text);
+    let line = lines.iter().find(|line| first_sentence(line).chars().count() >= 4)?;
+    // Whole sentences of the reply's first paragraph, as many as fit: the conclusion and what
+    // comes next, the way an agent's own report reads. A first sentence too long on its own is
+    // cut at a clause.
+    let mut sentences: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        current.push(c);
+        let end = "。！？!?".contains(c) || (c == '.' && chars.peek().is_none_or(|n| n.is_whitespace()));
+        if end {
+            sentences.push(std::mem::take(&mut current).trim().to_string());
+        }
+    }
+    if !current.trim().is_empty() {
+        sentences.push(current.trim().to_string());
+    }
+    let mut out = String::new();
+    for sentence in sentences.iter().filter(|s| !s.is_empty()) {
+        let joined = if out.is_empty() { sentence.clone() } else { format!("{out} {sentence}").replace("。 ", "。").replace("！ ", "！").replace("？ ", "？") };
+        if joined.chars().count() > BUBBLE_SAY_CHARS {
+            break;
+        }
+        out = joined;
+    }
+    if out.is_empty() {
+        return Some(fit_bubble(&first_sentence(line)));
+    }
+    Some(out.trim_end_matches(['：', ':', '，', ',', '；', ';']).trim().to_string())
 }
 
 /// The question a reply ENDS on, if it ends on one - "要按折中方案做吗？". A turn that closes by
@@ -2555,9 +2613,11 @@ fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Curs
 /// Longest line the speech bubble can show. Enforced here rather than trusted from the caller,
 /// because this is reachable from any process on the loopback interface.
 const SAY_MAX_CHARS: usize = 140;
-/// A bubble stays about 1.8s + 0.13s per character, and the forced hold below is only a few
-/// seconds. Past ~24 characters the line disappears before it can be read.
-const BUBBLE_SAY_CHARS: usize = 24;
+/// Longest line a HOST HOOK's reply is turned into. It used to be 24 characters ("past ~24 the line disappears before
+/// it can be read"), which cut a Cursor / Codex / Claude turn to its first clause - "新版已经装好了" out of two sentences.
+/// The user's reference is DSH, where the agent writes its own up-to-140-character report and it is shown whole
+/// (bubble_hold_ms holds a long line up to 20 s), so hook lines now get the same room.
+const BUBBLE_SAY_CHARS: usize = SAY_MAX_CHARS;
 /// Longest a single remembered fact may be.
 const MEMORY_MAX_CHARS: usize = 280;
 /// Longest a reminder's text may be.
@@ -3316,6 +3376,15 @@ fn validate_intent(intent: &serde_json::Value) -> Result<(), String> {
     }
 }
 
+/// The control fields that take over the cat's performance, and so contend for the stage.
+const STAGE_FIELDS: [&str; 5] = ["expression", "action", "say", "perform", "toy"];
+
+/// Whether a command still has something to play after its stage fields drew `rejected` preflight messages. Each field
+/// contributes at most one, so fewer messages than fields present means at least one field plays.
+fn stage_still_plays(command: &serde_json::Value, rejected: usize) -> bool {
+    rejected < STAGE_FIELDS.iter().filter(|field| command.get(**field).is_some()).count()
+}
+
 fn apply_control_command(
     app: &tauri::AppHandle,
     command: &serde_json::Value,
@@ -3427,10 +3496,7 @@ fn apply_control_command(
         .get("__stageAlreadyHeld")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let wants_stage = !already_held
-        && ["expression", "action", "say", "perform", "toy"]
-            .iter()
-            .any(|field| command.get(*field).is_some());
+    let wants_stage = !already_held && STAGE_FIELDS.iter().any(|field| command.get(*field).is_some());
     // Pre-flight the stage-worthy fields BEFORE claiming the stage. The order used to be claim
     // first, validate later, so a command like `{"agent":"a","action":"not-a-clip"}` held the
     // stage for its whole hold window with the agent's badge on screen, then came back 400 -
@@ -3474,7 +3540,11 @@ fn apply_control_command(
     } else {
         Vec::new()
     };
-    let wants_stage = wants_stage && stage_preflight_rejected.is_empty();
+    // The stage is refused only when NOTHING stage-worthy would play. Refusing it for any one bad field cost every
+    // bubble its attribution on the realistic cat: a reaction from the user's library names a clip or face only the
+    // voxel cat has, that field was rejected, and the line was still said - but with no agent-stage, so no icon and no
+    // session name.
+    let wants_stage = wants_stage && stage_still_plays(command, stage_preflight_rejected.len());
     let mut stage_denied: Option<String> = None;
     let hold = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
     if wants_stage {
@@ -6410,6 +6480,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         current_scale: Mutex::new(SCALE_LARGE),
         skin: Mutex::new(DEFAULT_SKIN.to_string()),
         camera: Mutex::new(DEFAULT_CAMERA.to_string()),
+        render_style: Mutex::new(DEFAULT_RENDER_STYLE.to_string()),
         cat_name: Mutex::new(DEFAULT_CAT_NAME.to_string()),
         cat_personality: Mutex::new(String::new()),
         active_agent: Mutex::new(default_active_agent()),
@@ -6741,6 +6812,7 @@ pub fn run() {
             set_behavior_preset,
             set_skin,
             set_camera,
+            set_render_style,
             report_capabilities,
             get_capabilities,
             play_action,
@@ -6876,6 +6948,7 @@ pub fn run() {
                 state.apply_behavior_preset(handle, &saved.behavior_preset);
                 state.apply_skin(handle, &saved.skin);
                 state.apply_camera(handle, &saved.camera);
+                state.apply_render_style(handle, &saved.render_style);
                 if !saved.visible {
                     // Same code path as the runtime tray toggle. The companion window
                     // must still be created visible (see the compositing note above);
@@ -7032,18 +7105,32 @@ mod tests {
     }
 
     #[test]
+    fn a_line_that_still_plays_keeps_the_stage_and_its_icon() {
+        // Codex's turn-end reaction on the realistic cat: the library's clip and face are voxel-only and rejected, the
+        // line is said - and must still claim the stage, or the bubble shows no icon.
+        let reaction = serde_json::json!({ "agent": "codex", "action": "wb-wave-flag", "expression": "收工", "say": "好了" });
+        assert!(stage_still_plays(&reaction, 2));
+        // nothing left to play: no stage
+        assert!(!stage_still_plays(&reaction, 3));
+        assert!(!stage_still_plays(&serde_json::json!({ "agent": "codex", "action": "nope" }), 1));
+        assert!(stage_still_plays(&serde_json::json!({ "say": "hi" }), 0));
+    }
+
+    #[test]
     fn a_turn_end_does_not_replace_what_the_turn_just_did() {
         assert!(keep_turn_summary("登录失败提示改完了", "completed", "本轮回复结束", 1_000));
         assert!(!keep_turn_summary("登录失败提示改完了", "completed", "本轮回复结束", 121_000));
         assert!(!keep_turn_summary("本轮回复结束", "completed", "登录失败提示改完了", 1_000));
         assert!(is_lifecycle_summary("本轮回复完成（end_turn）"));
         assert!(!is_lifecycle_summary("登录失败提示改完了，相关测试过了"));
-        let line = bubble_line("登录提示改好啦，测试也乖乖过了，顺便把文案也收短了");
+        let line = bubble_line(&"登录提示改好啦，测试也乖乖过了".repeat(10));
         assert!(line.chars().count() <= BUBBLE_SAY_CHARS);
         assert!(line.ends_with('…'));
+        assert_eq!(bubble_line("登录提示改好啦，测试也乖乖过了，顺便把文案也收短了"), "登录提示改好啦，测试也乖乖过了，顺便把文案也收短了");
         assert_eq!(bubble_line("哼，好了"), "哼，好了");
         assert!(bubble_hold_ms("哼，好了") >= 3200);
         assert!(bubble_hold_ms(&"啊".repeat(24)) <= 6400);
+        assert!(bubble_hold_ms(&"啊".repeat(140)) >= 18_000, "a full report stays up long enough to read");
         assert!(bubble_hold_ms(&"啊".repeat(100)) > 10_000, "long task summaries need time to read");
     }
 
@@ -7172,7 +7259,7 @@ mod tests {
                 "taskId": "s", "session": "s", "origin": "hook", "summary": "本轮回复结束", "result": result,
             }), 1).unwrap();
             assert_eq!(task_report_line(&event("completed", None), Some("搞定啦～")), None, "{host}");
-            assert_eq!(task_report_line(&event("completed", Some("登录测试已修复。")), None).as_deref(), Some("登录测试已修复"));
+            assert_eq!(task_report_line(&event("completed", Some("登录测试已修复。")), None).as_deref(), Some("登录测试已修复。"));
             assert_eq!(task_report_line(&event("completed", Some("你希望使用方案 A 还是 B？")), None).as_deref(), Some("你希望使用方案 A 还是 B？"));
             for state in ["failed", "needs_input", "needs_approval", "blocked"] {
                 let line = task_report_line(&event(state, None), Some("在等你哦")).unwrap();
@@ -7617,7 +7704,7 @@ mod tests {
             "session_id": "s", "hook_event_name": "Stop", "last_assistant_message": reply,
         });
         let event = normalize_claude_hook_event(&raw, 1);
-        assert_eq!(event.result.as_deref(), Some("新版已经装好"));
+        assert_eq!(event.result.as_deref(), Some("新版已经装好，重启后气泡会带上 Claude 图标和会话名。"));
         // Perceived, not collected: the reply never reaches the serialized event (event log,
         // notification sinks) - only the display-only field holds the line made from it.
         let serialized = serde_json::to_string(&event).unwrap();
@@ -7630,24 +7717,29 @@ mod tests {
 
     #[test]
     fn turn_line_takes_the_first_sentence_of_prose_and_keeps_it_bubble_sized() {
-        assert_eq!(turn_line("测试全部通过。接下来安装。").as_deref(), Some("测试全部通过"));
+        // DSH-style: whole sentences of the first paragraph, up to the report limit.
+        assert_eq!(turn_line("测试全部通过。接下来安装。").as_deref(), Some("测试全部通过。接下来安装。"));
         assert_eq!(
             turn_line("```bash\nnpm test\n```\n| a | b |\n## 结论\n**构建完成**，已安装到 `/Applications`。").as_deref(),
-            Some("构建完成，已安装到 /Applications"),
+            Some("构建完成，已安装到 /Applications。"),
         );
-        // Too long: cut at the last comma inside the bubble, not mid-word.
+        // Cursor, 2026-10-16: two sentences used to come out as their first clause, "新版已经装好了".
+        let reply = "新版已经装好了，真实猫的毛发换成了三层：里面是实心厚绒，中间是带毛丝纹理的壳毛，外面保留 Blender 的原版毛丝，所以轮廓更圆、质感更像毛。下一步我会给毛发加上沿毛方向的高光，再重新编译。";
+        assert_eq!(turn_line(reply).as_deref(), Some(reply));
         assert_eq!(
             turn_line("明白了：「不采集」指的是内容在本机处理完就丢弃，不上传、不外发，而不是让猫对内容一无所知。").as_deref(),
-            Some("明白了：「不采集」指的是内容在本机处理完就丢弃"),
+            Some("明白了：「不采集」指的是内容在本机处理完就丢弃，不上传、不外发，而不是让猫对内容一无所知。"),
         );
-        // No comma to cut at: truncated with an ellipsis.
-        let long = turn_line("关键发现：本机这版 Claude Code 的 hook 数据比我们以为的丰富。").unwrap();
+        // A first sentence past the limit with no comma to cut at: truncated with an ellipsis.
+        let long = turn_line(&format!("关键发现：{}。", "数据比我们以为的丰富".repeat(20))).unwrap();
         assert!(long.ends_with('…') && long.chars().count() == BUBBLE_SAY_CHARS, "{long}");
-        assert_eq!(turn_line("- see [the docs](https://x.y) for details.").as_deref(), Some("see the docs for details"));
-        // An aside in parentheses is dropped before cutting, rather than cut in half.
+        // Sentences that do not all fit: the ones that do, not a sentence cut in half.
+        let many = turn_line(&"这一句正好二十个字左右用来测试拼接上限。".repeat(10)).unwrap();
+        assert!(many.chars().count() <= BUBBLE_SAY_CHARS && many.ends_with('。'), "{many}");
+        assert_eq!(turn_line("- see [the docs](https://x.y) for details.").as_deref(), Some("see the docs for details."));
         assert_eq!(
             turn_line("Bash 这边一直拿不到自动模式的安全判定（服务端的问题，不是命令本身被拒），所以我没法替你启动 app。").as_deref(),
-            Some("Bash 这边一直拿不到自动模式的安全判定"),
+            Some("Bash 这边一直拿不到自动模式的安全判定（服务端的问题，不是命令本身被拒），所以我没法替你启动 app。"),
         );
         assert_eq!(turn_line("```\ncode only\n```"), None);
         // A reply that is data has no sentence to say - not even its opening brace.
@@ -7760,7 +7852,7 @@ mod tests {
         let named = serde_json::json!({ "type": "agent-turn-complete", "thread-id": "abc123456", "cwd": "/work/lingxi", "last-assistant-message": "登录测试修好了。接下来可以继续。" });
         let event = normalize_codex_notify_event(&named, 3).unwrap();
         assert_eq!(event.label, None);
-        assert_eq!(event.result.as_deref(), Some("登录测试修好了"));
+        assert_eq!(event.result.as_deref(), Some("登录测试修好了。接下来可以继续。"));
         assert!(!event.summary.contains("登录测试"), "reply must stay out of the event log");
 
         let question = serde_json::json!({ "type": "agent-turn-complete", "thread-id": "abc123456", "last-assistant-message": "需要你确认部署窗口吗？" });
@@ -7793,7 +7885,7 @@ mod tests {
         });
         let event = normalize_codex_notify_event(&users, 9).unwrap();
         assert_eq!(event.state, "completed");
-        assert_eq!(event.result.as_deref(), Some("可以叫「猫的一天」"));
+        assert_eq!(event.result.as_deref(), Some("可以叫「猫的一天」。"));
 
         // And the whole point of returning Option: anything else must fall through to the next
         // mapper rather than being invented into a state.
@@ -7811,7 +7903,7 @@ mod tests {
         assert_eq!(hooked("{\"title\":\"修复气泡\",\"description\":\"x\"}").state, "unknown");
         let real = hooked("气泡修好了。");
         assert_eq!(real.state, "completed");
-        assert_eq!(real.result.as_deref(), Some("气泡修好了"));
+        assert_eq!(real.result.as_deref(), Some("气泡修好了。"));
     }
 
     #[test]
@@ -8440,6 +8532,7 @@ command = "node"
         let settings = load_persisted_settings(Some(&path));
         assert_eq!(settings.skin, "rainbow-dragon", "a user-authored theme must survive a restart");
         assert_eq!(settings.camera, DEFAULT_CAMERA);
+        assert_eq!(settings.render_style, DEFAULT_RENDER_STYLE, "a settings file from before 风格 existed opens on the voxel cat");
 
         // ...but a blank one is still a blank one.
         let body = serde_json::json!({
@@ -8481,6 +8574,7 @@ command = "node"
             behavior_preset: "quiet".to_string(),
             skin: "silver-brook".to_string(),
             camera: "eye-level".to_string(),
+            render_style: "realistic".to_string(),
         };
         // Serialize the same way TrayState::persist does (tmp file + rename) and load
         // it back through the same loader the app startup uses.

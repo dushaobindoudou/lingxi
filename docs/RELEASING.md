@@ -197,7 +197,7 @@ npm login --registry https://registry.npmjs.org/   # 本机 registry 若是镜�
 npm publish                                       # publishConfig 已指向官方源、access public
 ```
 
-仓库根运行 `npm run build --prefix apps/lingxi && npm run check:release`：排除开发页面和实验模型，并从真实 tarball 解包执行 MCP 握手与工具列表。
+仓库根运行 `node scripts/prepare-realcat-assets.mjs && npm run build --prefix apps/lingxi && npm run check:release`：下载并校验固定版本的写实猫资源，确认两种形态均可打包，排除开发页面和其他实验模型，并从真实 tarball 解包执行 MCP 握手与工具列表。
 
 升 npm 版本时同步 `src/version.mjs`，再将修改的 MCP 模块复制到 Claude 和 Codex 插件的
 `mcp/` 目录。握手版本测试和插件副本测试必须通过。建议先 `npm pack`，在临时目录解包检查

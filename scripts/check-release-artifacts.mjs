@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { realcatManifest, verifyRealcatAssets } from './prepare-realcat-assets.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const dist = join(root, 'apps/lingxi/dist');
@@ -18,7 +19,11 @@ function walk(dir) {
     return entry.isDirectory() ? walk(path) : [path];
   });
 }
+// Both shipped forms must work on a clean machine, including the realistic model's companion files.
+verifyRealcatAssets(join(dist, realcatManifest.directory));
+const characterFiles = new Set(Object.keys(realcatManifest.files).map(name => join(dist, realcatManifest.directory, name)));
 for (const path of walk(dist)) {
+  if (characterFiles.has(path)) continue;
   assert.doesNotMatch(path, /(?:probe|harness|debug|demo|model-audit)|\.(?:glb|blend|map)$/i,
     `Development material leaked into release: ${path}`);
 }
@@ -28,7 +33,7 @@ for (const page of html) {
     assert.ok(existsSync(join(dist, reference.replace(/^\//, ''))), `${page}: missing asset ${reference}`);
   }
 }
-console.log('Frontend release: only product pages, all assets resolve, no debug/model payload');
+console.log('Frontend release: only product pages, all assets resolve, both cat forms verified, no development payload');
 
 const staging = mkdtempSync(join(tmpdir(), 'lingxi-release-check-'));
 function run(command, args, options = {}) {

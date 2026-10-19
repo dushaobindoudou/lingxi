@@ -96,6 +96,7 @@ interface Status {
   avoidRadius: number;
   skin: string;
   camera: string;
+  renderStyle?: string;
 }
 
 /** Mirrors src-tauri's `TaskEvent` struct / packages/contracts' `TaskEvent` interface. */
@@ -376,6 +377,32 @@ function renderCameraOptions(activeId: string) {
       note.textContent = preset.description;
       button.append(label, note);
       button.addEventListener('click', () => void invoke('set_camera', { camera: preset.id }));
+      return button;
+    }),
+  );
+}
+
+/** 风格: the voxel cat or the realistic (Blender-built) cat - see src/renderer-switcher.ts. Same card shape as the
+ *  camera picker. The companion swaps once the realistic model has loaded, so the card reflects the request. */
+const RENDER_STYLES = [
+  { id: 'voxel', name: '方块猫', description: '原来的像素风格，主题和全部动作都在' },
+  { id: 'realistic', name: '写实猫', description: '长毛 3D 造型，写实毛发与柔和光照' },
+];
+function renderStyleOptions(activeId: string) {
+  const container = document.getElementById('style-options');
+  if (!container) return;
+  container.replaceChildren(
+    ...RENDER_STYLES.map((style) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.style = style.id;
+      button.classList.toggle('active', style.id === activeId);
+      const label = document.createElement('b');
+      label.textContent = style.name;
+      const note = document.createElement('span');
+      note.textContent = style.description;
+      button.append(label, note);
+      button.addEventListener('click', () => void invoke('set_render_style', { style: style.id }));
       return button;
     }),
   );
@@ -1356,6 +1383,7 @@ async function main() {
   renderPlayPage();
   void refreshSkinCatalogue().then(() => renderSkinCards(status.skin));
   renderCameraOptions(status.camera);
+  renderStyleOptions(status.renderStyle ?? 'voxel');
 
   for (const selector of SIZE_BUTTON_GROUPS) {
     document.querySelectorAll<HTMLButtonElement>(selector).forEach((btn) => {
@@ -1482,6 +1510,7 @@ async function main() {
     void refreshSkinCatalogue().then(() => renderSkinCards(activeSkinId));
   });
   void listen<string>('set-camera', (event) => renderCameraOptions(event.payload));
+  void listen<string>('set-render-style', (event) => renderStyleOptions(event.payload));
   void listen<{ preset: BehaviorPreset; avoidRadius: number }>('set-behavior-preset', (event) =>
     setActiveBehaviorPreset(event.payload.preset),
   );

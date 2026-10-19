@@ -40,6 +40,9 @@ jobs:
         working-directory: apps/lingxi
         run: npm ci --ignore-scripts
 
+      - name: Prepare verified production cat assets
+        run: node scripts/prepare-realcat-assets.mjs
+
       # Run as separate steps rather than through `npm run validate`, so a red run names
       # which gate failed in the job summary instead of "validate".
       - name: Check JSON, preset contracts and Markdown links

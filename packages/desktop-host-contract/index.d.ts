@@ -181,6 +181,13 @@ export interface Renderer {
    * so reading one tells you nothing about the other.
    */
   readonly headYaw?: number;
+  /**
+   * The fastest pace (logical px/s) this renderer can walk at, at its current size and camera, with
+   * paws that still plant: a host scales its wandering down to it. Null or absent when any pace
+   * works (procedural legs). Exists because a clip-driven character drawn small covers few pixels
+   * per stride - at the voxel cat's pace the realistic cat's paws skated across the desktop.
+   */
+  locomotionPace?(): number | null;
   /** Dev probe only (see apps/lingxi/src/probe-unproject.ts); never called in production. */
   probeUnproject?(screenX: number, screenY: number): boolean;
   /**

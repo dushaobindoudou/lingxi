@@ -28,7 +28,7 @@ LINGXI_AGENT=cursor LINGXI_TASK_ID=fix-login lingxi task completed test proud "�
 |---|---|
 | 会话开始 | 会话开了；猫没在跑时顺手在后台拉起（`LINGXI_AUTOSTART=0` 时不拉） |
 | 你收到用户的一条消息 | 新一轮开始（不带用户说了什么） |
-| 回复完成 | `afterAgentResponse.text` 传给应用，从结论截一句；末尾有问题时叫用户回答 |
+| 回复完成 | `afterAgentResponse.text` 传给应用，按整句取回复首段（与 DSH 汇报同为 140 字上限），不再截成短句；末尾有问题时叫用户回答 |
 | 一轮失败或取消 | `stop.status` 更新终态；正常 stop 让位于回复事件 |
 
 你没报时 hook 从最终回复兜底；你报过时直接展示具体结果。完整任务结果和心情仍然只有你知道，

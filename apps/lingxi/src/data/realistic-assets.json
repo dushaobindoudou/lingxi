@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "directory": "characters/lingxi-realistic/current",
+  "archive": {
+    "url": "https://github.com/dushaobindoudou/lingxi/releases/download/models-2026-09-30/lingxi-realistic-runtime-2951b5f.tar.gz",
+    "sha256": "2cc171e6030f04a1ae97608f54de4d348337c1e7f4bf0d04d7fe1c7dbd7bf514"
+  },
+  "files": {
+    "cat.glb": {
+      "bytes": 26146488,
+      "sha256": "49a92d80aab696ddff8a2f58af1e017b9e790a819cc69464ba90aeec065b7f8a"
+    },
+    "lids.glb": {
+      "bytes": 229432,
+      "sha256": "2a5f5f11f5a36ff999c8095b304f729b924ce10e643dac0ba95535df769e7d2a"
+    },
+    "clips.glb": {
+      "bytes": 100032,
+      "sha256": "28dd8a89c49d0b5b3a00444cc283502ea04878c7108f61737f8da27af0c2214b"
+    },
+    "face.json": {
+      "bytes": 21451,
+      "sha256": "8ba1a515db3d64228e3b29cbacfcb24dd1e3663d106d33706dbff248b5dcceef"
+    },
+    "groom.json": {
+      "bytes": 15183,
+      "sha256": "c206de83150f18134ca4e5981cb7bc087142621825c1cb5de4e6bfb1ad8efe1c"
+    },
+    "groom.bin": {
+      "bytes": 79375236,
+      "sha256": "7985eb0a27cecfc976363e1bfcc067f09cd1255e0745e9f4e8eb7ee4511aa5e4"
+    }
+  }
+}

@@ -3,6 +3,8 @@ import { defineConfig } from "vite";
 import process from "node:process";
 // @ts-expect-error type error without @types/node package
 import { fileURLToPath, URL } from "node:url";
+// @ts-expect-error build-time Node module, kept outside the browser sources
+import { copyRealcatAssets } from "../../scripts/prepare-realcat-assets.mjs";
 const host = process.env.TAURI_DEV_HOST;
 const resolve = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -10,6 +12,11 @@ const resolve = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig(({ command }) => ({
   // Local look-dev files in public/ must never enter a release bundle.
   publicDir: command === "build" ? false : "public",
+  plugins: [{
+    name: "production-cat-assets",
+    apply: "build",
+    closeBundle() { copyRealcatAssets(resolve("dist")); },
+  }],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

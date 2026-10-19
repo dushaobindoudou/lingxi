@@ -11,7 +11,7 @@ Connect a coding agent and it reacts to completed tasks, failures and requests f
 
 <img src="assets/brand/lingxi-icon-v3.png" width="200" alt="Lingxi, a grey-brown tabby kitten with white paws" />
 
-The runtime uses a procedural, block-style 3D cat; the image above is the brand illustration.
+Switch between block-style and realistic cats in the main window under Appearance → Style. The image above is the brand illustration.
 
 **v1.0.0 is being prepared for release.** Supports **macOS 12+, Apple Silicon and Intel**.
 

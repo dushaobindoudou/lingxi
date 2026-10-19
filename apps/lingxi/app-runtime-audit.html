@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob: ipc: http://ipc.localhost" />
+    <title>灵犀 · 正式运行时复验</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #7a8b98; }
+      #stage { position: absolute; inset: 0; }
+      #log { position: absolute; left: 8px; top: 8px; z-index: 9; color: #d7e0ea;
+        font: 12px/1.5 ui-monospace, monospace; background: rgba(0,0,0,.7);
+        padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; max-width: 80ch;
+        max-height: 180px; overflow: auto; }
+    </style>
+    <script type="module" src="/src/app-harness.ts" defer></script>
+  </head>
+  <body><div id="stage"></div><div id="log">booting…</div></body>
+</html>

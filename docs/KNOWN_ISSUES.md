@@ -15,7 +15,7 @@
 
 自动化测试不能替代以下验证。发正式版前应在另一台 Mac 或新 macOS 用户下完成：
 
-1. 从通用 DMG 安装、首次启动、菜单栏开关、拖动、尺寸与主题切换。
+1. 从通用 DMG 安装、首次启动、菜单栏开关、拖动、尺寸、主题与方块猫 / 写实猫形态切换。
 2. 从旧版升级，设置、记忆、提醒和已有 Agent 配置保留。
 3. Apple 芯片与 Intel 两个平台的启动及睡眠恢复。
 4. Claude Code 和 Codex 各完成一次真实会话，验证来源图标、授权等待和回合结束不重复。
@@ -27,11 +27,11 @@
 
 | Issue | 当前情况 | 后续验收 |
 | --- | --- | --- |
-| [#3 角色母版](https://github.com/dushaobindoudou/lingxi/issues/3) | 当前正式运行时是程序生成的 3D 方块猫；存在独立模型研究素材 | 原议题中的四足拓扑、眼睑、可编辑母版和概念对照 |
-| [#4 运行时毛发](https://github.com/dushaobindoudou/lingxi/issues/4) | 透明桌面窗口、穿透、拖动及性能优化已有实现 | 原议题中的真实网格、毛发目标及跨设备性能证据 |
+| [#3 角色母版](https://github.com/dushaobindoudou/lingxi/issues/3) | 支持程序生成的方块猫和 GLB 写实猫，包含眼睑与面部配置 | 原议题中的四足拓扑、眼睑、可编辑母版和概念对照 |
+| [#4 运行时毛发](https://github.com/dushaobindoudou/lingxi/issues/4) | 写实网格、运行时毛发、透明桌面窗口、穿透与拖动已有实现 | 原议题中的真实网格、毛发目标及跨设备性能证据 |
 | [#5 生活闭环](https://github.com/dushaobindoudou/lingxi/issues/5) | 休息、睡眠、醒来、注视和互动已有实现与行为测试 | 一周试用记录与关闭原因仍需产品验收 |
 | [#6 皮肤与性格](https://github.com/dushaobindoudou/lingxi/issues/6) | 主题切换、自定义 JSON 与五个性格参数已有实现 | 完整资产组合、失败回退及长期状态保持的实机验收 |
 | [#7 Agent 适配](https://github.com/dushaobindoudou/lingxi/issues/7) | Claude / Codex / DSH 等适配器已存在，生命周期有集成测试 | 多宿主真实会话、重连、新鲜度与来源隔离证据 |
 | [#8 图标与设计系统](https://github.com/dushaobindoudou/lingxi/issues/8) | 应用图标、菜单栏符号、暖色管理界面已有实现 | 各尺寸视觉检查、焦点/对比和减少动态验收 |
 
-v1.0 的公开说明按当前功能描述，不把模型研究、写实毛发或历史设计目标宣传成已经交付。
+v1.0 的公开说明按当前功能描述，区分已经交付的两种形态与仍需验收的历史设计目标。

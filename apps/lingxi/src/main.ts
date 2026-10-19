@@ -9,11 +9,14 @@
 import './styles.css';
 import { createTauriDesktopHost } from './desktop-host.ts';
 import { createThreeRenderer } from './renderer.ts';
+import { createRealisticRenderer } from './realistic-renderer.ts';
+import { frameDelta } from './animation-clock.ts';
+import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx, type BubbleAttribution } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
-import { createLifeEngine, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
+import { createLifeEngine, DEFAULT_WANDER_SPEED, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
 import type { Personality } from '../../../packages/life-engine/src/index.d.mts';
 import { createActivityRecorder } from '../../../packages/perception/src/index.mjs';
 import type { WorkArea } from '../../../packages/desktop-host-contract/index.d.ts';
@@ -63,7 +66,29 @@ async function main() {
   dlog('main() start');
   const host = createTauriDesktopHost();
   // Fitted: the canvas follows the cat instead of covering the screen - see the renderer.
-  const renderer = createThreeRenderer({ fitCanvasToCat: true });
+  // 风格: one facade for the life of the window; the voxel or the realistic cat behind it (renderer-switcher.ts).
+  const renderer = createRendererSwitcher({
+    voxel: () => createThreeRenderer({ fitCanvasToCat: true }),
+    realistic: () => {
+      const trace = (message: string) => void invoke('debug_log', { message: `[realcat] ${message}` }).catch(() => {});
+      const url = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
+      trace(`creating, asset ${url}`);
+      const next = createRealisticRenderer({ assetUrl: url, fitCanvasToCat: true, shells: 32 });
+      next.ready.then(() => trace('model ready'), (error) => trace(`model failed: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`));
+      return next;
+    },
+  });
+  function applyRenderStyle(style: string | undefined): void {
+    const wanted: RenderStyle = style === 'realistic' ? 'realistic' : 'voxel';
+    void invoke('debug_log', { message: `[realcat] style requested ${style} -> ${wanted}, active ${renderer.activeStyle}` }).catch(() => {});
+    if (wanted === renderer.requestedStyle) return;
+    void renderer.switchStyle(wanted).then((result) => {
+      // Not dlog (dev only): a style that fails to load in the shipped app must leave a trace.
+      void invoke('debug_log', { message: `render style ${wanted}: ${JSON.stringify(result)}` }).catch(() => {});
+      // the two cats draw different heights, and the margins follow what is drawn
+      if (result.applied) { syncMargins(); publishCapabilities(); }
+    });
+  }
   const engineRecorder = createActivityRecorder();
   const stage = document.getElementById('stage');
   if (!stage) throw new Error('index.html must contain #stage');
@@ -181,6 +206,7 @@ async function main() {
     avoidRadius: number;
     skin: string;
     camera: string;
+    renderStyle?: string;
     /** The five sliders from 主界面. The engine reads these - see applyStatus. */
     personalityTraits?: Partial<Personality>;
   }
@@ -202,6 +228,7 @@ async function main() {
     renderer.setSkin?.(status.skin);
     userCamera = status.camera;
     renderer.setCameraPreset?.(status.camera);
+    applyRenderStyle(status.renderStyle);
     // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
     syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
@@ -409,6 +436,7 @@ async function main() {
     renderer.setSkin?.(event.payload);
     syncMargins();
   });
+  void listen<string>('set-render-style', (event) => applyRenderStyle(event.payload));
   void listen<string>('set-camera', (event) => {
     userCamera = event.payload;
     renderer.setCameraPreset?.(event.payload);
@@ -614,11 +642,13 @@ async function main() {
   let perceptionTimer: ReturnType<typeof setInterval> | null = null;
   function pushPerception() {
     const now = performance.now();
+    const renderState = renderer.describeCapabilities?.() as { style?: string; gait?: unknown; textures?: unknown } | undefined;
     const snapshot = {
       observedAt: Date.now(),
       cursor,
       petPosition: engine.position,
       petState: engine.state,
+      renderDiagnostics: renderState?.style === 'realistic' ? { gait: renderState.gait, textures: renderState.textures } : null,
       mode: engine.mode,
       // What the cat is doing right now, beyond where it is: which clip is playing and what it
       // is playing with. Both are things an agent (or the debug console, or a person watching
@@ -718,7 +748,7 @@ async function main() {
 
   function step(now: number) {
     try {
-      const deltaSeconds = lastFrameAt == null ? 0 : Math.min(0.1, (now - lastFrameAt) / 1000);
+      const deltaSeconds = frameDelta(lastFrameAt, now, renderer.activeStyle);
       lastFrameAt = now;
 
       // Drag position updates now come from the native mousemove listener above (faster,
@@ -726,6 +756,9 @@ async function main() {
       // The engine's radial fallback is useful in headless tests, but the live cat has an
       // actual silhouette. Use that for touch so approaching from below cannot trigger early.
       const pointerOnPet = cursor ? renderer.hitTest(cursor, true) : false;
+      // the realistic cat's legs set its pace (a small one strolls, it does not skate); the voxel cat's legs follow any
+      const pace = renderer.locomotionPace?.();
+      engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
       const snapshot = engine.tick(now, cursor, pointerOnPet);
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the
@@ -910,7 +943,7 @@ async function main() {
         updateSuspension();
         // Compare before applying: setSkin rebuilds the rig and repaints both atlases, so
         // calling it every 1.5s because nothing changed would be genuinely expensive.
-        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius]);
+        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius, status.renderStyle]);
         if (json === lastStatusJson) return;
         const missed = lastStatusJson !== '';
         lastStatusJson = json;

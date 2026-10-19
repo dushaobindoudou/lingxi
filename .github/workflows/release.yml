@@ -65,6 +65,10 @@ jobs:
           npm ci --ignore-scripts
           (cd apps/lingxi && npm ci --ignore-scripts)
 
+      - name: Prepare verified production cat assets
+        if: steps.gate.outputs.skip != 'true'
+        run: node scripts/prepare-realcat-assets.mjs
+
       # Validate the tagged commit itself; a green main build does not prove this tag passed.
       - name: Contracts and behaviour tests
         if: steps.gate.outputs.skip != 'true'

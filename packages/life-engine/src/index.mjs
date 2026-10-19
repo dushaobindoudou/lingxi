@@ -294,8 +294,12 @@ function randomBetween(min, max, random = Math.random) {
 /**
  * @param {Partial<typeof DEFAULTS> & { position?: {x:number,y:number} }} [config]
  */
+/** The tuned wandering pace (px/s) that setPace scales. */
+export const DEFAULT_WANDER_SPEED = DEFAULTS.speed;
+
 export function createLifeEngine(config = {}) {
   const cfg = { ...DEFAULTS, ...config };
+  const baseSpeed = cfg.speed; // see setPace
   // Injectable so behaviour can be replayed exactly. Every choice the cat makes runs through
   // here, which is what lets a test pin one seed and compare two builds on the SAME decisions
   // instead of on two different random walks - the difference between measuring a change and
@@ -1275,6 +1279,19 @@ export function createLifeEngine(config = {}) {
   }
 
   /**
+   * Scale every pace the cat moves at - wandering, a toy chase, an agent's move - by `multiplier`
+   * of the tuned speed. The renderer's legs decide what is believable: the realistic cat drawn
+   * small covers few pixels per stride, and at the tuned pace its paws would skate across the
+   * desktop. Non-positive / non-finite values are ignored; capped at 4x.
+   * @param {number} multiplier
+   */
+  function setPace(multiplier) {
+    if (typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0) {
+      cfg.speed = baseSpeed * Math.min(4, multiplier);
+    }
+  }
+
+  /**
    * Retained only so an older caller (a persisted setting, an agent written against the
    * previous build) does not blow up. There is one mode now - see INTERACTION_MODES - and this
    * does nothing. It is deliberately not an error: silently ignoring a setting that no longer
@@ -1687,6 +1704,7 @@ export function createLifeEngine(config = {}) {
     setInteractionMode,
     setPersonality,
     setAvoidRadius,
+    setPace,
     setMargins,
     setEdgePreference,
     resetPosition,
