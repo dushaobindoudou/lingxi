@@ -504,6 +504,8 @@ async function main() {
   });
 
   void listen<{ id: string }>('perform', (event) => {
+    petting.setEnabled(false);
+    engine.setPetting(false);
     markInteresting();
     if (!performances.play(event.payload.id)) dlog(`perform: unknown performance ${event.payload.id}`);
   });
@@ -823,7 +825,7 @@ async function main() {
       // Clear the text immediately while the cat quietly walks out. With no free spot
       // (a full-window editor without caret bounds), wait invisibly until focus changes.
       document.documentElement.style.opacity = yieldingToInput ? '0' : '1';
-      if (yieldingToInput) petting.release();
+      if (yieldingToInput || !pointerOnPet) petting.release();
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the
       // gait integrates would be wrong.
