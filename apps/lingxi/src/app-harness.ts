@@ -105,7 +105,8 @@ function frame(now: number) {
       lastStrokePoint = { ...cursor };
       if (now > nextPurrAt && pickPointerReaction({ hovering: true, hoverMs: 1000, strokeDistance: strokeTravel })?.kind === 'stroke') {
         // Match main.ts: the realistic coat and rig provide the continuous response; no clip interrupts it.
-        if (renderer.activeStyle !== 'realistic') { renderer.playAction?.('purr-settle'); renderer.playExpression?.('陶醉', 4200); }
+        if (renderer.activeStyle !== 'realistic') renderer.playAction?.('purr-settle');
+        renderer.playExpression?.('陶醉', 4200);
         nextPurrAt = now + 3500; strokeTravel = 0;
       }
     } else { lastStrokePoint = null; strokeTravel = 0; }

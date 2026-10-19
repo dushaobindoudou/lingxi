@@ -827,11 +827,12 @@ async function main() {
             const movingHand = renderer.activeStyle === 'realistic' && reaction.kind === 'notice' && (petting || strokeDistance > 24);
             // The realistic rig follows each stroke continuously. Replaying a full clip here used to interrupt the
             // nuzzle every four seconds; a moving hand must also not start the one-off notice clip first.
-            // The voxel cat still uses its authored affection reaction.
+            // The voxel cat still uses its authored affection reaction. The face's contentment stays on both: without
+            // it the realistic cat took its strokes wide-eyed.
             if ((renderer.activeStyle !== 'realistic' || reaction.kind !== 'stroke') && !movingHand) {
               renderer.playAction?.(deeplyRelaxed ? 'belly-up' : reaction.clip);
-              renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
             }
+            if (!movingHand) renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
             if (reaction.kind === 'stroke') {
               const head = renderer.headScreenPoint?.();
               if (head) fx.hearts(head.x, head.y, 3);

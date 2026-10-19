@@ -2087,7 +2087,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           clipLids += (clipLidsTarget - clipLids) * k;
           watchForSlowBlink(cursor, !moving && (state.state === 'idle' || state.state === 'play_toy') && !staged);
           const slow = slowBlinkWeight();
-          const petEye = Math.min(0.78, PET.eyeClose * petPose.contact + PET.eyeRelax * petRelax);
+          const petEye = Math.min(0.88, PET.eyeClose * petPose.contact + PET.eyeRelax * petRelax);
           const eyelid = Math.max(slow, petEye);
           if (eyelid > 0) {
             // over the face, not instead of it: shut as far as the blink has got, smiling at the lids, the clip's own

@@ -23,7 +23,7 @@ export const PET = {
   enter: 0.18, release: 0.62, interrupt: 0.09, relaxSeconds: 8,
   headYaw: 0.30, headRoll: 0.24, headPitch: 0.16, headBump: 0.12,
   backArch: 0.15, rumpLift: 0.11, tailLift: 1.0, tailCurl: 0.16, tailTremble: 0.035,
-  earRelax: 0.09, eyeClose: 0.56, eyeRelax: 0.19, breathPeriod: 3.4, breathBase: 0.35, breathPulse: 0.48,
+  earRelax: 0.09, eyeClose: 0.75, eyeRelax: 0.15, breathPeriod: 3.4, breathBase: 0.35, breathPulse: 0.48,
 } as const;
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
