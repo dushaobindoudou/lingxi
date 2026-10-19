@@ -82,6 +82,7 @@ const GROOM_VERTEX = /* glsl */ `
 #include <morphtarget_pars_vertex>
 #include <skinning_pars_vertex>
 attribute vec3 groomTangent;
+attribute vec3 groomPawOffset; // short paw-fibre lift, applied after the exported curve's rest position
 attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
 attribute vec3 groomStrand; // length (model units), random 0..1, 1 on the lids' coat
 uniform float uGroomTime, uGroomHeight, uGroomGust;
@@ -140,6 +141,7 @@ void main() {
     random = h.z;
     vGroomChildEnd = mix(${GROOM.childShortest}, 1.0, fract(h.z * 7.31));
   }
+  transformed += groomPawOffset;
   vec3 groomRest = transformed;
   vGroomRest = groomRest;
   #include <skinning_vertex>
@@ -348,6 +350,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
   });
+  Object.assign(material.defaultAttributeValues, { groomPawOffset: [0, 0, 0] });
   // merge() cloned the values: keep the material's own uniform objects as the ones update() writes
   Object.assign(uniforms, Object.fromEntries(Object.keys(uniforms).map((k) => [k, material.uniforms[k]])));
   const boneIndex = new Map(base.skeleton.bones.map((b, i) => [(b.userData.name as string | undefined) ?? b.name, i]));
@@ -363,12 +366,15 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const normals = floats(part.normals), weights = floats(part.weights);
     const joints = new Uint16Array(asset.bytes, part.joints.offset, part.joints.count);
     const count = part.strands * part.points * 2;
+    const pawCoat = /_LX_(Body|Legs)$/.test(part.name);
     const position = new Float32Array(count * 3), color = new Float32Array(count * 3), normal = new Float32Array(count * 3);
-    const tangent = new Float32Array(count * 3), data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
+    const tangent = new Float32Array(count * 3), pawOffset = pawCoat ? new Float32Array(count * 3) : null;
+    const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
     const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
     // Strands in a shuffled order, so any leading run of them (setDensity's draw range) is an even sample of the part.
     const order = shuffledOrder(part.strands);
     const lidCoat = /_LX_Lid/.test(part.name) ? 1 : 0;
+    const pawLength = part.name.includes('_under_') ? 0.006 : 0.012;
     const spacing = rootSpacing(source, part.strands, part.points);
     const shorten = coatLength(part.name);
     let ii = 0;
@@ -381,8 +387,16 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         const a = (strand * part.points + point - 1) * 3, b = a + 3;
         strandLength += Math.hypot(source[b] - source[a], source[b + 1] - source[a + 1], source[b + 2] - source[a + 2]);
       }
-      strandLength *= shorten;
       const root = strand * part.points * 3;
+      // The exported paw curves are only 2-6 mm long, shorter than the body's opaque undercoat. Let their tips clear
+      // that layer without lengthening the already groomed ankle. Leave downward-facing sole fibres and pads alone.
+      const paw = pawCoat
+        ? (1 - THREE.MathUtils.smoothstep(source[root + 1], 0.055, 0.13))
+          * THREE.MathUtils.smoothstep(normals[strand * 3 + 1], -0.65, -0.2)
+        : 0;
+      const pawExtension = paw * Math.max(0, pawLength - strandLength * shorten);
+      const pawScale = pawExtension / Math.max(strandLength, 1e-6);
+      strandLength = strandLength * shorten + pawExtension;
       for (let point = 0; point < part.points; point++) {
         const p = strand * part.points + point;
         const before = (strand * part.points + Math.max(0, point - 1)) * 3;
@@ -392,6 +406,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
           const v = out * 2 + side;
           for (let c = 0; c < 3; c++) {
             position[v * 3 + c] = source[root + c] + (source[p * 3 + c] - source[root + c]) * shorten;
+            if (pawOffset) pawOffset[v * 3 + c] = (source[p * 3 + c] - source[root + c]) * pawScale;
             color[v * 3 + c] = colors[p * 3 + c];
             normal[v * 3 + c] = normals[strand * 3 + c];
             tangent[v * 3 + c] = source[after + c] - source[before + c];
@@ -416,6 +431,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       ['position', position, 3], ['color', color, 3], ['normal', normal, 3], ['groomTangent', tangent, 3],
       ['groomData', data, 4], ['groomStrand', strandData, 3], ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
     ] as const) geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
+    if (pawOffset) geometry.setAttribute('groomPawOffset', new THREE.BufferAttribute(pawOffset, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     let lid: THREE.Mesh | undefined;
     if (part.morphTarget) root.traverse((o) => {

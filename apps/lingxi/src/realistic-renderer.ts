@@ -790,7 +790,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   function furScaleAttribute(mesh: THREE.SkinnedMesh, bonePos: Record<string, THREE.Vector3>) {
     const pos = mesh.geometry.getAttribute('position');
     const out = new Float32Array(pos.count).fill(1);
-    if (mesh.name.startsWith('LX_Head')) {
+    if (mesh.name.startsWith('LX_Body')) {
+      // The opaque body undercoat used to stand ~15 mm above the 2-6 mm paw curves, hiding them like smooth mittens.
+      // Its solid layers use furScale squared, so a short 0.42 scale keeps the skin covered while the paw hairs emerge.
+      for (let i = 0; i < pos.count; i++) {
+        const paw = 1 - THREE.MathUtils.smoothstep(pos.getY(i), 0.055, 0.13);
+        out[i] = 1 - 0.58 * paw;
+      }
+    } else if (mesh.name.startsWith('LX_Head')) {
       const v = new THREE.Vector3();
       const inv = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
       const local = (p?: THREE.Vector3) => (p ? p.clone().applyMatrix4(inv) : null);
