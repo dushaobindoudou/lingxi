@@ -408,6 +408,85 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
     ],
   },
+  {
+    id: 'pee-at-you',
+    name: '对着你尿尿',
+    description: '跑到屏幕前认真刨两下，蹲出一小滩亮晶晶的水渍，盖好后抖抖毛走开',
+    durationMs: 10800,
+    beats: [
+      { atMs: 0, run(context) {
+        context.renderer.setCameraPreset?.('game');
+        context.renderer.playExpression?.('好奇', 2300);
+        context.engine.suggestMoveTo(stageMark(context), context.now(), 2400, 4);
+      } },
+      // Stop before posing: walking through the crouch destroys the silhouette.
+      { atMs: 2400, run(context) {
+        context.engine.clearIntent(); context.engine.turnTo(FACING_VIEWER);
+        context.renderer.playExpression?.('认真', 4300);
+      } },
+      { atMs: 2800, run(context) { context.renderer.playAction?.('potty-dig'); } },
+      { atMs: 4500, run(context) {
+        context.renderer.playAction?.('potty-squat');
+        const at = context.petPosition();
+        context.fx.pottyMark('pee', at.x, at.y + 24, 5100);
+      } },
+      { atMs: 6100, run(context) { context.renderer.playExpression?.('满足', 2600); } },
+      { atMs: 8000, run(context) {
+        context.engine.turnTo(FACING_VIEWER + Math.PI);
+        context.renderer.playAction?.('potty-dig');
+        const at = context.petPosition(); context.fx.pottyAccent('sand', at.x, at.y + 20);
+      } },
+      { atMs: 9400, run(context) {
+        context.renderer.playAction?.('shake-fur');
+        const { width, height } = context.viewport();
+        context.engine.suggestMoveTo({ x: width * .62, y: height * .55 }, context.now(), 1300, 2);
+      } },
+      { atMs: 10800, run(context) {
+        context.renderer.setPerformanceScale?.(null, .3); context.restoreCamera();
+        context.engine.turnTo(FACING_VIEWER);
+      } },
+    ],
+  },
+  {
+    id: 'poop-at-you',
+    name: '对着你拉屎',
+    description: '认真蹲一会儿，留下一小坨卡通便便，刨沙盖好后得意走开',
+    durationMs: 11600,
+    beats: [
+      { atMs: 0, run(context) {
+        context.renderer.setCameraPreset?.('game');
+        context.renderer.playExpression?.('好奇', 2300);
+        context.engine.suggestMoveTo(stageMark(context), context.now(), 2400, 4);
+      } },
+      { atMs: 2400, run(context) {
+        context.engine.clearIntent(); context.engine.turnTo(FACING_VIEWER);
+        // "认真" is the closest available face to a gentle effort expression.
+        context.renderer.playExpression?.('认真', 5400);
+      } },
+      { atMs: 2900, run(context) { context.renderer.playAction?.('potty-dig'); } },
+      { atMs: 4600, run(context) { context.renderer.playAction?.('potty-squat'); } },
+      { atMs: 5900, run(context) {
+        const at = context.petPosition();
+        context.fx.pottyMark('poop', at.x, at.y + 24, 4800);
+        context.fx.pottyAccent('scent', at.x + 40, at.y - 8);
+      } },
+      { atMs: 7700, run(context) { context.renderer.playExpression?.('满足', 1700); } },
+      { atMs: 8400, run(context) {
+        context.engine.turnTo(FACING_VIEWER + Math.PI);
+        context.renderer.playAction?.('potty-dig');
+        const at = context.petPosition(); context.fx.pottyAccent('sand', at.x, at.y + 24);
+      } },
+      { atMs: 9900, run(context) {
+        context.renderer.playExpression?.('得意', 1700);
+        const { width, height } = context.viewport();
+        context.engine.suggestMoveTo({ x: width * .62, y: height * .55 }, context.now(), 1500, 2);
+      } },
+      { atMs: 11600, run(context) {
+        context.renderer.setPerformanceScale?.(null, .3); context.restoreCamera();
+        context.engine.turnTo(FACING_VIEWER);
+      } },
+    ],
+  },
 ];
 
 export interface PerformanceRunner {

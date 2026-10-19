@@ -21,7 +21,7 @@ export interface Vitals {
   sleptAt: number | null;
   wokeAt: number | null;
 }
-export type ToyKind = 'yarn' | 'feather' | 'laser';
+export type ToyKind = 'yarn' | 'feather' | 'laser' | 'pet';
 export interface ToyState {
   kind: ToyKind;
   position: Vec2;

@@ -47,6 +47,7 @@ const TOY_CATALOGUE = [
   { kind: 'yarn', name: '毛线球', description: '会滚、会撞墙反弹；猫追上去拍一爪又飞出去，能自己玩下去' },
   { kind: 'feather', name: '逗猫棒', description: '跟着你的鼠标走，但慢半拍——需要你来逗' },
   { kind: 'laser', name: '激光笔', description: '死死钉在光标上，拍到也抓不住（这就是笑点）' },
+  { kind: 'pet', name: '撸猫', description: '用小手在猫身上来回顺毛，越摸越放松' },
 ];
 
 async function main() {
@@ -802,7 +803,8 @@ async function main() {
       // because it happened to wander onto a cursor you had parked and forgotten about
       // ("鼠标主动放到他身上的时候应该是亲近"). The same flag stops it fleeing, so the two
       // halves of the reaction finally agree with each other.
-      if (cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
+      const petting = snapshot.toy?.kind === 'pet';
+      if (cursor && wasHit && (petting || snapshot.pointer?.byUser) && !isMouseDown && !isChargingToy) {
         if (hoverSince === 0) {
           hoverSince = now;
           strokeDistance = 0;
@@ -816,10 +818,11 @@ async function main() {
           const reaction = pickPointerReaction({
             hovering: true,
             hoverMs: now - hoverSince,
-            strokeDistance,
+            strokeDistance: petting ? strokeDistance * 1.5 : strokeDistance,
           });
           if (reaction) {
-            renderer.playAction?.(reaction.clip);
+            const deeplyRelaxed = petting && reaction.kind === 'stroke' && now - hoverSince > 9000;
+            renderer.playAction?.(deeplyRelaxed ? 'belly-up' : reaction.clip);
             renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
             if (reaction.kind === 'stroke') {
               const head = renderer.headScreenPoint?.();

@@ -136,16 +136,16 @@ const DEFAULT_RENDER_STYLE: &str = "voxel";
 /// simulation (rolling, bouncing, batting); Rust only routes the request. Unlike the theme and
 /// camera settings these are deliberately NOT persisted: a toy left on the desktop across a
 /// restart would be clutter the user never asked for twice.
-const KNOWN_TOYS: [&str; 3] = ["yarn", "feather", "laser"];
+const KNOWN_TOYS: [&str; 4] = ["yarn", "feather", "laser", "pet"];
 
 /// Scripted set-pieces ("特效"). Ids must match src/fx/performances.ts's PERFORMANCES, which
 /// owns the actual choreography.
-const KNOWN_PERFORMANCES: [&str; 3] = ["angry-claw", "kiss-rush", "zoomies"];
+const KNOWN_PERFORMANCES: [&str; 5] = ["angry-claw", "kiss-rush", "zoomies", "pee-at-you", "poop-at-you"];
 
 /// The tray's 玩具 and 特效 submenus: every known id with the name 主界面 gives it. A test keeps
 /// these in step with KNOWN_TOYS / KNOWN_PERFORMANCES, so a new toy cannot be missing here.
-const TRAY_TOYS: [(&str, &str); 3] = [("yarn", "毛线球"), ("feather", "逗猫棒"), ("laser", "激光笔")];
-const TRAY_EFFECTS: [(&str, &str); 3] = [("angry-claw", "愤怒抓屏"), ("kiss-rush", "飞奔亲亲"), ("zoomies", "半夜暴走")];
+const TRAY_TOYS: [(&str, &str); 4] = [("yarn", "毛线球"), ("feather", "逗猫棒"), ("laser", "激光笔"), ("pet", "撸猫")];
+const TRAY_EFFECTS: [(&str, &str); 5] = [("angry-claw", "愤怒抓屏"), ("kiss-rush", "飞奔亲亲"), ("zoomies", "半夜暴走"), ("pee-at-you", "对着你尿尿"), ("poop-at-you", "对着你拉屎")];
 
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
 /// stand-in for avoidRadius (and, later, wander speed/rate) until per-trait tuning exists.

@@ -26,6 +26,10 @@ export interface StageFx {
   clawSlash(x: number, y: number, options?: { scale?: number; rotation?: number }): void;
   /** A burst of hearts drifting up from a point. */
   hearts(x: number, y: number, count?: number): void;
+  /** A small, clean cartoon puddle / poop mark on the glass under the cat. */
+  pottyMark(kind: 'pee' | 'poop', x: number, y: number, durationMs: number): void;
+  /** Two light sprays of sand and a few wavy scent lines. */
+  pottyAccent(kind: 'sand' | 'scent', x: number, y: number): void;
   /** Shake the cat (the WebGL canvas), not the marks - the marks are on the glass. */
   shake(pixels: number, durationMs: number): void;
   /**
@@ -166,6 +170,11 @@ const CSS = `
   will-change: transform, opacity;
   animation: lingxi-heart-rise var(--dur) cubic-bezier(.25,.6,.3,1) forwards;
 }
+.lingxi-fx-potty { position:absolute; width:120px; height:70px; transform:translate(-50%,-50%); animation:lingxi-potty var(--dur) ease-in-out forwards; }
+.lingxi-fx-potty svg { width:100%; height:100%; overflow:visible; }
+@keyframes lingxi-potty { 0% { opacity:0; transform:translate(-50%,-50%) scale(.35); } 18%,75% { opacity:1; transform:translate(-50%,-50%) scale(1); } 100% { opacity:0; transform:translate(-50%,-50%) scale(1.1); } }
+.lingxi-fx-accent { position:absolute; color:#b49c73; font-size:24px; font-weight:300; animation:lingxi-accent 950ms ease-out forwards; }
+@keyframes lingxi-accent { from { opacity:0; transform:translate(-50%,0) scale(.5); } 25% { opacity:.8; } to { opacity:0; transform:translate(calc(-50% + var(--dx)),var(--dy)) scale(1.2); } }
 @keyframes lingxi-heart-rise {
   0%   { opacity: 0; transform: translate(-50%, 0) scale(.4) rotate(var(--tilt)); }
   14%  { opacity: 1; transform: translate(-50%, -14px) scale(1.12) rotate(var(--tilt)); }
@@ -511,6 +520,37 @@ export function createStageFx(): StageFx {
         heart.style.animationDelay = `${i * 55}ms`;
         layer.append(heart);
         autoRemove(heart, 3200);
+      }
+    },
+
+    pottyMark(kind, x, y, durationMs) {
+      if (!layer) return;
+      const node = document.createElement('div');
+      node.className = 'lingxi-fx-potty';
+      node.dataset.kind = kind;
+      node.style.left = `${x}px`;
+      node.style.top = `${y}px`;
+      node.style.setProperty('--dur', `${durationMs}ms`);
+      // SVG keeps the mark crisp on both the small voxel cat and the larger realistic cat.
+      node.innerHTML = kind === 'pee'
+        ? '<svg viewBox="0 0 120 70" aria-hidden="true"><ellipse cx="60" cy="45" rx="49" ry="18" fill="#ddc46b" opacity=".28"/><ellipse cx="60" cy="41" rx="42" ry="11" fill="#fff6b9" opacity=".46"/><path d="M37 40 Q50 34 72 38" fill="none" stroke="#fff" stroke-width="3" opacity=".72" stroke-linecap="round"/><path d="M60 1 Q54 17 62 36" fill="none" stroke="#e6cb71" stroke-width="2.5" opacity=".7" stroke-linecap="round"/></svg>'
+        : '<svg viewBox="0 0 120 70" aria-hidden="true"><ellipse cx="60" cy="53" rx="45" ry="13" fill="#e6d7b2" opacity=".6"/><path d="M36 51 Q40 35 53 37 Q51 25 65 28 Q72 26 77 39 Q88 39 88 52Z" fill="#9a765d"/><path d="M48 38 Q55 35 65 38" fill="none" stroke="#c9aa89" stroke-width="3" stroke-linecap="round"/><circle cx="73" cy="39" r="2" fill="#c9aa89"/></svg>';
+      layer.append(node);
+      autoRemove(node, durationMs + 150);
+    },
+
+    pottyAccent(kind, x, y) {
+      if (!layer) return;
+      for (let i = 0; i < (kind === 'sand' ? 9 : 3); i += 1) {
+        const mark = document.createElement('span');
+        mark.className = 'lingxi-fx-accent';
+        mark.textContent = kind === 'sand' ? '·' : '≈';
+        mark.style.left = `${x + (i - 4) * 9}px`;
+        mark.style.top = `${y - (kind === 'scent' ? 20 : 0)}px`;
+        mark.style.setProperty('--dx', `${(i - 4) * 10}px`);
+        mark.style.setProperty('--dy', `${kind === 'sand' ? -15 - (i % 3) * 8 : -45 - i * 12}px`);
+        layer.append(mark);
+        autoRemove(mark, 1100);
       }
     },
 

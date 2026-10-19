@@ -16,7 +16,7 @@
 // without any of them.
 
 export interface ToySituation {
-  kind: 'yarn' | 'feather' | 'laser';
+  kind: 'yarn' | 'feather' | 'laser' | 'pet';
   /** Distance from the cat to the toy, in logical pixels. */
   distance: number;
   /** How fast the toy itself is travelling, px/s. */
@@ -45,6 +45,7 @@ const FAST_TOY = 220;
  */
 export function pickToyReaction(situation: ToySituation, random = Math.random): Reaction | null {
   const { kind, distance, toySpeed, held } = situation;
+  if (kind === 'pet') return null;
 
   // A wand held still just out of reach is the classic set-up: the cat drops, waits, and
   // springs. This is the single most recognisable thing a cat does at a toy.
