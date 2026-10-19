@@ -60,7 +60,7 @@ export async function loadGroom(directory: string): Promise<GroomAsset | null> {
 
 /** Original curved strands, camera-facing only across their width. No procedural re-grooming. */
 export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: THREE.Object3D = base.parent!) {
-  const uniforms = { uGroomTime: { value: 0 }, uGroomMotion: { value: 0 }, uGroomHeight: { value: 1 }, uHairKey: { value: HAIR_KEY } };
+  const uniforms = { uGroomTime: { value: 0 }, uGroomMotion: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uHairKey: { value: HAIR_KEY } };
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: .86, metalness: 0, side: THREE.DoubleSide,
     // Blended, not alpha-to-coverage: A2C turns a given alpha into the same MSAA samples every time, so overlapping
@@ -69,6 +69,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     // draw after the opaque body and undercoat (transparent pass) and are depth-tested against them, but write no
     // depth, so a strand in front never punches a hole in the ones behind it.
     alphaToCoverage: false, transparent: true, depthWrite: false,
+    // DoubleSide + transparent would draw every strand twice (back faces, then front); a ribbon has no inside
+    forceSinglePass: true,
     // Explicit source-over alpha preserves an already opaque torso: replacing alpha
     // with a fractional fibre alpha made the original desktop coat transparent.
     blending: THREE.CustomBlending,
@@ -108,9 +110,11 @@ varying vec3 vHairT;\n` + shader.vertexShader;
       mvPosition.xy += across * groomData.x * drawnRadius;
       gl_Position = projectionMatrix * mvPosition;
     `);
-    shader.fragmentShader = 'varying float vGroomEdge, vGroomCoverage, vGroomAlong;\nvarying vec3 vHairT;\n' + HAIR_SPECULAR_GLSL + '\n' + shader.fragmentShader;
+    shader.fragmentShader = 'uniform float uGroomStack;\nvarying float vGroomEdge, vGroomCoverage, vGroomAlong;\nvarying vec3 vHairT;\n' + HAIR_SPECULAR_GLSL + '\n' + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       diffuseColor.a *= vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
+      // each strand drawn stands for uGroomStack of them (see setDensity): the opacity of that many overlapping
+      diffuseColor.a = 1.0 - pow(1.0 - min(diffuseColor.a, 0.999), uGroomStack);
       // roots in the coat's own shade, tips in the light (groomData.z runs root 0 -> tip 1, squared)
       diffuseColor.rgb = pow(max(diffuseColor.rgb, vec3(1e-4)), vec3(${GROOM_ABSORPTION}));
       diffuseColor.rgb *= mix(0.62, 1.05, sqrt(vGroomAlong));
@@ -129,7 +133,7 @@ varying vec3 vHairT;\n` + shader.vertexShader;
       #include <opaque_fragment>
     `);
   };
-  material.customProgramCacheKey = () => 'original-groom-v3-blended';
+  material.customProgramCacheKey = () => 'original-groom-v4-density';
   const boneIndex = new Map(base.skeleton.bones.map((b, i) => [(b.userData.name as string | undefined) ?? b.name, i]));
   const jointMap = asset.spec.jointNames.map((name) => {
     const index = boneIndex.get(name);
@@ -145,15 +149,19 @@ varying vec3 vHairT;\n` + shader.vertexShader;
     const position = new Float32Array(count * 3), color = new Float32Array(count * 3), normal = new Float32Array(count * 3);
     const tangent = new Float32Array(count * 3), data = new Float32Array(count * 4), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
     const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
+    // Strands in a shuffled order, so any leading run of them (setDensity's draw range) is an even sample of the part.
+    const order = shuffledOrder(part.strands);
     let ii = 0;
-    for (let strand = 0; strand < part.strands; strand++) {
+    for (let slot = 0; slot < part.strands; slot++) {
+      const strand = order[slot];
       const phase = ((strand * .61803398875) % 1) * Math.PI * 2;
       for (let point = 0; point < part.points; point++) {
         const p = strand * part.points + point;
         const before = (strand * part.points + Math.max(0, point - 1)) * 3;
         const after = (strand * part.points + Math.min(part.points - 1, point + 1)) * 3;
+        const out = slot * part.points + point;
         for (let side = 0; side < 2; side++) {
-          const v = p * 2 + side;
+          const v = out * 2 + side;
           for (let c = 0; c < 3; c++) {
             position[v * 3 + c] = source[p * 3 + c];
             color[v * 3 + c] = colors[p * 3 + c];
@@ -168,7 +176,7 @@ varying vec3 vHairT;\n` + shader.vertexShader;
           }
         }
         if (point < part.points - 1) {
-          const v = p * 2;
+          const v = out * 2;
           indices.set([v, v + 1, v + 2, v + 1, v + 3, v + 2], ii);
           ii += 6;
         }
@@ -192,7 +200,7 @@ varying vec3 vHairT;\n` + shader.vertexShader;
         const delta = part.morphs?.[name] ? floats(part.morphs[name]) : null;
         const values = new Float32Array(count * 3);
         if (delta) for (let v = 0; v < count; v++) {
-          const strand = Math.floor(v / (part.points * 2));
+          const strand = order[Math.floor(v / (part.points * 2))];
           values.set(delta.subarray(strand * 3, strand * 3 + 3), v * 3);
         }
         const attribute = new THREE.BufferAttribute(values, 3);
@@ -213,11 +221,48 @@ varying vec3 vHairT;\n` + shader.vertexShader;
     // The opaque undercoat supplies the large shadow. Hundreds of thousands of subpixel hair
     // shadows in a 2k map made a hard noisy coat rather than the review render's soft occlusion.
     mesh.castShadow = false;
+    mesh.userData.groomStrands = part.strands;
+    // slot -> source strand, for anything that has to find a source strand's vertices
+    mesh.userData.groomOrder = order;
+    mesh.userData.groomIndicesPerStrand = (part.points - 1) * 6;
     return mesh;
   });
-  return { meshes, material, update(seconds: number, motion: number, viewportHeight: number) {
-    uniforms.uGroomTime.value = seconds;
-    uniforms.uGroomMotion.value = THREE.MathUtils.clamp(motion, 0, 1);
-    uniforms.uGroomHeight.value = viewportHeight;
-  } };
+  let density = 1;
+  return {
+    meshes, material,
+    update(seconds: number, motion: number, viewportHeight: number) {
+      uniforms.uGroomTime.value = seconds;
+      uniforms.uGroomMotion.value = THREE.MathUtils.clamp(motion, 0, 1);
+      uniforms.uGroomHeight.value = viewportHeight;
+    },
+    /**
+     * Draw only this share of every part's strands, each standing for 1/share of them. Small on the desktop a cat is a
+     * few hundred pixels across and 276k strands are far more than it has pixels - they cost ~95 ms a frame on an M4
+     * (WebKit), the cat ran at ~10 fps - while a quarter of them, each as opaque as four overlapping, looks the same.
+     */
+    setDensity(share: number) {
+      const next = THREE.MathUtils.clamp(share, 0.01, 1);
+      if (Math.abs(next - density) < 0.01) return;
+      density = next;
+      for (const mesh of meshes) {
+        const total = mesh.userData.groomStrands as number;
+        mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * density)) * (mesh.userData.groomIndicesPerStrand as number));
+      }
+      uniforms.uGroomStack.value = 1 / density;
+    },
+    get density() { return density; },
+  };
+}
+
+/** A fixed shuffle of 0..n-1 (the same every load, so the cat never looks different between runs). */
+function shuffledOrder(n: number): Uint32Array {
+  const order = new Uint32Array(n);
+  for (let i = 0; i < n; i++) order[i] = i;
+  let seed = 0x9e3779b9;
+  for (let i = n - 1; i > 0; i--) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    const t = order[i]; order[i] = order[j]; order[j] = t;
+  }
+  return order;
 }

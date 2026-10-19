@@ -79,7 +79,9 @@ test('original groom is paired with this model and follows its animated skeleton
               expected.addScaledVector(rest.clone().applyMatrix4(transform), weights[offset]);
             }
             expected.applyMatrix4(base.bindMatrixInverse);
-            const actual = mesh.getVertexPosition(index * 2, new THREE.Vector3());
+            // strands are drawn in a shuffled order (setDensity draws a leading run of them)
+            const slot = mesh.userData.groomOrder.indexOf(strand);
+            const actual = mesh.getVertexPosition((slot * 6 + point) * 2, new THREE.Vector3());
             assert.ok(actual.distanceTo(expected) < 1e-6, `${mesh.name}, strand ${strand}, point ${point}, t ${t}`);
           }
           const a = new THREE.Vector3().fromArray(positions, strand * 18);
@@ -88,6 +90,14 @@ test('original groom is paired with this model and follows its animated skeleton
         }
       }
     }
+    // a small cat draws an even share of every part, each strand as opaque as the ones it stands for
+    groom.setDensity(0.3);
+    for (const mesh of groom.meshes) {
+      const strands = mesh.userData.groomStrands;
+      assert.equal(mesh.geometry.drawRange.count, Math.max(1, Math.round(strands * 0.3)) * 30, mesh.name);
+      assert.equal(new Set(mesh.userData.groomOrder).size, strands, `${mesh.name}: the shuffle must keep every strand`);
+    }
+    assert.equal(groom.density, 0.3);
     for (const mesh of groom.meshes) mesh.geometry.dispose();
     groom.material.dispose();
   });

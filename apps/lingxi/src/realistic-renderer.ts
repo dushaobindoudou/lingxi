@@ -62,11 +62,17 @@ const FUR: Record<string, { len: number; den: number }> = {
 };
 // the lids' short coat (see lidCoat)
 const LID_FUR = { len: 0.007, den: 650 };
+// Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor.
+// At the default .25 the cat is ~350 px tall and draws ~30% of them (see Groom.setDensity).
+const GROOM_FULL_DENSITY_PX = 1200;
+const GROOM_MIN_DENSITY = 0.12;
 // With the original groom: solid shells out to this share of the coat's length, then stranded shells to its tip (the
 // solid coat alone read smooth, a plush toy, and the user still saw too little fur).
 const UNDERCOAT_LAYERS = 8;
 const UNDERCOAT_REACH = 0.62;
-const OUTER_LAYERS = 12;
+// No stranded shells since the strands blend (realistic-groom): they accumulate into the coat's fluffy edge
+// themselves, and the 12 layers this once had cost a quarter of the frame for no visible difference at desktop size.
+const OUTER_LAYERS = 0;
 
 // The host's action ids (data/actions.json, main.ts) -> the GLB's clips. Approximate where the look-dev cat has no
 // exact clip; everything not listed is reported unsupported (false), never silently "played".
@@ -982,7 +988,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         style: 'realistic',
         debug: debugInfo,
         textures: textureAudit,
-        fur: groom ? { mode: 'original-curves', strands: groom.meshes.reduce((n, m) => n + m.geometry.getAttribute('position').count / 12, 0), parts: groom.meshes.length }
+        fur: groom ? { mode: 'original-curves', strands: groom.meshes.reduce((n, m) => n + m.geometry.getAttribute('position').count / 12, 0), parts: groom.meshes.length, density: +groom.density.toFixed(2) }
           : { mode: 'shells', layers: shellCount },
         animation: { elapsed: +elapsed.toFixed(3), clipTime: current ? +current.time.toFixed(3) : null, fps: +(1 / frameSeconds).toFixed(1), drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
         torsoScreenPoint: torso ? worldToScreen(torso) : null,
@@ -1011,6 +1017,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       elapsed += deltaSeconds;
       if (deltaSeconds > 0) frameSeconds += (deltaSeconds - frameSeconds) * .08;
       groom?.update(elapsed, Math.hypot(velocityX, velocityY) / 60, renderer.domElement.height);
+      groom?.setDensity(Math.max(GROOM_MIN_DENSITY, TARGET_HEIGHT * effectiveScale() / unitsPerPixel * renderer.getPixelRatio() / GROOM_FULL_DENSITY_PX));
       lastAnchor = { x: state.position.x, y: state.position.y };
 
       if (performanceScale != null) {

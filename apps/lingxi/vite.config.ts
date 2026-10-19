@@ -8,8 +8,10 @@ const resolve = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  // Local look-dev files in public/ must never enter a release bundle.
-  publicDir: command === "build" ? false : "public",
+  // Local look-dev files in public/ must never enter a release bundle. The realistic cat's asset lives there too
+  // (git-ignored, installed per machine by scripts/install-realcat-asset.mjs): LINGXI_BUNDLE_REALCAT=1 ships it in a
+  // local build, so the installed app can draw it - without it the app falls back to the voxel cat.
+  publicDir: command === "build" && process.env.LINGXI_BUNDLE_REALCAT !== "1" ? false : "public",
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
