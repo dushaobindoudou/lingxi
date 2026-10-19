@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { createGroom } from '../src/realistic-groom.ts';
+import { coatLength, createGroom } from '../src/realistic-groom.ts';
 
 const directory = new URL('../public/characters/lingxi-realistic/current/', import.meta.url);
 test('original groom is paired with this model and follows its animated skeleton without losing curvature',
@@ -62,7 +62,9 @@ test('original groom is paired with this model and follows its animated skeleton
         for (const strand of [0, Math.floor(part.strands / 2), part.strands - 1]) {
           for (const point of [0, 2, 5]) {
             const index = strand * 6 + point;
-            const rest = new THREE.Vector3().fromArray(positions, index * 3);
+            // the coat drawn a little shorter than groomed: each point drawn in toward its root
+            const root = new THREE.Vector3().fromArray(positions, strand * 18);
+            const rest = new THREE.Vector3().fromArray(positions, index * 3).sub(root).multiplyScalar(coatLength(part.name)).add(root);
             if (part.morphTarget) {
               for (const [key, mi] of Object.entries(mesh.morphTargetDictionary)) {
                 const block = part.morphs[key];

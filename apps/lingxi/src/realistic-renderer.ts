@@ -13,8 +13,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { loadGroom, createGroom } from './realistic-groom.ts';
+import { loadGroom, createGroom, type GroomAsset } from './realistic-groom.ts';
 import { createFurWind } from './realistic-wind.ts';
+import { rebalanceLimbWeights } from './realistic-skin.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -71,6 +72,7 @@ const CROSSFADE_SECONDS = 0.28;
 // Longer on the head than the old v5 demo (.022): the look-dev kitten's round head is mostly cheek and crown fluff.
 const FUR: Record<string, { len: number; den: number }> = {
   LX_Head: { len: 0.045, den: 500 },
+  LX_LipPhiltrum: { len: 0.005, den: 650 },
   LX_Body: { len: 0.050, den: 420 },
   LX_Tail: { len: 0.060, den: 380 },
 };
@@ -136,9 +138,17 @@ const LOOPING = new Set(['Idle', 'Walk', 'Run', 'Sleep']);
 // and stands up within itself ('rest': play on from the hold); the others end lying down ('reverse': play back to get
 // up). Looped, as they were, a sitting cat stood up and sat down again every two seconds and a lying one popped back
 // up to standing at every loop - the legs jumping.
-const SETTLE_CLIPS: Record<string, { hold: number; rise: 'rest' | 'reverse' }> = {
-  Sit: { hold: 0.5, rise: 'rest' }, Loaf: { hold: 1, rise: 'reverse' }, LieDown: { hold: 1, rise: 'reverse' }, SideLie: { hold: 1, rise: 'reverse' },
+// `hold` is where the pose is reached (the lying clips are settled by 0.6 - body, then neck, then tail - and breathe
+// after it: held there, the cat breathes on, the rest of the clip played back and forth). `pace`: the getting down and
+// the getting up played at this speed. At the clips' own speed a cat dropped from standing to lying in 0.8 s, all of
+// it at once - it read as a pop, not as lying down.
+const SETTLE_CLIPS: Record<string, { hold: number; rise: 'rest' | 'reverse'; pace: number }> = {
+  Sit: { hold: 0.5, rise: 'rest', pace: 0.75 }, Loaf: { hold: 0.6, rise: 'reverse', pace: 0.55 },
+  LieDown: { hold: 0.6, rise: 'reverse', pace: 0.55 }, SideLie: { hold: 0.6, rise: 'reverse', pace: 0.5 },
 };
+// Curling up to sleep goes by way of lying down (the Sleep clip is one held pose: straight from standing it popped into a
+// curl, and popped back up on waking): down, then the curl crossfaded in this slowly; waking, the reverse.
+const CURL_SECONDS = 1.6;
 // Clips that carry the body across the floor; the engine owns position, so their horizontal travel is removed.
 const TRAVELLING = ['Walk', 'Run', 'Jump'];
 // The tail's carriage while a clip that leaves it alone plays. The standing clips never move Tail0, Tail1 or Tail4 (a few
@@ -146,10 +156,11 @@ const TRAVELLING = ['Walk', 'Run', 'Jump'];
 // (root) to Tail4: `lift` (degrees, up about the cat's own side axis, each on top of the one before - a negative tip
 // curls it back over) and `sway` (degrees, side to side, a wave running root to tip once per `period` seconds). Clips
 // not listed (sitting, lying, grooming, sleeping) pose the tail themselves and get nothing.
-// Rest segments run -32, -29, -15, +11, +36 degrees from level; walking lifts them to about 30, 50, 55, 45, 30 (the
-// happy kitten's raised tail, tip hooked), standing to about -25, -20, -8, 5, 20 (low, hanging in a soft curve: any
-// higher and from the front the tip stood up behind the head like a tuft).
-const TAIL_WALK = { lift: [62, 17, -9, -36, -40], sway: [3, 4, 6, 8, 10], period: 1.5 };
+// Rest segments run -32, -29, -15, +11, +36 degrees from level; walking lifts them to about 36, 56, 68, 74, 70 (the
+// happy kitten's raised tail in one easy arc, the tip relaxed - hooked down at 30, the raised tail read as a stiff
+// brush), standing to about -25, -20, -8, 5, 20 (low, hanging in a soft curve: any higher and from the front the tip
+// stood up behind the head like a tuft).
+const TAIL_WALK = { lift: [68, 17, -2, -20, -29], sway: [3, 4, 6, 8, 10], period: 1.5 };
 const TAIL_STAND = { lift: [7, 2, -2, -13, -10], sway: [2, 3, 5, 7, 9], period: 3.2 };
 const TAIL_RUN = { lift: [37, 2, -12, -26, -22], sway: [1, 2, 3, 4, 5], period: 0.9 };
 const TAIL_CARRIAGE: Record<string, { lift: number[]; sway: number[]; period: number }> = {
@@ -157,7 +168,11 @@ const TAIL_CARRIAGE: Record<string, { lift: number[]; sway: number[]; period: nu
   Run: TAIL_RUN, Jump: TAIL_RUN,
   Idle: TAIL_STAND, Turn: TAIL_STAND, Yawn: TAIL_STAND, Bite: TAIL_STAND, Knead: TAIL_STAND, Stretch: TAIL_STAND, PawPlay: TAIL_STAND,
 };
-const TAIL_EASE_SECONDS = 0.35;
+// The tail moves as a whip, not a stick: each bone springs toward its carriage, the root quickest and each one on more
+// loosely (natural frequency, Hz, root to tip), a little under-damped - the root leads, the tip follows and swings a
+// touch past before settling. One time constant for all five raised the whole tail at once, a rod on a hinge.
+const TAIL_SPRING_HZ = [2.4, 2.0, 1.7, 1.4, 1.15];
+const TAIL_DAMPING = 0.6;
 // how far (radians) the sway wave lags from one tail bone to the next
 const TAIL_WAVE_LAG = 0.6;
 // The coat's color attribute is the SKIN under the Cycles hair, darker and duller than the golden caramel the hair
@@ -334,7 +349,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // Tail0..Tail4, and the model's own frame their lift and sway axes are given in (see TAIL_CARRIAGE)
   const tailBones: THREE.Bone[] = [];
   let tailFrame: THREE.Object3D | null = null;
-  const tailLift = [0, 0, 0, 0, 0];
+  const tailLift = [0, 0, 0, 0, 0], tailLiftVelocity = [0, 0, 0, 0, 0];
   const tailSway = [0, 0, 0, 0, 0];
   let tailPhase = 0;
   const shellMaterials: THREE.Material[] = [];
@@ -590,6 +605,26 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     for (let i = 0; i < world.length; i++) for (const p of lash) out[i] = Math.min(out[i], world[i].distanceTo(p));
     return out;
   }
+  /** realistic-skin's leg weights on one skinned mesh, in its skeleton's bind space */
+  function rebalanceLegSkin(mesh: THREE.SkinnedMesh) {
+    const geometry = mesh.geometry;
+    const pos = geometry.getAttribute('position'), joints = geometry.getAttribute('skinIndex'), weights = geometry.getAttribute('skinWeight');
+    if (!pos || !joints || !weights) return;
+    const names = mesh.skeleton.bones.map((b) => (b.userData.name as string | undefined) ?? b.name);
+    const bind = new THREE.Matrix4();
+    const position = (name: string) => {
+      const i = names.indexOf(name);
+      if (i < 0) return undefined;
+      const p = new THREE.Vector3().setFromMatrixPosition(bind.copy(mesh.skeleton.boneInverses[i]).invert());
+      return [p.x, p.y, p.z] as const;
+    };
+    const points = new Float32Array(pos.count * 3);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) v.fromBufferAttribute(pos, i).applyMatrix4(mesh.bindMatrix).toArray(points, i * 3);
+    if (rebalanceLimbWeights(points, joints.array as Uint16Array, weights.array as Float32Array, names, position) > 0) {
+      joints.needsUpdate = weights.needsUpdate = true;
+    }
+  }
   function furScaleAttribute(mesh: THREE.SkinnedMesh, bonePos: Record<string, THREE.Vector3>) {
     const pos = mesh.geometry.getAttribute('position');
     const out = new Float32Array(pos.count).fill(1);
@@ -617,12 +652,137 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         }
         // bare only over the eye itself (the Eye bone sits ~2 cm behind the lens; the lids, 4.1-6.7 cm out, have their own
         // short coat, which the head's overhangs at its outer edge)
-        for (const e of eyes) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(e) - 0.042) / 0.014, 0, 1));
+        // (eased in over 2.4 cm: the undercoat stopping within 1.4 cm cut a ragged edge round the lids' coat)
+        for (const e of eyes) s = Math.min(s, THREE.MathUtils.smoothstep(v.distanceTo(e), 0.042, 0.066));
         if (nose) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(nose) - 0.012) / 0.05, 0.25, 1));
         out[i] = s;
       }
     }
     mesh.geometry.setAttribute('furScale', new THREE.BufferAttribute(out, 1));
+  }
+
+  // The rest head turns sharply inward below the lower lip. Round only the forward centre of
+  // the jaw, and move the existing head hairs by the same amount so their roots stay on it.
+  function chinLift(x: number, y: number, z: number) {
+    const rise = THREE.MathUtils.smoothstep(y, 0.397, 0.422);
+    const fall = 1 - THREE.MathUtils.smoothstep(y, 0.425, 0.445);
+    const side = 1 - THREE.MathUtils.smoothstep(Math.abs(x), 0.018, 0.072);
+    const front = THREE.MathUtils.smoothstep(z, 0.34, 0.41);
+    return 0.014 * rise * fall * side * front;
+  }
+  function roundChin(head: THREE.Mesh, asset: GroomAsset | null) {
+    const pos = head.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const nrm = head.geometry.getAttribute('normal') as THREE.BufferAttribute;
+    const step = 0.0002;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const dz = chinLift(x, y, z);
+      if (dz === 0) continue;
+      // Inverse transpose of the local z displacement, preserving the exported smooth normals.
+      const dx = (chinLift(x + step, y, z) - chinLift(x - step, y, z)) / (2 * step);
+      const dy = (chinLift(x, y + step, z) - chinLift(x, y - step, z)) / (2 * step);
+      const zz = 1 + (chinLift(x, y, z + step) - chinLift(x, y, z - step)) / (2 * step);
+      const nz = nrm.getZ(i) / zz;
+      const normal = new THREE.Vector3(nrm.getX(i) - dx * nz, nrm.getY(i) - dy * nz, nz).normalize();
+      nrm.setXYZ(i, normal.x, normal.y, normal.z);
+      pos.setZ(i, z + dz);
+    }
+    pos.needsUpdate = true;
+    nrm.needsUpdate = true;
+    head.geometry.computeBoundingSphere();
+    if (!asset) return;
+    for (const part of asset.spec.parts) {
+      if (!part.name.endsWith('_LX_Head')) continue;
+      const data = new Float32Array(asset.bytes, part.positions.offset, part.positions.count);
+      for (let strand = 0; strand < part.strands; strand++) {
+        const start = strand * part.points * 3;
+        const dz = chinLift(data[start], data[start + 1], data[start + 2]);
+        if (dz === 0) continue;
+        for (let point = 0; point < part.points; point++) data[start + point * 3 + 2] += dz;
+      }
+    }
+  }
+  function coatPhiltrum(head: THREE.Mesh, philtrum: THREE.Mesh) {
+    const hp = head.geometry.getAttribute('position');
+    const hc = head.geometry.getAttribute('color');
+    const pp = philtrum.geometry.getAttribute('position');
+    if (!hc || !pp) return;
+    const colors = new Float32Array(pp.count * 3);
+    for (let i = 0; i < pp.count; i++) {
+      const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
+      let best = Infinity, nearest = 0;
+      for (let j = 0; j < hp.count; j++) {
+        const dx = hp.getX(j) - x, dy = hp.getY(j) - y, dz = hp.getZ(j) - z;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < best) { best = d; nearest = j; }
+      }
+      colors.set([hc.getX(nearest), hc.getY(nearest), hc.getZ(nearest)], i * 3);
+    }
+    philtrum.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  }
+  // The head's paint round the mouth: dark vertex colours along the mouth line and down the philtrum (0.1-0.4 among the
+  // muzzle's 0.87). The mesh is sparse there - a few vertices per 8 mm - so each dark vertex spread into a ragged dark
+  // triangle, and the closed mouth read as a crack from the nose down and a torn mouth line. The lip parts draw the
+  // mouth; the paint under and round them goes to the muzzle's own colour, and so do the strands growing from it.
+  function mouthPaintShare(x: number, y: number, z: number) {
+    const across = Math.hypot(x / 0.03, (y - 0.453) / 0.017);
+    // the mouth line itself keeps a soft trace of its paint (fully cleared, the cat had no mouth); the philtrum, from it
+    // up to the nose, is cleared
+    const keep = THREE.MathUtils.lerp(0.62, 1, THREE.MathUtils.smoothstep(y, 0.452, 0.458));
+    return (1 - THREE.MathUtils.smoothstep(across, 0.7, 1.0)) * THREE.MathUtils.smoothstep(z, 0.415, 0.435) * keep;
+  }
+  function cleanMouthPaint(head: THREE.Mesh, asset: GroomAsset | null) {
+    const pos = head.geometry.getAttribute('position'), col = head.geometry.getAttribute('color');
+    if (!pos || !col) return;
+    // the muzzle round the region: its light vertices, averaged
+    const ref = [0, 0, 0];
+    let n = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const share = mouthPaintShare(x, y, z), near = mouthPaintShare(x * 0.6, 0.453 + (y - 0.453) * 0.6, z);
+      if (share > 0 || near <= 0) continue;
+      const r = col.getX(i), g = col.getY(i), b = col.getZ(i);
+      if (0.2126 * r + 0.7152 * g + 0.0722 * b < 0.6) continue;
+      ref[0] += r; ref[1] += g; ref[2] += b; n++;
+    }
+    if (!n) return;
+    for (let c = 0; c < 3; c++) ref[c] /= n;
+    for (let i = 0; i < pos.count; i++) {
+      const share = mouthPaintShare(pos.getX(i), pos.getY(i), pos.getZ(i));
+      if (share <= 0) continue;
+      col.setXYZ(i, THREE.MathUtils.lerp(col.getX(i), ref[0], share), THREE.MathUtils.lerp(col.getY(i), ref[1], share), THREE.MathUtils.lerp(col.getZ(i), ref[2], share));
+    }
+    col.needsUpdate = true;
+    if (!asset) return;
+    for (const part of asset.spec.parts) {
+      if (!part.name.endsWith('_LX_Head')) continue;
+      const data = new Float32Array(asset.bytes, part.positions.offset, part.positions.count);
+      const colors = new Float32Array(asset.bytes, part.colors.offset, part.colors.count);
+      // the strands' own muzzle colour (their colour space is the groom's): light strands rooted round the region
+      const sref = [0, 0, 0];
+      let sn = 0;
+      const shares = new Float32Array(part.strands);
+      for (let strand = 0; strand < part.strands; strand++) {
+        const r = strand * part.points * 3;
+        const x = data[r], y = data[r + 1], z = data[r + 2];
+        shares[strand] = mouthPaintShare(x, y, z);
+        if (shares[strand] > 0 || mouthPaintShare(x * 0.6, 0.453 + (y - 0.453) * 0.6, z) <= 0) continue;
+        const tip = r + (part.points - 1) * 3;
+        if (0.2126 * colors[tip] + 0.7152 * colors[tip + 1] + 0.0722 * colors[tip + 2] < 0.5) continue;
+        for (let c = 0; c < 3; c++) sref[c] += colors[tip + c];
+        sn++;
+      }
+      if (!sn) continue;
+      for (let c = 0; c < 3; c++) sref[c] /= sn;
+      for (let strand = 0; strand < part.strands; strand++) {
+        const share = shares[strand];
+        if (share <= 0) continue;
+        for (let point = 0; point < part.points; point++) for (let c = 0; c < 3; c++) {
+          const k = (strand * part.points + point) * 3 + c;
+          colors[k] += (sref[c] - colors[k]) * share;
+        }
+      }
+    }
   }
 
   /** The engine owns where the cat is: keep a travelling clip's vertical bounce, drop its march across the floor. */
@@ -699,6 +859,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const lidMeshes: THREE.SkinnedMesh[] = [];
     root.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && /^LX_Lid(Upper|Lower)\./.test((o.userData.name as string | undefined) ?? '')) lidMeshes.push(o as THREE.SkinnedMesh); });
     const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root, groomAsset ? LID_UNDERCOAT_LIFT : LID_COAT_LIFT);
+    const head = root.getObjectByName('LX_Head') as THREE.Mesh | undefined;
+    const philtrum = root.getObjectByName('LX_LipPhiltrum') as THREE.Mesh | undefined;
+    if (head) {
+      cleanMouthPaint(head, groomAsset);
+      roundChin(head, groomAsset);
+      if (philtrum) coatPhiltrum(head, philtrum);
+    }
     // Rest pose stands: its height sets the metres -> world units factor, so either style draws the same size.
     const box = new THREE.Box3().setFromObject(root);
     restHeight = Math.max(0.2, box.max.y - box.min.y);
@@ -768,9 +935,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (groomAsset) {
       if (!coat.length) throw new Error('Groom needs a skinned coat mesh');
       groom = createGroom(groomAsset, coat[0], root);
-      ownedMaterials.push(groom.material);
-      for (const mesh of groom.meshes) coat[0].parent!.add(mesh);
+      ownedMaterials.push(...groom.materials);
+      for (const mesh of [...groom.meshes, ...groom.children]) coat[0].parent!.add(mesh);
     }
+    // the legs move as one piece with their thighs (realistic-skin): the skin, its shells (they share its geometry) and
+    // the strands growing from it, all the same way
+    for (const mesh of [...coat, ...(groom?.meshes ?? [])]) rebalanceLegSkin(mesh);
     // With the original curves the shells are only their solid undercoat: the review render's round, dense volume (the
     // curves alone are too sparse at desktop size - a grey haze round a thin body), the curves drawing the outline.
     const layers = groom ? UNDERCOAT_LAYERS : shellCount;
@@ -838,9 +1008,52 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   function riseSeconds(clip: string) {
     const settle = SETTLE_CLIPS[clip];
     const duration = actions[clip]?.getClip().duration ?? 0;
-    return settle ? (settle.rise === 'reverse' ? settle.hold : 1 - settle.hold) * duration : 0;
+    return settle ? (settle.rise === 'reverse' ? settle.hold : 1 - settle.hold) * duration / settle.pace : 0;
   }
-  function play(name: string, once = false) {
+  /** Seconds from standing to settled (0 for a clip that does not settle). */
+  function settleSeconds(clip: string) {
+    const settle = SETTLE_CLIPS[clip];
+    return settle ? settle.hold * (actions[clip]?.getClip().duration ?? 0) / settle.pace : 0;
+  }
+  // the way into and out of Sleep (see CURL_SECONDS): 'down' while lying down to curl up, 'up' while getting up after
+  let lyingVia: 'down' | 'up' | null = null;
+  /** The clip to play for `want`, by way of lying down when it is Sleep or comes after it. */
+  function viaLying(want: string, hurry: boolean): string {
+    const lie = actions.LieDown, settle = SETTLE_CLIPS.LieDown;
+    if (!lie || !actions.Sleep || (oneShot && oneShot.clip === 'LieDown')) { lyingVia = null; return want; }
+    const settledAt = settle.hold * lie.getClip().duration;
+    if (want === 'Sleep') {
+      if (currentName === 'Sleep') return 'Sleep';
+      if (currentName === 'LieDown' && lyingVia === 'down' && lie.time >= settledAt - 1e-3) {
+        lyingVia = null;
+        play('Sleep', false, CURL_SECONDS);
+        return 'Sleep';
+      }
+      if (currentName !== 'LieDown' || lyingVia !== 'down') { lyingVia = 'down'; play('LieDown', true); }
+      lie.timeScale = lie.time >= settledAt - 1e-3 ? 0 : settle.pace;
+      if (lie.time > settledAt) lie.time = settledAt;
+      return 'LieDown';
+    }
+    if (currentName === 'Sleep') {
+      // uncurl back into lying, then get up from it
+      lyingVia = 'up';
+      play('LieDown', true, CURL_SECONDS);
+      lie.time = settledAt;
+      lie.timeScale = 0;
+      return 'LieDown';
+    }
+    if (currentName === 'LieDown' && lyingVia) {
+      if (lyingVia === 'down') lyingVia = 'up';
+      // the curl fades out first, then the body gets up
+      const uncurled = !actions.Sleep.isRunning() || actions.Sleep.getEffectiveWeight() < 0.02;
+      lie.paused = false;
+      lie.timeScale = uncurled ? -settle.pace * (hurry ? 2 : 1) : 0;
+      if (lie.time > 0.02) return 'LieDown';
+      lyingVia = null;
+    }
+    return want;
+  }
+  function play(name: string, once = false, fade = CROSSFADE_SECONDS) {
     const next = actions[name];
     if (!next || (next === current && !once)) return false;
     const phase = current ? locomotionTransitionPhase(currentName, name, current.time / current.getClip().duration) : 0;
@@ -850,7 +1063,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     next.clampWhenFinished = once;
     next.timeScale = 1;
     next.play();
-    if (current && current !== next) current.crossFadeTo(next, CROSSFADE_SECONDS, false);
+    if (current && current !== next) current.crossFadeTo(next, fade, false);
     current = next;
     currentName = name;
     return true;
@@ -940,10 +1153,16 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   function carryTail(deltaSeconds: number) {
     if (!tailFrame) return;
     const pose = TAIL_CARRIAGE[currentName];
-    const k = deltaSeconds > 0 ? 1 - Math.exp(-deltaSeconds / TAIL_EASE_SECONDS) : 1;
+    // in small steps: a long frame must not throw the spring
+    const steps = Math.max(1, Math.ceil(deltaSeconds / (1 / 120)));
+    const dt = deltaSeconds / steps;
     for (let i = 0; i < 5; i++) {
-      tailLift[i] += ((pose?.lift[i] ?? 0) - tailLift[i]) * k;
-      tailSway[i] += ((pose?.sway[i] ?? 0) - tailSway[i]) * k;
+      const w = 2 * Math.PI * TAIL_SPRING_HZ[i];
+      for (let n = 0; n < steps; n++) {
+        tailLiftVelocity[i] += (((pose?.lift[i] ?? 0) - tailLift[i]) * w * w - 2 * TAIL_DAMPING * w * tailLiftVelocity[i]) * dt;
+        tailLift[i] += tailLiftVelocity[i] * dt;
+      }
+      tailSway[i] += ((pose?.sway[i] ?? 0) - tailSway[i]) * (1 - Math.exp(-deltaSeconds / 0.5));
     }
     tailPhase = (tailPhase + deltaSeconds * Math.PI * 2 / (pose?.period ?? TAIL_STAND.period)) % (Math.PI * 2);
     tailFrame.getWorldQuaternion(tailFrameQ);
@@ -1088,8 +1307,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const clip = ACTION_CLIPS[id] ?? (actions[id] ? id : undefined);
       if (!clip || !actions[clip]) return false;
       const loop = LOOPING.has(clip);
-      play(clip, !loop);
-      const ms = loop || SETTLE_CLIPS[clip] ? 4000 : actions[clip].getClip().duration * 1000;
+      // curling up starts by lying down (viaLying takes it on from there)
+      if (clip === 'Sleep' && currentName !== 'Sleep' && actions.LieDown) { lyingVia = 'down'; play('LieDown', true); }
+      else play(clip, !loop);
+      // a held pose is held 4 s once reached (getting down to it, and curling up by way of lying down, take their own time)
+      const ms = loop || SETTLE_CLIPS[clip] ? 4000 + 1000 * (settleSeconds(clip) + (clip === 'Sleep' ? settleSeconds('LieDown') + CURL_SECONDS : 0)) : actions[clip].getClip().duration * 1000;
       oneShot = { id, clip, endsAt: elapsed + ms / 1000 };
       return true;
     },
@@ -1258,14 +1480,29 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         const settled = settle && current === actions[oneShot!.clip] ? current : null;
         if (oneShot && settled && settle) {
           // settle into the pose and hold it; when the time is up, get up (the rest of the clip, or the clip backwards)
-          const holdAt = settle.hold * settled.getClip().duration;
-          if (!oneShot.rising && elapsed < oneShot.endsAt && settled.time >= holdAt - 1e-3) { settled.time = holdAt; settled.timeScale = 0; }
-          else if (!oneShot.rising && elapsed >= oneShot.endsAt) {
+          const duration = settled.getClip().duration, holdAt = settle.hold * duration;
+          if (!oneShot.rising && elapsed < oneShot.endsAt) {
+            if (settled.time < holdAt - 1e-3 && settled.timeScale >= 0) settled.timeScale = settle.pace;
+            else if (settle.rise === 'rest') { settled.time = holdAt; settled.timeScale = 0; }
+            else {
+              // settled: breathe, the rest of the clip back and forth
+              settled.paused = false;
+              if (settled.time >= duration - 0.05) settled.timeScale = -1;
+              else if (settled.time <= holdAt + 1e-3) settled.timeScale = 1;
+              else if (settled.timeScale === 0 || settled.timeScale === settle.pace) settled.timeScale = 1;
+              settled.time = THREE.MathUtils.clamp(settled.time, holdAt, duration - 0.02);
+            }
+          } else if (!oneShot.rising && elapsed >= oneShot.endsAt) {
             oneShot.rising = true;
-            oneShot.endsAt = elapsed + riseSeconds(oneShot.clip);
             settled.paused = false;
-            settled.time = holdAt;
-            settled.timeScale = settle.rise === 'reverse' ? -1 : 1;
+            if (settle.rise === 'reverse') {
+              oneShot.endsAt = elapsed + settled.time / settle.pace;
+              settled.timeScale = -settle.pace;
+            } else {
+              oneShot.endsAt = elapsed + riseSeconds(oneShot.clip);
+              settled.time = holdAt;
+              settled.timeScale = settle.pace;
+            }
           }
         }
         if (oneShot && elapsed >= oneShot.endsAt && (!settle || oneShot.rising)) oneShot = null;
@@ -1279,7 +1516,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           if (pick) {
             const loop = LOOPING.has(pick);
             play(pick, !loop);
-            oneShot = { id: pick, clip: pick, endsAt: elapsed + (loop || SETTLE_CLIPS[pick] ? 6 + Math.random() * 6 : actions[pick].getClip().duration) };
+            oneShot = { id: pick, clip: pick, endsAt: elapsed + (loop || SETTLE_CLIPS[pick] ? 6 + Math.random() * 6 + settleSeconds(pick) : actions[pick].getClip().duration) };
           }
           idleSince = elapsed;
           nextIdlePick = 6 + Math.random() * 6;
@@ -1293,6 +1530,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           want = locomotionClip(groundSpeed, naturalWalk, currentName === 'Run', Boolean(actions.Run), naturalRun);
         }
         else want = pivoting ? 'Walk' : 'Idle';
+        want = viaLying(want, moving);
         if (want !== currentName && !(oneShot && want === oneShot.clip && currentName === want)) play(want, oneShot != null && !LOOPING.has(want));
         // stride-matched playback: one clip cycle per stride of ground actually covered
         // Both sides of a crossfade must advance by the same ground distance.

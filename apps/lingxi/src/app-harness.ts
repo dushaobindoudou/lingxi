@@ -35,7 +35,7 @@ if (params.get('bg')) document.documentElement.style.background = document.body.
 const REALISTIC_URL = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
 const renderer = createRendererSwitcher({
   voxel: () => createThreeRenderer(),
-  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32), originalGroom: params.get('fur') !== 'shells', autonomous: !params.has('still'), clipBlinks: !params.has('noblink') }),
+  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32), originalGroom: params.get('fur') !== 'shells', autonomous: !params.has('still'), clipBlinks: !params.has('noblink'), fitCanvasToCat: params.has('fit') }),
 });
 if (params.get('style') === 'realistic') {
   void renderer.switchStyle('realistic').then((r) => { say(`style realistic: ${JSON.stringify(r)}`);

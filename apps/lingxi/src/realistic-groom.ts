@@ -38,12 +38,28 @@ const GROOM = {
   // the room the cat stands in (the other materials' RoomEnvironment at 0.5): soft light from everywhere
   ambient: '0.32',
   lidVeil: '0.4',
-  // Close up a drawn strand opens into a small lock of hairs (three, fanning toward the tip, each its own length and
-  // shade): from this many device pixels per model unit (the cat ~0.8 units tall: ~1000 is a cat ~800 px tall) to
-  // full at the second, the lock's ribbon this many times the strand's own width. Far off the lock is sub-pixel and
-  // a strand stays one hair; close up single hairs were a sparse scatter of hairlines, the coat thin and dull.
-  clumpFrom: '900.0', clumpFull: '2200.0', clumpSpread: '4.5',
+  // the lids' rows of strands lie about this far apart (model units)
+  lidRowSpacing: '0.012',
+  // A child hair (see GROOM_CHILDREN) grows this far from its parent, in the parent's spacing (its part's average
+  // distance between roots), and ends between these shares of its parent's length.
+  childSpread: '0.7', childShortest: '0.62',
 } as const;
+// Close up the coat gets denser rather than coarser: each drawn strand gains up to this many child hairs beside it, the
+// way an offline groom interpolates children between its guides - fine single hairs, a parent's copy moved a little
+// across the skin and ending at its own length. (A strand widened into a lock of three hairs had been tried: close up it
+// read as yarn, parallel threads in a ribbon.) Drawn only once the cat is big on screen (setDensity above 1).
+export const GROOM_CHILDREN = 2;
+// The coat a little shorter than the Blender groom (tail and lids as groomed): closer to a short-haired kitten's, and
+// a shorter coat stands denser over the skin
+const COAT_LENGTH = 0.8;
+const KEEP_LENGTH = /_LX_(Tail|TailTip|Lid)/;
+/** How much of its groomed length a part's strands keep (see COAT_LENGTH). */
+export function coatLength(partName: string) {
+  return KEEP_LENGTH.test(partName) ? 1 : COAT_LENGTH;
+}
+// The lids' strands lie flat in rows along the lid; at their own width the rows showed as lines of lit hair with the
+// undercoat dark between them, ring after ring round a closed eye. This much wider they overlap into one coat.
+const LID_STRAND_WIDTH = 8;
 
 const GROOM_VERTEX = /* glsl */ `
 #include <common>
@@ -57,7 +73,8 @@ uniform float uGroomTime, uGroomHeight, uGroomGust;
 uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axes
 uniform vec4 uGroomStroke;  // pointer (NDC xy), radius (view units), bend
 uniform vec2 uGroomStrokeDir;
-varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomClump, vGroomHair;
+uniform float uGroomChild;  // 0 the strand itself, 1.. its child hairs
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomChildEnd;
 varying vec3 vGroomT, vGroomN, vGroomColor;
 #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
   struct DirectionalLightShadow { float shadowIntensity; float shadowBias; float shadowNormalBias; float shadowRadius; vec2 shadowMapSize; };
@@ -80,6 +97,26 @@ void main() {
   #include <defaultnormal_vertex>
   #include <begin_vertex>
   #include <morphtarget_vertex>
+  // groomStrand.z: the part's root spacing, negative on the lids' coat
+  float spacing = abs(groomStrand.z), random = groomStrand.y;
+  vGroomChildEnd = 2.0;
+  if (groomStrand.z < 0.0) {
+    // the lids' strands are rooted in rows across the lid, each row's tips ending short of the next row's roots: each
+    // moved along itself by up to a row's spacing, or the gaps read as rings round a closed eye (not across: moved
+    // sideways they strayed over the lash line)
+    vec3 along = normalize(groomTangent + vec3(1e-5, 0.0, 0.0));
+    transformed += along * (fract(random * 31.7) - 0.5) * ${GROOM.lidRowSpacing};
+  }
+  if (uGroomChild > 0.5) {
+    // a child hair: the parent moved across the skin (rest space, before skinning, so it rides the body the same way)
+    vec3 h = fract(sin(vec3(12.9898, 78.233, 37.719) * (random * 57.3 + uGroomChild * 11.17)) * 43758.5453);
+    vec3 across1 = normalize(cross(normal, groomTangent) + vec3(1e-5, 0.0, 0.0));
+    vec3 across2 = cross(across1, normal);
+    float a = h.x * 6.2831853;
+    transformed += (across1 * cos(a) + across2 * sin(a)) * spacing * ${GROOM.childSpread} * sqrt(h.y);
+    random = h.z;
+    vGroomChildEnd = mix(${GROOM.childShortest}, 1.0, fract(h.z * 7.31));
+  }
   #include <skinning_vertex>
   vec3 hairTangent = groomTangent;
   #ifdef USE_SKINNING
@@ -117,17 +154,14 @@ void main() {
   vGroomColor = vColor.rgb;
   vGroomN = N;
   vGroomAlong = along;
-  vGroomRandom = groomStrand.y;
-  vGroomLid = groomStrand.z;
+  vGroomRandom = random;
+  vGroomLid = step(groomStrand.z, 0.0);
   vec2 across = vec2(-T.y, T.x);
   across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
   float radiusView = groomData.y * viewScale;
   float pixelsPerView = projectionMatrix[1][1] * uGroomHeight * 0.5;
   float minimumRadius = 0.30 / pixelsPerView;
-  vGroomClump = smoothstep(${GROOM.clumpFrom}, ${GROOM.clumpFull}, pixelsPerView * viewScale);
-  float drawnRadius = max(radiusView * mix(1.0, ${GROOM.clumpSpread}, vGroomClump), minimumRadius);
-  // one hair's half-width, in the ribbon's own across units (-1..1)
-  vGroomHair = radiusView / drawnRadius;
+  float drawnRadius = max(radiusView, minimumRadius);
   // A strand drawn wider than it is covers that much less of each pixel it touches.
   vGroomCoverage = pow(min(1.0, radiusView / drawnRadius), ${GROOM.coverageExp});
   vGroomEdge = groomData.x;
@@ -163,35 +197,19 @@ const GROOM_FRAGMENT = /* glsl */ `
 #include <common>
 #include <lights_pars_begin>
 uniform float uGroomStack;
-varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomClump, vGroomHair;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomChildEnd;
 varying vec3 vGroomT, vGroomN, vGroomColor;
 float hairLobe(vec3 T, vec3 H, float e) { float d = dot(T, H); return pow(sqrt(max(0.0, 1.0 - d * d)), e); }
 void main() {
   float alpha = vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
-  // close up: the lock's hairs across the ribbon (see GROOM.clump*)
-  float shade = 1.0;
-  if (vGroomClump > 0.001) {
-    float fw = max(fwidth(vGroomEdge), 1e-3);
-    float w = max(vGroomHair, 0.5 * fw);
-    float thin = min(1.0, 2.0 * vGroomHair / fw);
-    float along = sqrt(vGroomAlong);
-    float bare = 1.0, shadeSum = 0.0, weight = 0.0;
-    for (int k = 0; k < 3; k++) {
-      vec3 h = fract(sin(vec3(1.7, 9.2, 4.3) * (vGroomRandom * 91.7 + float(k) * 13.1)) * 43758.5453);
-      // spread across the ribbon, fanning out from root to tip; each ends at its own length
-      float centre = ((float(k) - 1.0) * 0.6 + (h.x - 0.5) * 0.35) * (0.35 + 0.65 * along);
-      float hair = thin * (1.0 - smoothstep(w - 0.5 * fw, w + 0.5 * fw, abs(vGroomEdge - centre)));
-      hair *= 1.0 - smoothstep(0.72 + 0.28 * h.y - 0.08, 0.72 + 0.28 * h.y, along);
-      bare *= 1.0 - hair;
-      shadeSum += hair * (0.82 + 0.36 * h.z); weight += hair;
-    }
-    alpha = mix(alpha, 1.0 - bare, vGroomClump);
-    shade = mix(1.0, weight > 0.0 ? shadeSum / weight : 1.0, vGroomClump);
-  }
+  // a child hair ends at its own length; so does each of the lids' strands, whose tips otherwise end row by row in
+  // lines round a closed eye
+  float end = mix(vGroomChildEnd, 0.55 + 0.45 * fract(vGroomRandom * 13.7), vGroomLid);
+  alpha *= 1.0 - smoothstep(end - 0.12, end, sqrt(vGroomAlong));
   // each strand drawn stands for uGroomStack of them (see setDensity): the opacity of that many overlapping
   alpha = 1.0 - pow(1.0 - min(alpha, 0.999), uGroomStack);
   vec3 base = pow(max(vGroomColor, vec3(1e-4)), vec3(${GROOM.absorption}));
-  base *= (1.0 + ${GROOM.melanin} * (vGroomRandom - 0.5)) * shade;
+  base *= 1.0 + ${GROOM.melanin} * (vGroomRandom - 0.5);
   // the coat grade the undercoat and skin get (COAT_GRADE), so strands do not veil them in another shade
   float lumC = dot(base, vec3(0.2126, 0.7152, 0.0722));
   base = max(mix(vec3(lumC), base, 1.25) * vec3(1.06, 1.0, 0.90), 0.0);
@@ -261,6 +279,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   const uniforms = {
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
     uGroomWind: { value: new THREE.Vector3() }, uGroomStroke: { value: new THREE.Vector4() }, uGroomStrokeDir: { value: new THREE.Vector2(1, 0) },
+    uGroomChild: { value: 0 },
   };
   // Its own shader, not MeshStandardMaterial's: a strand is a fibre, not a surface - its light runs along it - and the
   // standard one's per-pixel soft shadow and environment lookups, on millions of sub-pixel strand fragments, were most
@@ -304,6 +323,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     // Strands in a shuffled order, so any leading run of them (setDensity's draw range) is an even sample of the part.
     const order = shuffledOrder(part.strands);
     const lidCoat = /_LX_Lid/.test(part.name) ? 1 : 0;
+    const spacing = rootSpacing(source, part.strands, part.points);
+    const shorten = coatLength(part.name);
     let ii = 0;
     for (let slot = 0; slot < part.strands; slot++) {
       const strand = order[slot];
@@ -314,6 +335,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         const a = (strand * part.points + point - 1) * 3, b = a + 3;
         strandLength += Math.hypot(source[b] - source[a], source[b + 1] - source[a + 1], source[b + 2] - source[a + 2]);
       }
+      strandLength *= shorten;
+      const root = strand * part.points * 3;
       for (let point = 0; point < part.points; point++) {
         const p = strand * part.points + point;
         const before = (strand * part.points + Math.max(0, point - 1)) * 3;
@@ -322,13 +345,13 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         for (let side = 0; side < 2; side++) {
           const v = out * 2 + side;
           for (let c = 0; c < 3; c++) {
-            position[v * 3 + c] = source[p * 3 + c];
+            position[v * 3 + c] = source[root + c] + (source[p * 3 + c] - source[root + c]) * shorten;
             color[v * 3 + c] = colors[p * 3 + c];
             normal[v * 3 + c] = normals[strand * 3 + c];
             tangent[v * 3 + c] = source[after + c] - source[before + c];
           }
-          data.set([side ? 1 : -1, radii[p] * part.widthCompensation, (point / (part.points - 1)) ** 2, phase], v * 4);
-          strandData.set([strandLength, random, lidCoat], v * 3);
+          data.set([side ? 1 : -1, radii[p] * part.widthCompensation * (lidCoat ? LID_STRAND_WIDTH : 1), (point / (part.points - 1)) ** 2, phase], v * 4);
+          strandData.set([strandLength, random, lidCoat ? -spacing : spacing], v * 3);
           for (let c = 0; c < 4; c++) {
             const offset = (part.skinPerPoint ? p : strand) * 4 + c;
             skinIndex[v * 4 + c] = jointMap[joints[offset]];
@@ -387,9 +410,38 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     mesh.userData.groomIndicesPerStrand = (part.points - 1) * 6;
     return mesh;
   });
+  // The child hairs: the same strands drawn again (the same attribute buffers, each with its own draw range), each
+  // pass with its own child index. Hidden until setDensity asks for them.
+  const childMaterials: THREE.ShaderMaterial[] = [];
+  const children = Array.from({ length: GROOM_CHILDREN }, (_, k) => {
+    const childMaterial = material.clone();
+    // the parent's uniform objects (time, air, lights), its own child index
+    childMaterial.uniforms = { ...material.uniforms, uGroomChild: { value: k + 1 } };
+    childMaterials.push(childMaterial);
+    return meshes.map((parent) => {
+      const geometry = new THREE.BufferGeometry();
+      for (const [name, attribute] of Object.entries(parent.geometry.attributes)) geometry.setAttribute(name, attribute);
+      geometry.setIndex(parent.geometry.getIndex());
+      geometry.morphAttributes = parent.geometry.morphAttributes;
+      geometry.morphTargetsRelative = parent.geometry.morphTargetsRelative;
+      const child = new THREE.SkinnedMesh(geometry, childMaterial);
+      child.name = `${parent.name}.child${k + 1}`;
+      child.morphTargetInfluences = parent.morphTargetInfluences;
+      child.morphTargetDictionary = parent.morphTargetDictionary;
+      child.bind(parent.skeleton, parent.bindMatrix);
+      child.position.copy(parent.position); child.quaternion.copy(parent.quaternion); child.scale.copy(parent.scale);
+      child.frustumCulled = false;
+      child.receiveShadow = true;
+      child.castShadow = false;
+      child.visible = false;
+      child.userData = { ...parent.userData };
+      return child;
+    });
+  });
   let density = 1;
   return {
-    meshes, material,
+    /** the strands themselves, and (drawn only close up) their child hairs */
+    meshes, children: children.flat(), material, materials: [material, ...childMaterials],
     update(seconds: number, viewportHeight: number) {
       uniforms.uGroomTime.value = seconds;
       uniforms.uGroomHeight.value = viewportHeight;
@@ -407,16 +459,20 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
      * Draw only this share of every part's strands, each standing for 1/share of them. Small on the desktop a cat is a
      * few hundred pixels across and 276k strands are far more than it has pixels - they cost ~95 ms a frame on an M4
      * (WebKit), the cat ran at ~10 fps - while a quarter of them, each as opaque as four overlapping, looks the same.
+     * Above 1, all of them and that many more of their child hairs (1.5: every strand, and half of them a first child).
      */
     setDensity(share: number) {
-      const next = THREE.MathUtils.clamp(share, 0.01, 1);
+      const next = THREE.MathUtils.clamp(share, 0.01, 1 + GROOM_CHILDREN);
       if (Math.abs(next - density) < 0.01) return;
       density = next;
-      for (const mesh of meshes) {
+      const drawn = (mesh: THREE.Mesh, share: number) => {
         const total = mesh.userData.groomStrands as number;
-        mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * density)) * (mesh.userData.groomIndicesPerStrand as number));
-      }
-      uniforms.uGroomStack.value = 1 / density;
+        mesh.visible = share > 0;
+        if (share > 0) mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * Math.min(1, share))) * (mesh.userData.groomIndicesPerStrand as number));
+      };
+      for (const mesh of meshes) drawn(mesh, density);
+      children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, density - 1 - k); });
+      uniforms.uGroomStack.value = 1 / Math.min(1, density);
     },
     get density() { return density; },
   };
@@ -434,6 +490,33 @@ function evened(colors: Float32Array, points: number, share: number): Float32Arr
   const out = new Float32Array(colors.length);
   for (let i = 0; i < colors.length; i++) out[i] = colors[i] + (mean[i % (points * 3)] - colors[i]) * share;
   return out;
+}
+
+/**
+ * A part's typical distance between neighbouring roots (model units): the surface its roots cover, from the cells of a
+ * grid they fall in, shared between them.
+ */
+function rootSpacing(source: Float32Array, strands: number, points: number): number {
+  if (strands < 2) return 1e-3;
+  let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let s = 0; s < strands; s++) for (let c = 0; c < 3; c++) {
+    const v = source[s * points * 3 + c];
+    lo[c] = Math.min(lo[c], v); hi[c] = Math.max(hi[c], v);
+  }
+  // cells a few spacings across: fine enough to follow the surface, coarse enough that each holds several roots
+  const extent = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-4);
+  let cell = extent / 8;
+  for (let pass = 0; pass < 6; pass++) {
+    const occupied = new Set<string>();
+    for (let s = 0; s < strands; s++) {
+      const r = s * points * 3;
+      occupied.add(`${Math.floor((source[r] - lo[0]) / cell)},${Math.floor((source[r + 1] - lo[1]) / cell)},${Math.floor((source[r + 2] - lo[2]) / cell)}`);
+    }
+    const perCell = strands / occupied.size;
+    if (perCell < 12 || pass === 5) return Math.max(1e-5, Math.sqrt((occupied.size * cell * cell) / strands));
+    cell /= 2;
+  }
+  return 1e-3;
 }
 
 /** A fixed shuffle of 0..n-1 (the same every load, so the cat never looks different between runs). */

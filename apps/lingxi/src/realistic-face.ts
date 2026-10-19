@@ -53,6 +53,13 @@ export function expressionValues(spec: FaceSpec, name: string): Record<string, n
     for (const [k, v] of Object.entries(spec.layers[layer]?.[e[layer]] ?? {})) out[k] = (out[k] ?? 0) + v;
   }
   for (const [k, v] of Object.entries(spec.expression_extras?.[name] ?? {})) out[k] = (out[k] ?? 0) + v;
+  // The exported smile lifts the separate philtrum/upper lip, but barely moves the lower lip.
+  // At the look-dev value 1.4 their centre edges separate; keep the smile at the corners
+  // without opening a slit under the nose (including expressions that add more corner lift).
+  if (e.mouth === 'cat') for (const side of ['L', 'R']) {
+    const key = `MouthCornerUp.${side}`;
+    if (out[key] > 0) out[key] *= 0.45;
+  }
   return out;
 }
 
