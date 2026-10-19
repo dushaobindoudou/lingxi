@@ -101,11 +101,12 @@ fn spawn_focused_input_poller(app: tauri::AppHandle, scale_factor: f64) {
         let power = app.state::<PowerState>();
         let state = app.state::<FocusedInputState>();
         let mut had_input = false;
+        let mut sampler = focused_input::Sampler::default();
         loop {
             power.park_while(|p| p.away != 0 || p.tier == TIER_DORMANT);
             let enabled = app.state::<TrayState>().input_avoidance.load(Ordering::Relaxed);
             let trusted = enabled && accessibility_trusted_readonly();
-            let input = if trusted { focused_input::sample(scale_factor) } else { None };
+            let input = if trusted { sampler.sample(scale_factor) } else { None };
             // A setting change while AX was querying must not re-enable a stale rectangle.
             let input = if app.state::<TrayState>().input_avoidance.load(Ordering::Relaxed) { input } else { None };
             let present = input.is_some();

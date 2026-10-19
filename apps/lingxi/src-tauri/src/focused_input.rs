@@ -39,6 +39,7 @@ pub struct FocusedInput {
 mod native {
     use super::*;
     use core_foundation::base::{CFType, CFTypeRef, TCFType};
+    use core_foundation::boolean::CFBoolean;
     use core_foundation::string::{CFString, CFStringRef};
     use std::ffi::c_void;
     use std::ptr;
@@ -82,6 +83,17 @@ mod native {
             value: *mut CFTypeRef,
         ) -> i32;
         fn AXUIElementSetMessagingTimeout(element: Element, seconds: f32) -> i32;
+        fn AXUIElementGetPid(element: Element, pid: *mut i32) -> i32;
+        fn AXUIElementIsAttributeSettable(
+            element: Element,
+            name: CFStringRef,
+            settable: *mut u8,
+        ) -> i32;
+        fn AXUIElementSetAttributeValue(
+            element: Element,
+            name: CFStringRef,
+            value: CFTypeRef,
+        ) -> i32;
         fn AXUIElementGetTypeID() -> usize;
         fn AXValueGetTypeID() -> usize;
         fn AXValueGetType(value: CFTypeRef) -> u32;
@@ -170,7 +182,42 @@ mod native {
         };
         r.valid(true).then_some(r)
     }
-    pub fn sample(scale: f64) -> Option<FocusedInput> {
+    // Electron documents this flag for third-party assistive clients. Ask only apps
+    // that advertise it, and only once per foreground-app change when focus is absent.
+    // It exposes the native geometry API; we still never query text attributes.
+    fn prepare_electron(system: Element, prepared: &mut Option<i32>) {
+        let Some(app) = attribute(system, "AXFocusedApplication") else {
+            return;
+        };
+        if app.type_of() != unsafe { AXUIElementGetTypeID() } {
+            return;
+        }
+        let app = app.as_CFTypeRef();
+        unsafe {
+            AXUIElementSetMessagingTimeout(app, 0.05);
+        }
+        let mut pid = 0;
+        if unsafe { AXUIElementGetPid(app, &mut pid) } != 0 || *prepared == Some(pid) {
+            return;
+        }
+        *prepared = Some(pid);
+        let name = CFString::new("AXManualAccessibility");
+        let mut settable = 0;
+        if unsafe { AXUIElementIsAttributeSettable(app, name.as_concrete_TypeRef(), &mut settable) }
+            == 0
+            && settable != 0
+        {
+            unsafe {
+                AXUIElementSetAttributeValue(
+                    app,
+                    name.as_concrete_TypeRef(),
+                    CFBoolean::true_value().as_CFTypeRef(),
+                );
+            }
+        }
+    }
+
+    pub fn sample(scale: f64, prepared: &mut Option<i32>) -> Option<FocusedInput> {
         if !scale.is_finite()
             || scale <= 0.0
             || !macos_accessibility_client::accessibility::application_is_trusted()
@@ -187,7 +234,20 @@ mod native {
         unsafe {
             AXUIElementSetMessagingTimeout(system.as_CFTypeRef(), 0.05);
         }
-        let element = attribute(system.as_CFTypeRef(), "AXFocusedUIElement")?;
+        let mut focused = attribute(system.as_CFTypeRef(), "AXFocusedUIElement");
+        let input_role = |element: &CFType| {
+            if element.type_of() != unsafe { AXUIElementGetTypeID() } {
+                return false;
+            }
+            string_attribute(element.as_CFTypeRef(), "AXRole").is_some_and(|role| {
+                matches!(role.as_str(), "AXTextField" | "AXTextArea" | "AXComboBox")
+            })
+        };
+        if !focused.as_ref().is_some_and(input_role) {
+            prepare_electron(system.as_CFTypeRef(), prepared);
+            focused = attribute(system.as_CFTypeRef(), "AXFocusedUIElement");
+        }
+        let element = focused?;
         if element.type_of() != unsafe { AXUIElementGetTypeID() } {
             return None;
         }
@@ -208,11 +268,22 @@ mod native {
         })
     }
 }
-#[cfg(target_os = "macos")]
-pub use native::sample;
-#[cfg(not(target_os = "macos"))]
-pub fn sample(_scale: f64) -> Option<FocusedInput> {
-    None
+#[derive(Default)]
+pub struct Sampler {
+    prepared_app: Option<i32>,
+}
+impl Sampler {
+    pub fn sample(&mut self, scale: f64) -> Option<FocusedInput> {
+        #[cfg(target_os = "macos")]
+        {
+            native::sample(scale, &mut self.prepared_app)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = scale;
+            None
+        }
+    }
 }
 
 #[cfg(test)]
