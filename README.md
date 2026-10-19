@@ -37,6 +37,7 @@
 
 桌面应用和各接入渠道都只支持 macOS。插件与 MCP 服务在应用缺失时可以从 GitHub Releases 安装它，
 已有应用和用户数据会被复用。自动下载需要网络；桌面猫的日常行为在本地运行。
+DSH 动态插件通过 [DSH skill](integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md) 引导安装和升级，不自动下载 DMG。
 
 **Claude Code**（需要宿主 CLI；MCP 服务需要 Node.js 22+）：
 

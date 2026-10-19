@@ -21,6 +21,17 @@ model Tools, and from then on the model in a DSH session can drive the cat on th
 this summary together with the DSH identity. The current DSH integration provides these behavior rules directly through the tool description. Only if the DSH
 host loads a separate agent skill does installing the skill as well improve how accurately it triggers.
 
+## Installation and upgrade guidance (skill)
+
+The DSH plugin starts an existing app but does not download a missing DMG. Load the shared
+[lingxi skill](../../../../../integrations/skills/lingxi/SKILL.md) together with the
+[DSH host skill](../../../../../integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md) in the host's supported skill/profile configuration.
+Copying the JavaScript plugin alone does not load either skill.
+
+The host skill distinguishes a missing app, a stopped app and a bridge failure. It guides users through installing
+v1.0.0 or a newer stable release, or upgrading an existing app when requested. It verifies the installed version and bridge
+before claiming success, preserves local data and reports if the target release is not yet available.
+
 ## Stable event contract
 
 Every real task reports at least a start and a terminal state, and every event keeps the same `taskId`. The plugin fixes `provider` and

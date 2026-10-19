@@ -14,6 +14,7 @@
 - npm 命令入口加可执行权限；三个独立插件目录补齐 LICENSE.md。
 - 根据真实 CI 的 Node.js 20 弃用提示，将 cache / upload-artifact 更新到支持 Node.js 24 的 v6。
 - 中英文 README 改为下载、安装、使用优先；历史问题集中到 KNOWN_ISSUES.md。
+- DSH 宿主层 skill 补充应用缺失时的安装引导和旧版升级到 v1.0.0 的流程；动态插件仍只负责启动已有应用。
 
 ## GitHub 设置（已通过 API 回读）
 
@@ -41,6 +42,7 @@ main 上最近的远程 CI 仍是旧提交失败记录；此次修复在[草稿 
 | Claude Code | 仓库市场与独立插件清单可由 `claude plugin validate` 验证；独立插件 1.0.0 | 推送后刷新市场，真实宿主新会话验收 |
 | Codex | `.agents/plugins/marketplace.json` 指向独立 Codex 插件；插件/MCP 副本与 hooks 有集成测试 | 推送后刷新市场，真实宿主新会话验收 |
 | WorkBuddy | 插件与市场条目同步为 1.0.0；共享脚本副本受测试约束 | 真实宿主新会话验收 |
+| DSH | 动态插件 + 两层 skill；缺失应用时引导安装，旧版按要求升级 | 在宿主实际的 skill/profile 配置中加载系统层与 `lingxi-dsh`；真实会话验收 |
 | 官方插件目录 | 本次只验证仓库分发；未核验官方目录后台审核状态 | 如需官方目录曝光，另行提交审核；不能把 repo marketplace 当作官方上架 |
 
 [Codex 官方打包说明](https://developers.openai.com/plugins/build/plugins)区分仓库市场和公共目录；

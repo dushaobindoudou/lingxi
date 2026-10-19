@@ -37,6 +37,7 @@ Each app release includes `SHA256SUMS.txt`; use `shasum -a 256` to verify downlo
 
 The app and integrations support macOS. Plugins and the MCP server can install a missing app from GitHub Releases and reuse an existing installation and data.
 Automatic downloads require internet access; everyday cat behavior runs locally.
+The DSH dynamic plugin uses its [host skill](integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md) to guide installation and upgrades; it does not download a DMG automatically.
 
 **Claude Code** (host CLI required; the MCP server needs Node.js 22+):
 

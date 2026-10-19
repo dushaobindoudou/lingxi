@@ -207,6 +207,8 @@ curl -H "Authorization: Bearer $TOKEN" localhost:47811/integration
 Claude Code 的 `SessionStart` hook 在会话开始时、DSH 插件在加载时、CLI 在第一次请求前，发现桥不通就
 `open -g -b com.dushaobin.lingxi-desktop`（不抢焦点），等桥起来再继续。`lingxi up` 是这个检查单独
 拿出来的命令。不想要这个行为就设 `LINGXI_AUTOSTART=0`。接不通时先跑 `lingxi doctor`。
+DSH 插件只负责尝试启动已安装的应用；缺失应用时由 [DSH skill](hosts/dsh/skills/lingxi-dsh/SKILL.md)
+引导下载安装。只加载动态插件 JavaScript 不会自动加载 skill，需要在 DSH 的技能/profile 配置中加入两层 skill。
 各入口什么时候查、为什么只在会话边界拉起，见 [docs/19](../docs/19-agent-integration.md)「零步之前」。
 
 ---
