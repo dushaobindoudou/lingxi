@@ -542,40 +542,48 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // The Cycles iris draws its pupil procedurally (face-controls 'mat' PupilW/H, GazeX/Y), which glTF cannot carry: drawn
   // here on the iris map's UV disc, per eye, from the face (realistic-face.ts) - the pupil an ellipse that closes to a
   // pointed lens as it gets tall (a slit), the look moving the iris pattern across the lens over a pale sclera, a dark
-  // limbal ring, and catchlights that stay put on the lens.
+  // limbal ring, and broad reflections that stay put on the lens.
   const irisUniforms: Record<'L' | 'R', IrisUniforms> = {
     L: { uPupil: { value: new THREE.Vector2(APP_PUPIL, APP_PUPIL) }, uGaze: { value: new THREE.Vector2() }, uCatch: { value: 1 }, uSpark: { value: 0 } },
     R: { uPupil: { value: new THREE.Vector2(APP_PUPIL, APP_PUPIL) }, uGaze: { value: new THREE.Vector2() }, uCatch: { value: 1 }, uSpark: { value: 0 } },
   };
   function irisMaterial(src: THREE.MeshStandardMaterial, side: 'L' | 'R') {
-    const m = new THREE.MeshStandardMaterial({ map: src.map ?? null, roughness: 0.35, color: src.map ? 0xffffff : src.color });
+    const m = new THREE.MeshStandardMaterial({ map: src.map ?? null, roughness: 0.5, color: src.map ? 0xffffff : src.color });
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, irisUniforms[side]);
       sh.fragmentShader = 'uniform vec2 uPupil; uniform vec2 uGaze; uniform float uCatch; uniform float uSpark;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
         #ifdef USE_MAP
           vec2 guv = vMapUv - uGaze;
-          // the review render's golden iris round the pupil: the map is lifted (it read dark olive at desktop size), the
-          // dark limbal ring kept thin
+          // The map already has fine fibres. Add a low-contrast radial layer and a warmer collarette so that those
+          // fibres survive the small desktop rendering without becoming a flat bright disc.
           diffuseColor *= texture2D(map, guv);
-          diffuseColor.rgb *= 1.35;
+          diffuseColor.rgb *= 1.28;
           float irisD = distance(guv, vec2(0.5));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.085, 0.04), smoothstep(0.475, 0.50, irisD));
+          vec2 irisRay = guv - 0.5;
+          float irisAngle = atan(irisRay.y, irisRay.x);
+          float fibres = sin(irisAngle * 93.0 + irisD * 44.0 + sin(irisAngle * 19.0) * 1.5);
+          float fibreMask = smoothstep(0.19, 0.30, irisD) * (1.0 - smoothstep(0.43, 0.48, irisD));
+          diffuseColor.rgb *= 1.0 + 0.10 * fibres * fibreMask;
+          float collarette = smoothstep(uPupil.x * 0.88, uPupil.x * 1.18, irisD) * (1.0 - smoothstep(uPupil.x * 1.55, uPupil.x * 1.9, irisD));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.54, 0.32, 0.13), 0.22 * collarette);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.085, 0.068, 0.038), smoothstep(0.465, 0.50, irisD));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.757, 0.686), smoothstep(0.495, 0.515, irisD));
           vec2 pe = (guv - 0.5) / uPupil;
           float pey = abs(pe.y);
           float lensD = max(pey, abs(pe.x) / max(1.0 - pey * pey, 0.05));
           float lens = clamp((uPupil.y / uPupil.x - 1.8) / 2.5, 0.0, 1.0);
           float pd = mix(length(pe), lensD, lens);
-          float pw = max(fwidth(pd), 0.02);
-          diffuseColor.rgb = mix(vec3(0.004), diffuseColor.rgb, smoothstep(1.0 - pw, 1.0 + pw, pd));
+          float pw = max(fwidth(pd) * 1.5, 0.035);
+          diffuseColor.rgb = mix(vec3(0.008, 0.007, 0.006), diffuseColor.rgb, smoothstep(1.0 - pw, 1.0 + pw, pd));
           // a big soft catchlight up-left, a small one down-right - most of a kitten's 'wet', alive look - and, for
-          // 闪亮 / 期待, two more small sparkles
+          // 闪亮 / 期待, two more small sparkles. (A square window and a lower bounce were tried: they greyed the
+          // pupil over, a milky eye.)
           float catchL = smoothstep(0.085, 0.050, distance(vMapUv, vec2(0.37, 0.36))) + 0.7 * smoothstep(0.035, 0.018, distance(vMapUv, vec2(0.63, 0.64)));
           catchL += uSpark * 0.22 * (smoothstep(0.03, 0.012, distance(vMapUv, vec2(0.62, 0.33))) + smoothstep(0.022, 0.008, distance(vMapUv, vec2(0.33, 0.62))));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), clamp(catchL * 0.92 * uCatch, 0.0, 1.0));
         #endif`);
     };
-    m.customProgramCacheKey = () => 'realcat-iris-v2';
+    m.customProgramCacheKey = () => 'realcat-iris-v3';
     ownedMaterials.push(m);
     return m;
   }
@@ -733,7 +741,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         // dark it is: the lid's skin is dark in patches all over, and every dark vertex stayed bare, dark skin, which
         // showed between the rows of lid strands as rings of dark bands round a closed eye
         const coat = THREE.MathUtils.smoothstep(fromLash[i], LASH_WIDTH * 0.4, LASH_WIDTH);
-        lc.setXYZ(i, THREE.MathUtils.lerp(lc.getX(i), sum[0] / n, coat), THREE.MathUtils.lerp(lc.getY(i), sum[1] / n, coat), THREE.MathUtils.lerp(lc.getZ(i), sum[2] / n, coat));
+        // Leave a narrow brown lash, but lift its nearly black source skin toward the coat to avoid a row of dark
+        // polygon steps at the eye's edge. Fur still starts beyond the free edge, so a blink keeps its clear outline.
+        const tint = 0.27 + 0.73 * coat;
+        lc.setXYZ(i, THREE.MathUtils.lerp(lc.getX(i), sum[0] / n, tint), THREE.MathUtils.lerp(lc.getY(i), sum[1] / n, tint), THREE.MathUtils.lerp(lc.getZ(i), sum[2] / n, tint));
         scale[i] = coat;
       }
       lc.needsUpdate = true;
@@ -870,10 +881,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           const side = THREE.MathUtils.smoothstep(Math.abs(nv.x), 0.45, 0.85) * THREE.MathUtils.smoothstep(-nv.y, -0.2, 0.3);
           s *= 1 + 0.4 * side;
         }
-        // bare only over the eye itself (the Eye bone sits ~2 cm behind the lens; the lids, 4.1-6.7 cm out, have their own
-        // short coat, which the head's overhangs at its outer edge)
-        // (eased in over 2.4 cm: the undercoat stopping within 1.4 cm cut a ragged edge round the lids' coat)
-        for (const e of eyes) s = Math.min(s, THREE.MathUtils.smoothstep(v.distanceTo(e), 0.042, 0.066));
+        // The nearest head vertices start about 4.2 cm from each Eye bone. The previous 4.2-6.6 cm ramp left most
+        // of that visible ring nearly bare, exposing a flat brown patch of head skin around the short lid coat.
+        // Start the ramp inside the head's actual eye opening and keep a little undercoat at its edge.
+        for (const e of eyes) s = Math.min(s, 0.28 + 0.72 * THREE.MathUtils.smoothstep(v.distanceTo(e), 0.037, 0.061));
         if (nose) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(nose) - 0.012) / 0.05, 0.25, 1));
         out[i] = s;
       }
@@ -1133,6 +1144,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (/Iris/i.test(name)) m.material = irisMaterial(mat, name.endsWith('.R') ? 'R' : 'L');
       else if (/Cornea/i.test(name)) {
         const c = new THREE.MeshPhysicalMaterial({
+          // (an 8% white film with a clearcoat was tried for the room's reflection: it greyed the pupils over)
           color: 0x000000, roughness: 0.04, transparent: true, opacity: 0.0, specularIntensity: 1,
           envMapIntensity: 1.0, depthWrite: false, premultipliedAlpha: true,
         });
