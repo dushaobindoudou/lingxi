@@ -1534,6 +1534,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       bonePoint.y += 0.12 * effectiveScale();
       return worldToScreen(bonePoint);
     },
+    rumpScreenPoint() {
+      const tailRoot = tailBones[0];
+      if (!tailRoot) return { x: lastAnchor.x, y: lastAnchor.y - 0.35 * TARGET_HEIGHT * (performanceScale ?? modelScale) / unitsPerPixel };
+      // just under the root of the tail, on the cat's own down (it may be squatting, or have a leg up)
+      tailRoot.getWorldPosition(bonePoint);
+      catRoot.getWorldQuaternion(stageRootQ);
+      bonePoint.addScaledVector(new THREE.Vector3(0, -1, -0.25).normalize().applyQuaternion(stageRootQ), 0.035 * TARGET_HEIGHT * effectiveScale());
+      return worldToScreen(bonePoint);
+    },
     screenExtent() {
       if (!catRect) {
         const h = (TARGET_HEIGHT * (performanceScale ?? modelScale)) / unitsPerPixel;

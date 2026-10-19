@@ -161,6 +161,8 @@ export interface Renderer {
   /** Where the character's head currently is on screen, for anchoring overlays like a speech
    *  bubble. Same logical pixel space as resize/render. */
   headScreenPoint?(): { x: number; y: number };
+  /** Where the cat's rump is on screen (logical px) - under the root of its tail - for what a set piece has come out of it. */
+  rumpScreenPoint?(): { x: number; y: number };
   /**
    * How far the drawn character reaches from its anchor point, in logical screen pixels at the
    * current scale and camera. A host uses this to decide how close to each screen edge the

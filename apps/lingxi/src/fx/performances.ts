@@ -134,6 +134,11 @@ const CLOSE_HEIGHT = 0.55;
  */
 // The potty scenes: the cat this tall (share of the screen), close enough to read, the floor round it still in frame
 const POTTY_HEIGHT = 0.34;
+/** Where the cat's rump is on screen (the renderer's, else a guess from where it stands). */
+function rumpOf(context: PerformanceContext) {
+  const at = context.petPosition();
+  return context.renderer.rumpScreenPoint?.() ?? { x: at.x, y: at.y - 0.12 * POTTY_HEIGHT * context.viewport().height };
+}
 /** The first of these actions the renderer has (the realistic cat's staged ones, else the voxel cat's squat). */
 function playFirst(context: PerformanceContext, ...ids: string[]) {
   for (const id of ids) if (context.renderer.playAction?.(id)) return;
@@ -449,11 +454,13 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        // the leg is up (~1.2 s to turn round, a beat to lift it): at the viewer, from under the raised leg
+        // the leg is up (~1.2 s to turn round, a beat to lift it): out of its rump at the viewer, splashing on the glass
+        // below it and running down like rain
         atMs: 3200,
         run(context) {
-          const at = context.petPosition(), size = pottySize(context), cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.peeStream(at.x, at.y - 0.3 * cat, at.x + 0.3 * cat, at.y + 0.35 * cat, 2300, size);
+          const rump = () => rumpOf(context), start = rump();
+          const cat = POTTY_HEIGHT * context.viewport().height;
+          context.fx.peeStream(rump, { x: start.x + 0.08 * cat, y: start.y + 0.55 * cat }, 2300, pottySize(context));
         },
       },
       {
@@ -507,12 +514,18 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        // behind its rump - between it and the viewer - and under the cat until it gets up
-        atMs: 5000,
+        // out of its rump and flung at the viewer: it squashes onto the glass below the cat and slides down it
+        atMs: 4800,
         run(context) {
-          const at = context.petPosition();
-          const size = pottySize(context);
-          context.fx.pottyMark('poop', at.x, at.y + 8 * size, 5800, size);
+          const from = rumpOf(context), cat = POTTY_HEIGHT * context.viewport().height;
+          context.fx.flingPoop(from, { x: from.x - 0.05 * cat, y: from.y + 0.5 * cat }, pottySize(context));
+        },
+      },
+      {
+        atMs: 5500,
+        run(context) {
+          const from = rumpOf(context), cat = POTTY_HEIGHT * context.viewport().height;
+          context.fx.flingPoop(from, { x: from.x + 0.14 * cat, y: from.y + 0.42 * cat }, pottySize(context) * 0.8);
         },
       },
       {

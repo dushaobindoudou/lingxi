@@ -20,6 +20,8 @@ export interface BubbleAttribution {
   color?: string;
 }
 
+import { createGlass, type Glass } from './glass.ts';
+
 export interface StageFx {
   mount(container: HTMLElement): void;
   /** Three tapered scratch marks, as if clawed into the screen at this point. */
@@ -32,9 +34,11 @@ export interface StageFx {
   /** The petting hand (the 撸猫 toy) at the pointer, or hidden with null. On the glass, over the cat: as a prop in
    *  the 3D scene it stood on the floor under the pointer's spot - behind the cat whenever the pointer was on it. */
   petHand(at: { x: number; y: number } | null): void;
-  /** A thin arc of pee from (x0, y0) toward the viewer, landing on the glass at (x1, y1), where drops splash and run
-   *  down. `scale` sizes it to the cat (1: a cat ~250 px tall). */
-  peeStream(x0: number, y0: number, x1: number, y1: number, durationMs: number, scale?: number): void;
+  /** A stream of pee from `from` (asked again every frame: the cat's own rump) at the viewer, splashing on the glass at
+   *  `to` into drops that gather and run down it like rain (fx/glass). `scale` sizes it (1: a cat ~250 px tall). */
+  peeStream(from: () => { x: number; y: number }, to: { x: number; y: number }, durationMs: number, scale?: number): void;
+  /** A poop flung from `from` at the viewer: it squashes onto the glass at `to`, sticks, and sags down it. */
+  flingPoop(from: { x: number; y: number }, to: { x: number; y: number }, scale?: number): void;
   /** Two light sprays of sand and a few wavy scent lines. */
   pottyAccent(kind: 'sand' | 'scent', x: number, y: number): void;
   /** Shake the cat (the WebGL canvas), not the marks - the marks are on the glass. */
@@ -152,28 +156,6 @@ const CSS = `
   z-index: 2;
 }
 .lingxi-fx-layer.lingxi-fx-floor { z-index: auto; }
-.lingxi-fx-pee { position: absolute; overflow: visible; pointer-events: none; animation: lingxi-pee-life var(--dur) linear forwards; }
-.lingxi-fx-pee path { fill: none; stroke-linecap: round; }
-.lingxi-fx-pee .flow { stroke-dasharray: 10 7; animation: lingxi-pee-flow 260ms linear infinite; }
-@keyframes lingxi-pee-flow { to { stroke-dashoffset: -17; } }
-@keyframes lingxi-pee-life { 0% { opacity: 0; } 8%, 88% { opacity: 1; } 100% { opacity: 0; } }
-.lingxi-fx-drop {
-  position: absolute; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(255,255,240,.95), rgba(236,212,110,.75) 45%, rgba(214,180,70,.55));
-  box-shadow: 0 1px 2px rgba(120,90,20,.25);
-  animation: lingxi-drop var(--life) ease-in forwards;
-}
-.lingxi-fx-drop::after {
-  content: ''; position: absolute; left: 35%; width: 30%; top: 60%; height: var(--run);
-  background: linear-gradient(rgba(236,212,110,.55), rgba(236,212,110,0));
-  border-radius: 0 0 50% 50%;
-}
-@keyframes lingxi-drop {
-  0% { opacity: 0; transform: translate(0, 0) scale(.2); }
-  6% { opacity: 1; transform: translate(var(--sx), var(--sy)) scale(1); }
-  70% { opacity: .9; transform: translate(var(--sx), calc(var(--sy) + var(--slide))) scale(.9); }
-  100% { opacity: 0; transform: translate(var(--sx), calc(var(--sy) + var(--slide) * 1.4)) scale(.8); }
-}
 .lingxi-fx-hand {
   position: absolute;
   font-size: 64px;
@@ -450,8 +432,7 @@ export function createStageFx(): StageFx {
   // stands on it
   let floor: HTMLDivElement | null = null;
   let hand: HTMLDivElement | null = null;
-  // effects still to come from one already fired (the pee's later splashes): cancelled by clear()
-  const pending = new Set<ReturnType<typeof setTimeout>>();
+  let glass: Glass | null = null;
   let handAt: { x: number; y: number } | null = null;
   let handTilt = 0;
   /** Who the next bubble speaks for, or null for the cat speaking as itself. */
@@ -499,6 +480,7 @@ export function createStageFx(): StageFx {
       layer = document.createElement('div');
       layer.className = 'lingxi-fx-layer';
       container.append(layer);
+      if (typeof document !== 'undefined' && typeof container.prepend === 'function') glass = createGlass(container);
       if (typeof container.prepend === 'function') {
         floor = document.createElement('div');
         floor.className = 'lingxi-fx-layer lingxi-fx-floor';
@@ -597,51 +579,12 @@ export function createStageFx(): StageFx {
       hand.style.transform = `rotate(${handTilt.toFixed(1)}deg)`;
     },
 
-    peeStream(x0, y0, x1, y1, durationMs, scale = 1) {
-      if (!layer) return;
-      const pad = 40 * scale;
-      const left = Math.min(x0, x1) - pad, top = Math.min(y0, y1) - pad;
-      const w = Math.abs(x1 - x0) + pad * 2, h = Math.abs(y1 - y0) + pad * 2;
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'lingxi-fx-pee');
-      svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-      svg.style.left = `${left}px`; svg.style.top = `${top}px`;
-      svg.style.width = `${w}px`; svg.style.height = `${h}px`;
-      svg.style.setProperty('--dur', `${durationMs}ms`);
-      // an arc bowing out to the side the stream leaves from, widening as it comes at the viewer
-      const ax = x0 - left, ay = y0 - top, bx = x1 - left, by = y1 - top;
-      const cx = (ax + bx) / 2 + (bx - ax) * 0.35 + 30 * scale * Math.sign(bx - ax || 1), cy = Math.min(ay, by) - 10 * scale;
-      const d = `M ${ax} ${ay} Q ${cx} ${cy} ${bx} ${by}`;
-      svg.innerHTML = `<path d="${d}" stroke="rgba(230,200,95,.45)" stroke-width="${5 * scale}"/>`
-        + `<path class="flow" d="${d}" stroke="rgba(245,222,120,.9)" stroke-width="${2.6 * scale}"/>`
-        + `<path class="flow" d="${d}" stroke="rgba(255,255,235,.8)" stroke-width="${0.9 * scale}" style="animation-duration:190ms"/>`;
-      layer.append(svg);
-      autoRemove(svg, durationMs + 100);
-      // drops land on the glass where it hits, spread out, and run down it
-      const splash = (k: number) => {
-        if (!layer) return;
-        for (let i = 0; i < 3; i++) {
-          const drop = document.createElement('div');
-          drop.className = 'lingxi-fx-drop';
-          const size = (5 + Math.random() * 9) * scale;
-          const a = Math.random() * Math.PI * 2, r = (6 + Math.random() * 30) * scale * (1 + k * 0.08);
-          drop.style.left = `${x1 - size / 2}px`; drop.style.top = `${y1 - size / 2}px`;
-          drop.style.width = drop.style.height = `${size}px`;
-          drop.style.setProperty('--sx', `${Math.cos(a) * r}px`);
-          drop.style.setProperty('--sy', `${Math.sin(a) * r * 0.7}px`);
-          drop.style.setProperty('--slide', `${(20 + Math.random() * 60) * scale}px`);
-          drop.style.setProperty('--run', `${(10 + Math.random() * 40) * scale}px`);
-          const life = 2600 + Math.random() * 1800;
-          drop.style.setProperty('--life', `${life}ms`);
-          layer.append(drop);
-          autoRemove(drop, life + 100);
-        }
-      };
-      const n = Math.max(1, Math.floor(durationMs / 220));
-      for (let k = 0; k < n; k++) {
-        const timer = setTimeout(() => { pending.delete(timer); splash(k); }, 120 + k * 220);
-        pending.add(timer);
-      }
+    peeStream(from, to, durationMs, scale = 1) {
+      glass?.stream(from, to, durationMs / 1000, scale);
+    },
+
+    flingPoop(from, to, scale = 1) {
+      glass?.fling(from, to, scale);
     },
 
     pottyMark(kind, x, y, durationMs, scale = 1) {
@@ -940,8 +883,7 @@ export function createStageFx(): StageFx {
       tracked.clear();
       if (layer) layer.replaceChildren();
       floor?.replaceChildren();
-      for (const timer of pending) clearTimeout(timer);
-      pending.clear();
+      glass?.clear();
       shakeTarget?.classList.remove('lingxi-fx-shaking');
       shakeTarget?.classList.remove('lingxi-fx-tilted');
     },
@@ -951,6 +893,8 @@ export function createStageFx(): StageFx {
       layer = null;
       floor?.remove();
       floor = null;
+      glass?.dispose();
+      glass = null;
       shakeTarget = null;
     },
   };

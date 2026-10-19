@@ -6,12 +6,12 @@ import { createToyProp } from '../src/rig/toys.ts';
 import { pickToyReaction } from '../src/anim/interactions.ts';
 import { createLifeEngine } from '../../../packages/life-engine/src/index.mjs';
 
-const POTTY = { 'pee-at-you': { action: 'potty-pee', mark: 'peeStream' }, 'poop-at-you': { action: 'potty-poop', mark: 'pottyMark' } };
+const POTTY = { 'pee-at-you': { action: 'potty-pee', mark: 'peeStream' }, 'poop-at-you': { action: 'potty-poop', mark: 'flingPoop' } };
 for (const [id, { action, mark }] of Object.entries(POTTY)) {
   test(`${id} has a complete 8-12 second timeline and a cancellation cleanup`, t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const events = [];
-    const fx = Object.fromEntries(['clear','pottyMark','pottyAccent','peeStream','speedLines','shake','vignette','hearts','impactFrame','clawSlash','tilt'].map(key => [key, () => events.push(key)]));
+    const fx = Object.fromEntries(['clear','pottyMark','pottyAccent','peeStream','flingPoop','speedLines','shake','vignette','hearts','impactFrame','clawSlash','tilt'].map(key => [key, () => events.push(key)]));
     const context = {
       engine: { position: {x:500,y:600}, suggestMoveTo: () => events.push('move'), turnTo: () => true, clearIntent: () => events.push('clearIntent'), hold: () => events.push('hold') },
       renderer: { setCameraPreset: () => {}, setPerformanceScale: () => events.push('scale'), playAction: clip => { events.push(clip); return true; }, playExpression: () => true },
@@ -38,7 +38,7 @@ test('a renderer without the staged potty actions (the voxel cat) squats instead
   const context = {
     engine: { position: {x:500,y:600}, suggestMoveTo: noop, turnTo: () => true, clearIntent: noop },
     renderer: { playAction: clip => { if (clip === 'potty-pee' || clip === 'potty-poop') return false; played.push(clip); return true; }, playExpression: () => true },
-    fx: Object.fromEntries(['clear','pottyMark','pottyAccent','peeStream'].map(key => [key, noop])),
+    fx: Object.fromEntries(['clear','pottyMark','pottyAccent','peeStream','flingPoop'].map(key => [key, noop])),
     viewport: () => ({width:1000,height:800}), petPosition: () => ({x:500,y:600}), restoreCamera: noop, now: () => 0,
   };
   const runner = createPerformanceRunner(context);
