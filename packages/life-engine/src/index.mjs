@@ -997,7 +997,8 @@ export function createLifeEngine(config = {}) {
     if (charge || toyHeld) return;
 
     if (touching() && now - lastBatAt >= cfg.toyBatCooldownMs) {
-      if (isFinitePoint(contact?.petContactPosition)) position = { ...contact.petContactPosition };
+      if (isFinitePoint(contact?.petContactPosition)
+        && !pathProtected(position, contact.petContactPosition, protectedRegions)) position = { ...contact.petContactPosition };
       if (toy.kind === 'yarn' && isFinitePoint(contact?.contactPosition)) toy.position = { ...contact.contactPosition };
       lastBatAt = now;
       batThisTick = true;

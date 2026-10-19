@@ -64,3 +64,12 @@ test('an active toy inside an input cannot pull the cat into that input', () => 
     assert.equal(contains(input, engine.position), false);
   }
 });
+test('a swept toy-contact correction cannot place the body inside an input', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 700 }, protectedRegions: [input], position: { x: 200, y: 350 },
+    toyInteraction: () => ({ target: { x: 500, y: 350 }, touching: true, petContactPosition: { x: 500, y: 350 } }),
+  });
+  engine.setToy('yarn', { x: 500, y: 350 });
+  engine.throwToy({ x: 0, y: 0 });
+  const snapshot = engine.tick(0, null);
+  assert.equal(contains(input, snapshot.position), false, 'collision correction bypassed input avoidance');
+});
