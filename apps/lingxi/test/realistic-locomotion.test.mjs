@@ -48,3 +48,25 @@ test('steering bends the torso without accumulating offsets into the next mixer 
   motion.beforeMixer();
   assert.ok(chest.quaternion.angleTo(authored) < 1e-7, 'restore the authored pose before the mixer');
 });
+
+test('run flight and an in-place walk pivot retain the authored skeleton', () => {
+  for (const [clipName, moving] of [['Run', true], ['Walk', false]]) {
+    const a = readMotion(), b = readMotion();
+    const mixerA = new THREE.AnimationMixer(a.root), mixerB = new THREE.AnimationMixer(b.root);
+    const actionA = mixerA.clipAction(a.clips[clipName].clip).play();
+    mixerB.clipAction(b.clips[clipName].clip).play();
+    const motion = createLocomotion(a.root);
+    const names = ['Pelvis', 'Head', 'FrontPaw.L', 'FrontPaw.R', 'RearPaw.L', 'RearPaw.R'];
+    for (let i = 0; i < 120; i++) {
+      motion.beforeMixer();
+      mixerA.update(1 / 120); mixerB.update(1 / 120);
+      motion.update(1 / 120, 0, moving, clipName, actionA.time / actionA.getClip().duration);
+      a.root.updateMatrixWorld(true); b.root.updateMatrixWorld(true);
+      for (const name of names) {
+        const actual = a.nodes.find(n => n.name === name).getWorldPosition(new THREE.Vector3());
+        const original = b.nodes.find(n => n.name === name).getWorldPosition(new THREE.Vector3());
+        assert.ok(actual.distanceTo(original) < .0002, `${clipName} ${name} changed`);
+      }
+    }
+  }
+});

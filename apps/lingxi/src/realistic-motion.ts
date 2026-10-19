@@ -16,6 +16,12 @@ export function walkCadence(rate: number): number {
   return rate > 0 ? Math.min(WALK_CADENCE.max, Math.max(WALK_CADENCE.min, rate)) : 0;
 }
 
+/** When cadence reaches its comfortable limits, shorten or lengthen the actual foot sweep to match ground travel. */
+export function matchedWalkStride(nominalStrideScale: number, requiredRate: number, cadence: number, maxStrideScale: number): number {
+  if (cadence <= 0) return nominalStrideScale;
+  return Math.min(maxStrideScale, Math.max(0.08, nominalStrideScale * requiredRate / cadence));
+}
+
 /**
  * Use the run's longer stride before the walk turns into frantic tiny steps. Hysteresis avoids toggling.
  * `runSpeed` (the run's natural ground speed): the run is only chosen once it can play at a believable rate - the

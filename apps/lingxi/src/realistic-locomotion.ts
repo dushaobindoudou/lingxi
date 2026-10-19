@@ -5,12 +5,11 @@ const wrap = (n: number) => ((n % 1) + 1) % 1;
 const smooth = (n: number) => { const t = THREE.MathUtils.clamp(n, 0, 1); return t * t * (3 - 2 * t); };
 
 export const steeringStrideScale = (turnRate: number) => 1 / (1 + Math.min(1.5, Math.abs(turnRate) * 1.5));
-/**
- * The kitten's walk over the look-dev Walk (an adult's long, unhurried stride): steps this much shorter - the renderer
- * plays it that much faster for the same ground covered, quick little steps - and a springier bounce, this much more rise
- * (model units, cat ~0.8 tall) between the clip's own dips (at .30 and .80 of the cycle, just after each hind paw lands).
- */
-export const KITTEN_WALK = { stride: 0.72, bounce: 0.012, dip: 0.30 };
+/** Metres and radians in the unscaled cat (~0.8 m tall). All additions are confined to travelling Walk. */
+export const KITTEN_WALK = {
+  stride: 0.72, support: 0.62, release: 0.08, frontLift: 0.025, rearLift: 0.016,
+  load: 0.018, shoulderPitch: 0.010, hipSway: 0.014, tailSway: 0.025, headNod: 0.009,
+};
 
 /** Keep the authored bend plane while placing a two-bone chain in world space. */
 function placePaw(upper: THREE.Object3D, lower: THREE.Object3D, paw: THREE.Object3D, target: THREE.Vector3) {
@@ -55,11 +54,12 @@ export function createLocomotion(root: THREE.Object3D) {
     ['Front', 'L', 0], ['Front', 'R', .5], ['Rear', 'L', .25], ['Rear', 'R', .75],
   ].flatMap(([part, side, offset]) => {
     const upper = find(`${part}Upper.${side}`), lower = find(`${part}Lower.${side}`), paw = find(`${part}Paw.${side}`);
-    return upper && lower && paw ? [{ upper, lower, paw, offset: Number(offset), rest: root.worldToLocal(paw.getWorldPosition(new THREE.Vector3())), anchor: null as THREE.Vector3 | null, lastPhase: -1 }] : [];
+    return upper && lower && paw ? [{ upper, lower, paw, front: part === 'Front', offset: Number(offset), rest: root.worldToLocal(paw.getWorldPosition(new THREE.Vector3())), anchor: null as THREE.Vector3 | null, lastPhase: -1 }] : [];
   });
   const chain = [['Loin', .10], ['Spine', .20], ['Chest', .20], ['Neck', .22], ['NeckB', .16], ['Head', .12], ['Tail0', -.25], ['Tail1', -.18]] as const;
   const joints = chain.flatMap(([name, share]) => { const bone = find(name); return bone ? [{ bone, share }] : []; });
   const pelvis = find("Pelvis");
+  const chest = find("Chest"), tail = find("Tail0");
   let pelvisPosition: THREE.Vector3 | null = null;
   const saved = new Map<THREE.Object3D, THREE.Quaternion>();
   let bend = 0;
@@ -71,25 +71,38 @@ export function createLocomotion(root: THREE.Object3D) {
       for (const [bone, quaternion] of saved) bone.quaternion.copy(quaternion);
       saved.clear();
     },
-    update(dt: number, turnRate: number, moving: boolean, clip: string, phase: number) {
+    update(dt: number, turnRate: number, moving: boolean, clip: string, phase: number, strideScale = KITTEN_WALK.stride * steeringStrideScale(turnRate)) {
       const wanted = moving ? THREE.MathUtils.clamp(turnRate * .18, -.28, .28) : 0;
       bend += (wanted - bend) * (1 - Math.exp(-Math.max(0, dt) / .16));
       root.updateWorldMatrix(true, true);
-      // Swing feet retain their authored world targets while the shoulder/hip moves above them.
+      const walking = moving && clip === 'Walk';
+      // Capture the mixer pose before moving the torso; IK then keeps paw contacts independent of body load.
       const targets = legs.map(leg => {
         const local = root.worldToLocal(leg.paw.getWorldPosition(new THREE.Vector3()));
-        if (moving && clip === "Walk") local.z = leg.rest.z + (local.z - leg.rest.z) * steeringStrideScale(turnRate) * KITTEN_WALK.stride;
+        if (walking) {
+          local.z = leg.rest.z + (local.z - leg.rest.z) * strideScale;
+          const p = wrap(phase + leg.offset);
+          if (p >= KITTEN_WALK.support) {
+            const swing = (p - KITTEN_WALK.support) / (1 - KITTEN_WALK.support);
+            // Extra clearance peaks in mid swing and vanishes at both ends, preserving the clip's toe roll.
+            local.y += (leg.front ? KITTEN_WALK.frontLift : KITTEN_WALK.rearLift) * Math.sin(Math.PI * swing);
+          }
+        }
         return root.localToWorld(local);
       });
-      // Lower the support centre into a turn so straight forelegs retain reach; and the kitten's bounce while it walks
-      // (the paws stay where they are: their targets are taken above, before the body moves)
-      const bounce = moving && clip === 'Walk' ? KITTEN_WALK.bounce * (0.5 - 0.5 * Math.cos(4 * Math.PI * (phase - KITTEN_WALK.dip))) : 0;
-      if (pelvis && (Math.abs(bend) > 1e-5 || bounce > 1e-6)) {
+      // Forepaws land half a cycle apart. The torso yields just after contact, then recovers over planted legs.
+      const load = walking ? -KITTEN_WALK.load * Math.cos(4 * Math.PI * phase - .2 * Math.PI) : 0;
+      if (pelvis && (Math.abs(bend) > 1e-5 || walking)) {
         pelvisPosition = pelvis.position.clone();
-        const drop = up.clone().multiplyScalar((bounce - .025 * Math.min(1, Math.abs(bend) / .18)) * root.getWorldScale(new THREE.Vector3()).y);
+        const drop = up.clone().multiplyScalar((load - .025 * Math.min(1, Math.abs(bend) / .18)) * root.getWorldScale(new THREE.Vector3()).y);
         const parent = pelvis.parent!;
         const point = pelvis.getWorldPosition(new THREE.Vector3()).add(drop);
         pelvis.position.copy(parent.worldToLocal(point));
+        if (walking) {
+          save(pelvis);
+          // A tiny side-to-side hip transfer follows the alternating hind paws.
+          pelvis.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), KITTEN_WALK.hipSway * Math.sin(2 * Math.PI * phase)));
+        }
         pelvis.updateWorldMatrix(false, true);
       }
       for (const { bone, share } of joints) {
@@ -98,15 +111,29 @@ export function createLocomotion(root: THREE.Object3D) {
         bone.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, bend * share));
         bone.updateWorldMatrix(false, true);
       }
+      if (walking && chest) {
+        save(chest);
+        chest.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -KITTEN_WALK.shoulderPitch * Math.cos(4 * Math.PI * phase - .2 * Math.PI)));
+        chest.updateWorldMatrix(false, true);
+      }
+      if (walking && tail) {
+        save(tail);
+        tail.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), KITTEN_WALK.tailSway * Math.sin(2 * Math.PI * phase + .5)));
+        tail.updateWorldMatrix(false, true);
+      }
       legs.forEach((leg, i) => {
         const p = wrap(phase + leg.offset);
-        // These offsets and .62 duty belong to the shipped ZZZ4 Walk; gallop keeps its authored flight.
-        const planted = moving && clip === 'Walk' && p < .62;
+        // These offsets and duty belong to the shipped ZZZ4 Walk; gallop keeps its authored flight.
+        const planted = walking && p < KITTEN_WALK.support;
         if (planted) {
           if (!leg.anchor || p < leg.lastPhase || dt > .1) leg.anchor = targets[i].clone();
-          const weight = smooth(p / .07) * smooth((.62 - p) / .09);
-          targets[i].x = THREE.MathUtils.lerp(targets[i].x, leg.anchor.x, weight);
-          targets[i].z = THREE.MathUtils.lerp(targets[i].z, leg.anchor.z, weight);
+          // Hold all three coordinates from touchdown to toe-off: no horizontal skating or hovering sole.
+          targets[i].copy(leg.anchor);
+        } else if (walking && leg.anchor) {
+          // Transfer from the fixed contact into the authored swing over a short toe-off, avoiding a one-frame pop.
+          const release = smooth((p - KITTEN_WALK.support) / KITTEN_WALK.release);
+          targets[i].lerpVectors(leg.anchor, targets[i], release);
+          if (release >= 1) leg.anchor = null;
         } else leg.anchor = null;
         leg.lastPhase = p;
         if (!moving && Math.abs(bend) < 1e-5) return;

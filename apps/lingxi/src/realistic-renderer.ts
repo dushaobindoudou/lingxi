@@ -21,7 +21,7 @@ import type { Renderer, RendererCapabilities } from '../../../packages/desktop-h
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 import { createLocomotion, KITTEN_WALK, steeringStrideScale } from './realistic-locomotion.ts';
-import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, sprintPace, walkCadence } from './realistic-motion.ts';
+import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 
 export interface RealisticRendererOptions {
@@ -1527,7 +1527,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (headBone && headOverlaid) headBone.quaternion.copy(headClipPose);
     headOverlaid = false;
   }
-  function overlayHead(dt: number) {
+  function overlayHead(dt: number, moving: boolean) {
     if (!headBone?.parent) return;
     headClipPose.copy(headBone.quaternion);
     headOverlaid = true;
@@ -1542,6 +1542,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (gait > 0.001) {
       relative.slerp(headSteady, HEAD_STEADY_SHARE * Math.min(1, gait));
       headBone.quaternion.copy(headBone.parent.getWorldQuaternion(parentQ).invert().multiply(relative.premultiply(rootQ)));
+    }
+    if (moving && currentName === 'Walk' && current) {
+      // Apply the small contact nod after gaze stabilization, so the eyes do not inherit the full torso bounce.
+      const phase = current.time / current.getClip().duration;
+      headBone.rotation.x += KITTEN_WALK.headNod * Math.cos(4 * Math.PI * phase - .2 * Math.PI) * current.getEffectiveWeight();
     }
     if (cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
   }
@@ -2059,7 +2064,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           const action = actions[name];
           if (action?.isRunning() && strides[name] > 0) {
             const rate = locomotionRate(groundDistance, deltaSeconds, strides[name] * (name === 'Walk' ? walkStrideScale : 1), effectiveScale(), action.getClip().duration);
-            action.timeScale = name === 'Walk' && pivoting ? PIVOT_CADENCE : name === 'Walk' && moving ? walkCadence(rate) : rate;
+            const cadence = name === 'Walk' && pivoting ? PIVOT_CADENCE : name === 'Walk' && moving ? walkCadence(rate) : rate;
+            action.timeScale = cadence;
+            if (name === 'Walk' && moving) {
+              // A cadence floor without a matching shorter sweep made each slow step scrub against its planted paw.
+              walkStrideScale = matchedWalkStride(walkStrideScale, rate, cadence, steeringStrideScale(steeringTurnRate));
+            }
           }
         }
         unoverlayPet();
@@ -2134,8 +2144,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       shadowCatcher.position.set(stand.x, 0.002, stand.z);
       shadowCatcher.scale.setScalar(reach * 2.5);
 
-      locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0);
-      overlayHead(deltaSeconds);
+      locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0, walkStrideScale);
+      overlayHead(deltaSeconds, moving);
       overlayStage(deltaSeconds);
       overlayPet(deltaSeconds, moving || pivoting || !!oneShot || !!staged || currentName === 'Walk' || currentName === 'Run');
 
