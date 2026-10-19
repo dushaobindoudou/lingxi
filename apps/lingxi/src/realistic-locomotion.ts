@@ -42,6 +42,12 @@ function placePaw(upper: THREE.Object3D, lower: THREE.Object3D, paw: THREE.Objec
   paw.updateWorldMatrix(false, true);
 }
 
+/** Turn `bone` by `angle` about a world axis, on top of its pose. */
+function turnAbout(bone: THREE.Object3D, axis: THREE.Vector3, angle: number) {
+  const local = axis.clone().applyQuaternion(bone.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+  bone.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(local, angle));
+}
+
 /** Add steering after the mixer, then solve paws AFTER the torso bends. No changes to the source clips. */
 export function createLocomotion(root: THREE.Object3D) {
   const find = (name: string) => {
@@ -76,6 +82,8 @@ export function createLocomotion(root: THREE.Object3D) {
       bend += (wanted - bend) * (1 - Math.exp(-Math.max(0, dt) / .16));
       root.updateWorldMatrix(true, true);
       const walking = moving && clip === 'Walk';
+      // the hips roll about the way the cat faces (the model's +z), not about whichever way the pelvis bone points
+      const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
       // Capture the mixer pose before moving the torso; IK then keeps paw contacts independent of body load.
       const targets = legs.map(leg => {
         const local = root.worldToLocal(leg.paw.getWorldPosition(new THREE.Vector3()));
@@ -101,7 +109,7 @@ export function createLocomotion(root: THREE.Object3D) {
         if (walking) {
           save(pelvis);
           // A tiny side-to-side hip transfer follows the alternating hind paws.
-          pelvis.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), KITTEN_WALK.hipSway * Math.sin(2 * Math.PI * phase)));
+          turnAbout(pelvis, forward, KITTEN_WALK.hipSway * Math.sin(2 * Math.PI * phase));
         }
         pelvis.updateWorldMatrix(false, true);
       }
@@ -118,7 +126,8 @@ export function createLocomotion(root: THREE.Object3D) {
       }
       if (walking && tail) {
         save(tail);
-        tail.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), KITTEN_WALK.tailSway * Math.sin(2 * Math.PI * phase + .5)));
+        // side to side about the vertical (about its own bone axis, it only twisted)
+        turnAbout(tail, up, KITTEN_WALK.tailSway * Math.sin(2 * Math.PI * phase + .5));
         tail.updateWorldMatrix(false, true);
       }
       legs.forEach((leg, i) => {
@@ -127,12 +136,15 @@ export function createLocomotion(root: THREE.Object3D) {
         const planted = walking && p < KITTEN_WALK.support;
         if (planted) {
           if (!leg.anchor || p < leg.lastPhase || dt > .1) leg.anchor = targets[i].clone();
-          // Hold all three coordinates from touchdown to toe-off: no horizontal skating or hovering sole.
-          targets[i].copy(leg.anchor);
+          // Held across the ground from touchdown to toe-off: no skating. Its height stays the clip's: held where the
+          // paw touched down (often a few millimetres up, mid toe-roll) it hovered over its shadow the whole stance.
+          targets[i].x = leg.anchor.x;
+          targets[i].z = leg.anchor.z;
         } else if (walking && leg.anchor) {
           // Transfer from the fixed contact into the authored swing over a short toe-off, avoiding a one-frame pop.
           const release = smooth((p - KITTEN_WALK.support) / KITTEN_WALK.release);
-          targets[i].lerpVectors(leg.anchor, targets[i], release);
+          targets[i].x = THREE.MathUtils.lerp(leg.anchor.x, targets[i].x, release);
+          targets[i].z = THREE.MathUtils.lerp(leg.anchor.z, targets[i].z, release);
           if (release >= 1) leg.anchor = null;
         } else leg.anchor = null;
         leg.lastPhase = p;
