@@ -12,6 +12,7 @@
 - Linux CI 不执行依赖 macOS `plutil` 的两个去重场景；macOS Rust job 明确执行它们。
 - Release workflow 在待发布 tag 上执行 Rust 测试；本地及 CI 构建验证真实前端产物和解包后的 npm 服务。
 - npm 命令入口加可执行权限；三个独立插件目录补齐 LICENSE.md。
+- 根据真实 CI 的 Node.js 20 弃用提示，将 cache / upload-artifact 更新到支持 Node.js 24 的 v6。
 - 中英文 README 改为下载、安装、使用优先；历史问题集中到 KNOWN_ISSUES.md。
 
 ## GitHub 设置（已通过 API 回读）
@@ -29,7 +30,7 @@
 | 私密漏洞报告 | 已开启，与 SECURITY.md 中的报告入口一致 |
 | Apple 发布 Secrets | 检查时未配置；本机无可用代码签名身份 |
 
-main 上最近的远程 CI 仍是旧提交失败记录；此次修复需经 PR 推送后，由 GitHub runner 确认通过。
+main 上最近的远程 CI 仍是旧提交失败记录；此次修复在[草稿 PR #26](https://github.com/dushaobindoudou/lingxi/pull/26)验证，正式合并后还应核对发布提交上的检查。
 
 ## 渠道状态
 
