@@ -26,8 +26,12 @@ export interface StageFx {
   clawSlash(x: number, y: number, options?: { scale?: number; rotation?: number }): void;
   /** A burst of hearts drifting up from a point. */
   hearts(x: number, y: number, count?: number): void;
-  /** A small, clean cartoon puddle / poop mark on the glass under the cat. */
-  pottyMark(kind: 'pee' | 'poop', x: number, y: number, durationMs: number): void;
+  /** A small, clean cartoon puddle / poop mark on the floor under the cat (drawn beneath it, so the cat stands over
+   *  it), `scale` times its 120 x 70 px. */
+  pottyMark(kind: 'pee' | 'poop', x: number, y: number, durationMs: number, scale?: number): void;
+  /** The petting hand (the 撸猫 toy) at the pointer, or hidden with null. On the glass, over the cat: as a prop in
+   *  the 3D scene it stood on the floor under the pointer's spot - behind the cat whenever the pointer was on it. */
+  petHand(at: { x: number; y: number } | null): void;
   /** Two light sprays of sand and a few wavy scent lines. */
   pottyAccent(kind: 'sand' | 'scent', x: number, y: number): void;
   /** Shake the cat (the WebGL canvas), not the marks - the marks are on the glass. */
@@ -143,6 +147,15 @@ const CSS = `
   pointer-events: none;
   overflow: hidden;
   z-index: 2;
+}
+.lingxi-fx-layer.lingxi-fx-floor { z-index: auto; }
+.lingxi-fx-hand {
+  position: absolute;
+  font-size: 64px;
+  line-height: 1;
+  transform-origin: 50% 70%;
+  filter: drop-shadow(0 3px 4px rgba(60, 40, 20, .25));
+  transition: opacity 160ms ease-out;
 }
 .lingxi-fx-claw {
   position: absolute;
@@ -408,6 +421,12 @@ const ATTRIBUTION_TTL_MS = 3000;
 
 export function createStageFx(): StageFx {
   let layer: HTMLDivElement | null = null;
+  // what lies on the floor rather than on the glass: under the (transparent) canvas, so the cat covers it where it
+  // stands on it
+  let floor: HTMLDivElement | null = null;
+  let hand: HTMLDivElement | null = null;
+  let handAt: { x: number; y: number } | null = null;
+  let handTilt = 0;
   /** Who the next bubble speaks for, or null for the cat speaking as itself. */
   let attribution: BubbleAttribution | null = null;
   let attributionAt = 0;
@@ -453,6 +472,11 @@ export function createStageFx(): StageFx {
       layer = document.createElement('div');
       layer.className = 'lingxi-fx-layer';
       container.append(layer);
+      if (typeof container.prepend === 'function') {
+        floor = document.createElement('div');
+        floor.className = 'lingxi-fx-layer lingxi-fx-floor';
+        container.prepend(floor);
+      }
       shakeTarget = container.querySelector('canvas');
     },
 
@@ -523,19 +547,45 @@ export function createStageFx(): StageFx {
       }
     },
 
-    pottyMark(kind, x, y, durationMs) {
+    petHand(at) {
       if (!layer) return;
+      if (!at) {
+        if (hand) hand.style.opacity = '0';
+        handAt = null;
+        return;
+      }
+      if (!hand || !hand.isConnected) {
+        hand = document.createElement('div');
+        hand.className = 'lingxi-fx-hand';
+        hand.textContent = '\u{1FAF3}\u{1F3FB}'; // palm down, a light skin tone: a hand laid on the fur
+        layer.append(hand);
+      }
+      // leaning a little into the stroke, eased
+      const dx = handAt ? at.x - handAt.x : 0;
+      handTilt += (Math.max(-18, Math.min(18, dx * 1.5)) - handTilt) * 0.2;
+      handAt = { ...at };
+      hand.style.opacity = '1';
+      hand.style.left = `${Math.round(at.x - 32)}px`;
+      hand.style.top = `${Math.round(at.y - 40)}px`;
+      hand.style.transform = `rotate(${handTilt.toFixed(1)}deg)`;
+    },
+
+    pottyMark(kind, x, y, durationMs, scale = 1) {
+      const under = floor ?? layer;
+      if (!under) return;
       const node = document.createElement('div');
       node.className = 'lingxi-fx-potty';
       node.dataset.kind = kind;
       node.style.left = `${x}px`;
       node.style.top = `${y}px`;
       node.style.setProperty('--dur', `${durationMs}ms`);
+      node.style.width = `${120 * scale}px`;
+      node.style.height = `${70 * scale}px`;
       // SVG keeps the mark crisp on both the small voxel cat and the larger realistic cat.
       node.innerHTML = kind === 'pee'
         ? '<svg viewBox="0 0 120 70" aria-hidden="true"><ellipse cx="60" cy="45" rx="49" ry="18" fill="#ddc46b" opacity=".28"/><ellipse cx="60" cy="41" rx="42" ry="11" fill="#fff6b9" opacity=".46"/><path d="M37 40 Q50 34 72 38" fill="none" stroke="#fff" stroke-width="3" opacity=".72" stroke-linecap="round"/><path d="M60 1 Q54 17 62 36" fill="none" stroke="#e6cb71" stroke-width="2.5" opacity=".7" stroke-linecap="round"/></svg>'
         : '<svg viewBox="0 0 120 70" aria-hidden="true"><ellipse cx="60" cy="53" rx="45" ry="13" fill="#e6d7b2" opacity=".6"/><path d="M36 51 Q40 35 53 37 Q51 25 65 28 Q72 26 77 39 Q88 39 88 52Z" fill="#9a765d"/><path d="M48 38 Q55 35 65 38" fill="none" stroke="#c9aa89" stroke-width="3" stroke-linecap="round"/><circle cx="73" cy="39" r="2" fill="#c9aa89"/></svg>';
-      layer.append(node);
+      under.append(node);
       autoRemove(node, durationMs + 150);
     },
 
@@ -815,6 +865,7 @@ export function createStageFx(): StageFx {
       this.hush();
       tracked.clear();
       if (layer) layer.replaceChildren();
+      floor?.replaceChildren();
       shakeTarget?.classList.remove('lingxi-fx-shaking');
       shakeTarget?.classList.remove('lingxi-fx-tilted');
     },
@@ -822,6 +873,8 @@ export function createStageFx(): StageFx {
     dispose() {
       layer?.remove();
       layer = null;
+      floor?.remove();
+      floor = null;
       shakeTarget = null;
     },
   };

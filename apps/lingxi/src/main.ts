@@ -769,6 +769,7 @@ async function main() {
       // a walk that starts at 30fps reads as a stutter.
       if (tier === 'idle' && !catIsStill()) setTier('active');
       renderer.render(snapshot, deltaSeconds, cursor);
+      fx.petHand(snapshot.toy?.kind === 'pet' ? cursor : null);
 
       // --- sleep, made visible ----------------------------------------------------------
       //

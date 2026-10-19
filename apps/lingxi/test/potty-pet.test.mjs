@@ -53,7 +53,8 @@ test('pet hand follows the pointer while the cat stays in place, then resumes', 
   assert.equal(pickToyReaction({kind:'pet',distance:10,toySpeed:0,held:false}),null);
   engine.clearToy();
   assert.equal(engine.tick(200,null).toy,null);
+  // drawn on the glass at the pointer (stage-fx), nothing in the scene
   const hand = createToyProp('pet');
-  assert.ok(hand.object.children.length >= 5);
+  assert.equal(hand.object.children.length, 0);
   hand.dispose();
 });

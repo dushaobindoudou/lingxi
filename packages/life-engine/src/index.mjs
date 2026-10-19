@@ -883,6 +883,7 @@ export function createLifeEngine(config = {}) {
       x: clamp(point.x, minX(), maxX()),
       y: clamp(point.y, minY(), maxY()),
     };
+    toy.velocity = { x: 0, y: 0 };
   }
 
   /** Advance the toy itself. Who drives it is the whole difference between the three kinds. */

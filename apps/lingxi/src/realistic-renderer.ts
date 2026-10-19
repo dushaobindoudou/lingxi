@@ -110,8 +110,9 @@ const ACTION_CLIPS: Record<string, string> = {
   'curled-sleep': 'Sleep', 'side-nap': 'SideLie', 'stretch-front': 'Stretch', 'stretch-back': 'Stretch',
   yawn: 'Yawn', 'sleepy-nod': 'Yawn', 'lick-paw': 'Lick', 'groom-chest': 'Lick', knead: 'Knead',
   'paw-wave': 'PawPlay', 'paw-reach': 'PawPlay', 'toy-swat': 'PawPlay', 'claw-screen': 'PawPlay',
-  // Swap these two values to Squat / Dig when the authored GLB clips are available.
-  'potty-squat': 'Sit', 'potty-dig': 'PawPlay',
+  // the potty set pieces (fx/performances): the sit with the tail raised and quivering (TAIL_ACTION_CARRIAGE) for the
+  // squat; kneading's alternating forepaws for scratching at the floor
+  'potty-squat': 'Sit', 'potty-dig': 'Knead',
   pounce: 'Jump', 'hop-catch': 'Jump', 'play-bow': 'LieDown', 'stalk-crouch': 'LieDown',
   'curious-tilt': 'Curious', 'ear-listen': 'Curious', 'sniff-air': 'Curious', 'look-at-you': 'Curious', 'notice-you': 'Curious',
   greeting: 'Happy', affection: 'Happy', 'head-bump': 'Happy', 'purr-settle': 'Happy',
@@ -165,6 +166,14 @@ const TRAVELLING = ['Walk', 'Run', 'Jump'];
 const TAIL_WALK = { lift: [68, 17, -2, -20, -29], sway: [3, 4, 6, 8, 10], period: 1.5 };
 const TAIL_STAND = { lift: [7, 2, -2, -13, -10], sway: [2, 3, 5, 7, 9], period: 3.2 };
 const TAIL_RUN = { lift: [37, 2, -12, -26, -22], sway: [1, 2, 3, 4, 5], period: 0.9 };
+// Host actions that carry the tail their own way over the clip's, from the tail's rest pose rather than on top of the
+// clip's: the squat's sit wraps the tail round the paws, and a squatting cat holds it up and back, quivering. The sit
+// pitches the pelvis up ~60 degrees, so the root lifts that much just to stand level behind.
+// How long a held pose is held for these host actions (ms, once reached), where a set piece times its beats round it
+const ACTION_HOLD_MS: Record<string, number> = { 'potty-squat': 2000 };
+const TAIL_ACTION_CARRIAGE: Record<string, { lift: number[]; sway: number[]; period: number }> = {
+  'potty-squat': { lift: [105, 12, 4, -6, -10], sway: [1.5, 2, 2.5, 3, 3.5], period: 0.32 },
+};
 const TAIL_CARRIAGE: Record<string, { lift: number[]; sway: number[]; period: number }> = {
   Walk: TAIL_WALK, Happy: TAIL_WALK, Curious: TAIL_WALK,
   Run: TAIL_RUN, Jump: TAIL_RUN,
@@ -891,7 +900,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (b?.isBone) tailBones.push(b);
     }
     tailFrame = tailBones.length === 5 ? root : null;
-    if (tailFrame) for (let i = 0; i < 5; i++) tailClipPose[i].copy(tailBones[i].quaternion);
+    if (tailFrame) for (let i = 0; i < 5; i++) { tailClipPose[i].copy(tailBones[i].quaternion); tailRest[i].copy(tailBones[i].quaternion); }
 
     const coat: THREE.SkinnedMesh[] = [];
     root.traverse((o) => {
@@ -1145,6 +1154,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // standing clips - so the clip's pose is kept here and put back before each mixer update (uncarryTail), or the turns
   // would pile up frame on frame.
   const tailClipPose = Array.from({ length: 5 }, () => new THREE.Quaternion());
+  const tailRest = Array.from({ length: 5 }, () => new THREE.Quaternion());
+  let tailOwnWeight = 0;
   function uncarryTail() {
     if (tailFrame) for (let i = 0; i < 5; i++) tailBones[i].quaternion.copy(tailClipPose[i]);
   }
@@ -1154,7 +1165,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const tailTurn = new THREE.Quaternion();
   function carryTail(deltaSeconds: number) {
     if (!tailFrame) return;
-    const pose = TAIL_CARRIAGE[currentName];
+    const own = oneShot ? TAIL_ACTION_CARRIAGE[oneShot.id] : undefined;
+    const pose = own ?? TAIL_CARRIAGE[currentName];
     // in small steps: a long frame must not throw the spring
     const steps = Math.max(1, Math.ceil(deltaSeconds / (1 / 120)));
     const dt = deltaSeconds / steps;
@@ -1169,6 +1181,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     tailPhase = (tailPhase + deltaSeconds * Math.PI * 2 / (pose?.period ?? TAIL_STAND.period)) % (Math.PI * 2);
     tailFrame.getWorldQuaternion(tailFrameQ);
     for (let i = 0; i < 5; i++) tailClipPose[i].copy(tailBones[i].quaternion);
+    // an action's own carriage starts from the rest pose, eased in and out
+    tailOwnWeight += ((own ? 1 : 0) - tailOwnWeight) * (1 - Math.exp(-deltaSeconds / 0.4));
+    if (tailOwnWeight > 1e-3) for (let i = 0; i < 5; i++) tailBones[i].quaternion.slerp(tailRest[i], tailOwnWeight);
     for (let i = 0; i < 5; i++) {
       const bone = tailBones[i];
       bone.parent!.getWorldQuaternion(tailParentQ).invert();
@@ -1313,7 +1328,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (clip === 'Sleep' && currentName !== 'Sleep' && actions.LieDown) { lyingVia = 'down'; play('LieDown', true); }
       else play(clip, !loop);
       // a held pose is held 4 s once reached (getting down to it, and curling up by way of lying down, take their own time)
-      const ms = loop || SETTLE_CLIPS[clip] ? 4000 + 1000 * (settleSeconds(clip) + (clip === 'Sleep' ? settleSeconds('LieDown') + CURL_SECONDS : 0)) : actions[clip].getClip().duration * 1000;
+      const ms = loop || SETTLE_CLIPS[clip] ? (ACTION_HOLD_MS[id] ?? 4000) + 1000 * (settleSeconds(clip) + (clip === 'Sleep' ? settleSeconds('LieDown') + CURL_SECONDS : 0)) : actions[clip].getClip().duration * 1000;
       oneShot = { id, clip, endsAt: elapsed + ms / 1000 };
       return true;
     },

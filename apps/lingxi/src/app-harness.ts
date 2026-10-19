@@ -98,6 +98,7 @@ function frame(now: number) {
         position: { x: width * .25 + (forward ? p : span * 2 - p), y: height * .68 } };
     }
     renderer.render(snapshot, dt, cursor);
+    fx.petHand(snapshot.toy?.kind === 'pet' ? cursor : null);
     if (params.get('toy') === 'pet' && snapshot.toy?.kind === 'pet' && cursor && renderer.hitTest(cursor, true)) {
       if (lastStrokePoint) strokeTravel += Math.hypot(cursor.x - lastStrokePoint.x, cursor.y - lastStrokePoint.y);
       lastStrokePoint = { ...cursor };
