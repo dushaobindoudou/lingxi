@@ -18,7 +18,7 @@ import type { Renderer, RendererCapabilities } from '../../../packages/desktop-h
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 import { createLocomotion, steeringStrideScale } from './realistic-locomotion.ts';
-import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase } from './realistic-motion.ts';
+import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 
 export interface RealisticRendererOptions {
@@ -1110,7 +1110,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         for (const name of ['Walk', 'Run']) {
           const action = actions[name];
           if (action?.isRunning() && strides[name] > 0) {
-            action.timeScale = locomotionRate(groundDistance, deltaSeconds, strides[name] * (name === 'Walk' ? walkStrideScale : 1), effectiveScale(), action.getClip().duration);
+            const rate = locomotionRate(groundDistance, deltaSeconds, strides[name] * (name === 'Walk' ? walkStrideScale : 1), effectiveScale(), action.getClip().duration);
+            action.timeScale = name === 'Walk' && moving ? walkCadence(rate) : rate;
           }
         }
         locomotion?.beforeMixer();

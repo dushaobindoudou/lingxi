@@ -1,7 +1,12 @@
 """Preserve a look-dev groom as skinned six-point ribbons, without re-grooming it.
 
 blender -b <round>/lingxi-short-fur-rig-v5.blend --python <this file> -- \
-  --out <app>/public/characters/lingxi-realistic/current --budget 240000
+  --out <app>/public/characters/lingxi-realistic/current --budget 240000 \
+  --share _LX_Tail=1 --share guard_LX_Body=.5 --share _LX_Lid=.25
+
+--budget sets the share of every source not named by a --share (substring of the source name, first match wins).
+A uniform share starved the tail: the fullest part of the coat, it read as a thin core in a haze at 40%, while the
+eyelids' dense short coat cost as much and is barely visible at desktop size.
 
 Only original strand indices are sampled. Positions, point colours, tapered radii and
 per-point weights come from the Blender sources. Coordinates are converted to glTF Y-up.
@@ -21,6 +26,7 @@ from mathutils.kdtree import KDTree
 ap = argparse.ArgumentParser()
 ap.add_argument('--out', required=True)
 ap.add_argument('--budget', type=int, default=240000)
+ap.add_argument('--share', action='append', default=[], help='SUBSTRING=FRACTION of that source kept (repeatable)')
 args = ap.parse_args(sys.argv[sys.argv.index('--') + 1:])
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -31,6 +37,10 @@ joints = {name: i for i, name in enumerate(joint_names)}
 sources = sorted((o for o in bpy.data.objects if o.name.startswith('LX_Fur_')), key=lambda o: o.name)
 total = sum(len(o.data.vertices) // int(o['strand_points']) for o in sources)
 rng = np.random.default_rng(7331)
+shares = [(key, float(value)) for key, value in (item.split('=', 1) for item in args.share)]
+
+def share_of(name):
+    return next((value for key, value in shares if key in name), min(1, args.budget / total))
 parts, blocks, offset = [], [], 0
 
 def store(a, dtype):
@@ -50,7 +60,7 @@ trees = {}
 for src in sources:
     p = int(src['strand_points'])
     count = len(src.data.vertices) // p
-    n = min(count, max(1, round(count * min(1, args.budget / total))))
+    n = min(count, max(1, round(count * min(1, share_of(src.name)))))
     selected = np.sort(rng.choice(count, n, replace=False))
     xyz = np.empty(len(src.data.vertices) * 3, dtype='f')
     src.data.vertices.foreach_get('co', xyz)

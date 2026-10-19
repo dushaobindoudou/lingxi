@@ -972,6 +972,28 @@ test('an outside driver cannot park the cat for 27 hours', () => {
   assert.ok(moved, 'the cat must come back to life within the hold cap');
 });
 
+// The realistic cat drawn small walks at ~10-20 px/s (setPace). A taper sized for the 90 px/s pace (slowingRadius,
+// 120 px) put most of every walk inside it at those speeds: the speed decayed exponentially for half a minute and the
+// stride-matched walk played at 0.07x - a cat that looked stuck. Braking has to scale with the pace.
+test('a slow cat brakes in about a second, not for half a minute', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(21) });
+  engine.setPace(15 / 90);
+  engine.suggestMoveTo({ x: 600, y: 400 }, 0, 120000);
+  const dt = 1 / 60;
+  let arrivedAt = -1;
+  let crawling = 0;
+  let previous = { ...engine.position };
+  for (let f = 1; f <= 60 * 60 && arrivedAt < 0; f += 1) {
+    const snap = engine.tick(f * 1000 * dt, null);
+    const speed = distance(snap.position, previous) / dt;
+    previous = { ...snap.position };
+    if (snap.intent === null) arrivedAt = f * dt;
+    else if (speed > 0 && speed < 15 * 0.4) crawling += dt;
+  }
+  assert.ok(arrivedAt > 0 && arrivedAt < 100 / 15 + 1.5, `100 px at 15 px/s should take ~7 s, took ${arrivedAt.toFixed(1)} s`);
+  assert.ok(crawling < 0.8, `crawled below 40% of its pace for ${crawling.toFixed(1)} s`);
+});
+
 // An intent ends three ways and all three must hand the body back. Only expiry used to.
 test('the cat resumes living after an intent ARRIVES, not just after it expires', () => {
   const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(11) });

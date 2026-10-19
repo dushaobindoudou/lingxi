@@ -255,8 +255,14 @@ const DEFAULTS = Object.freeze({
   // what keeps them consistent.
   maxTurnRadius: 200,
   // Distance at which the cat starts slowing for its destination. Without an arrival taper it
-  // can only ever fly past a close target and come back around.
+  // can only ever fly past a close target and come back around. At most this far, and at most
+  // brakeSeconds of travel at the current pace: 120 px suits the tuned 90 px/s, but a cat slowed
+  // to 15 px/s (setPace) spent most of every walk inside it, decaying for half a minute.
   slowingRadius: 120,
+  brakeSeconds: 1.0,
+  // Share of the pace kept until the destination is reached: the taper is linear in distance, so
+  // without a floor the last few pixels take forever (and a stride-matched walk plays at 0.07x).
+  minArrivalSpeedFactor: 0.4,
   // Speed retained when the destination is at right angles or behind. Well under 1 so sharp
   // corners are taken slowly (and a full reversal is close to a pivot in place), which is both
   // how animals move and what keeps the turning circle from overshooting the target.
@@ -1095,7 +1101,8 @@ export function createLifeEngine(config = {}) {
     const bearing = detourAround(Math.atan2(dest.y - position.y, dest.x - position.x), avoid);
     const error = shortestAngle(bearing - heading);
     // Arrival taper first, because the speed it produces is what the turn rate is derived from.
-    const arrival = Math.min(1, d / Math.max(1, cfg.slowingRadius));
+    const brakeDistance = Math.min(cfg.slowingRadius, speed * cfg.brakeSeconds);
+    const arrival = Math.max(cfg.minArrivalSpeedFactor, Math.min(1, d / Math.max(1, brakeDistance)));
     const alignmentNow = Math.max(0, Math.cos(error));
     const paceFactor = (cfg.minTurnSpeedFactor + (1 - cfg.minTurnSpeedFactor) * alignmentNow) * arrival;
     const turnRate = Math.min(

@@ -33,6 +33,18 @@ export const HAIR_SPECULAR_GLSL = `
   }`;
 export const HAIR_KEY = new THREE.Vector3(-1.3, 2.4, 2.2).normalize();
 
+// How the strands are coloured and how much of a pixel each covers, matched by eye against the Cycles review renders at
+// desktop size (light background, side and front):
+// - coverage: square root of the drawn width's true share - the physical (linear) share left the 40%-sampled coat thin
+// - absorption: the review render's Principled Hair scatters light through many strands, each absorbing - the mass
+//   reads darker and richer than one strand's colour (the tail's grey-brown 142,112,88 is a deep banded brown there).
+//   Raising the colour to this power stands in for it; white stays white
+// - the coat grade the undercoat and skin get (COAT_GRADE), so strands do not veil them in another shade
+// - the white highlight lobe at a fraction: on blended strands every lit strand's highlight adds up to a sheen
+const GROOM_COVERAGE_EXP = '0.50';
+const GROOM_ABSORPTION = '1.60';
+const GROOM_SPECULAR = '0.40';
+
 export async function loadGroom(directory: string): Promise<GroomAsset | null> {
   const response = await fetch(`${directory}groom.json`);
   if (response.status === 404) return null;
@@ -51,8 +63,12 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   const uniforms = { uGroomTime: { value: 0 }, uGroomMotion: { value: 0 }, uGroomHeight: { value: 1 }, uHairKey: { value: HAIR_KEY } };
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: .86, metalness: 0, side: THREE.DoubleSide,
-    alphaToCoverage: true, transparent: false, depthWrite: true,
-    // MSAA smooths individual fibres without the salt-and-pepper alphaHash pattern.
+    // Blended, not alpha-to-coverage: A2C turns a given alpha into the same MSAA samples every time, so overlapping
+    // strands kept landing on the same samples and a dense coat never got past its first strand's coverage - the tail's
+    // 15k dark-brown strands read as a pale grey haze round a thin core. Blended strands accumulate as fur does. They
+    // draw after the opaque body and undercoat (transparent pass) and are depth-tested against them, but write no
+    // depth, so a strand in front never punches a hole in the ones behind it.
+    alphaToCoverage: false, transparent: true, depthWrite: false,
     // Explicit source-over alpha preserves an already opaque torso: replacing alpha
     // with a fractional fibre alpha made the original desktop coat transparent.
     blending: THREE.CustomBlending,
@@ -86,9 +102,8 @@ varying vec3 vHairT;\n` + shader.vertexShader;
       float radiusView = groomData.y * length(modelViewMatrix[0].xyz);
       float minimumRadius = 0.30 / (projectionMatrix[1][1] * uGroomHeight * 0.5);
       float drawnRadius = max(radiusView, minimumRadius);
-      // Coverage affects both the MSAA sample mask and source-over opacity. A linear
-      // factor squared the intended coverage, making fine hair vanish at pet size.
-      vGroomCoverage = sqrt(min(1.0, radiusView / drawnRadius));
+      // A strand drawn wider than it is covers that much less of each pixel it touches.
+      vGroomCoverage = pow(min(1.0, radiusView / drawnRadius), ${GROOM_COVERAGE_EXP});
       vGroomEdge = groomData.x;
       mvPosition.xy += across * groomData.x * drawnRadius;
       gl_Position = projectionMatrix * mvPosition;
@@ -97,7 +112,10 @@ varying vec3 vHairT;\n` + shader.vertexShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       diffuseColor.a *= vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
       // roots in the coat's own shade, tips in the light (groomData.z runs root 0 -> tip 1, squared)
+      diffuseColor.rgb = pow(max(diffuseColor.rgb, vec3(1e-4)), vec3(${GROOM_ABSORPTION}));
       diffuseColor.rgb *= mix(0.62, 1.05, sqrt(vGroomAlong));
+      { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        diffuseColor.rgb = max(mix(vec3(lumC), diffuseColor.rgb, 1.25) * vec3(1.06, 1.0, 0.90), 0.0); }
     `);
     // Use the groom's outward surface normal on both sides of the thin ribbon.
     shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
@@ -107,11 +125,11 @@ varying vec3 vHairT;\n` + shader.vertexShader;
     `);
     shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
       outgoingLight += diffuseColor.rgb * 0.055 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);
-      outgoingLight += hairSpecular(normalize(vHairT), normal, normalize(vViewPosition), diffuseColor.rgb) * sqrt(vGroomAlong);
+      outgoingLight += hairSpecular(normalize(vHairT), normal, normalize(vViewPosition), diffuseColor.rgb) * sqrt(vGroomAlong) * ${GROOM_SPECULAR};
       #include <opaque_fragment>
     `);
   };
-  material.customProgramCacheKey = () => 'original-groom-v2-hairspec';
+  material.customProgramCacheKey = () => 'original-groom-v3-blended';
   const boneIndex = new Map(base.skeleton.bones.map((b, i) => [(b.userData.name as string | undefined) ?? b.name, i]));
   const jointMap = asset.spec.jointNames.map((name) => {
     const index = boneIndex.get(name);
