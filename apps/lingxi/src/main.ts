@@ -12,7 +12,7 @@ import { createThreeRenderer } from './renderer.ts';
 import { createRealisticRenderer } from './realistic-renderer.ts';
 import { frameDelta } from './animation-clock.ts';
 import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
-import { createStageFx } from './fx/stage-fx.ts';
+import { createStageFx, type BubbleAttribution } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
@@ -398,31 +398,26 @@ async function main() {
   // merge is done - a no-op when the id is unchanged, a mount when it is not.
   renderer.setSkin?.(currentSkinId);
   syncMargins();
-  // Who the cat is currently speaking for. Applied to the NEXT bubble rather than drawn beside
-  // the cat: a mark pinned to the body is a HUD with no natural moment to leave, while a bubble
-  // already has one. Arrives before the `say` that follows it, because the Rust side claims the
-  // stage before it applies the rest of the command.
-  //
-  // A known host (Claude Code, Codex, ...) always shows the mark this app ships for it - the
-  // same one 主界面 shows - and a session name, when the event carries one, is what the bubble
-  // says: "which Claude" is the question when several sessions are open.
-  void listen<{ agent: string; name: string; label?: string | null; badge: string; logo: string | null; color: string }>(
-    'agent-stage',
-    (event) => {
-      const { agent, name, label, badge, logo, color } = event.payload;
-      // The same rule 主界面 uses (ui/icons.ts agentLook), so an agent's icon on the cat and in
-      // the main window can never differ.
-      const look = agentLook({ id: agent, name, badge, logo, color });
-      fx.setBubbleAttribution({
-        name: label || look.name,
-        title: label ? `${look.name} · ${label}` : look.name,
-        badge: look.badge,
-        logo: null,
-        markUrl: look.src ?? undefined,
-        color: look.chip,
-      });
-    },
-  );
+  // Performances may speak later; direct speech carries the source in its own event.
+  type SpeechSource = {
+    agent: string; name: string; label?: string | null;
+    badge: string; logo: string | null; color: string;
+  };
+  function bubbleSource(source: SpeechSource): BubbleAttribution {
+    const { agent, name, label, badge, logo, color } = source;
+    const look = agentLook({ id: agent, name, badge, logo, color });
+    return {
+      name: label || look.name,
+      title: label ? `${look.name} · ${label}` : look.name,
+      badge: look.badge,
+      logo: null,
+      markUrl: look.src ?? undefined,
+      color: look.chip,
+    };
+  }
+  void listen<SpeechSource>('agent-stage', (event) => {
+    fx.setBubbleAttribution(bubbleSource(event.payload));
+  });
 
   void listen('reload-custom-assets', () => {
     void loadCustomAssets().then(() => {
@@ -512,12 +507,16 @@ async function main() {
   void listen('clear-toy', () => engine.clearToy());
 
   // 说话气泡: one line at a time, above the head, anchored every frame in frame() below.
-  void listen<{ text: string; durationMs?: number }>('say', (event) => {
+  void listen<{ text: string; durationMs?: number; source?: SpeechSource }>('say', (event) => {
     markInteresting();
     // An empty text is the hush signal (the debug console's 收起 button, and anything else
     // that wants to withdraw a line); fx.say no-ops on empty, so it is routed explicitly.
     if (!event.payload.text.trim()) fx.hush();
-    else fx.say(event.payload.text, event.payload.durationMs);
+    else fx.say(
+      event.payload.text,
+      event.payload.durationMs,
+      event.payload.source ? bubbleSource(event.payload.source) : null,
+    );
   });
 
   // Publish what this renderer can do, once, so GET /capabilities can answer an agent

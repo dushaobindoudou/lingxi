@@ -247,7 +247,7 @@ test('a compaction is not a new session', async () => {
   assert.deepEqual(box.posts(), []);
 });
 
-test('with the app\'s own "一键接入" hooks installed, the plugin does not post a second copy', async () => {
+test('with the app\'s own "一键接入" hooks installed, the plugin does not post a second copy', { skip: !onMac }, async () => {
   const box = machine({ oneClick: true });
   // Both of the events used below have real counterparts in settings.
   const settings = join(box.home, '.claude/settings.json');
@@ -261,7 +261,7 @@ test('with the app\'s own "一键接入" hooks installed, the plugin does not po
   assert.deepEqual(box.posts(), [], 'the settings.json hooks already report these');
 });
 
-test('a partial Claude settings install must not silence plugin events that have no counterpart', () => {
+test('a partial Claude settings install must not silence plugin events that have no counterpart', { skip: !onMac }, () => {
   const box = machine({ up: true, oneClick: true }); // settings covers Stop only
   run('event.sh', box, payload('UserPromptSubmit'));
   run('event.sh', box, payload('PermissionRequest', { tool_name: 'Bash' }));

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel) => readFileSync(join(REPO, rel), 'utf8');
 const SYSTEM = 'integrations/skills/lingxi/SKILL.md';
-const HOSTS = ['claude', 'codex', 'cursor', 'doubao', 'workbuddy'];
+const HOSTS = ['claude', 'codex', 'cursor', 'doubao', 'workbuddy', 'dsh'];
 
 test('the system layer names no host: host facts belong in the host layer', () => {
   const system = read(SYSTEM);

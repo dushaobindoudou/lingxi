@@ -30,6 +30,8 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
+mod tray_badge;
+
 /// Read-only Accessibility trust check. NEVER shows the system permission dialog.
 ///
 /// This is the ONLY form of the check the app has, and that is deliberate: **nothing here
@@ -161,13 +163,8 @@ fn avoid_radius_for_preset(preset: &str) -> f64 {
     }
 }
 
-/// docs/18 §5.4's five personality sliders - same field names as
-/// `packages/contracts/src/index.d.ts`'s `PersonalityManifest.traits`, so a future JS-side
-/// consumer (the behavior engine, an AI driver reading GET /perception) can deserialize this
-/// straight into that shape without a translation layer. Every trait is 0..1; unlike
-/// avoidRadius above, nothing in the behavior engine reads these yet (see the "即将生效"
-/// hint doc/18 requires next to any trait not yet consumed) - they persist and broadcast
-/// today, honestly inert otherwise.
+/// The five 0..1 personality traits persisted here are applied by the frontend's
+/// life engine on startup and on set-personality-traits events.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct PersonalityTraits {
     independence: f64,
@@ -389,10 +386,16 @@ impl TrayState {
     fn refresh_status(&self, app: &tauri::AppHandle) {
         let name = self.cat_name.lock().unwrap().clone();
         let text = tray_status_text(&name, self.visible.load(Ordering::SeqCst), &working_agent_names(app));
-        let mut last = self.status_text.lock().unwrap();
-        if *last != text {
+        // The lock is released BEFORE the menu is touched. A menu setter called off the main thread waits for the main
+        // thread to run it, and report_perception (a sync command, so ON the main thread) comes through here too: an HTTP
+        // thread holding this lock across set_text and the main thread waiting for the lock froze the whole app - no
+        // bridge, no events, no bubbles - until it was killed.
+        let changed = {
+            let mut last = self.status_text.lock().unwrap();
+            if *last == text { false } else { *last = text.clone(); true }
+        };
+        if changed {
             let _ = self.status_summary.set_text(&text);
-            *last = text;
         }
     }
 
@@ -3771,7 +3774,20 @@ fn apply_control_command(
             rejected.push("say: empty text".to_string());
         } else {
             let duration = command.get("sayMs").and_then(|v| v.as_u64());
-            let _ = app.emit("say", serde_json::json!({ "text": trimmed.clone(), "durationMs": duration }));
+            // Identity and text must cross the webview boundary together. A separate
+            // agent-stage event can be consumed/overwritten by intervening speech.
+            let _ = app.emit("say", serde_json::json!({
+                "text": trimmed.clone(),
+                "durationMs": duration,
+                "source": {
+                    "agent": identity.id,
+                    "name": identity.name,
+                    "label": command.get("__label").and_then(|v| v.as_str()),
+                    "badge": identity.badge,
+                    "logo": identity.logo,
+                    "color": identity.color,
+                },
+            }));
             // Truncation is reported rather than silent. A caller that is told `ok` and gets its
             // own 150-character string echoed back will tell the user the cat said all of it.
             applied.push(if truncated {
@@ -4168,7 +4184,13 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
             }
             let _ = app.emit(
                 "say",
-                serde_json::json!({ "text": reminder.text.clone(), "durationMs": 6000 }),
+                serde_json::json!({
+                    "text": reminder.text.clone(), "durationMs": 6000,
+                    "source": {
+                        "agent": if reminder.from.is_empty() { "lingxi" } else { reminder.from.as_str() },
+                        "name": "提醒", "badge": "⏰", "logo": null, "color": "#F4E6C8",
+                    },
+                }),
             );
         }
         // Mark done only AFTER speaking, then persist. The old order (mark, persist, speak)
@@ -5515,12 +5537,20 @@ fn keep_turn_summary(previous: &str, previous_state: &str, incoming: &str, age_m
 /// in `<app config>/logs/task-events.log`. Rotated to `.1` past this size, so it never grows
 /// without bound on a machine that runs the cat all day.
 const TASK_EVENT_LOG_CAP_BYTES: u64 = 1024 * 1024;
+// Bridge and native hook callbacks can log simultaneously. Rotation and the entire
+// JSON line must share one lock; formatted writes otherwise interleave their fragments.
+static TASK_EVENT_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 /// Without it, "the cat said nothing useful" could only be debugged by guessing what the host
 /// sent: the in-memory ring holds 50 normalized events and none of the raw payload's shape.
 fn log_task_event(app: &tauri::AppHandle, mut entry: serde_json::Value) {
-    use std::io::Write;
     let Some(dir) = app.path().app_config_dir().ok().map(|d| d.join("logs")) else { return };
+    append_task_event(&dir, &mut entry);
+}
+
+fn append_task_event(dir: &std::path::Path, entry: &mut serde_json::Value) {
+    use std::io::Write;
+    let _guard = TASK_EVENT_LOG_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
@@ -5531,11 +5561,12 @@ fn log_task_event(app: &tauri::AppHandle, mut entry: serde_json::Value) {
     if let Some(object) = entry.as_object_mut() {
         object.insert("at".into(), serde_json::json!(now_millis()));
     }
+    let line = format!("{entry}\n");
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .and_then(|mut file| writeln!(file, "{entry}"));
+        .and_then(|mut file| file.write_all(line.as_bytes()));
 }
 
 /// What a raw payload carried, without what it said: every key with its type, and for text its
@@ -5746,11 +5777,14 @@ fn update_tray_attention(app: &tauri::AppHandle) {
         .count();
     let tray = app.state::<TrayState>();
     tray.refresh_status(app);
-    let mut previous_count = tray.attention_count.lock().unwrap();
-    if *previous_count == attention_count {
-        return;
+    // Same rule as refresh_status: decide under the lock, touch the tray after it is released.
+    {
+        let mut previous_count = tray.attention_count.lock().unwrap();
+        if *previous_count == attention_count {
+            return;
+        }
+        *previous_count = attention_count;
     }
-    *previous_count = attention_count;
     let text = if attention_count == 0 {
         "目前没有未读提醒".to_string()
     } else {
@@ -5760,7 +5794,7 @@ fn update_tray_attention(app: &tauri::AppHandle) {
     // The count next to the menu-bar icon: visible without opening anything, and it stays until
     // read. The task's actual waiting/failed state stays visible in the home surface.
     if let Some(icon) = app.tray_by_id("main-tray") {
-        let _ = icon.set_title(if attention_count == 0 { None } else { Some(attention_count.to_string()) });
+        let _ = icon.set_title(tray_badge::attention_title(attention_count));
     }
 }
 
@@ -6646,10 +6680,20 @@ fn clear_toy(app: tauri::AppHandle) {
 /// a developer/agent surface, not a settings surface, and you usually want it open *beside*
 /// the management window while comparing what a control did.
 #[tauri::command]
-fn open_debug_window(app: tauri::AppHandle) {
-    open_or_focus_debug_window(&app);
+fn open_debug_window(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        open_or_focus_debug_window(&app);
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err("调试台仅在开发版本中可用".to_string())
+    }
 }
 
+#[cfg(debug_assertions)]
 fn open_or_focus_debug_window(app: &tauri::AppHandle) {
     if let Some(existing) = app.get_webview_window("debug") {
         let _ = existing.show();
@@ -6973,6 +7017,79 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    /// A tray/menu setter called off the main thread blocks until the main thread runs it, and sync commands such as
+    /// report_perception run ON the main thread. So a setter reached while a Mutex guard is still alive is a deadlock
+    /// waiting for the right interleaving (it froze 0.4.0: bridge, events and bubbles all stopped). Source scan: within
+    /// a block, a `let x = ….lock()` guard must be out of scope (or dropped) before any setter at the same or deeper level.
+    #[test]
+    fn no_tray_or_menu_setter_runs_while_a_lock_is_held() {
+        let source = include_str!("lib.rs");
+        let lines: Vec<&str> = source.lines().take_while(|line| !line.starts_with("mod tests")).collect();
+        let indent = |line: &str| line.len() - line.trim_start().len();
+        let setters = [".set_text(", ".set_title(", ".set_checked(", ".set_enabled(", ".set_icon(", ".set_tooltip("];
+        let mut problems = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            if !setters.iter().any(|setter| line.contains(setter)) { continue; }
+            let depth = indent(line);
+            for j in (0..i).rev() {
+                let earlier = lines[j];
+                if earlier.trim().is_empty() { continue; }
+                // Left the enclosing block or the function: nothing above can still be alive here.
+                if indent(earlier) < depth && (earlier.trim_end().ends_with('{') && earlier.contains("fn ")) { break; }
+                if indent(earlier) < depth.saturating_sub(4) && earlier.contains("fn ") { break; }
+                let trimmed = earlier.trim_start();
+                if indent(earlier) <= depth && trimmed.starts_with("let ") && trimmed.contains(".lock()") && trimmed.ends_with(';')
+                    && !trimmed.contains(").clone()") && !trimmed.contains(".clone();") && !trimmed.contains(".count();") {
+                    let name = trimmed.trim_start_matches("let ").trim_start_matches("mut ").split([' ', ':']).next().unwrap_or("");
+                    let dropped = lines[j..i].iter().any(|l| l.contains(&format!("drop({name})")));
+                    // A guard inside a block that closed before the setter is out of scope.
+                    let closed = lines[j + 1..i].iter().any(|l| indent(l) < indent(earlier) && l.trim_start().starts_with('}'));
+                    if !dropped && !closed { problems.push(format!("lib.rs:{}: `{}` while `{name}` (line {}) is held", i + 1, line.trim(), j + 1)); }
+                }
+            }
+        }
+        assert!(problems.is_empty(), "tray/menu setter under a lock:\n{}", problems.join("\n"));
+    }
+
+    #[test]
+    fn concurrent_task_logs_remain_complete_json_lines() {
+        let dir = std::env::temp_dir().join(format!("lingxi-task-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::append_task_event(&dir, &mut serde_json::json!({
+            "dir": "before-rotation", "payload": "x".repeat(super::TASK_EVENT_LOG_CAP_BYTES as usize),
+        }));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
+        std::thread::scope(|scope| {
+            for worker in 0..12 {
+                let dir = &dir;
+                let barrier = barrier.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    for sequence in 0..10 {
+                        super::append_task_event(dir, &mut serde_json::json!({
+                            "dir": "in", "worker": worker, "sequence": sequence,
+                            "payload": "x".repeat(4096),
+                        }));
+                    }
+                });
+            }
+        });
+        let text = std::fs::read_to_string(dir.join("task-events.log")).unwrap();
+        let rotated = std::fs::read_to_string(dir.join("task-events.log.1")).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let rows: Vec<serde_json::Value> = text.lines().map(|line| {
+            serde_json::from_str(line).expect("concurrent writers must not interleave JSON records")
+        }).collect();
+        assert_eq!(rows.len(), 120);
+        let ids: std::collections::HashSet<_> = rows.iter().map(|row| {
+            (row["worker"].as_u64().unwrap(), row["sequence"].as_u64().unwrap())
+        }).collect();
+        assert_eq!(ids.len(), 120, "every event is written exactly once");
+        assert_eq!(rotated.lines().count(), 1, "rotation keeps the entire previous record");
+        let previous: serde_json::Value = serde_json::from_str(rotated.trim()).unwrap();
+        assert_eq!(previous["dir"], "before-rotation");
+    }
+
     use super::*;
 
     /// A throwaway unique path under the system temp dir; no external temp-dir crate

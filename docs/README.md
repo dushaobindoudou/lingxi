@@ -75,3 +75,8 @@
 
 `npm run check` 知道这件事：它对缺失目标跑一次 `git check-ignore`，被 git 故意忽略的
 不算死链，其余照样报错。所以检查通过时会顺带打印一行"N 条链接指向 git 忽略的工作材料"。
+
+## 正式版发布
+
+- [v1.0.0 发布准备记录](RELEASE_READINESS.md)
+- [已知问题与支持范围](KNOWN_ISSUES.md)

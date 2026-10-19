@@ -56,8 +56,10 @@ export interface StageFx {
    * A comic speech bubble above the cat's head. Only one at a time: a second line replaces the
    * first rather than stacking, because a pet talking over itself reads as a bug.
    * @param durationMs how long it stays up; it is sized from the text length if omitted.
+   * @param source identity carried with the speech; null is the cat itself, while omitted
+   * uses the pending performance attribution.
    */
-  say(text: string, durationMs?: number): void;
+  say(text: string, durationMs?: number, source?: BubbleAttribution | null): void;
   /** Move the current bubble to sit above this screen point. Called every frame while one is
    *  up, because the cat it is anchored to is walking around. */
   anchorBubble(x: number, y: number): void;
@@ -615,7 +617,7 @@ export function createStageFx(): StageFx {
       attributionAt = performance.now();
     },
 
-    say(text, durationMs) {
+    say(text, durationMs, explicitSource) {
       if (!layer) return;
       const trimmed = text.trim().slice(0, 140);
       if (!trimmed) return;
@@ -649,7 +651,11 @@ export function createStageFx(): StageFx {
       // Attribution is for the ONE bubble it was set for, which arrives right behind it. It used
       // to stick: after any agent spoke once, every later bubble - a reminder, the cat's own
       // line when petted - wore that agent's mark and session name.
-      const source = attribution && performance.now() - attributionAt < ATTRIBUTION_TTL_MS ? attribution : null;
+      // Transported speech carries its own identity: intervening speech, another agent,
+      // or a busy webview must not steal/expire it. Undefined retains the performance API.
+      const source = explicitSource !== undefined
+        ? explicitSource
+        : attribution && performance.now() - attributionAt < ATTRIBUTION_TTL_MS ? attribution : null;
       attribution = null;
       const sourceRow = source ? document.createElement('div') : null;
       if (sourceRow) sourceRow.className = 'lingxi-bubble-source';

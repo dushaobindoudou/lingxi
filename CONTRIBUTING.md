@@ -17,6 +17,10 @@ cd apps/lingxi/src-tauri && cargo test
 
 `npm run tauri dev` 在 `apps/lingxi` 里启动桌面应用。改动画之前先看 `probe-gait.html` 文件头部的健康值。
 
+开发服务器提供 `app-harness.html`、`debug.html` 与 `probe-*.html`，用于渲染、动作、投影和足底接触检查。这些页面不进入正式构建。
+
+发版前运行 `npm run build --prefix apps/lingxi && npm run check:release`，检查实际前端产物与 npm tarball。
+
 ## 分支与提交
 
 从 `main` 拉分支：`feat/…`、`fix/…`、`docs/…`。提交说明用 `feat:`、`fix:`、`docs:`、`chore:` 前缀，说明为什么改。

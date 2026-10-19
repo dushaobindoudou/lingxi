@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "downloadedAt": "2026-10-13T13:52:10.151787",
+  "assets": [
+    {
+      "id": "kenney_animated-characters-protagonists",
+      "author": "Kenney",
+      "source": "https://kenney.nl/assets/animated-characters-protagonists",
+      "localArchive": "downloads/kenney_animated-characters-protagonists.zip",
+      "bytes": 581441,
+      "sha256": "ec3787de70fa2200256848d74201b10f6b6c3126594e9857bf989753312c2b84",
+      "archiveLicense": "CC0-1.0",
+      "scope": "local evaluation and derived humanoid working assets"
+    },
+    {
+      "id": "universal-base-characters-standard",
+      "author": "Quaternius",
+      "source": "https://quaternius.itch.io/universal-base-characters",
+      "localArchive": "downloads/universal-base-characters-standard.zip",
+      "bytes": 128968391,
+      "sha256": "fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40",
+      "archiveLicense": "CC0-1.0",
+      "scope": "local evaluation and derived humanoid working assets"
+    },
+    {
+      "id": "universal-animation-library-standard",
+      "author": "Quaternius",
+      "source": "https://quaternius.itch.io/universal-animation-library",
+      "localArchive": "downloads/universal-animation-library-standard.zip",
+      "bytes": 15904933,
+      "sha256": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724",
+      "archiveLicense": "CC0-1.0",
+      "scope": "local evaluation and derived humanoid working assets"
+    },
+    {
+      "id": "cesium-man",
+      "author": "Cesium",
+      "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CesiumMan",
+      "localAsset": "downloads/cesium-man/CesiumMan.glb",
+      "bytes": 438044,
+      "sha256": "b7001eaeea8254bd44773bcd247e78696d94169388fbb2a1800fc69434e777d9",
+      "license": "CC-BY-4.0",
+      "additionalNotice": "Cesium logo has separate trademark terms; reference model only"
+    }
+  ],
+  "licenseNote": {
+    "quaternius": "The downloaded Standard archives explicitly include CC0 license files and the asset-specific listing says CC0. The general publisher license page now presents QAL v1.0 (2026-08-28). Both observations are retained; original and derived binaries remain local working assets, not redistributed in git.",
+    "currentPublisherLicense": "https://quaternius.com/license.html"
+  },
+  "runtimeIntegrated": false,
+  "derivedAssets": [
+    "work/human-male.blend",
+    "work/human-male.glb",
+    "work/human-female.blend",
+    "work/human-female.glb"
+  ]
+}
