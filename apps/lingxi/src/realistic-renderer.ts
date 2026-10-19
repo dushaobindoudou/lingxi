@@ -1612,7 +1612,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     bone.quaternion.premultiply(petTurn.setFromAxisAngle(petAxis, angle));
   }
   function samplePet(cursor: { x: number; y: number } | null, enabled: boolean) {
-    if (!cursor || !enabled || !model || !headBone || !chestBone || !pelvisBone || !tailBones[0] || !lastAir) {
+    // no hand moving over the coat, nothing to answer (and no rig to project: this runs whenever the pointer is about)
+    if (!cursor || !enabled || !model || !headBone || !chestBone || !pelvisBone || !tailBones[0] || !lastAir || lastAir.stroke.amount < 1e-3) {
       petTarget = emptyPet;
       return;
     }
@@ -1662,8 +1663,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     turnPetBone('Tail4', side, -rump * PET.tailCurl);
     turnPetBone('Tail4', up, rump * PET.tailTremble * Math.sin(elapsed * 19));
     // Relaxed ears splay a little; the face rig's expression and its ear keys remain underneath.
-    turnPetBone('Ear.L', forward, petRelax * PET.earRelax);
-    turnPetBone('Ear.R', forward, -petRelax * PET.earRelax);
+    // (the loader's names: GLTFLoader drops the dot from Blender's Ear.L)
+    turnPetBone('EarL', forward, petRelax * PET.earRelax);
+    turnPetBone('EarR', forward, -petRelax * PET.earRelax);
   }
   // Breathing: the clips key the body's Breath shape key (a rise and fall of the flanks and back), but at 4.6 mm on a
   // cat 0.8 tall it is under a pixel at desktop size - a sleeping cat that never breathed. Lying down and asleep it is
