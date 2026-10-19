@@ -598,6 +598,26 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // They get neither: on the outer shells both read as a milky film over the stripes - the hair highlight along one
   // smooth comb direction is a broad sheen, not lines along strands, and the rim lit every bulge's edge (thigh,
   // shoulder) as a pale see-through oval.
+  // The tufts inside the ears (LX_EarFurnish: 320 thin tubes an ear, u along each from root to tip). Cycles shades them as
+  // hair; drawn as opaque white tubes they were hard, aliased lines crossing into a gauze over the pink ear. Here each
+  // fades from about half opaque at its root to nothing at its tip, unwritten to depth, so together they are a soft
+  // white down.
+  const EAR_TUFT = { alpha: 0.5, fadeFrom: 0.2 };
+  // the bump textures' relief (see the normal-map fix in the material pass): 1 reads at desktop size, 3 turned the ears grainy
+  const BUMP_SCALE = 1;
+  function earTuftMaterial(source: THREE.MeshStandardMaterial) {
+    const m = new THREE.MeshStandardMaterial({
+      color: source.color.clone(), roughness: 0.9, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    m.defines = { USE_UV: '' };
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
+        diffuseColor.a *= ${EAR_TUFT.alpha.toFixed(2)} * (1.0 - smoothstep(${EAR_TUFT.fadeFrom.toFixed(2)}, 1.0, vUv.x));`);
+    };
+    m.customProgramCacheKey = () => 'realcat-ear-tuft-v1';
+    ownedMaterials.push(m);
+    return m;
+  }
   function shellMaterial(len: number, den: number, t: number, solid = false, underCurves = false) {
     // Coverage must not overwrite an already opaque body pixel with fractional framebuffer alpha.
     // Alpha hashing discards strand gaps, while every surviving sample stays opaque on the desktop.
@@ -1069,6 +1089,16 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const mat = m.material as THREE.MeshStandardMaterial;
       const name = mat?.name ?? '';
       if (/^LX_(Tooth|Lip|Mouth|Tongue)/.test(m.name)) teeth.push(m);
+      if (/^LX_EarFurnish/.test(m.name)) m.material = earTuftMaterial(m.material as THREE.MeshStandardMaterial);
+      // The export hands Blender's bump textures over as normal maps: ear_bump, nose_bump, the pads', the tongue's - one
+      // grey channel each, read as a normal they point every which way, and the ears came out streaked with hard white
+      // lines and black specks. They are height, so they go back to being height.
+      if (mat?.normalMap && /_bump$/.test(mat.normalMap.name)) {
+        mat.bumpMap = mat.normalMap;
+        mat.bumpScale = BUMP_SCALE;
+        mat.normalMap = null;
+        mat.needsUpdate = true;
+      }
       if (/Iris/i.test(name)) m.material = irisMaterial(mat, name.endsWith('.R') ? 'R' : 'L');
       else if (/Cornea/i.test(name)) {
         const c = new THREE.MeshPhysicalMaterial({

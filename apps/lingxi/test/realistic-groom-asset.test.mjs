@@ -96,8 +96,9 @@ test('original groom is paired with this model and follows its animated skeleton
     groom.setDensity(0.3);
     for (const mesh of groom.meshes) {
       const strands = mesh.userData.groomStrands;
-      // (the lids' coat is drawn whole at any size - thinned, their undercoat's rows showed as rings round a closed eye)
-      const share = /_LX_Lid/.test(mesh.name) ? 1 : 0.3;
+      // (the lids' coat is drawn fuller than the rest - thinned with it, their undercoat's rows showed as rings round a
+      // closed eye)
+      const share = /_LX_Lid/.test(mesh.name) ? 0.65 : 0.3;
       assert.equal(mesh.geometry.drawRange.count, Math.max(1, Math.round(strands * share)) * 30, mesh.name);
       assert.equal(new Set(mesh.userData.groomOrder).size, strands, `${mesh.name}: the shuffle must keep every strand`);
     }

@@ -75,6 +75,8 @@ export function coatLength(partName: string) {
 // The lids' strands lie flat in rows along the lid; at their own width the rows showed as lines of lit hair with the
 // undercoat dark between them, ring after ring round a closed eye. This much wider they overlap into one coat.
 const LID_STRAND_WIDTH = 8;
+// how much more of the lids' coat than of the rest is drawn (see setDensity)
+const LID_DENSITY_LEAD = 0.35;
 
 const GROOM_VERTEX = /* glsl */ `
 #include <common>
@@ -145,13 +147,13 @@ void main() {
   vec3 groomRest = transformed;
   vGroomRest = groomRest;
   #include <skinning_vertex>
-  // where this point would be on the sprung skeleton: the coat's inertia, in object space
+  // where this point would be on the sprung skeleton: the coat's inertia, in object space. By the point's main bone only
+  // (its first, heaviest weight): the lag hardly differs between the bones a point blends, and four lagged matrices a
+  // vertex - sixteen texture reads, on millions of strand vertices - cost the small desktop cat a third of its frame
   vec3 lagDelta = vec3(0.0);
   #ifdef USE_SKINNING
     vec4 restSkin = bindMatrix * vec4(groomRest, 1.0);
-    vec4 lagged = groomLagMatrix(skinIndex.x) * restSkin * skinWeight.x + groomLagMatrix(skinIndex.y) * restSkin * skinWeight.y
-      + groomLagMatrix(skinIndex.z) * restSkin * skinWeight.z + groomLagMatrix(skinIndex.w) * restSkin * skinWeight.w;
-    lagDelta = (bindMatrixInverse * lagged).xyz - transformed;
+    lagDelta = (bindMatrixInverse * ((groomLagMatrix(skinIndex.x) - boneMatX) * restSkin)).xyz;
   #endif
   vec3 hairTangent = groomTangent;
   #ifdef USE_SKINNING
@@ -578,9 +580,10 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         mesh.visible = share > 0;
         if (share > 0) mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * Math.min(1, share))) * (mesh.userData.groomIndicesPerStrand as number));
       };
-      // the lids' coat is always drawn whole: it is small (a lid is a centimetre across), and thinned out with the rest
-      // of the coat the rows of the undercoat under it showed through as rings round a closed eye
-      for (const mesh of meshes) drawn(mesh, /_LX_Lid/.test(mesh.name) ? Math.max(1, density) : density);
+      // the lids' coat drawn fuller than the rest: thinned with it, the rows of the undercoat under it showed through as
+      // rings round a closed eye. Not whole at desktop size, where a lid is a few pixels and its 68k strands - a fifth of
+      // the coat's - cost more than they show
+      for (const mesh of meshes) drawn(mesh, /_LX_Lid/.test(mesh.name) ? Math.max(density, Math.min(1, LID_DENSITY_LEAD + density)) : density);
       children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, density - 1 - k); });
       uniforms.uGroomStack.value = 1 / Math.min(1, density);
     },
