@@ -95,9 +95,11 @@ const LID_SOLIDIFY_OUT = 0.0022;
 const LID_UNDERCOAT_LIFT = 1.5;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
 // Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
-// cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need.
+// cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need. At .28 the desktop cat
+// (~270 device px tall) drew under a third of its coat, each strand standing for three: thin and coarse ("毛太少"); half
+// of it reads as a dense, soft coat, at the same desktop frame rate as measured side by side.
 const GROOM_FULL_DENSITY_PX = 1000;
-const GROOM_MIN_DENSITY = 0.28;
+const GROOM_MIN_DENSITY = 0.5;
 // With the original groom: an opaque undercoat out to this share of the coat's length, under the strands. Short: at
 // .62 it buried every strand groomed flat along the body - the chest, the middle of the face, the flanks seen from the
 // front - and close up the cat was a smooth painted surface with hair only round its outline. At .3 the strands lie on

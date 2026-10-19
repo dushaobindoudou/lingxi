@@ -62,8 +62,12 @@ export const GROOM_CHILDREN = 2;
 const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
 // The coat a touch shorter than the Blender groom (lids as groomed, the tail its own): longer (1.15-1.25, tried to make
 // the coat read at desktop size) the strands stood out one by one, long and sparse; shorter and drawn denser (the
-// renderer's GROOM_MIN_DENSITY) it is a thick, soft coat
-const COAT_LENGTH = 0.95;
+// renderer's GROOM_MIN_DENSITY) it is a thick, soft coat. At .95 it was still too long and too few (the user, by eye on
+// the desktop): frizzy at the outline, single hairs standing off the back; .85 and drawn denser it is a close, soft coat
+// that shows the tabby crisply. The face keeps a little more (FACE_LENGTH): its fluff is the kitten's round cheeks.
+const COAT_LENGTH = 0.85;
+const FACE_LENGTH = 0.9;
+const FACE = /_LX_Head$/;
 const KEEP_LENGTH = /_LX_Lid/;
 // The tail's own coat: shorter than groomed. At its groomed length (kept when the body's grew) it was a bottle brush
 // twice the kitten's body thickness; a kitten's tail is slim, its fur short and soft.
@@ -71,7 +75,7 @@ const TAIL_LENGTH = 0.62;
 const TAIL = /_LX_(Tail|TailTip)/;
 /** How much of its groomed length a part's strands keep (see COAT_LENGTH). */
 export function coatLength(partName: string) {
-  return KEEP_LENGTH.test(partName) ? 1 : TAIL.test(partName) ? TAIL_LENGTH : COAT_LENGTH;
+  return KEEP_LENGTH.test(partName) ? 1 : TAIL.test(partName) ? TAIL_LENGTH : FACE.test(partName) ? FACE_LENGTH : COAT_LENGTH;
 }
 // The lids' strands lie flat in rows along the lid; at their own width the rows showed as lines of lit hair with the
 // undercoat dark between them, ring after ring round a closed eye. This much wider they overlap into one coat.
