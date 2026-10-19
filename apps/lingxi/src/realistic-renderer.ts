@@ -108,6 +108,8 @@ const ACTION_CLIPS: Record<string, string> = {
   'curled-sleep': 'Sleep', 'side-nap': 'SideLie', 'stretch-front': 'Stretch', 'stretch-back': 'Stretch',
   yawn: 'Yawn', 'sleepy-nod': 'Yawn', 'lick-paw': 'Lick', 'groom-chest': 'Lick', knead: 'Knead',
   'paw-wave': 'PawPlay', 'paw-reach': 'PawPlay', 'toy-swat': 'PawPlay', 'claw-screen': 'PawPlay',
+  // Swap these two values to Squat / Dig when the authored GLB clips are available.
+  'potty-squat': 'Sit', 'potty-dig': 'PawPlay',
   pounce: 'Jump', 'hop-catch': 'Jump', 'play-bow': 'LieDown', 'stalk-crouch': 'LieDown',
   'curious-tilt': 'Curious', 'ear-listen': 'Curious', 'sniff-air': 'Curious', 'look-at-you': 'Curious', 'notice-you': 'Curious',
   greeting: 'Happy', affection: 'Happy', 'head-bump': 'Happy', 'purr-settle': 'Happy',
@@ -1195,6 +1197,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const groundDistance = Math.hypot(dx * worldPerPixelX, dy * worldPerPixelZ);
       groundSpeed = deltaSeconds > 0 ? groundDistance / deltaSeconds : 0;
       if (groom) {
+        const petMode = (state as { toy?: { kind: string } | null }).toy?.kind === 'pet';
         // the coat in the air: its velocity in cat heights a second (a kitten's trot and a big cat's look the same)
         const catHeight = TARGET_HEIGHT * effectiveScale();
         const over = cursor != null && catRect != null && cursor.x >= catRect.x0 && cursor.x <= catRect.x1 && cursor.y >= catRect.y0 && cursor.y <= catRect.y1;
@@ -1203,7 +1206,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         const view = fitCanvas && canvasRect.width ? canvasRect : { x: 0, y: 0, width, height };
         groom.setWind(air.wind, air.gust, {
           x: (air.stroke.x - view.x) / view.width * 2 - 1, y: 1 - (air.stroke.y - view.y) / view.height * 2,
-          radius: STROKE_RADIUS_PX * unitsPerPixel, dx: air.stroke.dx, dy: -air.stroke.dy, amount: air.stroke.amount,
+          radius: STROKE_RADIUS_PX * (petMode ? 1.45 : 1) * unitsPerPixel,
+          dx: air.stroke.dx, dy: -air.stroke.dy,
+          amount: air.stroke.amount * (petMode ? 1.35 : 1),
         });
       }
       const moving = (state.state === 'wander' || state.state === 'ai_directed' || state.state === 'play_toy' || state.state === 'follow_cursor')

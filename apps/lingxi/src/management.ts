@@ -135,12 +135,15 @@ const TOYS = [
   { kind: 'yarn', name: '毛线球', description: '会滚会反弹，猫拍一爪又飞出去，能自己玩下去' },
   { kind: 'feather', name: '逗猫棒', description: '跟着鼠标走，但慢半拍——需要你来逗' },
   { kind: 'laser', name: '激光笔', description: '钉死在光标上，拍到也抓不住' },
+  { kind: 'pet', name: '撸猫', description: '用手来回顺毛，猫会停下来享受呼噜' },
 ] as const;
 
 const PERFORMANCES = [
   { id: 'angry-claw', name: '愤怒抓屏', description: '炸毛冲到屏幕中间，对着你连抓两爪，留下爪痕并震屏' },
   { id: 'kiss-rush', name: '飞奔亲亲', description: '从另一头跑过来，闭眼亲一下，爱心飘满屏' },
   { id: 'zoomies', name: '半夜暴走', description: '贴着四角疯跑一圈，跑完自己坐下喘气' },
+  { id: 'pee-at-you', name: '对着你尿尿', description: '认真刨沙、蹲下一会儿，留下一小滩亮晶晶的水渍' },
+  { id: 'poop-at-you', name: '对着你拉屎', description: '留下一小坨卡通便便，刨沙盖好后得意走开' },
 ] as const;
 
 const PET_STATE_LABELS: Record<string, string> = {

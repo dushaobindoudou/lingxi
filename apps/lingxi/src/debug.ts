@@ -234,7 +234,10 @@ const API: ApiExample[] = [
   { method: 'POST', path: '/control', summary: '摆一个表情（4 秒后自动交还）', body: { expression: '开心', holdMs: 4000 } },
   { method: 'POST', path: '/control', summary: '换视角 + 换主题（可任意组合字段）', body: { camera: 'eye-level', skin: 'calico-poem' } },
   { method: 'POST', path: '/control', summary: '放一个毛线球（"none" 收起）', body: { toy: 'yarn' } },
+  { method: 'POST', path: '/control', summary: '撸猫：光标变手，顺着猫身来回移动', body: { toy: 'pet' } },
   { method: 'POST', path: '/control', summary: '演一段特效：冲过来抓屏幕', body: { perform: 'angry-claw' } },
+  { method: 'POST', path: '/control', summary: '演一段特效：对着你尿尿', body: { perform: 'pee-at-you' } },
+  { method: 'POST', path: '/control', summary: '演一段特效：对着你拉屎', body: { perform: 'poop-at-you' } },
   { method: 'POST', path: '/control', summary: '让它说一句话（头顶气泡）', body: { say: '我在这儿呢' } },
   { method: 'POST', path: '/intent', summary: '建议它走到某个点（到期自动放弃，不是接管）', body: { targetPoint: { x: 400, y: 300 }, holdMs: 4000 } },
 ];

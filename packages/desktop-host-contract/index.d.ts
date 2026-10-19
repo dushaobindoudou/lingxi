@@ -76,7 +76,7 @@ export interface RendererCapabilities {
 
 /** Logical-pixel inputs; the renderer alone knows the posed model and projection. */
 export interface ToyInteractionRequest {
-  kind: 'yarn' | 'feather' | 'laser';
+  kind: 'yarn' | 'feather' | 'laser' | 'pet';
   position: { x: number; y: number };
   previousPosition: { x: number; y: number };
   petPosition: { x: number; y: number };

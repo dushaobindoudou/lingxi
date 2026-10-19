@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { createRope } from './rope.ts';
 
-export type ToyKind = 'yarn' | 'feather' | 'laser';
+export type ToyKind = 'yarn' | 'feather' | 'laser' | 'pet';
 
 export interface ToyProp {
   /** Added to / removed from the scene by the renderer. */
@@ -52,6 +52,32 @@ export interface ToyProp {
 export const YARN_RADIUS = 2.0;
 export const LASER_RADIUS = 0.85;
 export const FEATHER_HAND_HEIGHT = 10;
+
+/** A small open hand follows the pointer while petting. The fingers sit above the fur. */
+function createPetHand(): ToyProp {
+  const group = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: 0xf2c8a8, roughness: .92 });
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(1.65, 12, 9), skin);
+  palm.scale.set(1, .45, 1.15);
+  group.add(palm);
+  for (let i = 0; i < 4; i += 1) {
+    const finger = new THREE.Mesh(new THREE.CapsuleGeometry(.34, 1.15 - i * .12, 4, 8), skin);
+    finger.rotation.x = Math.PI / 2;
+    finger.position.set(-1.15 + i * .76, .08, -1.6);
+    group.add(finger);
+  }
+  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(.39, .8, 4, 8), skin);
+  thumb.rotation.z = -.85;
+  thumb.position.set(1.8, -.05, .2);
+  group.add(thumb);
+  return {
+    object: group,
+    anchorHeight: 9,
+    contactSphere(target) { target.center.copy(group.position); target.radius = 0; return target; },
+    update() {},
+    dispose() { disposeTree(group); },
+  };
+}
 
 function disposeTree(root: THREE.Object3D) {
   root.traverse((object) => {
@@ -389,6 +415,7 @@ function createLaser(): ToyProp {
 }
 
 export function createToyProp(kind: ToyKind): ToyProp {
+  if (kind === 'pet') return createPetHand();
   if (kind === 'feather') return createFeather();
   if (kind === 'laser') return createLaser();
   return createYarn();

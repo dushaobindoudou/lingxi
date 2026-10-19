@@ -62,8 +62,9 @@ export const INTERACTION_MODES = Object.freeze(['free']);
  *                      it. This is the one that needs a human.
  *   'laser'  激光笔  - pinned exactly to the cursor, and batting does nothing at all, because
  *                      that is the joke: it can never be caught.
+ *   'pet'    撸猫    - a hand follows the cursor; the cat rests for strokes instead of chasing it.
  */
-export const TOY_KINDS = Object.freeze(['yarn', 'feather', 'laser']);
+export const TOY_KINDS = Object.freeze(['yarn', 'feather', 'laser', 'pet']);
 
 const DEFAULTS = Object.freeze({
   bounds: { width: 1280, height: 800 },
@@ -771,7 +772,7 @@ export function createLifeEngine(config = {}) {
    * Put a toy on the desktop. Spawns clear of the cat so there is something to run at, rather
    * than materialising under its nose. An unknown kind is ignored rather than throwing - this
    * is reachable from a tray click and from an agent's HTTP POST.
-   * @param {'yarn'|'feather'|'laser'} kind
+   * @param {'yarn'|'feather'|'laser'|'pet'} kind
    * @param {{x:number,y:number}|null} [at] where to drop it; defaults to a point across the
    *   work area from the cat.
    */
@@ -783,7 +784,7 @@ export function createLifeEngine(config = {}) {
     // computation turns it into a NaN heading, which is how the cat vanished the last time
     // this class of input slipped through. A spawn point that is not a point falls back to
     // the default "across the work area" placement.
-    const spawn = isFinitePoint(at)
+    const spawn = kind === 'pet' ? position : isFinitePoint(at)
       ? at
       : {
           x: position.x < bounds.width / 2 ? bounds.width * 0.75 : bounds.width * 0.25,
@@ -799,7 +800,7 @@ export function createLifeEngine(config = {}) {
     };
     lastBatAt = -Infinity;
     charge = null;
-    // The yarn ball arrives in your hand; the other two are cursor-driven anyway.
+    // The yarn ball arrives in your hand; the other props are cursor-driven.
     toyHeld = kind === 'yarn';
   }
 
@@ -882,7 +883,6 @@ export function createLifeEngine(config = {}) {
       x: clamp(point.x, minX(), maxX()),
       y: clamp(point.y, minY(), maxY()),
     };
-    toy.velocity = { x: 0, y: 0 };
   }
 
   /** Advance the toy itself. Who drives it is the whole difference between the three kinds. */
@@ -917,7 +917,7 @@ export function createLifeEngine(config = {}) {
       return;
     }
 
-    if (toy.kind === 'laser') {
+    if (toy.kind === 'laser' || toy.kind === 'pet') {
       // Pinned to the cursor exactly. With no cursor it simply stays where it last was, which
       // reads as the dot being held still rather than the toy vanishing.
       const previous = toy.position;
@@ -1504,6 +1504,12 @@ export function createLifeEngine(config = {}) {
     // while there is something to play with, that IS what the cat wants to do. It is outranked
     // only by a drag and by an explicit AI intent, both handled above.
     if (toy) {
+      if (toy.kind === 'pet') {
+        // A hand on the cat is attention, not prey. Stay where the user found it.
+        state = 'idle';
+        target = null;
+        return snapshot();
+      }
       chaseToy(now, deltaSeconds, previousToyPosition, previousPetPosition);
       return snapshot();
     }
