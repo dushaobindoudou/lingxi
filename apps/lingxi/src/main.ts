@@ -17,6 +17,7 @@ import { createStageFx, type BubbleAttribution } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
+import { createPettingSession, bellyIsExposed } from './anim/petting.ts';
 import { createLifeEngine, DEFAULT_WANDER_SPEED, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
 import type { Personality } from '../../../packages/life-engine/src/index.d.mts';
 import { createActivityRecorder } from '../../../packages/perception/src/index.mjs';
@@ -46,8 +47,9 @@ const EDGE_MARGIN = 24;
 /** Shared by the startup report and every post-reload republish, so the two cannot drift. */
 const TOY_CATALOGUE = [
   { kind: 'yarn', name: '毛线球', description: '会滚、会撞墙反弹；猫追上去拍一爪又飞出去，能自己玩下去' },
-  { kind: 'feather', name: '逗猫棒', description: '跟着你的鼠标走，但慢半拍——需要你来逗' },
+  { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，靠近时猫会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '死死钉在光标上，拍到也抓不住（这就是笑点）' },
+  { kind: 'petting', name: '撸猫', description: '按住左键轻轻摸头和身体；翻身后可以摸肚皮' },
 ];
 
 async function main() {
@@ -324,6 +326,9 @@ async function main() {
   let pointerReactionUntil = 0;
   let lastAffectionLine: string | null = null;
   let toyReactionUntil = 0;
+  const petting = createPettingSession();
+  let bellyDurationMs = 0;
+  let lastPettingRegion: string | null = null;
 
   // Generous slack around the work area, not a hard clip - covers edge rounding/DPI jitter
   // without accepting a genuinely bogus reading (a second monitor's coordinates, computed
@@ -506,6 +511,17 @@ async function main() {
 
   void listen<{ kind: string }>('set-toy', (event) => {
     markInteresting();
+    if (event.payload.kind === 'petting') {
+      performances.stop();
+      engine.clearToy();
+      engine.clearIntent();
+      engine.setPetting(true);
+      petting.setEnabled(true);
+      lastPettingRegion = null;
+      renderer.playAction?.('pet-head');
+      fx.say('按住左键，轻轻摸摸我～', 2600);
+      return;
+    }
     // Validated here rather than trusted: this event can originate from an agent's HTTP POST,
     // and the engine treats an unknown kind as a no-op, which would look like a silent failure.
     const kind = event.payload.kind as (typeof TOY_KINDS)[number];
@@ -513,9 +529,23 @@ async function main() {
       dlog(`set-toy: unknown toy ${event.payload.kind}`);
       return;
     }
+    petting.setEnabled(false);
+    engine.setPetting(false);
     engine.setToy(kind);
   });
-  void listen('clear-toy', () => engine.clearToy());
+  void listen('clear-toy', () => {
+    petting.setEnabled(false);
+    engine.setPetting(false);
+    engine.clearToy();
+  });
+  void listen('request-play-mode', () => {
+    void emit('play-mode', { kind: petting.enabled ? 'petting' : engine.toy?.kind ?? null });
+  });
+  void listen('petting-belly', () => {
+    if (!petting.enabled) return;
+    petting.release();
+    if (renderer.playAction?.('belly-up')) bellyDurationMs = renderer.playingAction?.remainingMs ?? 0;
+  });
 
   // 说话气泡: one line at a time, above the head, anchored every frame in frame() below.
   void listen<{ text: string; durationMs?: number; source?: SpeechSource }>('say', (event) => {
@@ -562,8 +592,16 @@ async function main() {
     if (targetPoint) engine.suggestMoveTo(targetPoint, performance.now(), holdMs);
   });
 
-  window.addEventListener('mousedown', () => {
+  window.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
     if (!isCaptured || !cursor) return;
+    if (petting.enabled) {
+      if (renderer.hitTest(cursor, true)) {
+        petting.press();
+        engineRecorder.record({ type: 'click_on_pet', at: performance.now(), position: cursor });
+      }
+      return;
+    }
     // Clicking the yarn ball picks it UP and starts winding a throw, rather than grabbing the
     // cat. Whichever of the two the pointer is actually over wins - see the hit test in frame().
     if (overToy && engine.toy?.kind === 'yarn') {
@@ -608,6 +646,7 @@ async function main() {
   // short line. Distinct from a click-drag (pick the cat up) and from hovering (it notices
   // you), so all three gestures mean different things instead of competing.
   window.addEventListener('dblclick', () => {
+    if (petting.enabled) return;
     if (!isCaptured || !wasHit) return;
     renderer.playAction?.('head-bump');
     renderer.playExpression?.('撒娇', 2600);
@@ -619,6 +658,7 @@ async function main() {
   });
 
   window.addEventListener('mouseup', () => {
+    petting.release();
     if (isChargingToy) {
       engine.releaseCharge(performance.now(), aim);
       isChargingToy = false;
@@ -634,6 +674,10 @@ async function main() {
       engineRecorder.record({ type: 'drag_start', at: dragStartedAt, position: cursor });
       engineRecorder.record({ type: 'drag_end', at: now, position: cursor, durationMs: now - dragStartedAt });
     }
+  });
+  window.addEventListener('blur', () => petting.release());
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && petting.enabled) void emit('clear-toy');
   });
 
   const canvas = stage.querySelector('canvas');
@@ -779,6 +823,7 @@ async function main() {
       // Clear the text immediately while the cat quietly walks out. With no free spot
       // (a full-window editor without caret bounds), wait invisibly until focus changes.
       document.documentElement.style.opacity = yieldingToInput ? '0' : '1';
+      if (yieldingToInput) petting.release();
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the
       // gait integrates would be wrong.
@@ -787,6 +832,23 @@ async function main() {
       // a walk that starts at 30fps reads as a stutter.
       if (tier === 'idle' && !catIsStill()) setTier('active');
       renderer.render(snapshot, deltaSeconds, cursor);
+      const exposedBelly = bellyIsExposed(renderer.playingAction, bellyDurationMs);
+      const touched = petting.enabled && petting.pressed && cursor && !yieldingToInput
+        ? renderer.pettingHitTest?.(cursor, exposedBelly) ?? null : null;
+      const affection = petting.tick(cursor, touched, now);
+      if (affection) {
+        // Keep the belly pose while stroking it; do not interrupt the roll with a standing clip.
+        if (affection.clip && renderer.playingAction?.id !== 'belly-up') renderer.playAction?.(affection.clip);
+        renderer.playExpression?.(affection.expression, 2000);
+        if (affection.region !== lastPettingRegion) {
+          fx.say({ head: '呼噜…再摸摸头～', body: '顺毛好舒服…', belly: '轻一点点，喵～' }[affection.region], 2000);
+          lastPettingRegion = affection.region;
+        }
+        const head = renderer.headScreenPoint?.();
+        if (head) fx.hearts(head.x, head.y, 3);
+      }
+      document.documentElement.style.cursor = petting.enabled && pointerOnPet
+        ? petting.pressed ? 'grabbing' : 'grab' : '';
 
       // --- sleep, made visible ----------------------------------------------------------
       //
@@ -801,7 +863,7 @@ async function main() {
       // of being interrupted by a yawn or a grooming clip every few seconds.
       if (snapshot.state === 'sleep') {
         if (!renderer.playingAction) renderer.playAction?.('curled-sleep');
-      } else if (wasAsleep) {
+      } else if (wasAsleep && !petting.enabled) {
         // Waking up is a beat of its own. A cat that snaps from curled to walking looks
         // teleported; one that stretches first reads as having just got up.
         renderer.playAction?.('stretch-front');
@@ -821,7 +883,7 @@ async function main() {
       // because it happened to wander onto a cursor you had parked and forgotten about
       // ("鼠标主动放到他身上的时候应该是亲近"). The same flag stops it fleeing, so the two
       // halves of the reaction finally agree with each other.
-      if (cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
+      if (!petting.enabled && !snapshot.toy && !yieldingToInput && cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
         if (hoverSince === 0) {
           hoverSince = now;
           strokeDistance = 0;
@@ -858,13 +920,14 @@ async function main() {
 
       // --- toy play: stalk, spring, rear up ---------------------------------------------
       const toyNow = snapshot.toy;
-      if (toyNow && snapshot.state === 'play_toy' && now >= toyReactionUntil && !renderer.playingAction) {
+      if (toyNow && snapshot.state === 'play_toy' && now >= toyReactionUntil && !performances.active) {
         const reaction = pickToyReaction({
           kind: toyNow.kind,
           distance: Math.hypot((snapshot.target ?? toyNow.position).x - snapshot.position.x,
             (snapshot.target ?? toyNow.position).y - snapshot.position.y),
           toySpeed: Math.hypot(toyNow.velocity.x, toyNow.velocity.y),
           held: toyNow.held,
+          playingClip: renderer.playingAction?.id,
         });
         if (reaction) {
           renderer.playAction?.(reaction.clip);
@@ -885,7 +948,7 @@ async function main() {
         heldForAction = playing.id;
         // Only clips that need the legs pin the cat. A tail flick or a glance can happily play
         // while it keeps walking, and holding for those would make it stop for no visible reason.
-        if (!playing.legFree) engine.hold(playing.remainingMs, now);
+        if (!playing.legFree) engine.hold(playing.remainingMs, now, true);
       } else if (!playing) {
         heldForAction = null;
       }
@@ -905,7 +968,7 @@ async function main() {
         // reaches this webview at all.
         const toy = snapshot.toy;
         overToy = toy?.kind === 'yarn' && Math.hypot(toy.position.x - cursor.x, toy.position.y - cursor.y) < TOY_GRAB_RADIUS_PX;
-        const shouldCapture = !yieldingToInput && (hit || overToy || isMouseDown || isChargingToy);
+        const shouldCapture = !yieldingToInput && (hit || overToy || isMouseDown || isChargingToy || petting.pressed);
         if (shouldCapture !== isCaptured) {
           isCaptured = shouldCapture;
           void host.setClickThrough(!isCaptured);

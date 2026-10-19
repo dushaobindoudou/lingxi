@@ -4,6 +4,37 @@ import * as THREE from 'three';
 import {createToyProp} from '../src/rig/toys.ts';
 import {createLifeEngine} from '../../../packages/life-engine/src/index.mjs';
 
+test('the cursor holds the handle and the string hangs from the opposite rod end',()=>{
+  const toy=createToyProp('feather');
+  toy.update(1/60,0,0);toy.object.updateMatrixWorld(true);
+  const rod=toy.object.children.find(o=>o.geometry?.type==='CylinderGeometry');
+  const ends=[-1,1].map(sign=>rod.localToWorld(new THREE.Vector3(0,sign*rod.geometry.parameters.height/2,0)));
+  const grip=toy.object.localToWorld(new THREE.Vector3());
+  const held=ends[0].distanceTo(grip)<ends[1].distanceTo(grip)?0:1;
+  assert.ok(ends[held].distanceTo(grip)<1e-5,'mouse must grip an actual endpoint');
+  const string=toy.object.children.find(o=>o.isLine);
+  const anchor=string.localToWorld(new THREE.Vector3().fromBufferAttribute(string.geometry.attributes.position,0));
+  assert.ok(anchor.distanceTo(ends[1-held])<1e-5,'string must attach to the far end, not the held end');
+  toy.dispose();
+});
+
+test('the feather handle follows the hand exactly while its rope supplies the lag',()=>{
+  const engine=createLifeEngine({bounds:{width:1280,height:800},position:{x:100,y:100}});
+  engine.setToy('feather',{x:500,y:400});engine.tick(0,{x:500,y:400});
+  assert.deepEqual(engine.tick(16,{x:700,y:400}).toy.position,{x:700,y:400});
+});
+
+test('a toy keeps moving during a jump, but the cat holds its launch position',()=>{
+  const engine=createLifeEngine({bounds:{width:1280,height:800},position:{x:300,y:400}});
+  engine.setToy('feather',{x:700,y:400});engine.tick(0,{x:700,y:400});
+  const before=engine.position;
+  engine.hold(1500,0,true);
+  const during=engine.tick(100,{x:800,y:400});
+  assert.deepEqual(during.position,before,'chasing must not slide the cat during its jump');
+  assert.equal(during.batted,false,'a floor swat must not interrupt the jump');
+  assert.deepEqual(during.toy.position,{x:800,y:400});
+});
+
 test('yarn rolls by distance covered divided by its drawn radius',()=>{
   const toy=createToyProp('yarn'),scale=.0275,dt=1/60;
   toy.object.scale.setScalar(scale);

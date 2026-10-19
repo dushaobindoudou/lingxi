@@ -180,11 +180,12 @@ const DEFAULT_CAMERA: &str = "game";
 const KNOWN_RENDER_STYLES: [&str; 2] = ["voxel", "realistic"];
 const DEFAULT_RENDER_STYLE: &str = "voxel";
 
-/// Toys ("玩具"). Ids must match packages/life-engine's TOY_KINDS - that module owns the
+/// Toys and affection ("玩具"). Physical ids match life-engine's TOY_KINDS; petting
+/// is handled by the host interaction director. The engine owns the
 /// simulation (rolling, bouncing, batting); Rust only routes the request. Unlike the theme and
 /// camera settings these are deliberately NOT persisted: a toy left on the desktop across a
 /// restart would be clutter the user never asked for twice.
-const KNOWN_TOYS: [&str; 3] = ["yarn", "feather", "laser"];
+const KNOWN_TOYS: [&str; 4] = ["yarn", "feather", "laser", "petting"];
 
 /// Scripted set-pieces ("特效"). Ids must match src/fx/performances.ts's PERFORMANCES, which
 /// owns the actual choreography.
@@ -192,7 +193,12 @@ const KNOWN_PERFORMANCES: [&str; 3] = ["angry-claw", "kiss-rush", "zoomies"];
 
 /// The tray's 玩具 and 特效 submenus: every known id with the name 主界面 gives it. A test keeps
 /// these in step with KNOWN_TOYS / KNOWN_PERFORMANCES, so a new toy cannot be missing here.
-const TRAY_TOYS: [(&str, &str); 3] = [("yarn", "毛线球"), ("feather", "逗猫棒"), ("laser", "激光笔")];
+const TRAY_TOYS: [(&str, &str); 4] = [
+    ("yarn", "毛线球"),
+    ("feather", "逗猫棒"),
+    ("laser", "激光笔"),
+    ("petting", "撸猫"),
+];
 const TRAY_EFFECTS: [(&str, &str); 3] = [("angry-claw", "愤怒抓屏"), ("kiss-rush", "飞奔亲亲"), ("zoomies", "半夜暴走")];
 
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
@@ -6729,6 +6735,11 @@ fn set_toy(app: tauri::AppHandle, kind: String) {
 }
 
 #[tauri::command]
+fn petting_belly(app: tauri::AppHandle) {
+    let _ = app.emit("petting-belly", ());
+}
+
+#[tauri::command]
 fn clear_toy(app: tauri::AppHandle) {
     let _ = app.emit("clear-toy", ());
 }
@@ -6883,6 +6894,7 @@ pub fn run() {
             stop_performance,
             set_toy,
             clear_toy,
+            petting_belly,
             say,
             get_custom_assets,
             install_asset_templates,

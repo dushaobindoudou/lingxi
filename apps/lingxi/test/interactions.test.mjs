@@ -12,10 +12,10 @@ test('a wand held still just out of reach makes the cat set up rather than walk 
   }
 });
 
-test('a wand within reach gets jumped at or reared up for, never merely tapped', () => {
+test('a wand within reach reliably triggers a jump', () => {
   for (const roll of [0.1, 0.9]) {
     const reaction = pickToyReaction({ kind: 'feather', distance: 40, toySpeed: 30, held: false }, () => roll);
-    assert.ok(reaction && ['hop-catch', 'rear-up'].includes(reaction.clip), `got ${reaction?.clip}`);
+    assert.ok(reaction?.clip === 'hop-catch', `got ${reaction?.clip}`);
   }
 });
 
@@ -49,4 +49,12 @@ test('affection lines never repeat back to back', () => {
     assert.notEqual(line, previous);
     previous = line;
   }
+});
+
+
+test('wand contact does not starve the jump, and an active jump is never restarted', () => {
+  const input={kind:'feather',distance:40,toySpeed:0,held:false};
+  assert.equal(pickToyReaction({...input,playingClip:'toy-swat'})?.clip,'hop-catch');
+  assert.equal(pickToyReaction({...input,playingClip:'hop-catch'}),null);
+  assert.equal(pickToyReaction({...input,playingClip:'belly-up'}),null);
 });

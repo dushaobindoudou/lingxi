@@ -161,14 +161,22 @@ function createYarn(): ToyProp {
 function createFeather(): ToyProp {
   const group = new THREE.Group();
 
-  // The rigid part: a stick from the hand going up out of frame.
+  // Grip at the origin; the string attaches to the OTHER endpoint.
+  const rodTip = new THREE.Vector3(-18, 9, 0);
   const rod = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.16, 0.16, 30, 5),
+    new THREE.CylinderGeometry(0.16, 0.16, rodTip.length(), 5),
     new THREE.MeshStandardMaterial({ color: 0x8a6a4f, roughness: 1 }),
   );
-  rod.position.set(1.6, 15, -1.2);
-  rod.rotation.z = -0.1;
+  rod.position.copy(rodTip).multiplyScalar(0.5);
+  rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), rodTip.clone().normalize());
   group.add(rod);
+  const grip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.32, 3, 8),
+    new THREE.MeshStandardMaterial({ color: 0x403b38, roughness: 0.9 }),
+  );
+  grip.position.copy(rodTip).normalize().multiplyScalar(1.5);
+  grip.quaternion.copy(rod.quaternion);
+  group.add(grip);
 
   // The soft part. Five links of string between the rod tip and the feather.
   const ROPE_POINTS = 6;
@@ -209,7 +217,7 @@ function createFeather(): ToyProp {
   plume.add(knot);
   group.add(plume);
 
-  const rodTip = new THREE.Vector3(1.6, 0.6, -1.2);
+
   const strike = new THREE.Vector3();
   const forward = new THREE.Vector3();
   const localPoint = new THREE.Vector3();

@@ -219,10 +219,6 @@ const DEFAULTS = Object.freeze({
   toyFriction: 1.9, // per-second exponential decay of the yarn ball's speed
   toyRestSpeed: 12, // below this the ball counts as stopped
   toyBounceLoss: 0.62, // speed kept after bouncing off a screen edge
-  // Per-second catch-up rate of the wand tip toward the cursor. High enough that the wand is
-  // effectively ON your pointer (the ask was for the cursor to BE the toy), but not infinite -
-  // the small remaining whip is what the cat overshoots and pounces at.
-  toyFeatherLag: 16,
   toyChargeMaxMs: 900, // hold this long for a full-power throw
   toyThrowSpeedMin: 260, // px/s at zero charge
   toyThrowSpeedMax: 1250, // px/s at full charge
@@ -608,6 +604,8 @@ export function createLifeEngine(config = {}) {
   let toy = null; // { kind, position:{x,y}, velocity:{x,y} } | null - see TOY_KINDS
   let lastBatAt = -Infinity;
   let batThisTick = false; // one-frame flag the renderer turns into a pounce/swat clip
+  let toyHoldUntil = 0;
+  let petting = false;
   let holdUntil = 0; // stand still until this timestamp - see hold()
   // Yarn ball only: the user is holding it at the cursor and winding up a throw. `since` is
   // when they pressed; the longer they hold, the harder it goes.
@@ -778,6 +776,8 @@ export function createLifeEngine(config = {}) {
    */
   function setToy(kind, at = null) {
     if (!TOY_KINDS.includes(kind)) return;
+    petting = false;
+    toyHoldUntil = 0;
     // `at` arrives from an agent's HTTP POST and from tray state restore, so it has exactly
     // the trust level of any other remote input. clamp() cannot sanitise it - Math.min/max
     // propagate NaN - and a NaN toy position reaches chaseToy's moveToward, whose bearing
@@ -806,6 +806,7 @@ export function createLifeEngine(config = {}) {
 
   /** Take the toy away; the cat goes back to whatever it was doing on the next tick. */
   function clearToy() {
+    toyHoldUntil = 0;
     toy = null;
     charge = null;
     toyHeld = false;
@@ -918,9 +919,9 @@ export function createLifeEngine(config = {}) {
       return;
     }
 
-    if (toy.kind === 'laser') {
-      // Pinned to the cursor exactly. With no cursor it simply stays where it last was, which
-      // reads as the dot being held still rather than the toy vanishing.
+    if (toy.kind === 'laser' || toy.kind === 'feather') {
+      // The wand grip and laser follow the hand; only the rope supplies lag.
+      // With no cursor, keep the last placement instead of losing the toy.
       const previous = toy.position;
       if (cursor) toy.position = { x: clamp(cursor.x, loX, hiX), y: clamp(cursor.y, loY, hiY) };
       toy.velocity = deltaSeconds > 0 ? {
@@ -929,24 +930,6 @@ export function createLifeEngine(config = {}) {
       } : { x: 0, y: 0 };
       return;
     }
-    if (toy.kind === 'feather') {
-      // Trails the cursor with a lag - a wand tip does not teleport with your hand, and the
-      // lag is exactly what gives the cat something to overshoot.
-      const previous = toy.position;
-      if (cursor) {
-        const catchUp = 1 - Math.exp(-deltaSeconds * cfg.toyFeatherLag);
-        toy.position = {
-          x: clamp(toy.position.x + (cursor.x - toy.position.x) * catchUp, loX, hiX),
-          y: clamp(toy.position.y + (cursor.y - toy.position.y) * catchUp, loY, hiY),
-        };
-      }
-      toy.velocity = deltaSeconds > 0 ? {
-        x: (toy.position.x - previous.x) / deltaSeconds,
-        y: (toy.position.y - previous.y) / deltaSeconds,
-      } : { x: 0, y: 0 };
-      return;
-    }
-
     // 'yarn': free physics - roll, slow down, bounce off the edges of the desktop.
     const decay = Math.exp(-deltaSeconds * cfg.toyFriction);
     toy.velocity = { x: toy.velocity.x * decay, y: toy.velocity.y * decay };
@@ -1275,11 +1258,12 @@ export function createLifeEngine(config = {}) {
    * idle windows are short, it also meant scheduled clips were usually cut off a second in, so
    * they effectively never played ("工作模式动作也没有随机做"). A hold is deliberately weaker
    * than an AI intent: it suppresses autonomous movement only, and a drag, a toy or an explicit
-   * intent all still override it.
+   * intent all still override it. includeToy also pins the legs for an explicitly played clip.
    */
-  function hold(ms, now) {
+  function hold(ms, now, includeToy = false) {
     if (!Number.isFinite(ms)) return;
     holdUntil = Math.max(holdUntil, now + clamp(ms, 0, cfg.maxHoldMs));
+    if (includeToy) toyHoldUntil = Math.max(toyHoldUntil, now + clamp(ms, 0, cfg.maxHoldMs));
   }
 
   /**
@@ -1486,6 +1470,7 @@ export function createLifeEngine(config = {}) {
       }
       aiIntent = null;
       holdUntil = 0;
+      toyHoldUntil = 0;
       settledSince = null;
       sleptAt = null;
       state = inputEscapeTarget ? 'wander' : 'idle';
@@ -1495,6 +1480,14 @@ export function createLifeEngine(config = {}) {
     }
     inputEscapeTarget = null;
     if (target && isProtected(target, protectedRegions)) target = null;
+
+    // Deliberately entering petting asks the cat to stay for your hand, even asleep.
+    // Input avoidance above still wins; this is never a physical toy to chase.
+    if (petting) {
+      if (state === 'sleep') wakeUp(now);
+      state = 'idle'; target = null; aiIntent = null;
+      return snapshot();
+    }
 
     // Waking comes before every autonomous drive and before the intent handling below,
     // because all of them assume a cat that is up. A disturbance wakes it immediately - and
@@ -1535,6 +1528,8 @@ export function createLifeEngine(config = {}) {
     // while there is something to play with, that IS what the cat wants to do. It is outranked
     // only by a drag and by an explicit AI intent, both handled above.
     if (toy) {
+      // A jump/strike owns the legs until landing. The toy still moves in stepToy.
+      if (now < toyHoldUntil) { state = 'play_toy'; target = null; return snapshot(); }
       chaseToy(now, deltaSeconds, previousToyPosition, previousPetPosition);
       return snapshot();
     }
@@ -1750,6 +1745,7 @@ export function createLifeEngine(config = {}) {
     resetPosition,
     setToy,
     clearToy,
+    setPetting(enabled) { petting = Boolean(enabled); if (petting) clearToy(); },
     throwToy,
     beginCharge,
     releaseCharge,

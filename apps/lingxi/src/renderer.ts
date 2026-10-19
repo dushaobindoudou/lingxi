@@ -25,6 +25,7 @@ import { createIdleAnimator } from './anim/idle.ts';
 import { createBodyFlex } from './anim/body-flex.ts';
 import { CAMERA_PRESETS, DEFAULT_CAMERA_ID, AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, cameraPreset } from './rig/cameras.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
+import { createVoxelPettingProbe } from './rig/petting.ts';
 import { createToyInteractionProbe } from './rig/toy-contact.ts';
 import { mergeBody, type MergedBody } from './rig/merged-body.ts';
 
@@ -203,6 +204,7 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
   let skin: CustomSkin = SKINS.find((s) => s.id === DEFAULT_SKIN_ID) ?? SKINS[0];
   let lastFrame: ReturnType<ReturnType<typeof createDirector>['update']> | null = null;
   let rig!: Rig;
+  let pettingProbe: ReturnType<typeof createVoxelPettingProbe> | null = null;
   let bodyTexture!: THREE.CanvasTexture;
   let bodyMaterial!: THREE.MeshStandardMaterial;
   let faceMaterial!: THREE.MeshBasicMaterial;
@@ -316,6 +318,7 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
     rig.node('head').add(faceMesh);
     faceDecal = faceMesh;
 
+    pettingProbe = createVoxelPettingProbe(rig.root);
     bodyController = createBodyController(rig, SKELETON);
     toyInteractionProbe = createToyInteractionProbe(rig, {
       scale: () => VOXEL_TO_WORLD * modelScale,
@@ -1343,6 +1346,12 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
       } else {
         renderer.render(scene, camera);
       }
+    },
+
+    pettingHitTest(point, exposed) {
+      ndc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      return pettingProbe?.(raycaster, exposed) ?? null;
     },
 
     hitTest(point: { x: number; y: number }, precise = false) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
-function readAsset(asset, strip) {
+function readAsset(asset, strip, names) {
   const bytes = readFileSync(asset);
   const jsonLength = bytes.readUInt32LE(12);
   const gltf = JSON.parse(bytes.subarray(20, 20 + jsonLength));
@@ -27,7 +27,7 @@ function readAsset(asset, strip) {
   gltf.nodes.forEach((n, i) => n.children?.forEach((j) => nodes[i].add(nodes[j])));
   const root = new THREE.Group();
   gltf.scenes[gltf.scene ?? 0].nodes.forEach((i) => root.add(nodes[i]));
-  const clips = Object.fromEntries(gltf.animations.filter((a) => ['Walk', 'Run'].includes(a.name)).map((a) => {
+  const clips = Object.fromEntries(gltf.animations.filter((a) => names.includes(a.name)).map((a) => {
     let stride = 0;
     const tracks = a.channels.filter((c) => c.target.path !== 'weights').map((c) => {
       const s = a.samplers[c.sampler];
@@ -46,10 +46,10 @@ function readAsset(asset, strip) {
   return { root, nodes, clips };
 }
 
-export function readMotion(strip = true) {
+export function readMotion(strip = true, names = ['Walk', 'Run']) {
   const directory = new URL('../../public/characters/lingxi-realistic/current/', import.meta.url);
-  const base = readAsset(new URL('cat.glb', directory), strip);
-  const patch = readAsset(new URL('clips.glb', directory), strip);
+  const base = readAsset(new URL('cat.glb', directory), strip, names);
+  const patch = readAsset(new URL('clips.glb', directory), strip, names);
   for (const [name, entry] of Object.entries(patch.clips)) {
     const tracks = entry.clip.tracks.map(track => {
       const copy = track.clone();

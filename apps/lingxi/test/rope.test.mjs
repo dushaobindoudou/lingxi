@@ -56,7 +56,8 @@ test('the rendered wand feather lags a moving prop instead of staying rigidly at
       prop.object.position.x = frame * 1.2 * scale;
       prop.update(step, 0, 0);
       prop.object.updateMatrixWorld(true);
-      const handX = prop.object.position.x + 1.6 * scale;
+      const rod = prop.object.children.find(child => child.geometry?.type === 'CylinderGeometry');
+      const handX = rod.localToWorld(new THREE.Vector3(0, rod.geometry.parameters.height / 2, 0)).x;
       const featherX = plume.getWorldPosition(new THREE.Vector3()).x;
       greatestLag = Math.max(greatestLag, (handX - featherX) / scale);
       const first = new THREE.Vector3().fromBufferAttribute(string.geometry.getAttribute('position'), 0);

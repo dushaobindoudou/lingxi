@@ -67,6 +67,7 @@ export interface LifeEngineConfig {
   toyFriction?: number;
   toyRestSpeed?: number;
   toyBounceLoss?: number;
+  /** @deprecated Ignored: the rendered rope now supplies the feather lag. */
   toyFeatherLag?: number;
   dragStaleMs?: number;
   busyWindowMs?: number;
@@ -151,7 +152,9 @@ export interface LifeEngine {
   turnTo(angle: number): boolean;
   /** Stand still for `ms` without otherwise changing behaviour - used to stop the cat walking
    *  out from under an action clip that is mid-play. Weaker than a drag, a toy or an intent. */
-  hold(ms: number, now: number): void;
+  hold(ms: number, now: number, includeToy?: boolean): void;
+  /** Explicit affection mode. Keeps still while input avoidance retains priority. */
+  setPetting(enabled: boolean): void;
   /** 'auto' (default, stays out of the way) or 'play' ("逗猫模式", follows the cursor). */
   setInteractionMode(mode: InteractionMode): void;
   /** Live-update the 'auto' mode avoidance radius (see LifeEngineConfig.avoidRadius) - the

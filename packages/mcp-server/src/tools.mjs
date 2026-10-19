@@ -167,11 +167,11 @@ export const tools = [
     description:
       'Put a toy on the desktop or take it away. The cat drops what it is doing and plays with ' +
       'it: the yarn ball arrives on the pointer to be thrown, the wand is chased and jumped at, ' +
-      'the laser is chased and never caught. Good for "you have been at this for two hours".',
+      'the laser is chased and never caught; petting lets the user stroke its head, body or offered belly. Good for "you have been at this for two hours".',
     inputSchema: {
       type: 'object',
       properties: {
-        toy: { type: 'string', enum: ['yarn', 'feather', 'laser', 'none'] },
+        toy: { type: 'string', enum: ['yarn', 'feather', 'laser', 'petting', 'none'] },
         priority: PRIORITY,
       },
       required: ['toy'],

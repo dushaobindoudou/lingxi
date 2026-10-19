@@ -465,12 +465,12 @@ test('the yarn ball rolls, slows down, and never leaves the work area', () => {
   assert.deepEqual(engine.toy.velocity, { x: 0, y: 0 });
 });
 
-test('the wand trails the cursor instead of snapping to it, and the laser is pinned to it', () => {
+test('the wand handle and laser follow the pointer exactly', () => {
   const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 } });
   engine.setToy('feather', { x: 100, y: 100 });
   engine.tick(0, { x: 900, y: 700 });
   const afterOneFrame = engine.tick(1000 / 60, { x: 900, y: 700 }).toy.position;
-  assert.ok(afterOneFrame.x > 100 && afterOneFrame.x < 900, 'the wand tip lags the hand');
+  assert.deepEqual(afterOneFrame, { x: 900, y: 700 }, 'the held wand handle follows the hand; the rendered rope supplies lag');
 
   engine.setToy('laser', { x: 100, y: 100 });
   const laser = engine.tick(100, { x: 640, y: 480 }).toy.position;

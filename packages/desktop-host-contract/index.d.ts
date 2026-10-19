@@ -100,7 +100,11 @@ export interface ToyInteraction {
   petContactPosition?: { x: number; y: number };
 }
 
+export type PettingRegion = 'head' | 'body' | 'belly';
+
 export interface Renderer {
+  /** Surface hit on the posed cat; no screen-box approximation. */
+  pettingHitTest?(point: { x: number; y: number }, bellyExposed: boolean): PettingRegion | null;
   readonly capabilities: RendererCapabilities;
   /** Actual body/toy contact; optional for renderers with no physical geometry. */
   toyInteraction?(request: ToyInteractionRequest): ToyInteraction | null;

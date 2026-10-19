@@ -5,7 +5,7 @@
 import './management.css';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { TaskStore } from '../../../packages/contracts/src/index.mjs';
 // The renderer owns the viewing-angle catalogue and skins.json owns the theme catalogue;
@@ -133,8 +133,9 @@ interface PerceptionSnapshot {
 
 const TOYS = [
   { kind: 'yarn', name: '毛线球', description: '会滚会反弹，猫拍一爪又飞出去，能自己玩下去' },
-  { kind: 'feather', name: '逗猫棒', description: '跟着鼠标走，但慢半拍——需要你来逗' },
+  { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，猫靠近会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '钉死在光标上，拍到也抓不住' },
+  { kind: 'petting', name: '撸猫', description: '按住左键轻轻摸头和身体；翻身后可以摸肚皮' },
 ] as const;
 
 const PERFORMANCES = [
@@ -413,12 +414,16 @@ function renderStyleOptions(activeId: string) {
 function renderPlayPage() {
   const toys = document.getElementById('toy-options');
   const markToy = (kind: string | null) => {
+    const controls = document.getElementById('petting-controls');
+    if (controls) controls.hidden = kind !== 'petting';
     toys?.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
       button.classList.toggle('active', button.dataset.kind === kind);
     });
   };
   void listen<{ kind: string }>('set-toy', (event) => markToy(event.payload.kind));
   void listen('clear-toy', () => markToy(null));
+  void listen<{ kind: string | null }>('play-mode', event => markToy(event.payload.kind))
+    .then(() => emit('request-play-mode'));
   if (toys) {
     toys.replaceChildren(
       ...TOYS.map((toy) => {
@@ -453,6 +458,7 @@ function renderPlayPage() {
       }),
     );
   }
+  document.getElementById('petting-belly')?.addEventListener('click', () => void invoke('petting_belly'));
   document.getElementById('clear-toy')?.addEventListener('click', () => void invoke('clear_toy'));
   const sayInput = document.getElementById('say-input') as HTMLInputElement | null;
   const sayButton = document.getElementById('say-button') as HTMLButtonElement | null;

@@ -335,11 +335,15 @@ LINGXI_AGENT_NAME = "Codex"</pre>
         <section class="page" id="page-play">
           <h2>玩具</h2>
           <p class="hint">
-            放下玩具后，猫会把它当成当前唯一想做的事——优先级高于游走和避让，只输给你亲手拖它。
+            放下玩具后，猫会专心陪你玩；输入区域避让仍然优先。选择「撸猫」后，按住左键轻轻来回摸，松手就停。
             毛线球有真实物理（会滚、减速、撞边反弹），猫够到就拍一爪把它打飞，所以不用你管它也能自己玩下去。
           </p>
           <div class="camera-options play-options" id="toy-options"></div>
-          <button id="clear-toy" class="wide-button secondary">收起玩具</button>
+          <div id="petting-controls" hidden>
+            <p class="hint">摸头会蹭手，摸身体会放松拱背。先翻身露出肚皮，再轻轻摸；肚皮只在翻身停稳时响应。此时拖动鼠标是抚摸，不会拎起猫咪。</p>
+            <button id="petting-belly" class="wide-button secondary">翻个肚皮</button>
+          </div>
+          <button id="clear-toy" class="wide-button secondary">收起玩具 / 结束撸猫</button>
 
           <h2 class="section-gap">说话</h2>
           <p class="hint">在猫咪头顶显示一句话。接入 Agent 后，也会在这里显示任务提醒。</p>

@@ -19,6 +19,8 @@ import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMER
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 import { createLocomotion, steeringStrideScale } from './realistic-locomotion.ts';
 import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase } from './realistic-motion.ts';
+import { stationaryJump, holdBellyPose } from './realistic-play.ts';
+import { createSkinnedPettingProbe } from './rig/petting.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 
 export interface RealisticRendererOptions {
@@ -74,10 +76,10 @@ const ACTION_CLIPS: Record<string, string> = {
   'curled-sleep': 'Sleep', 'side-nap': 'SideLie', 'stretch-front': 'Stretch', 'stretch-back': 'Stretch',
   yawn: 'Yawn', 'sleepy-nod': 'Yawn', 'lick-paw': 'Lick', 'groom-chest': 'Lick', knead: 'Knead',
   'paw-wave': 'PawPlay', 'paw-reach': 'PawPlay', 'toy-swat': 'PawPlay', 'claw-screen': 'PawPlay',
-  pounce: 'Jump', 'hop-catch': 'Jump', 'play-bow': 'LieDown', 'stalk-crouch': 'LieDown',
+  pounce: 'WandJump', 'hop-catch': 'WandJump', 'play-bow': 'LieDown', 'stalk-crouch': 'LieDown',
   'curious-tilt': 'Curious', 'ear-listen': 'Curious', 'sniff-air': 'Curious', 'look-at-you': 'Curious', 'notice-you': 'Curious',
-  greeting: 'Happy', affection: 'Happy', 'head-bump': 'Happy', 'purr-settle': 'Happy',
-  hiss: 'Bite', sit: 'Sit', loaf: 'Loaf', 'belly-up': 'BellyUp', 'scratch-ear': 'ScratchEar',
+  'pet-head': 'Happy', 'pet-back': 'Happy', greeting: 'Happy', affection: 'Happy', 'head-bump': 'Happy', 'purr-settle': 'Happy',
+  hiss: 'Bite', sit: 'Sit', loaf: 'Loaf', 'belly-up': 'PetBelly', 'scratch-ear': 'ScratchEar',
   'wash-face': 'WashFace', 'groom-side': 'GroomSide',
   // the rest of the voxel library (and the WorkBuddy pack in it): the nearest clip, so a reaction written for the voxel
   // cat still moves this one instead of being rejected outright
@@ -124,8 +126,8 @@ const TAIL_WAVE_LAG = 0.6;
 // The face a clip implies while it plays and nothing is held (the voxel cat's actions carry theirs in actions.json).
 const CLIP_EXPRESSION: Record<string, string> = {
   Sleep: '闭眼休息', SideLie: '放松', Happy: '开心', Curious: '好奇', Yawn: '困困', Lick: '满足', WashFace: '满足',
-  GroomSide: '满足', ScratchEar: '满足', Knead: '陶醉', Stretch: '放松', PawPlay: '玩心', Jump: '期待', Bite: '生气',
-  BellyUp: '撒娇', Loaf: '安心',
+  GroomSide: '满足', ScratchEar: '满足', Knead: '陶醉', Stretch: '放松', PawPlay: '玩心', Jump: '期待', WandJump: '期待', Bite: '生气',
+  BellyUp: '撒娇', PetBelly: '撒娇', Loaf: '安心',
 };
 const DEFAULT_EXPRESSION = '安然';
 const EXPRESSION_HOLD_MS = 4000;
@@ -283,6 +285,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let idleSince = 0;
   let nextIdlePick = 6 + Math.random() * 6;
   const bones: THREE.Bone[] = [];
+  let pettingProbe: ReturnType<typeof createSkinnedPettingProbe> | null = null;
+  const pettingRay = new THREE.Raycaster();
+  const pettingNdc = new THREE.Vector2();
   let headBone: THREE.Bone | null = null;
   // Tail0..Tail4, and the model's own frame their lift and sway axes are given in (see TAIL_CARRIAGE)
   const tailBones: THREE.Bone[] = [];
@@ -616,6 +621,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     tailFrame = tailBones.length === 5 ? root : null;
     if (tailFrame) for (let i = 0; i < 5; i++) tailClipPose[i].copy(tailBones[i].quaternion);
 
+    pettingProbe = createSkinnedPettingProbe(root, root.getObjectByName('Chest') ?? root);
     const coat: THREE.SkinnedMesh[] = [];
     root.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -712,6 +718,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (TRAVELLING.includes(clip.name)) strides[clip.name] = stripTravel(clip);
       actions[clip.name] = mixer.clipAction(clip);
     }
+    if (actions.Jump) actions.WandJump = mixer.clipAction(stationaryJump(actions.Jump.getClip()));
+    if (actions.BellyUp) actions.PetBelly = mixer.clipAction(holdBellyPose(actions.BellyUp.getClip()));
     catRoot.add(root);
     model = root;
     catRoot.scale.setScalar(effectiveScale());
@@ -1155,6 +1163,16 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       shadowCatcher.scale.setScalar(reach * 2.5);
 
       locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0);
+      if (oneShot && /^pet-(head|back)$/.test(oneShot.id)) {
+        const remaining = Math.max(0, oneShot.endsAt - elapsed);
+        const duration = actions[oneShot.clip]?.getClip().duration || 1;
+        const weight = Math.sin(Math.PI * Math.min(1, remaining / duration));
+        if (headBone) headBone.rotation.z += 0.12 * weight;
+        if (oneShot.id === 'pet-back') {
+          const spine = bones.find(b => b.name === 'Spine');
+          if (spine) spine.rotation.x -= 0.10 * weight;
+        }
+      }
       if (headBone && cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
 
       updateToy(state, deltaSeconds);
@@ -1168,6 +1186,22 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         catRect = measureDrawnRect();
         renderer.render(scene, camera);
       }
+    },
+    toyInteraction(request) {
+      if (request.kind !== 'feather' || !toyProp || toyKind !== 'feather') return null;
+      const sphere = toyProp.contactSphere(new THREE.Sphere());
+      const paw = bones.find(b => b.name === 'FrontPaw.R');
+      if (!paw) return null;
+      const pawPoint = paw.getWorldPosition(new THREE.Vector3());
+      const target = worldToScreen(new THREE.Vector3(
+        sphere.center.x - (pawPoint.x - catRoot.position.x), 0,
+        sphere.center.z - (pawPoint.z - catRoot.position.z)));
+      return { target, touching: sphere.center.distanceTo(pawPoint) <= sphere.radius + 0.035 * effectiveScale() };
+    },
+    pettingHitTest(point, exposed) {
+      pettingNdc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
+      pettingRay.setFromCamera(pettingNdc, camera);
+      return pettingProbe?.(pettingRay, exposed) ?? null;
     },
     hitTest(point, precise = false) {
       if (!catRect) return false;
