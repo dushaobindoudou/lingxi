@@ -15,6 +15,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadGroom, createGroom, shutLidLift, type GroomAsset } from './realistic-groom.ts';
 import { createFurWind } from './realistic-wind.ts';
+import { WHISKER, stepWhiskerSpring, whiskerMood, type WhiskerSpring, type WhiskerVec } from './realistic-whiskers.ts';
 import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
@@ -486,6 +487,17 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let tailPhase = 0;
   const shellMaterials: THREE.Material[] = [];
   const ownedMaterials: THREE.Material[] = [];
+  const whiskerBends = [new THREE.Vector3(), new THREE.Vector3()];
+  let whiskerSprings: WhiskerSpring[] = [
+    { position: [0, 0, 0], velocity: [0, 0, 0] },
+    { position: [0, 0, 0], velocity: [0, 0, 0] },
+  ];
+  const previousHeadQ = new THREE.Quaternion();
+  const currentHeadQ = new THREE.Quaternion();
+  const headTurnQ = new THREE.Quaternion();
+  const inverseHeadQ = new THREE.Quaternion();
+  const localAir = new THREE.Vector3();
+  let whiskersPrimed = false;
   // GLSL `float lidShown(vec3 rest)` (see LID_TUCK), written once the eyes are found
   let lidTuckGlsl = 'float lidShown(vec3 rest) { return 1.0; }';
   let loaded = false;
@@ -1201,7 +1213,39 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         mat.normalMap = null;
         mat.needsUpdate = true;
       }
-      if (/Iris/i.test(name)) m.material = irisMaterial(mat, name.endsWith('.R') ? 'R' : 'L');
+      if (/^LX_Whisker/.test(m.name) && (m as THREE.SkinnedMesh).isSkinnedMesh) {
+        const whisker = m as THREE.SkinnedMesh;
+        const side = whisker.skeleton.bones.some((b) => b.name === 'WhiskerR') ? 1 : 0;
+        const uv = whisker.geometry.getAttribute('uv');
+        const length = new Float32Array(uv.count);
+        for (let i = 0; i < uv.count; i++) length[i] = uv.getX(i);
+        whisker.geometry.setAttribute('whiskerLength', new THREE.BufferAttribute(length, 1));
+        // The asset already narrows toward its tip; reduce its oversized 1.36 mm root without changing its curve.
+        const fiber = new THREE.MeshStandardMaterial({
+          color: 0xfff3df, roughness: 0.52, metalness: 0, side: THREE.DoubleSide,
+          transparent: true, opacity: WHISKER.opacity, depthWrite: false,
+        });
+        fiber.onBeforeCompile = (sh) => {
+          sh.uniforms.uWhiskerBend = { value: whiskerBends[side] };
+          sh.vertexShader = 'attribute float whiskerLength; uniform vec3 uWhiskerBend; varying float vWhiskerLength;\n' + sh.vertexShader
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+              vWhiskerLength = whiskerLength;
+              transformed -= normal * ((1.0 - ${WHISKER.width.toFixed(3)}) * mix(0.00068, 0.000045, whiskerLength));
+              transformed += uWhiskerBend * (whiskerLength * whiskerLength);`);
+          sh.fragmentShader = 'varying float vWhiskerLength;\n' + sh.fragmentShader
+            .replace('#include <color_fragment>', `#include <color_fragment>
+              diffuseColor.a *= (1.0 - smoothstep(${WHISKER.fadeFrom.toFixed(2)}, 1.0, vWhiskerLength));`)
+            .replace('#include <opaque_fragment>', `
+              // A weak grazing glow catches the warm rim light without turning the fiber into a white wire.
+              outgoingLight += vec3(0.16, 0.12, 0.08) * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);
+              #include <opaque_fragment>`);
+        };
+        fiber.customProgramCacheKey = () => 'realcat-whisker-v2';
+        ownedMaterials.push(fiber);
+        m.material = fiber;
+        m.receiveShadow = false;
+        m.renderOrder = 3;
+      } else if (/Iris/i.test(name)) m.material = irisMaterial(mat, name.endsWith('.R') ? 'R' : 'L');
       else if (/Cornea/i.test(name)) {
         const c = new THREE.MeshPhysicalMaterial({
           // (an 8% white film with a clearcoat was tried for the room's reflection: it greyed the pupils over)
@@ -1570,6 +1614,37 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       headBone.rotation.x += KITTEN_WALK.headNod * Math.cos(4 * Math.PI * phase - .2 * Math.PI) * current.getEffectiveWeight();
     }
     if (cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
+  }
+  function animateWhiskers(seconds: number, cursor: { x: number; y: number } | null) {
+    if (!headBone) return;
+    headBone.getWorldQuaternion(currentHeadQ);
+    const continuous = whiskersPrimed && seconds > 0 && seconds <= 0.25;
+    const yawRate = continuous
+      ? Math.max(-4, Math.min(4, 2 * headTurnQ.copy(previousHeadQ).invert().multiply(currentHeadQ).y
+        * Math.sign(headTurnQ.w) / seconds)) : 0;
+    previousHeadQ.copy(currentHeadQ);
+    whiskersPrimed = true;
+    inverseHeadQ.copy(currentHeadQ).invert();
+    localAir.set(...(lastAir?.wind ?? [0, 0, 0])).applyQuaternion(inverseHeadQ);
+    let strokeX = 0, strokeY = 0;
+    if (cursor && lastAir?.stroke.amount && catRect) {
+      headBone.getWorldPosition(bonePoint);
+      const head = worldToScreen(bonePoint);
+      const reach = STROKE_RADIUS_PX * (performanceScale ?? modelScale) * 1.5;
+      const near = Math.max(0, 1 - Math.hypot(cursor.x - head.x, cursor.y - head.y) / reach);
+      strokeX = lastAir.stroke.dx * lastAir.stroke.amount * near;
+      strokeY = -lastAir.stroke.dy * lastAir.stroke.amount * near;
+    }
+    for (let side = 0; side < 2; side++) {
+      const sign = side === 0 ? -1 : 1;
+      const target: WhiskerVec = [
+        localAir.x * WHISKER.breeze + strokeX * WHISKER.stroke,
+        localAir.y * WHISKER.breeze + strokeY * WHISKER.stroke,
+        whiskerMood(faceName) - sign * yawRate * WHISKER.yawDrag + localAir.z * WHISKER.breeze,
+      ];
+      whiskerSprings[side] = stepWhiskerSpring(whiskerSprings[side], target, seconds);
+      whiskerBends[side].fromArray(whiskerSprings[side].position);
+    }
   }
   // A staged set piece's pose over its clip (ACTION_STAGING): the look back over the shoulder, the hind leg raised. Eased
   // in once the action plays and out as it ends. Undone before the mixer, as the head's overlay.
@@ -2173,6 +2248,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       updateToy(state, deltaSeconds);
       if (contextLost) return;
       scene.updateMatrixWorld();
+      animateWhiskers(deltaSeconds, cursor);
       groom?.simulate(deltaSeconds);
       if (fitCanvas) {
         fitCanvasToFrame();
