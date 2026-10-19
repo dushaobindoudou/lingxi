@@ -221,6 +221,12 @@ const DEFAULT_EXPRESSION = '安然';
 const EXPRESSION_HOLD_MS = 4000;
 // how fast the face eases to a new expression (time constant)
 const FACE_EASE_SECONDS = 0.09;
+// The slow blink - a cat's "I trust you", and the most 治愈 thing it does. When the pointer comes to rest by its face
+// and stays (someone has stopped to look at it), the cat closes its eyes slowly, holds them shut a moment with a soft
+// smile at the lids, and opens them again. Never on a timer, and not again for a while. `dwell`: seconds the pointer
+// has to rest, within `reach` of the head (share of the cat's drawn height), moving less than `still` px; then the
+// blink's `close` / `hold` / `open` (seconds) and the `rest` before the next one can come (seconds, random in between).
+const SLOW_BLINK = { dwell: 1.6, reach: 0.7, still: 12, close: 0.6, hold: 0.45, open: 0.85, rest: [14, 28] as const };
 const COAT_GRADE = `
   { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     diffuseColor.rgb = max(mix(vec3(lumC), diffuseColor.rgb, 1.25) * vec3(1.06, 1.0, 0.90), 0.0); }`;
@@ -487,6 +493,38 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let faceName = '';
   let faceTarget: Record<string, number> = {};
   const faceNow: Record<string, number> = {};
+  let slowBlinkAt: number | null = null;
+  let slowBlinkNotBefore = 3;
+  let slowBlinkDwell: { since: number; x: number; y: number } | null = null;
+  /** Start a slow blink when someone's pointer has come to rest by the face of a settled cat (SLOW_BLINK). */
+  function watchForSlowBlink(cursor: { x: number; y: number } | null, settled: boolean) {
+    if (!cursor || !settled || slowBlinkAt != null || !headBone || !catRect) { slowBlinkDwell = null; return; }
+    headBone.getWorldPosition(bonePoint);
+    const head = worldToScreen(bonePoint);
+    if (Math.hypot(cursor.x - head.x, cursor.y - head.y) > SLOW_BLINK.reach * (catRect.y1 - catRect.y0)) { slowBlinkDwell = null; return; }
+    if (!slowBlinkDwell || Math.hypot(cursor.x - slowBlinkDwell.x, cursor.y - slowBlinkDwell.y) > SLOW_BLINK.still) {
+      slowBlinkDwell = { since: elapsed, x: cursor.x, y: cursor.y };
+      return;
+    }
+    if (elapsed - slowBlinkDwell.since >= SLOW_BLINK.dwell && elapsed >= slowBlinkNotBefore) {
+      slowBlinkAt = elapsed;
+      slowBlinkDwell = null;
+    }
+  }
+  /** How shut the slow blink has the eyes now, 0..1. */
+  function slowBlinkWeight() {
+    if (slowBlinkAt == null) return 0;
+    const { close, hold, open, rest } = SLOW_BLINK;
+    const t = elapsed - slowBlinkAt;
+    if (t >= close + hold + open) {
+      slowBlinkAt = null;
+      slowBlinkNotBefore = elapsed + rest[0] + Math.random() * (rest[1] - rest[0]);
+      return 0;
+    }
+    if (t < close) return THREE.MathUtils.smoothstep(t, 0, close);
+    if (t < close + hold) return 1;
+    return 1 - THREE.MathUtils.smoothstep(t, close + hold, close + hold + open);
+  }
   const faceControls = new Set<string>();
   let clipLids = options.clipBlinks === false ? 0 : 1;
   let clipLidsTarget = 1;
@@ -1807,7 +1845,19 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             faceNow[c] = from + ((faceTarget[c] ?? restValue(c)) - from) * k;
           }
           clipLids += (clipLidsTarget - clipLids) * k;
-          faceRig.apply(faceNow, clipLids);
+          watchForSlowBlink(cursor, !moving && (state.state === 'idle' || state.state === 'play_toy') && !staged);
+          const slow = slowBlinkWeight();
+          if (slow > 0) {
+            // over the face, not instead of it: shut as far as the blink has got, smiling at the lids, the clip's own
+            // blinks and any squint giving way to it
+            const blinking = { ...faceNow };
+            for (const side of ['L', 'R']) {
+              blinking[`Blink.${side}`] = Math.max(blinking[`Blink.${side}`] ?? 0, slow);
+              blinking[`SmileArc.${side}`] = Math.max(blinking[`SmileArc.${side}`] ?? 0, 0.55 * slow);
+              blinking[`Squint.${side}`] = (blinking[`Squint.${side}`] ?? 0) * (1 - slow);
+            }
+            faceRig.apply(blinking, clipLids * (1 - slow));
+          } else faceRig.apply(faceNow, clipLids);
         }
       }
       if (jawBone) {

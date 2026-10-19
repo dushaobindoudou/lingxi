@@ -562,7 +562,9 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         mesh.visible = share > 0;
         if (share > 0) mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * Math.min(1, share))) * (mesh.userData.groomIndicesPerStrand as number));
       };
-      for (const mesh of meshes) drawn(mesh, density);
+      // the lids' coat is always drawn whole: it is small (a lid is a centimetre across), and thinned out with the rest
+      // of the coat the rows of the undercoat under it showed through as rings round a closed eye
+      for (const mesh of meshes) drawn(mesh, /_LX_Lid/.test(mesh.name) ? Math.max(1, density) : density);
       children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, density - 1 - k); });
       uniforms.uGroomStack.value = 1 / Math.min(1, density);
     },
@@ -575,12 +577,15 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
 // striped pad under the lash line. Each lid's coat is drawn this much of the way to its own average (point by point,
 // root to tip); the shader's per-strand melanin keeps it from going flat.
 const LID_COLOUR_EVENING = 0.75;
+const LID_SHADE = 0.8;
 function evened(colors: Float32Array, points: number, share: number): Float32Array {
   const strands = colors.length / (points * 3);
   const mean = new Float64Array(points * 3);
   for (let i = 0; i < colors.length; i++) mean[i % (points * 3)] += colors[i] / strands;
   const out = new Float32Array(colors.length);
-  for (let i = 0; i < colors.length; i++) out[i] = colors[i] + (mean[i % (points * 3)] - colors[i]) * share;
+  // and a shade darker: drawn whole (setDensity), the lid's coat stacks more opaque than the thinned face coat round
+  // it, and at its own colour a closed eye read as a pale pad laid over the face
+  for (let i = 0; i < colors.length; i++) out[i] = (colors[i] + (mean[i % (points * 3)] - colors[i]) * share) * LID_SHADE;
   return out;
 }
 
