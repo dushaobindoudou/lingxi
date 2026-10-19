@@ -5208,6 +5208,19 @@ fn builtin_reaction(
     kind: &str,
     mood: &str,
 ) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
+    if let Some(found) = builtin_mood_reaction(state, kind, mood) {
+        return Some(found);
+    }
+    builtin_lifecycle_reaction(state, kind)
+}
+
+/// The built-in table's rows that answer HOW IT FELT (a known mood, with or without the kind) - None for a mood it has
+/// nothing particular for. Split out so a mood can outrank a user's mood-agnostic override (see react_to_task_event).
+fn builtin_mood_reaction(
+    state: &str,
+    kind: &str,
+    mood: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     // --- all three known: this exact thing, feeling this exact way ---------------------------
     //
     // Only fully-specified entries belong here. A wildcard mood in this block would shadow the
@@ -5263,7 +5276,14 @@ fn builtin_reaction(
         ("running", "frustrated") => return Some(("认真", Some("ear-listen"), None)),
         _ => {}
     }
+    None
+}
 
+/// The built-in table's rows for what sort of work it was, and the plain lifecycle - when the mood adds nothing.
+fn builtin_lifecycle_reaction(
+    state: &str,
+    kind: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     // --- what sort of work it was, when the mood adds nothing beyond the default ---------------
     match (state, kind) {
         ("completed", "deploy") => return Some(("得意", Some("stretch-front"), Some("上线啦！"))),
@@ -6040,9 +6060,18 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
             entry.get("say").and_then(|v| v.as_str()).map(str::to_string),
         ))
     };
-    // Most specific override wins, and a user override at any level beats the built-in table.
+    // Most specific override wins, and a user override beats the built-in table at its own level. One exception, the
+    // table's own rule: how it FELT outranks what sort of work it was. A definite mood (not the default) gets its
+    // built-in row before an override that does not mention mood ("completed:chat" in an action pack made every
+    // finished turn 收工, whether it had just got everything green or was still broken). Override "state:mood" or
+    // "state:kind:mood" to change those rows too.
+    let felt = || {
+        if event.mood == "focused" { return None; }
+        builtin_mood_reaction(&event.state, &event.kind, &event.mood).map(|(e, a, l)| (e.to_string(), a.map(str::to_string), l.map(str::to_string)))
+    };
     let resolved = lookup(&format!("{}:{}:{}", event.state, event.kind, event.mood))
         .or_else(|| lookup(&format!("{}:{}", event.state, event.mood)))
+        .or_else(felt)
         .or_else(|| lookup(&format!("{}:{}", event.state, event.kind)))
         .or_else(|| lookup(&event.state))
         .or_else(|| lookup(&event.mood))
