@@ -19,7 +19,7 @@ import { rebalanceLimbWeights } from './realistic-skin.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
-import { createLocomotion, steeringStrideScale } from './realistic-locomotion.ts';
+import { createLocomotion, KITTEN_WALK, steeringStrideScale } from './realistic-locomotion.ts';
 import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, sprintPace, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 
@@ -89,8 +89,8 @@ const LID_UNDERCOAT_LIFT = 1.5;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
 // Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
 // cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need.
-const GROOM_FULL_DENSITY_PX = 1700;
-const GROOM_MIN_DENSITY = 0.08;
+const GROOM_FULL_DENSITY_PX = 1000;
+const GROOM_MIN_DENSITY = 0.28;
 // With the original groom: an opaque undercoat out to this share of the coat's length, under the strands. Short: at
 // .62 it buried every strand groomed flat along the body - the chest, the middle of the face, the flanks seen from the
 // front - and close up the cat was a smooth painted surface with hair only round its outline. At .3 the strands lie on
@@ -180,6 +180,12 @@ const ACTION_STAGING: Record<string, { yaw: number; look?: boolean; liftHind?: b
   // the rump to the screen, nearly square on, so it pees at the viewer from under the leg raised out to the side
   'potty-pee': { yaw: Math.PI - 0.35, liftHind: true },
 };
+// The lying clips were authored and approved for the camera square in front of the cat (the review renders' "-app"
+// views): SideLie and Sleep even set the head's world orientation to face that camera. Played from the three-quarter
+// stance the cat stands in - or whatever heading it stopped at - the face pointed off past the viewer, the head looked
+// wrenched round on the lying body. So the cat turns square on first, then lies down (the same staging as the potty set
+// pieces), and the engine's sleep the same way.
+const FRONT_FACING_CLIPS = new Set(['LieDown', 'Loaf', 'SideLie', 'Sleep']);
 // the look over the shoulder: the most it turns (radians), and each bone's share of it, chest to head
 const LOOK_BACK = { most: 2.3, shares: { Chest: 0.18, Neck: 0.4, Head: 0.42 } as Record<string, number> };
 // the leg-lift (radians): out from the body, forward at the hip, the knee bent; the pelvis rolls away from it a little
@@ -779,15 +785,23 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     mesh.geometry.setAttribute('furScale', new THREE.BufferAttribute(out, 1));
   }
 
-  // The rest head turns sharply inward below the lower lip. Round only the forward centre of
-  // the jaw, and move the existing head hairs by the same amount so their roots stay on it.
+  // The chin. Under the mouth the head mesh steps back ~2 cm and runs in a straight slope to the throat, and down its
+  // middle it is a groove 1.5-2 cm behind the jaw either side: no chin in profile, a hollow under the mouth from the front
+  // (with the lips' own parts hidden while the mouth is closed, nothing covers it). Wherever the surface lies behind a
+  // rounded chin - CHIN_PROFILE down the middle, falling away to the sides - it is brought out to it; what already
+  // stands in front of it is left alone.
+  const CHIN_PROFILE: [number, number][] = [[0.388, 0.360], [0.395, 0.374], [0.400, 0.384], [0.405, 0.396], [0.410, 0.408],
+    [0.415, 0.421], [0.420, 0.433], [0.425, 0.442], [0.430, 0.448], [0.435, 0.452], [0.440, 0.455], [0.449, 0.455]];
   function chinLift(x: number, y: number, z: number) {
-    const rise = THREE.MathUtils.smoothstep(y, 0.397, 0.422);
-    const fall = 1 - THREE.MathUtils.smoothstep(y, 0.425, 0.445);
-    const side = 1 - THREE.MathUtils.smoothstep(Math.abs(x), 0.018, 0.072);
-    const front = THREE.MathUtils.smoothstep(z, 0.34, 0.41);
-    // 7 mm: at 14 the chin stood out under the mouth as a pout
-    return 0.007 * rise * fall * side * front;
+    const first = CHIN_PROFILE[0], last = CHIN_PROFILE[CHIN_PROFILE.length - 1];
+    if (y <= first[0] || y >= last[0] || z < 0.33) return 0;
+    let k = 1;
+    while (CHIN_PROFILE[k][0] < y) k++;
+    const [y0, z0] = CHIN_PROFILE[k - 1], [y1, z1] = CHIN_PROFILE[k];
+    const target = z0 + (z1 - z0) * (y - y0) / (y1 - y0) - 3.0 * x * x;
+    const fade = THREE.MathUtils.smoothstep(y, first[0], first[0] + 0.01) * (1 - THREE.MathUtils.smoothstep(y, last[0] - 0.004, last[0]));
+    const side = 1 - THREE.MathUtils.smoothstep(Math.abs(x), 0.045, 0.085);
+    return Math.max(0, target - z) * fade * side * THREE.MathUtils.smoothstep(z, 0.33, 0.37);
   }
   function roundChin(head: THREE.Mesh, asset: GroomAsset | null) {
     const pos = head.geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -1129,15 +1143,28 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       ? (ACTION_HOLD_MS[id] ?? 4000) / 1000 + settleSeconds(clip) + (clip === 'Sleep' ? settleSeconds('LieDown') + CURL_SECONDS : 0)
       : actions[clip].getClip().duration;
   }
-  function startAction(id: string, clip: string) {
+  function startAction(id: string, clip: string, seconds = actionSeconds(id, clip)) {
     // curling up starts by lying down (viaLying takes it on from there)
     if (clip === 'Sleep' && currentName !== 'Sleep' && actions.LieDown) { lyingVia = 'down'; play('LieDown', true); }
     else play(clip, !LOOPING.has(clip));
     // a held pose is held 4 s once reached (getting down to it, and curling up by way of lying down, take their own time)
-    oneShot = { id, clip, endsAt: elapsed + actionSeconds(id, clip) };
+    oneShot = { id, clip, endsAt: elapsed + seconds };
   }
-  // a set piece's staging (ACTION_STAGING): turning to its mark, then (started) playing
-  let staged: { id: string; clip: string; yaw: number; started: boolean } | null = null;
+  // a set piece's staging (ACTION_STAGING, FRONT_FACING_CLIPS): turning to its mark, then (started) playing
+  let staged: { id: string; clip: string; yaw: number; started: boolean; seconds?: number } | null = null;
+  /** Play `id` (as `clip`), turning to its mark first if it has one. */
+  function stageOrStart(id: string, clip: string, seconds?: number) {
+    const stage = ACTION_STAGING[id];
+    const yaw = stage ? (Math.sign(bodyYaw) || 1) * stage.yaw : FRONT_FACING_CLIPS.has(clip) ? 0 : null;
+    if (yaw == null || Math.abs(Math.atan2(Math.sin(yaw - bodyYaw), Math.cos(yaw - bodyYaw))) < 0.06) {
+      staged = stage ? { id, clip, yaw: bodyYaw, started: true, seconds } : null;
+      startAction(id, clip, seconds);
+      return;
+    }
+    // turn first (the render loop starts it once turned)
+    staged = { id, clip, yaw, started: false, seconds };
+    oneShot = null;
+  }
   /** Seconds a settled clip takes to get up again (0 for any other clip). */
   function riseSeconds(clip: string) {
     const settle = SETTLE_CLIPS[clip];
@@ -1494,14 +1521,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     playAction(id: string) {
       const clip = ACTION_CLIPS[id] ?? (actions[id] ? id : undefined);
       if (!clip || !actions[clip]) return false;
-      const stage = ACTION_STAGING[id];
-      if (stage) {
-        // turn first (the render loop starts it once turned)
-        staged = { id, clip, yaw: (Math.sign(bodyYaw) || 1) * stage.yaw, started: false };
-        oneShot = null;
-        return true;
-      }
-      startAction(id, clip);
+      stageOrStart(id, clip);
       return true;
     },
     playExpression(requested: string, holdMs = EXPRESSION_HOLD_MS) {
@@ -1653,6 +1673,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         // a staged set piece turns to its mark first (ACTION_STAGING); not while it plays an action (a head bump, a
         // stretch): the body would spin rigidly under it - it holds still
         if (staged && !staged.started) facingAngle = staged.yaw;
+        else if (state.state === 'sleep') facingAngle = currentName === 'Sleep' || lyingVia ? bodyYaw : 0;
         else if (oneShot) facingAngle = bodyYaw;
         else if (elapsed - settledSince > SETTLE_DELAY_SECONDS) {
           let presentation = 0;
@@ -1677,7 +1698,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (state.state === 'dragged') { bodyYaw = facingAngle; pivoting = false; }
       else {
         const toTurn = Math.atan2(Math.sin(facingAngle - bodyYaw), Math.cos(facingAngle - bodyYaw));
-        pivoting = !moving && !oneShot && state.state !== 'sleep' && Math.abs(toTurn) > (pivoting ? PIVOT_STOP : PIVOT_START);
+        const lying = currentName === 'Sleep' || lyingVia != null;
+        pivoting = !moving && !oneShot && !(state.state === 'sleep' && lying) && Math.abs(toTurn) > (pivoting ? PIVOT_STOP : PIVOT_START);
         const maxStep = (moving ? TURN_RATE : PIVOT_TURN_RATE) * deltaSeconds;
         bodyYaw += Math.abs(toTurn) <= maxStep ? toTurn : Math.sign(toTurn) * maxStep;
       }
@@ -1686,12 +1708,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (staged && moving) staged = null;
       if (staged && !staged.started && Math.abs(Math.atan2(Math.sin(staged.yaw - bodyYaw), Math.cos(staged.yaw - bodyYaw))) < 0.06) {
         staged.started = true;
-        startAction(staged.id, staged.clip);
+        startAction(staged.id, staged.clip, staged.seconds);
       }
       if (staged?.started && oneShot?.id !== staged.id) staged = null;
+      // the engine's sleep: square on before it lies down (FRONT_FACING_CLIPS), then held
+      const sleepTurn = state.state === 'sleep' && currentName !== 'Sleep' && !lyingVia && !oneShot && !staged
+        && Math.abs(Math.atan2(Math.sin(bodyYaw), Math.cos(bodyYaw))) > 0.06;
       const yawRate = deltaSeconds > 0 ? Math.atan2(Math.sin(bodyYaw - previousYaw), Math.cos(bodyYaw - previousYaw)) / deltaSeconds : 0;
       steeringTurnRate += ((moving ? yawRate : 0) - steeringTurnRate) * (1 - Math.exp(-deltaSeconds / .16));
-      walkStrideScale = steeringStrideScale(steeringTurnRate);
+      walkStrideScale = steeringStrideScale(steeringTurnRate) * KITTEN_WALK.stride;
 
       // --- which clip ---
       if (loaded) {
@@ -1727,22 +1752,22 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (oneShot && elapsed >= oneShot.endsAt && (!settle || oneShot.rising)) oneShot = null;
         if (moving) oneShot = null;
         // a settled cat picks something to do now and then (the voxel director's job on the other style)
-        if (moving || state.state !== 'idle' || oneShot) idleSince = elapsed;
+        if (moving || state.state !== 'idle' || oneShot || staged) idleSince = elapsed;
         else if (autonomous && elapsed - idleSince > nextIdlePick) {
           const picks = IDLE_PICKS.filter(([c]) => actions[c]);
           let r = Math.random() * picks.reduce((t, [, w]) => t + w, 0);
           const pick = picks.find(([, w]) => (r -= w) < 0)?.[0];
           if (pick) {
             const loop = LOOPING.has(pick);
-            play(pick, !loop);
-            oneShot = { id: pick, clip: pick, endsAt: elapsed + (loop || SETTLE_CLIPS[pick] ? 6 + Math.random() * 6 + settleSeconds(pick) : actions[pick].getClip().duration) };
+            stageOrStart(pick, pick, loop || SETTLE_CLIPS[pick] ? 6 + Math.random() * 6 + settleSeconds(pick) : actions[pick].getClip().duration);
           }
           idleSince = elapsed;
           nextIdlePick = 6 + Math.random() * 6;
         }
         let want = currentName;
         if (oneShot) want = oneShot.clip;
-        else if (state.state === 'sleep') want = 'Sleep';
+        else if (state.state === 'sleep') want = sleepTurn ? 'Walk' : 'Sleep';
+        else if (staged && !staged.started) want = pivoting ? 'Walk' : 'Idle';
         else if (moving) {
           const naturalWalk = (strides.Walk ?? 0) * effectiveScale() / (actions.Walk?.getClip().duration || 1);
           const naturalRun = (strides.Run ?? 0) * effectiveScale() / (actions.Run?.getClip().duration || 1);

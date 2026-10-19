@@ -5,6 +5,12 @@ const wrap = (n: number) => ((n % 1) + 1) % 1;
 const smooth = (n: number) => { const t = THREE.MathUtils.clamp(n, 0, 1); return t * t * (3 - 2 * t); };
 
 export const steeringStrideScale = (turnRate: number) => 1 / (1 + Math.min(1.5, Math.abs(turnRate) * 1.5));
+/**
+ * The kitten's walk over the look-dev Walk (an adult's long, unhurried stride): steps this much shorter - the renderer
+ * plays it that much faster for the same ground covered, quick little steps - and a springier bounce, this much more rise
+ * (model units, cat ~0.8 tall) between the clip's own dips (at .30 and .80 of the cycle, just after each hind paw lands).
+ */
+export const KITTEN_WALK = { stride: 0.72, bounce: 0.012, dip: 0.30 };
 
 /** Keep the authored bend plane while placing a two-bone chain in world space. */
 function placePaw(upper: THREE.Object3D, lower: THREE.Object3D, paw: THREE.Object3D, target: THREE.Vector3) {
@@ -72,13 +78,15 @@ export function createLocomotion(root: THREE.Object3D) {
       // Swing feet retain their authored world targets while the shoulder/hip moves above them.
       const targets = legs.map(leg => {
         const local = root.worldToLocal(leg.paw.getWorldPosition(new THREE.Vector3()));
-        if (moving && clip === "Walk") local.z = leg.rest.z + (local.z - leg.rest.z) * steeringStrideScale(turnRate);
+        if (moving && clip === "Walk") local.z = leg.rest.z + (local.z - leg.rest.z) * steeringStrideScale(turnRate) * KITTEN_WALK.stride;
         return root.localToWorld(local);
       });
-      // Lower the support centre into a turn so straight forelegs retain reach.
-      if (pelvis && Math.abs(bend) > 1e-5) {
+      // Lower the support centre into a turn so straight forelegs retain reach; and the kitten's bounce while it walks
+      // (the paws stay where they are: their targets are taken above, before the body moves)
+      const bounce = moving && clip === 'Walk' ? KITTEN_WALK.bounce * (0.5 - 0.5 * Math.cos(4 * Math.PI * (phase - KITTEN_WALK.dip))) : 0;
+      if (pelvis && (Math.abs(bend) > 1e-5 || bounce > 1e-6)) {
         pelvisPosition = pelvis.position.clone();
-        const drop = up.clone().multiplyScalar(-.025 * Math.min(1, Math.abs(bend) / .18) * root.getWorldScale(new THREE.Vector3()).y);
+        const drop = up.clone().multiplyScalar((bounce - .025 * Math.min(1, Math.abs(bend) / .18)) * root.getWorldScale(new THREE.Vector3()).y);
         const parent = pelvis.parent!;
         const point = pelvis.getWorldPosition(new THREE.Vector3()).add(drop);
         pelvis.position.copy(parent.worldToLocal(point));

@@ -10,7 +10,8 @@ export function locomotionRate(distance: number, seconds: number, stride: number
  * changes stride length more than cadence: outside this band the planted paws (realistic-locomotion's anchors) take up
  * the difference. Zero stays zero - a stopped cat does not keep stepping.
  */
-export const WALK_CADENCE = { min: 0.5, max: 1.8 };
+// (max 2.6: the kitten's quick short steps, realistic-locomotion KITTEN_WALK, play the clip ~1.8x at an ordinary pace)
+export const WALK_CADENCE = { min: 0.5, max: 2.6 };
 export function walkCadence(rate: number): number {
   return rate > 0 ? Math.min(WALK_CADENCE.max, Math.max(WALK_CADENCE.min, rate)) : 0;
 }

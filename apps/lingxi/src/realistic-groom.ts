@@ -30,10 +30,12 @@ const GROOM = {
   // diffuse wrap: light carries round a fur volume further than round a hard surface
   wrap: '0.45',
   // tight and bright, gathered into a band (glossFocus): a broad lobe lit a little of every hair at once and washed
-  // the coat in a grey haze - dull - instead of a few hairs catching the light in bright lines
-  r: { shift: '0.10', exp: '240.0', strength: '2.0' },
-  glossFocus: '8.0',
-  trt: { shift: '-0.18', exp: '60.0', strength: '1.5' },
+  // the coat in a grey haze - dull - instead of a few hairs catching the light in bright lines. The coat's warm sheen is
+  // TRT's, in the hair's own colour: made broader and the main one, R kept a thin bright line (a broader, stronger R
+  // only greyed the tabby over)
+  r: { shift: '0.10', exp: '300.0', strength: '2.6' },
+  glossFocus: '5.0',
+  trt: { shift: '-0.18', exp: '30.0', strength: '3.2' },
   tt: { exp: '5.0', strength: '1.6' },
   // the room the cat stands in (the other materials' RoomEnvironment at 0.5): soft light from everywhere
   ambient: '0.32',
@@ -57,13 +59,18 @@ const GROOM = {
 export const GROOM_CHILDREN = 2;
 // The coat's inertia (simulate): Hz, damping ratio, and a jump (model units) that is a teleport, not a motion
 const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
-// The coat a little longer than the Blender groom (tail and lids as groomed): at desktop size, a cat 100-200 px tall,
-// the groomed length read as short velvet with no fur at its edges; 0.8 of it (tried for a denser close-up) more so
-const COAT_LENGTH = 1.15;
-const KEEP_LENGTH = /_LX_(Tail|TailTip|Lid)/;
+// The coat a touch shorter than the Blender groom (lids as groomed, the tail its own): longer (1.15-1.25, tried to make
+// the coat read at desktop size) the strands stood out one by one, long and sparse; shorter and drawn denser (the
+// renderer's GROOM_MIN_DENSITY) it is a thick, soft coat
+const COAT_LENGTH = 0.95;
+const KEEP_LENGTH = /_LX_Lid/;
+// The tail's own coat: shorter than groomed. At its groomed length (kept when the body's grew) it was a bottle brush
+// twice the kitten's body thickness; a kitten's tail is slim, its fur short and soft.
+const TAIL_LENGTH = 0.62;
+const TAIL = /_LX_(Tail|TailTip)/;
 /** How much of its groomed length a part's strands keep (see COAT_LENGTH). */
 export function coatLength(partName: string) {
-  return KEEP_LENGTH.test(partName) ? 1 : COAT_LENGTH;
+  return KEEP_LENGTH.test(partName) ? 1 : TAIL.test(partName) ? TAIL_LENGTH : COAT_LENGTH;
 }
 // The lids' strands lie flat in rows along the lid; at their own width the rows showed as lines of lit hair with the
 // undercoat dark between them, ring after ring round a closed eye. This much wider they overlap into one coat.
