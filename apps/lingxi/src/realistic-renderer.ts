@@ -226,6 +226,8 @@ const FACE_EASE_SECONDS = 0.09;
 // smile at the lids, and opens them again. Never on a timer, and not again for a while. `dwell`: seconds the pointer
 // has to rest, within `reach` of the head (share of the cat's drawn height), moving less than `still` px; then the
 // blink's `close` / `hold` / `open` (seconds) and the `rest` before the next one can come (seconds, random in between).
+// how much deeper the breathing is drawn lying down and asleep (see breathe)
+const BREATH_GAIN = 2.6;
 const SLOW_BLINK = { dwell: 1.6, reach: 0.7, still: 12, close: 0.6, hold: 0.45, open: 0.85, rest: [14, 28] as const };
 const COAT_GRADE = `
   { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -414,6 +416,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let nextIdlePick = 6 + Math.random() * 6;
   const bones: THREE.Bone[] = [];
   let headBone: THREE.Bone | null = null;
+  // the body's coat mesh (its shape keys: Breath)
+  let coatBody: THREE.SkinnedMesh | null = null;
   // the teeth and the lips' parts (lips, mouth, tongue) show only with the jaw open (an expression's or a clip's): with it
   // closed the coat draws the mouth (MOUTH_CURVE), and the parts' edges poked through it as ragged pink slivers and a
   // fang's tip as a buck tooth
@@ -787,6 +791,31 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     for (let i = 0; i < world.length; i++) for (const p of lash) out[i] = Math.min(out[i], world[i].distanceTo(p));
     return out;
   }
+  /** The coat mesh's Breath shape key, looked up by rest position (the nearest of its vertices within 1.5 cm). */
+  function breathLookup(body: THREE.SkinnedMesh) {
+    const index = body.morphTargetDictionary?.Breath;
+    const delta = index == null ? undefined : body.geometry.morphAttributes.position?.[index];
+    if (!delta || !body.geometry.morphTargetsRelative) return undefined;
+    const pos = body.geometry.getAttribute('position');
+    const cell = 0.015, grid = new Map<string, number[]>();
+    const key = (x: number, y: number, z: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(delta.getX(i)) + Math.abs(delta.getY(i)) + Math.abs(delta.getZ(i)) < 1e-6) continue;
+      const k = key(pos.getX(i), pos.getY(i), pos.getZ(i));
+      (grid.get(k) ?? grid.set(k, []).get(k)!).push(i);
+    }
+    return (x: number, y: number, z: number) => {
+      let best = cell * cell, found = -1;
+      const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+        for (const i of grid.get(`${cx + dx},${cy + dy},${cz + dz}`) ?? []) {
+          const d = (pos.getX(i) - x) ** 2 + (pos.getY(i) - y) ** 2 + (pos.getZ(i) - z) ** 2;
+          if (d < best) { best = d; found = i; }
+        }
+      }
+      return found < 0 ? null : [delta.getX(found), delta.getY(found), delta.getZ(found)] as const;
+    };
+  }
   /** realistic-skin's leg weights on one skinned mesh, in its skeleton's bind space */
   function rebalanceLegSkin(mesh: THREE.SkinnedMesh) {
     const geometry = mesh.geometry;
@@ -813,8 +842,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (mesh.name.startsWith('LX_Body')) {
       // The opaque body undercoat used to stand ~15 mm above the 2-6 mm paw curves, hiding them like smooth mittens.
       // Its solid layers use furScale squared, so a short 0.42 scale keeps the skin covered while the paw hairs emerge.
+      // Up the lower leg too: its strands are long enough (16-34 mm) but groomed flat down the leg, inside the 15 mm of
+      // undercoat, so the shin was a smooth sleeve. Eased back to the full undercoat by 20 cm (higher, it thinned the belly).
       for (let i = 0; i < pos.count; i++) {
-        const paw = 1 - THREE.MathUtils.smoothstep(pos.getY(i), 0.055, 0.13);
+        const paw = 1 - THREE.MathUtils.smoothstep(pos.getY(i), 0.055, 0.2);
         out[i] = 1 - 0.58 * paw;
       }
     } else if (mesh.name.startsWith('LX_Head')) {
@@ -1131,9 +1162,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const base = m.name.split('.')[0].replace(/_\d+$/, '');
       if ((m as THREE.SkinnedMesh).isSkinnedMesh && FUR[base]) coat.push(m as THREE.SkinnedMesh);
     });
+    coatBody = coat.find((m) => m.morphTargetDictionary?.Breath != null) ?? null;
     if (groomAsset) {
       if (!coat.length) throw new Error('Groom needs a skinned coat mesh');
       groom = createGroom(groomAsset, coat[0], root, {
+        breath: breathLookup(coat[0]),
         // the muzzle's hairs part along the closed mouth's line (drawn in the undercoat), or they lay across it
         part: `${MOUTH_GLSL}
           float groomPart(vec3 rest) {
@@ -1494,6 +1527,29 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       turnBone(lower, side, LEG_LIFT.knee * w);
     }
     if (!active && stageWeight < 2e-3) stagePose = null;
+  }
+  // Breathing: the clips key the body's Breath shape key (a rise and fall of the flanks and back), but at 4.6 mm on a
+  // cat 0.8 tall it is under a pixel at desktop size - a sleeping cat that never breathed. Lying down and asleep it is
+  // drawn deeper (BREATH_GAIN), eased in and out, and the strands rise and fall with the skin (realistic-groom). Undone
+  // before the mixer: it writes a weight only when its value changes.
+  let breathIndex: number | undefined;
+  let breathRaw: number | null = null;
+  let breathGain = 1;
+  function unbreathe() {
+    const body = coatBody;
+    if (body?.morphTargetInfluences && breathIndex != null && breathRaw != null) body.morphTargetInfluences[breathIndex] = breathRaw;
+    breathRaw = null;
+  }
+  function breathe(dt: number) {
+    const body = coatBody;
+    if (!body?.morphTargetInfluences) return;
+    breathIndex ??= body.morphTargetDictionary?.Breath;
+    if (breathIndex == null) return;
+    const lying = currentName === 'Sleep' || currentName === 'LieDown' || currentName === 'Loaf' || currentName === 'SideLie';
+    breathGain += ((lying ? BREATH_GAIN : 1) - breathGain) * (1 - Math.exp(-Math.max(0, dt) / 0.8));
+    breathRaw = body.morphTargetInfluences[breathIndex];
+    body.morphTargetInfluences[breathIndex] = breathRaw * breathGain;
+    groom?.setBreath(body.morphTargetInfluences[breathIndex]);
   }
   function fitCanvasToFrame() {
     const drawn = measureDrawnRect();
@@ -1865,8 +1921,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         locomotion?.beforeMixer();
         faceRig?.beforeMixer();
         uncarryTail();
+        unbreathe();
         mixer!.update(deltaSeconds);
         carryTail(deltaSeconds);
+        breathe(deltaSeconds);
         if (faceRig && faceSpec) {
           const want = wantedExpression();
           if (want.name !== faceName) {

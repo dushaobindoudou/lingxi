@@ -85,6 +85,8 @@ const GROOM_VERTEX = /* glsl */ `
 #include <skinning_pars_vertex>
 attribute vec3 groomTangent;
 attribute vec3 groomPawOffset; // short paw-fibre lift, applied after the exported curve's rest position
+attribute vec3 groomBreath;    // the skin's Breath shape key under the strand's root (createGroom options.breath)
+uniform float uGroomBreath;    // that key's influence this frame
 attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
 attribute vec3 groomStrand; // length (model units), random 0..1, 1 on the lids' coat
 uniform float uGroomTime, uGroomHeight, uGroomGust;
@@ -143,7 +145,7 @@ void main() {
     random = h.z;
     vGroomChildEnd = mix(${GROOM.childShortest}, 1.0, fract(h.z * 7.31));
   }
-  transformed += groomPawOffset;
+  transformed += groomPawOffset + groomBreath * uGroomBreath;
   vec3 groomRest = transformed;
   vGroomRest = groomRest;
   #include <skinning_vertex>
@@ -324,12 +326,17 @@ export async function loadGroom(directory: string): Promise<GroomAsset | null> {
  * `options.part`: GLSL defining `float groomPart(vec3 rest)` - how much of a strand to draw at a point of the model's rest
  * pose (0 parts the coat there). Default: everywhere.
  */
-export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: THREE.Object3D = base.parent!, options: { part?: string } = {}) {
+export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: THREE.Object3D = base.parent!, options: {
+  part?: string;
+  /** The Breath shape key's offset at a rest-pose point (the skin under a strand's root), or null where it has none. */
+  breath?: (x: number, y: number, z: number) => readonly [number, number, number] | null;
+} = {}) {
   const uniforms = {
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
     uGroomWind: { value: new THREE.Vector3() }, uGroomStroke: { value: new THREE.Vector4() }, uGroomStrokeDir: { value: new THREE.Vector2(1, 0) },
     uGroomChild: { value: 0 },
     uGroomLagBones: { value: null as THREE.DataTexture | null },
+    uGroomBreath: { value: 0 },
   };
   // Its own shader, not MeshStandardMaterial's: a strand is a fibre, not a surface - its light runs along it - and the
   // standard one's per-pixel soft shadow and environment lookups, on millions of sub-pixel strand fragments, were most
@@ -352,7 +359,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
   });
-  Object.assign(material.defaultAttributeValues, { groomPawOffset: [0, 0, 0] });
+  Object.assign(material.defaultAttributeValues, { groomPawOffset: [0, 0, 0], groomBreath: [0, 0, 0] });
   // merge() cloned the values: keep the material's own uniform objects as the ones update() writes
   Object.assign(uniforms, Object.fromEntries(Object.keys(uniforms).map((k) => [k, material.uniforms[k]])));
   const boneIndex = new Map(base.skeleton.bones.map((b, i) => [(b.userData.name as string | undefined) ?? b.name, i]));
@@ -371,10 +378,22 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const pawCoat = /_LX_(Body|Legs)$/.test(part.name);
     const position = new Float32Array(count * 3), color = new Float32Array(count * 3), normal = new Float32Array(count * 3);
     const tangent = new Float32Array(count * 3), pawOffset = pawCoat ? new Float32Array(count * 3) : null;
-    const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
-    const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
     // Strands in a shuffled order, so any leading run of them (setDensity's draw range) is an even sample of the part.
     const order = shuffledOrder(part.strands);
+    // the skin's breathing under each strand's root: the whole strand rides it, as it rides the bones
+    let breath: Float32Array | null = null;
+    if (options.breath) {
+      const roots = Array.from({ length: part.strands }, (_, s) => options.breath!(source[s * part.points * 3], source[s * part.points * 3 + 1], source[s * part.points * 3 + 2]));
+      if (roots.some((d) => d && (d[0] || d[1] || d[2]))) {
+        breath = new Float32Array(count * 3);
+        for (let slot = 0; slot < part.strands; slot++) {
+          const d = roots[order[slot]];
+          if (d) for (let k = 0; k < part.points * 2; k++) breath.set(d, ((slot * part.points * 2) + k) * 3);
+        }
+      }
+    }
+    const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
+    const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
     const lidCoat = /_LX_Lid/.test(part.name) ? 1 : 0;
     const pawLength = part.name.includes('_under_') ? 0.006 : 0.012;
     const spacing = rootSpacing(source, part.strands, part.points);
@@ -434,6 +453,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       ['groomData', data, 4], ['groomStrand', strandData, 3], ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
     ] as const) geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
     if (pawOffset) geometry.setAttribute('groomPawOffset', new THREE.BufferAttribute(pawOffset, 3));
+    if (breath) geometry.setAttribute('groomBreath', new THREE.BufferAttribute(breath, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     let lid: THREE.Mesh | undefined;
     if (part.morphTarget) root.traverse((o) => {
@@ -552,6 +572,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     dispose() { lagTexture.dispose(); },
     /** the strands themselves, and (drawn only close up) their child hairs */
     meshes, children: children.flat(), material, materials: [material, ...childMaterials],
+    /** How far the skin is breathing in this frame (its Breath shape key's influence): the strands rise and fall with it. */
+    setBreath(influence: number) { uniforms.uGroomBreath.value = influence; },
     update(seconds: number, viewportHeight: number) {
       uniforms.uGroomTime.value = seconds;
       uniforms.uGroomHeight.value = viewportHeight;
