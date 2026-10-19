@@ -7003,6 +7003,8 @@ pub fn run() {
             {
                 let state = app.state::<TrayState>();
                 let handle = app.handle();
+                // Set this before apply_* writes any restored snapshot back to disk.
+                state.input_avoidance.store(saved.input_avoidance, Ordering::Relaxed);
                 state.apply_scale(handle, saved.scale);
                 state.apply_identity(handle, &saved.cat_name, &saved.cat_personality);
                 state.apply_active_agent(handle, &saved.active_agent);
@@ -7011,7 +7013,6 @@ pub fn run() {
                 state.apply_skin(handle, &saved.skin);
                 state.apply_camera(handle, &saved.camera);
                 state.apply_render_style(handle, &saved.render_style);
-                state.input_avoidance.store(saved.input_avoidance, Ordering::Relaxed);
                 if !saved.visible {
                     // Same code path as the runtime tray toggle. The companion window
                     // must still be created visible (see the compositing note above);
