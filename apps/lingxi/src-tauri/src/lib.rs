@@ -157,13 +157,8 @@ fn avoid_radius_for_preset(preset: &str) -> f64 {
     }
 }
 
-/// docs/18 §5.4's five personality sliders - same field names as
-/// `packages/contracts/src/index.d.ts`'s `PersonalityManifest.traits`, so a future JS-side
-/// consumer (the behavior engine, an AI driver reading GET /perception) can deserialize this
-/// straight into that shape without a translation layer. Every trait is 0..1; unlike
-/// avoidRadius above, nothing in the behavior engine reads these yet (see the "即将生效"
-/// hint doc/18 requires next to any trait not yet consumed) - they persist and broadcast
-/// today, honestly inert otherwise.
+/// The five 0..1 personality traits persisted here are applied by the frontend's
+/// life engine on startup and on set-personality-traits events.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct PersonalityTraits {
     independence: f64,
@@ -3709,7 +3704,20 @@ fn apply_control_command(
             rejected.push("say: empty text".to_string());
         } else {
             let duration = command.get("sayMs").and_then(|v| v.as_u64());
-            let _ = app.emit("say", serde_json::json!({ "text": trimmed.clone(), "durationMs": duration }));
+            // Identity and text must cross the webview boundary together. A separate
+            // agent-stage event can be consumed/overwritten by intervening speech.
+            let _ = app.emit("say", serde_json::json!({
+                "text": trimmed.clone(),
+                "durationMs": duration,
+                "source": {
+                    "agent": identity.id,
+                    "name": identity.name,
+                    "label": command.get("__label").and_then(|v| v.as_str()),
+                    "badge": identity.badge,
+                    "logo": identity.logo,
+                    "color": identity.color,
+                },
+            }));
             // Truncation is reported rather than silent. A caller that is told `ok` and gets its
             // own 150-character string echoed back will tell the user the cat said all of it.
             applied.push(if truncated {
@@ -4106,7 +4114,13 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
             }
             let _ = app.emit(
                 "say",
-                serde_json::json!({ "text": reminder.text.clone(), "durationMs": 6000 }),
+                serde_json::json!({
+                    "text": reminder.text.clone(), "durationMs": 6000,
+                    "source": {
+                        "agent": if reminder.from.is_empty() { "lingxi" } else { reminder.from.as_str() },
+                        "name": "提醒", "badge": "⏰", "logo": null, "color": "#F4E6C8",
+                    },
+                }),
             );
         }
         // Mark done only AFTER speaking, then persist. The old order (mark, persist, speak)
@@ -6595,10 +6609,20 @@ fn clear_toy(app: tauri::AppHandle) {
 /// a developer/agent surface, not a settings surface, and you usually want it open *beside*
 /// the management window while comparing what a control did.
 #[tauri::command]
-fn open_debug_window(app: tauri::AppHandle) {
-    open_or_focus_debug_window(&app);
+fn open_debug_window(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        open_or_focus_debug_window(&app);
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err("调试台仅在开发版本中可用".to_string())
+    }
 }
 
+#[cfg(debug_assertions)]
 fn open_or_focus_debug_window(app: &tauri::AppHandle) {
     if let Some(existing) = app.get_webview_window("debug") {
         let _ = existing.show();

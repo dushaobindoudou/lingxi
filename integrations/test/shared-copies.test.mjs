@@ -36,7 +36,8 @@ const COPIES = {
     'packages/mcp-server/bin/lingxi',
   ],
   // The npm package is published without the repository: it must carry the licence it is under.
-  'LICENSE.md': ['packages/mcp-server/LICENSE.md'],
+  'LICENSE.md': ['packages/mcp-server/LICENSE.md', 'integrations/hosts/claude/LICENSE.md',
+    'integrations/hosts/codex/plugin/LICENSE.md', 'integrations/hosts/workbuddy/plugin/LICENSE.md'],
   'integrations/skills/lingxi/SKILL.md': ['integrations/hosts/codex/plugin/skills/lingxi/SKILL.md'],
   'integrations/skills/lingxi-authoring/SKILL.md': ['integrations/hosts/codex/plugin/skills/lingxi-authoring/SKILL.md'],
   'integrations/hosts/codex/skills/lingxi-codex/SKILL.md': ['integrations/hosts/codex/plugin/skills/lingxi-codex/SKILL.md'],

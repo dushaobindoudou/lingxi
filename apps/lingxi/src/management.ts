@@ -1,12 +1,10 @@
 // Management window ("主界面"): the tray's primary entry point. Talks to the same
 // Rust-side state (TrayState in src-tauri/src/lib.rs) as the tray menu, via commands +
 // events, so changing something here updates the tray's checkmarks and vice versa.
-// docs/18-main-interface-design.md (v2) is the IA this file implements: 5 sidebar pages + a
-// global top bar. Every control is wired to something real EXCEPT where the markup itself
-// says otherwise (badges like "未实现"/"即将生效") - that ◐/⬜ honesty is deliberate, not
-// left over from a TODO.
+// Product controls stay available in release builds; diagnostic tools are development-only.
 import './management.css';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { TaskStore } from '../../../packages/contracts/src/index.mjs';
@@ -1347,6 +1345,8 @@ async function main() {
   setupHomeHero();
   setupAccordion();
 
+  const version = document.getElementById('app-version');
+  if (version) version.textContent = `灵犀 v${await getVersion()}`;
   const status = await invoke<Status>('get_status');
   setActiveSizeButton(status.scale);
   setVisibilityButtonLabel(status.visible);
@@ -1356,8 +1356,6 @@ async function main() {
   renderPlayPage();
   void refreshSkinCatalogue().then(() => renderSkinCards(status.skin));
   renderCameraOptions(status.camera);
-  const accEl = document.getElementById('status-accessibility');
-  if (accEl) accEl.textContent = status.accessibilityTrusted ? '已授权' : '未授权（不影响使用）';
 
   for (const selector of SIZE_BUTTON_GROUPS) {
     document.querySelectorAll<HTMLButtonElement>(selector).forEach((btn) => {
@@ -1374,7 +1372,10 @@ async function main() {
   });
 
 
-  document.getElementById('open-debug')?.addEventListener('click', () => void invoke('open_debug_window'));
+  if (import.meta.env.DEV) {
+    document.querySelectorAll<HTMLElement>('[data-dev-only]').forEach((element) => { element.hidden = false; });
+    document.getElementById('open-debug')?.addEventListener('click', () => void invoke('open_debug_window'));
+  }
 
   // --- 自定义资源 ---
   const assetStatus = document.getElementById('asset-status');

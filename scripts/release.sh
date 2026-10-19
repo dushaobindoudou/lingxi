@@ -194,6 +194,8 @@ $(codesign --verify --deep --strict --verbose=4 "$app" 2>&1)"
   awk -F= '/^CDHash=/{print $2}' <<<"$details"
 }
 
+( cd "$REPO" && npm run check:release ) || die "release artifact checks failed"
+
 say "Verify the signature"
 OUTER_CDHASH="$(verify_app "$APP" "the .app")"
 MOUNT="$(mktemp -d)"
