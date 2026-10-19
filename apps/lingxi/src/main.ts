@@ -760,6 +760,7 @@ async function main() {
       // the realistic cat's legs set its pace (a small one strolls, it does not skate); the voxel cat's legs follow any
       const pace = renderer.locomotionPace?.();
       engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
+      engine.setSprintPace(renderer.sprintPace?.() ?? null);
       const snapshot = engine.tick(now, cursor, pointerOnPet);
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the

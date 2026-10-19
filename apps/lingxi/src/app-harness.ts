@@ -85,6 +85,7 @@ function frame(now: number) {
     lastFrameAt = now;
     const pace = renderer.locomotionPace?.();
     engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
+    engine.setSprintPace(renderer.sprintPace?.() ?? null);
     // ?still=1: a fixed, centred, idle cat for look-dev comparisons (no wandering between screenshots)
     let snapshot = params.has('still')
       ? ({ ...engine.tick(now, null), state: 'idle', position: { x: width / 2, y: height * 0.62 }, facing: 1 } as ReturnType<typeof engine.tick>)

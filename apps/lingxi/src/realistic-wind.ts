@@ -23,8 +23,9 @@ export const FUR_WIND = {
   // a gust every ~10 s on average, ~2 s long: the sum of three slow waves only now and then crosses this
   gustThreshold: 0.45,
   // the coat's lag behind the body: bend per (cat heights per second) of speed, a spring that overshoots a little
-  drag: 0.08,
-  maxDrag: 0.3,
+  // (small: the strands' own inertia - realistic-groom's sprung skeleton - carries most of the trailing now)
+  drag: 0.04,
+  maxDrag: 0.2,
   stiffness: 34,
   damping: 5.5,
   // a stroke: pointer speed (CSS px/s) for a full push, the push at full speed, and its own (springier) return

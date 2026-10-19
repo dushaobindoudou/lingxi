@@ -20,7 +20,7 @@ import type { Renderer, RendererCapabilities } from '../../../packages/desktop-h
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 import { createLocomotion, steeringStrideScale } from './realistic-locomotion.ts';
-import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, walkCadence } from './realistic-motion.ts';
+import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, sprintPace, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 
 export interface RealisticRendererOptions {
@@ -72,7 +72,6 @@ const CROSSFADE_SECONDS = 0.28;
 // Longer on the head than the old v5 demo (.022): the look-dev kitten's round head is mostly cheek and crown fluff.
 const FUR: Record<string, { len: number; den: number }> = {
   LX_Head: { len: 0.045, den: 500 },
-  LX_LipPhiltrum: { len: 0.005, den: 650 },
   LX_Body: { len: 0.050, den: 420 },
   LX_Tail: { len: 0.060, den: 380 },
 };
@@ -87,10 +86,11 @@ const LID_SOLIDIFY_OUT = 0.0022;
 // the lids' undercoat lifted to their own strands' brightness: the ring average round the eye takes in the dark tabby
 // stripes, and a closed lid read as a dark pad over the eye
 const LID_UNDERCOAT_LIFT = 1.5;
-// Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor.
-// At the default .25 the cat is ~350 px tall and draws ~30% of them (see Groom.setDensity).
-const GROOM_FULL_DENSITY_PX = 1200;
-const GROOM_MIN_DENSITY = 0.12;
+// Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
+// Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
+// cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need.
+const GROOM_FULL_DENSITY_PX = 1700;
+const GROOM_MIN_DENSITY = 0.08;
 // With the original groom: an opaque undercoat out to this share of the coat's length, under the strands. Short: at
 // .62 it buried every strand groomed flat along the body - the chest, the middle of the face, the flanks seen from the
 // front - and close up the cat was a smooth painted surface with hair only round its outline. At .3 the strands lie on
@@ -112,7 +112,7 @@ const ACTION_CLIPS: Record<string, string> = {
   'paw-wave': 'PawPlay', 'paw-reach': 'PawPlay', 'toy-swat': 'PawPlay', 'claw-screen': 'PawPlay',
   // the potty set pieces (fx/performances): the sit with the tail raised and quivering (TAIL_ACTION_CARRIAGE) for the
   // squat; kneading's alternating forepaws for scratching at the floor
-  'potty-squat': 'Sit', 'potty-dig': 'Knead',
+  'potty-squat': 'Sit', 'potty-dig': 'Knead', 'potty-poop': 'Sit', 'potty-pee': 'Idle',
   pounce: 'Jump', 'hop-catch': 'Jump', 'play-bow': 'LieDown', 'stalk-crouch': 'LieDown',
   'curious-tilt': 'Curious', 'ear-listen': 'Curious', 'sniff-air': 'Curious', 'look-at-you': 'Curious', 'notice-you': 'Curious',
   greeting: 'Happy', affection: 'Happy', 'head-bump': 'Happy', 'purr-settle': 'Happy',
@@ -170,9 +170,26 @@ const TAIL_RUN = { lift: [37, 2, -12, -26, -22], sway: [1, 2, 3, 4, 5], period: 
 // clip's: the squat's sit wraps the tail round the paws, and a squatting cat holds it up and back, quivering. The sit
 // pitches the pelvis up ~60 degrees, so the root lifts that much just to stand level behind.
 // How long a held pose is held for these host actions (ms, once reached), where a set piece times its beats round it
-const ACTION_HOLD_MS: Record<string, number> = { 'potty-squat': 2000 };
+const ACTION_HOLD_MS: Record<string, number> = { 'potty-squat': 2000, 'potty-poop': 2600, 'potty-pee': 3200 };
+// Set pieces that stage the cat before they play: it turns on the spot to `yaw` (0 faces the viewer, PI away; the side
+// it already shows), and only then acts - a standing cat is otherwise always shown three-quarter on to the viewer, and an
+// action freezes its facing. Over the clip: `look` turns the chest, neck and head round to the viewer (over its
+// shoulder); `liftHind` raises the hind leg on the viewer's side, out and up (a dog's leg-lift).
+const ACTION_STAGING: Record<string, { yaw: number; look?: boolean; liftHind?: boolean }> = {
+  'potty-poop': { yaw: Math.PI - 0.85, look: true },
+  // the rump to the screen, nearly square on, so it pees at the viewer from under the leg raised out to the side
+  'potty-pee': { yaw: Math.PI - 0.35, liftHind: true },
+};
+// the look over the shoulder: the most it turns (radians), and each bone's share of it, chest to head
+const LOOK_BACK = { most: 2.3, shares: { Chest: 0.18, Neck: 0.4, Head: 0.42 } as Record<string, number> };
+// the leg-lift (radians): out from the body, forward at the hip, the knee bent; the pelvis rolls away from it a little
+const LEG_LIFT = { out: 1.45, forward: 0.2, knee: 0.6, pelvisRoll: 0.1 };
 const TAIL_ACTION_CARRIAGE: Record<string, { lift: number[]; sway: number[]; period: number }> = {
   'potty-squat': { lift: [105, 12, 4, -6, -10], sway: [1.5, 2, 2.5, 3, 3.5], period: 0.32 },
+  // the rump to the viewer: the tail well up off the floor behind it
+  'potty-poop': { lift: [135, 15, 0, -12, -18], sway: [1.5, 2, 2.5, 3, 3.5], period: 0.32 },
+  // standing, the pelvis level: up and over the back, quivering
+  'potty-pee': { lift: [70, 25, 5, -10, -15], sway: [1.5, 2, 3, 4, 5], period: 0.28 },
 };
 const TAIL_CARRIAGE: Record<string, { lift: number[]; sway: number[]; period: number }> = {
   Walk: TAIL_WALK, Happy: TAIL_WALK, Curious: TAIL_WALK,
@@ -201,6 +218,38 @@ const FACE_EASE_SECONDS = 0.09;
 const COAT_GRADE = `
   { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     diffuseColor.rgb = max(mix(vec3(lumC), diffuseColor.rgb, 1.25) * vec3(1.06, 1.0, 0.90), 0.0); }`;
+
+// The closed mouth, drawn into the muzzle's coat: the upper lips' lower rim (the cat's ω, measured off LX_LipUpper -
+// down from the philtrum, out and up to the corners) and the philtrum up to the nose, in the model's rest coordinates
+// (x across, mirrored; y up), so the line rides the face as the lips and corners move. The head mesh is too sparse
+// there to carry it as vertex colour - painted, it broke up into ragged dark triangles, a crack from the nose down.
+const MOUTH_CURVE: [number, number][] = [[0, 0.4465], [0.0045, 0.444], [0.0080, 0.4431], [0.0113, 0.4430], [0.0147, 0.4440],
+  [0.0182, 0.4456], [0.0216, 0.4474], [0.0250, 0.4490]];
+const PHILTRUM: [[number, number], [number, number]] = [[0, 0.4465], [0, 0.4690]];
+// half-widths (model units; never under ~a pixel), the mouth only on the face's front (rest z), and its colour
+const MOUTH = { width: 0.0008, philtrumWidth: 0.0005, frontFrom: 0.425, frontFull: 0.44, colour: [0.21, 0.13, 0.12] } as const;
+const glslVec2 = ([x, y]: [number, number]) => `vec2(${x.toFixed(5)}, ${y.toFixed(5)})`;
+const MOUTH_GLSL = `
+  float mouthSegment(vec2 p, vec2 a, vec2 b) { vec2 ab = b - a; float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0); return length(p - a - ab * t); }
+  // distance (model units, front view) to the mouth's ω (x) and to the philtrum (y)
+  vec2 mouthDistance(vec3 rest) {
+    vec2 p = vec2(abs(rest.x), rest.y);
+    float d = 1e3;
+    ${MOUTH_CURVE.slice(1).map((q, i) => `d = min(d, mouthSegment(p, ${glslVec2(MOUTH_CURVE[i])}, ${glslVec2(q)}));`).join('\n    ')}
+    return vec2(d, mouthSegment(p, ${glslVec2(PHILTRUM[0])}, ${glslVec2(PHILTRUM[1])}));
+  }`;
+/** The same distance on the CPU (for the strands rooted on the line). */
+function mouthDistance(x: number, y: number): number {
+  const seg = (px: number, py: number, [ax, ay]: [number, number], [bx, by]: [number, number]) => {
+    const abx = bx - ax, aby = by - ay;
+    const t = Math.min(1, Math.max(0, ((px - ax) * abx + (py - ay) * aby) / (abx * abx + aby * aby)));
+    return Math.hypot(px - ax - abx * t, py - ay - aby * t);
+  };
+  const px = Math.abs(x);
+  let d = seg(px, y, PHILTRUM[0], PHILTRUM[1]);
+  for (let i = 1; i < MOUTH_CURVE.length; i++) d = Math.min(d, seg(px, y, MOUTH_CURVE[i - 1], MOUTH_CURVE[i]));
+  return d;
+}
 
 export function createRealisticRenderer(options: RealisticRendererOptions): ReadyRenderer {
   const shellCount = Math.max(0, Math.min(64, options.shells ?? 32));
@@ -353,6 +402,53 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let nextIdlePick = 6 + Math.random() * 6;
   const bones: THREE.Bone[] = [];
   let headBone: THREE.Bone | null = null;
+  // the teeth and the lips' parts (lips, mouth, tongue) show only with the jaw open (an expression's or a clip's): with it
+  // closed the coat draws the mouth (MOUTH_CURVE), and the parts' edges poked through it as ragged pink slivers and a
+  // fang's tip as a buck tooth
+  let jawBone: THREE.Bone | null = null;
+  const jawRest = new THREE.Quaternion();
+  const teeth: THREE.Object3D[] = [];
+  const JAW_OPEN_SHOWS_TEETH = 0.04;
+  // The head's skin is cut along the mouth so the jaw can open: each vertex on the line is there twice, one copy on the
+  // upper lip's bones, one on the jaw's. Any face that moves the lips but not the jaw - the resting 'cat' mouth lifts its
+  // corners - pulled the cut open into a ragged slit, the crack under the nose. With the jaw closed the two copies are
+  // sewn together (both on the pair's average weights); open, they part again.
+  let mouthSeam: { index: THREE.BufferAttribute; weight: THREE.BufferAttribute; vertices: number[]; own: number[][]; sewn: number[][] } | null = null;
+  let mouthSewn = false;
+  function findMouthSeam(head: THREE.Mesh) {
+    const pos = head.geometry.getAttribute('position'), index = head.geometry.getAttribute('skinIndex') as THREE.BufferAttribute,
+      weight = head.geometry.getAttribute('skinWeight') as THREE.BufferAttribute;
+    if (!pos || !index || !weight) return;
+    const at = new Map<string, number[]>();
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      if (z < MOUTH.frontFrom - 0.02 || Math.abs(x) > 0.05 || y < 0.42 || y > 0.48) continue;
+      const k = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
+      at.set(k, [...(at.get(k) ?? []), i]);
+    }
+    const read = (i: number) => [0, 1, 2, 3].map((c) => [index.getComponent(i, c), weight.getComponent(i, c)] as [number, number]);
+    const vertices: number[] = [], own: number[][] = [], sewn: number[][] = [];
+    for (const copies of at.values()) {
+      if (copies.length < 2) continue;
+      const sum = new Map<number, number>();
+      for (const i of copies) for (const [j, w] of read(i)) if (w > 0) sum.set(j, (sum.get(j) ?? 0) + w / copies.length);
+      const top = [...sum.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+      const total = top.reduce((t, [, w]) => t + w, 0);
+      const average = [0, 1, 2, 3].flatMap((c) => top[c] ? [top[c][0], top[c][1] / total] : [0, 0]);
+      for (const i of copies) { vertices.push(i); own.push(read(i).flat()); sewn.push(average); }
+    }
+    if (vertices.length) mouthSeam = { index, weight, vertices, own, sewn };
+  }
+  function sewMouth(sewn: boolean) {
+    if (!mouthSeam || sewn === mouthSewn) return;
+    mouthSewn = sewn;
+    const { index, weight, vertices } = mouthSeam;
+    vertices.forEach((i, n) => {
+      const w = (sewn ? mouthSeam!.sewn : mouthSeam!.own)[n];
+      for (let c = 0; c < 4; c++) { index.setComponent(i, c, w[c * 2]); weight.setComponent(i, c, w[c * 2 + 1]); }
+    });
+    index.needsUpdate = weight.needsUpdate = true;
+  }
   let pelvisBone: THREE.Object3D | null = null;
   let chestBone: THREE.Object3D | null = null;
   const bodyCentre = new THREE.Vector3();
@@ -487,6 +583,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             transformed += dir * h;`);
       sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; varying vec3 vRest; varying float vScale;\n'
         + 'vec3 furHash3(vec3 p){ p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }\n'
+        + MOUTH_GLSL + '\n'
         + sh.fragmentShader
           .replace('#include <color_fragment>', `#include <color_fragment>
             vec3 q = vRest * uDen;
@@ -507,14 +604,24 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             diffuseColor.a = a;
             // the coat's occlusion: roots deep, tips light
             diffuseColor.rgb *= mix(0.60, 1.08, smoothstep(0.0, 0.85, uShell));
-            ${COAT_GRADE}`)
+            ${COAT_GRADE}
+            // the closed mouth (MOUTH_CURVE): a fine dark line, never under about a pixel wide, in a soft crease
+            {
+              float front = smoothstep(${MOUTH.frontFrom}, ${MOUTH.frontFull}, vRest.z);
+              vec2 md = mouthDistance(vRest);
+              float lipW = max(${MOUTH.width}, fwidth(md.x) * 0.75), philW = max(${MOUTH.philtrumWidth}, fwidth(md.y) * 0.6);
+              float line = max(1.0 - smoothstep(lipW * 0.5, lipW * 1.5, md.x), 0.75 * (1.0 - smoothstep(philW * 0.5, philW * 1.5, md.y)));
+              float crease = 1.0 - smoothstep(0.0, 0.0035, min(md.x, md.y));
+              diffuseColor.rgb *= 1.0 - 0.16 * crease * front;
+              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${MOUTH.colour.join(', ')}), 0.9 * line * front);
+            }`)
           .replace('#include <opaque_fragment>', underCurves ? '#include <opaque_fragment>' : `
             // light through the coat's edge where the view grazes it
             float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
             outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
             #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v3' : underCurves ? 'realcat-fur-shell-under-curves-v1' : 'realcat-fur-shell-opaque-v5');
+    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v4' : underCurves ? 'realcat-fur-shell-under-curves-v2' : 'realcat-fur-shell-opaque-v6');
     shellMaterials.push(m);
     return m;
   }
@@ -679,7 +786,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const fall = 1 - THREE.MathUtils.smoothstep(y, 0.425, 0.445);
     const side = 1 - THREE.MathUtils.smoothstep(Math.abs(x), 0.018, 0.072);
     const front = THREE.MathUtils.smoothstep(z, 0.34, 0.41);
-    return 0.014 * rise * fall * side * front;
+    // 7 mm: at 14 the chin stood out under the mouth as a pout
+    return 0.007 * rise * fall * side * front;
   }
   function roundChin(head: THREE.Mesh, asset: GroomAsset | null) {
     const pos = head.geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -712,24 +820,6 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         for (let point = 0; point < part.points; point++) data[start + point * 3 + 2] += dz;
       }
     }
-  }
-  function coatPhiltrum(head: THREE.Mesh, philtrum: THREE.Mesh) {
-    const hp = head.geometry.getAttribute('position');
-    const hc = head.geometry.getAttribute('color');
-    const pp = philtrum.geometry.getAttribute('position');
-    if (!hc || !pp) return;
-    const colors = new Float32Array(pp.count * 3);
-    for (let i = 0; i < pp.count; i++) {
-      const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
-      let best = Infinity, nearest = 0;
-      for (let j = 0; j < hp.count; j++) {
-        const dx = hp.getX(j) - x, dy = hp.getY(j) - y, dz = hp.getZ(j) - z;
-        const d = dx * dx + dy * dy + dz * dz;
-        if (d < best) { best = d; nearest = j; }
-      }
-      colors.set([hc.getX(nearest), hc.getY(nearest), hc.getZ(nearest)], i * 3);
-    }
-    philtrum.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   }
   // The head's paint round the mouth: dark vertex colours along the mouth line and down the philtrum (0.1-0.4 among the
   // muzzle's 0.87). The mesh is sparse there - a few vertices per 8 mm - so each dark vertex spread into a ragged dark
@@ -782,6 +872,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (0.2126 * colors[tip] + 0.7152 * colors[tip + 1] + 0.0722 * colors[tip + 2] < 0.5) continue;
         for (let c = 0; c < 3; c++) sref[c] += colors[tip + c];
         sn++;
+      }
+      // the strands rooted right on the mouth's line part from it, or the muzzle's white hairs lie across it
+      const radii = new Float32Array(asset.bytes, part.radii.offset, part.radii.count);
+      for (let strand = 0; strand < part.strands; strand++) {
+        const r = strand * part.points * 3;
+        if (data[r + 2] < MOUTH.frontFrom || mouthDistance(data[r], data[r + 1]) > 0.0018) continue;
+        radii.fill(0, strand * part.points, (strand + 1) * part.points);
       }
       if (!sn) continue;
       for (let c = 0; c < 3; c++) sref[c] /= sn;
@@ -871,11 +968,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     root.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && /^LX_Lid(Upper|Lower)\./.test((o.userData.name as string | undefined) ?? '')) lidMeshes.push(o as THREE.SkinnedMesh); });
     const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root, groomAsset ? LID_UNDERCOAT_LIFT : LID_COAT_LIFT);
     const head = root.getObjectByName('LX_Head') as THREE.Mesh | undefined;
-    const philtrum = root.getObjectByName('LX_LipPhiltrum') as THREE.Mesh | undefined;
     if (head) {
       cleanMouthPaint(head, groomAsset);
       roundChin(head, groomAsset);
-      if (philtrum) coatPhiltrum(head, philtrum);
+      findMouthSeam(head);
+      sewMouth(true);
     }
     // Rest pose stands: its height sets the metres -> world units factor, so either style draws the same size.
     const box = new THREE.Box3().setFromObject(root);
@@ -891,6 +988,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         bones.push(o as THREE.Bone);
         bonePos[o.name.replace(/[._]/g, '')] = o.getWorldPosition(new THREE.Vector3());
         if (o.name === 'Head') headBone = o as THREE.Bone;
+        if (o.name === 'Jaw') { jawBone = o as THREE.Bone; jawRest.copy(o.quaternion); }
         if (o.name === 'Pelvis') pelvisBone = o;
         if (o.name === 'Chest') chestBone = o;
       }
@@ -911,6 +1009,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       m.receiveShadow = true;
       const mat = m.material as THREE.MeshStandardMaterial;
       const name = mat?.name ?? '';
+      if (/^LX_(Tooth|Lip|Mouth|Tongue)/.test(m.name)) teeth.push(m);
       if (/Iris/i.test(name)) m.material = irisMaterial(mat, name.endsWith('.R') ? 'R' : 'L');
       else if (/Cornea/i.test(name)) {
         const c = new THREE.MeshPhysicalMaterial({
@@ -945,7 +1044,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     });
     if (groomAsset) {
       if (!coat.length) throw new Error('Groom needs a skinned coat mesh');
-      groom = createGroom(groomAsset, coat[0], root);
+      groom = createGroom(groomAsset, coat[0], root, {
+        // the muzzle's hairs part along the closed mouth's line (drawn in the undercoat), or they lay across it
+        part: `${MOUTH_GLSL}
+          float groomPart(vec3 rest) {
+            if (rest.z < ${MOUTH.frontFrom}) return 1.0;
+            vec2 md = mouthDistance(rest);
+            return smoothstep(${MOUTH.width}, ${MOUTH.width * 3.5}, md.x) * smoothstep(${MOUTH.philtrumWidth}, ${MOUTH.philtrumWidth * 3.5}, md.y);
+          }`,
+      });
       ownedMaterials.push(...groom.materials);
       for (const mesh of [...groom.meshes, ...groom.children]) coat[0].parent!.add(mesh);
     }
@@ -1015,6 +1122,22 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     loaded = true;
   });
 
+  /** How long a host action plays (s): a held pose's hold plus its getting down (see startAction), else the clip. */
+  function actionSeconds(id: string, clip: string) {
+    const loop = LOOPING.has(clip);
+    return loop || SETTLE_CLIPS[clip]
+      ? (ACTION_HOLD_MS[id] ?? 4000) / 1000 + settleSeconds(clip) + (clip === 'Sleep' ? settleSeconds('LieDown') + CURL_SECONDS : 0)
+      : actions[clip].getClip().duration;
+  }
+  function startAction(id: string, clip: string) {
+    // curling up starts by lying down (viaLying takes it on from there)
+    if (clip === 'Sleep' && currentName !== 'Sleep' && actions.LieDown) { lyingVia = 'down'; play('LieDown', true); }
+    else play(clip, !LOOPING.has(clip));
+    // a held pose is held 4 s once reached (getting down to it, and curling up by way of lying down, take their own time)
+    oneShot = { id, clip, endsAt: elapsed + actionSeconds(id, clip) };
+  }
+  // a set piece's staging (ACTION_STAGING): turning to its mark, then (started) playing
+  let staged: { id: string; clip: string; yaw: number; started: boolean } | null = null;
   /** Seconds a settled clip takes to get up again (0 for any other clip). */
   function riseSeconds(clip: string) {
     const settle = SETTLE_CLIPS[clip];
@@ -1224,6 +1347,52 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     }
     if (cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
   }
+  // A staged set piece's pose over its clip (ACTION_STAGING): the look back over the shoulder, the hind leg raised. Eased
+  // in once the action plays and out as it ends. Undone before the mixer, as the head's overlay.
+  const stageSaved = new Map<THREE.Object3D, THREE.Quaternion>();
+  let stageWeight = 0;
+  let stagePose: { look?: boolean; liftHind?: boolean } | null = null;
+  const stageAxis = new THREE.Vector3(), stageQ = new THREE.Quaternion(), stageParentQ = new THREE.Quaternion(), stageRootQ = new THREE.Quaternion();
+  function unoverlayStage() {
+    for (const [bone, q] of stageSaved) bone.quaternion.copy(q);
+    stageSaved.clear();
+  }
+  /** Turn `bone` by `angle` about a world axis (in place, on top of whatever it holds). */
+  function turnBone(bone: THREE.Object3D | undefined, axis: THREE.Vector3, angle: number) {
+    if (!bone?.parent || Math.abs(angle) < 1e-5) return;
+    if (!stageSaved.has(bone)) stageSaved.set(bone, bone.quaternion.clone());
+    bone.parent.getWorldQuaternion(stageParentQ).invert();
+    stageAxis.copy(axis).applyQuaternion(stageParentQ).normalize();
+    bone.quaternion.premultiply(stageQ.setFromAxisAngle(stageAxis, angle));
+  }
+  function overlayStage(dt: number) {
+    const active = staged?.started && oneShot?.id === staged.id && !oneShot.rising ? ACTION_STAGING[staged.id] : null;
+    if (active) stagePose = active;
+    stageWeight += ((active ? 1 : 0) - stageWeight) * (1 - Math.exp(-Math.max(0, dt) / 0.3));
+    if (!stagePose || !model || stageWeight < 1e-3) return;
+    const w = stageWeight * stageWeight * (3 - 2 * stageWeight);
+    catRoot.getWorldQuaternion(stageRootQ);
+    const up = new THREE.Vector3(0, 1, 0);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(stageRootQ);
+    const side = new THREE.Vector3(1, 0, 0).applyQuaternion(stageRootQ);
+    if (stagePose.look) {
+      // round to the viewer (yaw 0), chest to head
+      const turn = THREE.MathUtils.clamp(Math.atan2(Math.sin(-bodyYaw), Math.cos(-bodyYaw)), -LOOK_BACK.most, LOOK_BACK.most) * w;
+      for (const name of ['Chest', 'Neck', 'Head']) turnBone(model.getObjectByName(name), up, turn * LOOK_BACK.shares[name]);
+    }
+    if (stagePose.liftHind) {
+      // the hind leg on the viewer's side (its left, -x, when the yaw's sine is positive), out away from the body
+      const right = Math.sin(bodyYaw) < 0;
+      const out = right ? 1 : -1;
+      turnBone(model.getObjectByName('Pelvis'), forward, -out * LEG_LIFT.pelvisRoll * w);
+      const upper = model.getObjectByName(right ? 'RearUpper.R' : 'RearUpper.L') ?? model.getObjectByName(right ? 'RearUpperR' : 'RearUpperL');
+      const lower = model.getObjectByName(right ? 'RearLower.R' : 'RearLower.L') ?? model.getObjectByName(right ? 'RearLowerR' : 'RearLowerL');
+      turnBone(upper, forward, out * LEG_LIFT.out * w);
+      turnBone(upper, side, -LEG_LIFT.forward * w);
+      turnBone(lower, side, LEG_LIFT.knee * w);
+    }
+    if (!active && stageWeight < 2e-3) stagePose = null;
+  }
   function fitCanvasToFrame() {
     const drawn = measureDrawnRect();
     catRect = drawn;
@@ -1277,7 +1446,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let lastAnchor = { x: 0, y: 0 };
   let contextLost = false;
   renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); contextLost = true; });
-  renderer.domElement.addEventListener('webglcontextrestored', () => { contextLost = false; });
+  // back, but its image-bitmap textures may not be (they drew black): the host rebuilds the renderer (needsRebuild)
+  let contextRestored = false;
+  renderer.domElement.addEventListener('webglcontextrestored', () => { contextLost = false; contextRestored = true; });
 
   const capabilities: RendererCapabilities = { locomotion: true, facing: true, idleAnimation: true, preciseHitTest: true };
 
@@ -1323,13 +1494,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     playAction(id: string) {
       const clip = ACTION_CLIPS[id] ?? (actions[id] ? id : undefined);
       if (!clip || !actions[clip]) return false;
-      const loop = LOOPING.has(clip);
-      // curling up starts by lying down (viaLying takes it on from there)
-      if (clip === 'Sleep' && currentName !== 'Sleep' && actions.LieDown) { lyingVia = 'down'; play('LieDown', true); }
-      else play(clip, !loop);
-      // a held pose is held 4 s once reached (getting down to it, and curling up by way of lying down, take their own time)
-      const ms = loop || SETTLE_CLIPS[clip] ? (ACTION_HOLD_MS[id] ?? 4000) + 1000 * (settleSeconds(clip) + (clip === 'Sleep' ? settleSeconds('LieDown') + CURL_SECONDS : 0)) : actions[clip].getClip().duration * 1000;
-      oneShot = { id, clip, endsAt: elapsed + ms / 1000 };
+      const stage = ACTION_STAGING[id];
+      if (stage) {
+        // turn first (the render loop starts it once turned)
+        staged = { id, clip, yaw: (Math.sign(bodyYaw) || 1) * stage.yaw, started: false };
+        oneShot = null;
+        return true;
+      }
+      startAction(id, clip);
       return true;
     },
     playExpression(requested: string, holdMs = EXPRESSION_HOLD_MS) {
@@ -1338,7 +1510,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       heldExpression = { name, until: elapsed + Math.max(0, holdMs) / 1000 };
       return true;
     },
+    get needsRebuild() { return contextRestored; },
     get playingAction() {
+      if (staged && !staged.started) {
+        // still turning to its mark: the turn, then the whole action
+        const turn = Math.abs(Math.atan2(Math.sin(staged.yaw - bodyYaw), Math.cos(staged.yaw - bodyYaw))) / PIVOT_TURN_RATE;
+        return { id: staged.id, remainingMs: 1000 * (turn + actionSeconds(staged.id, staged.clip) + riseSeconds(staged.clip)), legFree: false };
+      }
       if (!oneShot) return null;
       const remainingMs = Math.max(0, (oneShot.endsAt - elapsed) * 1000);
       const rising = oneShot.rising ? 0 : riseSeconds(oneShot.clip) * 1000;
@@ -1400,6 +1578,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     locomotionPace() {
       return comfortableWalkPace(strides.Walk ?? 0, actions.Walk?.getClip().duration ?? 0, effectiveScale(), worldPerPixelX, worldPerPixelZ, facingAngle);
     },
+    sprintPace() {
+      return sprintPace(strides.Run ?? 0, actions.Run?.getClip().duration ?? 0, effectiveScale(), worldPerPixelX, worldPerPixelZ, facingAngle);
+    },
     render(state, deltaSeconds, cursor) {
       elapsed += deltaSeconds;
       if (deltaSeconds > 0) frameSeconds += (deltaSeconds - frameSeconds) * .08;
@@ -1460,8 +1641,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         settledSince = null;
       } else {
         settledSince ??= elapsed;
-        // not while it plays an action (a head bump, a stretch): the body would spin rigidly under it - it holds still
-        if (oneShot) facingAngle = bodyYaw;
+        // a staged set piece turns to its mark first (ACTION_STAGING); not while it plays an action (a head bump, a
+        // stretch): the body would spin rigidly under it - it holds still
+        if (staged && !staged.started) facingAngle = staged.yaw;
+        else if (oneShot) facingAngle = bodyYaw;
         else if (elapsed - settledSince > SETTLE_DELAY_SECONDS) {
           let presentation = 0;
           if (cursor) {
@@ -1490,6 +1673,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         bodyYaw += Math.abs(toTurn) <= maxStep ? toTurn : Math.sign(toTurn) * maxStep;
       }
       catRoot.rotation.y = bodyYaw;
+      // the staged set piece starts once it stands on its mark, and is over with its action
+      if (staged && moving) staged = null;
+      if (staged && !staged.started && Math.abs(Math.atan2(Math.sin(staged.yaw - bodyYaw), Math.cos(staged.yaw - bodyYaw))) < 0.06) {
+        staged.started = true;
+        startAction(staged.id, staged.clip);
+      }
+      if (staged?.started && oneShot?.id !== staged.id) staged = null;
       const yawRate = deltaSeconds > 0 ? Math.atan2(Math.sin(bodyYaw - previousYaw), Math.cos(bodyYaw - previousYaw)) / deltaSeconds : 0;
       steeringTurnRate += ((moving ? yawRate : 0) - steeringTurnRate) * (1 - Math.exp(-deltaSeconds / .16));
       walkStrideScale = steeringStrideScale(steeringTurnRate);
@@ -1561,6 +1751,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             action.timeScale = name === 'Walk' && pivoting ? PIVOT_CADENCE : name === 'Walk' && moving ? walkCadence(rate) : rate;
           }
         }
+        unoverlayStage();
         unoverlayHead();
         locomotion?.beforeMixer();
         faceRig?.beforeMixer();
@@ -1584,6 +1775,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           clipLids += (clipLidsTarget - clipLids) * k;
           faceRig.apply(faceNow, clipLids);
         }
+      }
+      if (jawBone) {
+        const open = 2 * Math.acos(Math.min(1, Math.abs(jawBone.quaternion.dot(jawRest))));
+        for (const t of teeth) t.visible = open > JAW_OPEN_SHOWS_TEETH;
+        sewMouth(open <= JAW_OPEN_SHOWS_TEETH);
       }
 
       // --- placement and facing (as renderer.ts) ---
@@ -1612,10 +1808,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
 
       locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0);
       overlayHead(deltaSeconds);
+      overlayStage(deltaSeconds);
 
       updateToy(state, deltaSeconds);
       if (contextLost) return;
       scene.updateMatrixWorld();
+      groom?.simulate(deltaSeconds);
       if (fitCanvas) {
         fitCanvasToFrame();
         renderer.render(scene, camera);
@@ -1656,6 +1854,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (m.isMesh) m.geometry.dispose();
       });
       for (const m of [...shellMaterials, ...ownedMaterials]) m.dispose();
+      groom?.dispose();
       shadow.geometry.dispose();
       shadowCatcher.geometry.dispose();
       (shadowCatcher.material as THREE.Material).dispose();

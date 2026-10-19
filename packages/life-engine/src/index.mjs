@@ -307,6 +307,7 @@ export const DEFAULT_WANDER_SPEED = DEFAULTS.speed;
 export function createLifeEngine(config = {}) {
   const cfg = { ...DEFAULTS, ...config };
   const baseSpeed = cfg.speed; // see setPace
+  let sprintSpeed = null; // see setSprintPace
   // Injectable so behaviour can be replayed exactly. Every choice the cat makes runs through
   // here, which is what lets a test pin one seed and compare two builds on the SAME decisions
   // instead of on two different random walks - the difference between measuring a change and
@@ -982,7 +983,7 @@ export function createLifeEngine(config = {}) {
       moveToward(
         target,
         deltaSeconds,
-        cfg.speed * cfg.toyChaseSpeedMultiplier * traitFactor(personality.playfulness, 0.25),
+        (sprintSpeed ?? cfg.speed * cfg.toyChaseSpeedMultiplier) * traitFactor(personality.playfulness, 0.25),
       );
       // Contact must be evaluated AFTER this frame's movement, not on the stale
       // gap from before moving. The renderer also sweeps the ball's trajectory.
@@ -1297,6 +1298,16 @@ export function createLifeEngine(config = {}) {
     if (typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0) {
       cfg.speed = baseSpeed * Math.min(4, multiplier);
     }
+  }
+
+  /**
+   * The pace a chase runs at (px/s), from the renderer's own gallop: a multiple of the walk ran the realistic cat's
+   * slow look-dev gallop in slow motion. Null (or nonsense) goes back to that multiple. Bounded by what the body can
+   * steer at, like every pace (moveToward).
+   * @param {number|null} pxPerSecond
+   */
+  function setSprintPace(pxPerSecond) {
+    sprintSpeed = typeof pxPerSecond === 'number' && Number.isFinite(pxPerSecond) && pxPerSecond > 0 ? pxPerSecond : null;
   }
 
   /**
@@ -1719,6 +1730,7 @@ export function createLifeEngine(config = {}) {
     setPersonality,
     setAvoidRadius,
     setPace,
+    setSprintPace,
     setMargins,
     setEdgePreference,
     resetPosition,

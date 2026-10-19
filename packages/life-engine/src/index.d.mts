@@ -121,6 +121,8 @@ export interface LifeEngine {
   setBounds(bounds: { width: number; height: number }): void;
   /** Scale movement to the renderer's stride at the current size. */
   setPace(multiplier: number): void;
+  /** The pace (px/s) a chase runs at, from the renderer's gallop; null returns to a multiple of the walk. */
+  setSprintPace(pxPerSecond: number | null): void;
   beginDrag(cursor: Vec2): void;
   updateDrag(cursor: Vec2): void;
   endDrag(now: number): void;

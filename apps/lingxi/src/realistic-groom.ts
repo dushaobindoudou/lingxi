@@ -40,6 +40,12 @@ const GROOM = {
   lidVeil: '0.4',
   // the lids' rows of strands lie about this far apart (model units)
   lidRowSpacing: '0.012',
+  // How far a tip trails the body's motion (see the coat's inertia in createGroom): this share of where it would be
+  // with the skeleton's sprung copy, at most this share of the strand's length.
+  lagGain: '0.9', lagMax: '0.75',
+  // the narrowest a strand is drawn (half-width, device pixels): thinner, a small cat's coat was a faint haze over the
+  // undercoat; drawn this wide (with less coverage, see coverageExp) the strands read as fur
+  minimumWidthPx: '0.5',
   // A child hair (see GROOM_CHILDREN) grows this far from its parent, in the parent's spacing (its part's average
   // distance between roots), and ends between these shares of its parent's length.
   childSpread: '0.7', childShortest: '0.62',
@@ -49,9 +55,11 @@ const GROOM = {
 // across the skin and ending at its own length. (A strand widened into a lock of three hairs had been tried: close up it
 // read as yarn, parallel threads in a ribbon.) Drawn only once the cat is big on screen (setDensity above 1).
 export const GROOM_CHILDREN = 2;
-// The coat a little shorter than the Blender groom (tail and lids as groomed): closer to a short-haired kitten's, and
-// a shorter coat stands denser over the skin
-const COAT_LENGTH = 0.8;
+// The coat's inertia (simulate): Hz, damping ratio, and a jump (model units) that is a teleport, not a motion
+const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
+// The coat a little longer than the Blender groom (tail and lids as groomed): at desktop size, a cat 100-200 px tall,
+// the groomed length read as short velvet with no fur at its edges; 0.8 of it (tried for a denser close-up) more so
+const COAT_LENGTH = 1.15;
 const KEEP_LENGTH = /_LX_(Tail|TailTip|Lid)/;
 /** How much of its groomed length a part's strands keep (see COAT_LENGTH). */
 export function coatLength(partName: string) {
@@ -74,8 +82,16 @@ uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axe
 uniform vec4 uGroomStroke;  // pointer (NDC xy), radius (view units), bend
 uniform vec2 uGroomStrokeDir;
 uniform float uGroomChild;  // 0 the strand itself, 1.. its child hairs
+uniform highp sampler2D uGroomLagBones; // the skeleton's sprung copy, laid out as three's boneTexture
+mat4 groomLagMatrix(const in float i) {
+  int size = textureSize(uGroomLagBones, 0).x;
+  int j = int(i) * 4;
+  int x = j % size, y = j / size;
+  return mat4(texelFetch(uGroomLagBones, ivec2(x, y), 0), texelFetch(uGroomLagBones, ivec2(x + 1, y), 0),
+    texelFetch(uGroomLagBones, ivec2(x + 2, y), 0), texelFetch(uGroomLagBones, ivec2(x + 3, y), 0));
+}
 varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomChildEnd;
-varying vec3 vGroomT, vGroomN, vGroomColor;
+varying vec3 vGroomT, vGroomN, vGroomColor, vGroomRest;
 #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
   struct DirectionalLightShadow { float shadowIntensity; float shadowBias; float shadowNormalBias; float shadowRadius; vec2 shadowMapSize; };
   uniform DirectionalLightShadow directionalLightShadows[ NUM_DIR_LIGHT_SHADOWS ];
@@ -117,7 +133,17 @@ void main() {
     random = h.z;
     vGroomChildEnd = mix(${GROOM.childShortest}, 1.0, fract(h.z * 7.31));
   }
+  vec3 groomRest = transformed;
+  vGroomRest = groomRest;
   #include <skinning_vertex>
+  // where this point would be on the sprung skeleton: the coat's inertia, in object space
+  vec3 lagDelta = vec3(0.0);
+  #ifdef USE_SKINNING
+    vec4 restSkin = bindMatrix * vec4(groomRest, 1.0);
+    vec4 lagged = groomLagMatrix(skinIndex.x) * restSkin * skinWeight.x + groomLagMatrix(skinIndex.y) * restSkin * skinWeight.y
+      + groomLagMatrix(skinIndex.z) * restSkin * skinWeight.z + groomLagMatrix(skinIndex.w) * restSkin * skinWeight.w;
+    lagDelta = (bindMatrixInverse * lagged).xyz - transformed;
+  #endif
   vec3 hairTangent = groomTangent;
   #ifdef USE_SKINNING
     hairTangent = (skinMatrix * vec4(hairTangent, 0.0)).xyz;
@@ -141,6 +167,11 @@ void main() {
   fromPointer /= vec2(projectionMatrix[0][0], projectionMatrix[1][1]);
   float touch = uGroomStroke.w * exp(-dot(fromPointer, fromPointer) / max(1e-6, uGroomStroke.z * uGroomStroke.z));
   bend += vec3(uGroomStrokeDir, 0.0) * touch + N * abs(touch) * 0.6;
+  // the body's own motion: the tip trails where the sprung skeleton still has it, swings past when it stops
+  vec3 lagView = mat3(modelViewMatrix) * lagDelta * ${GROOM.lagGain};
+  float lagLength = length(lagView), lagMost = ${GROOM.lagMax} * strandLength;
+  if (lagLength > lagMost) lagView *= lagMost / lagLength;
+  bend += lagView / max(strandLength, 1e-6);
   bend -= N * min(0.0, dot(bend, N));
   // slow breathing of the coat, so a still cat's fur is never frozen
   bend += vec3(sin(uGroomTime * 1.7 + groomData.w), 0.25 * sin(uGroomTime * 1.3 + groomData.w), 0.45 * cos(uGroomTime * 1.5 + groomData.w)) * 0.012;
@@ -160,7 +191,7 @@ void main() {
   across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
   float radiusView = groomData.y * viewScale;
   float pixelsPerView = projectionMatrix[1][1] * uGroomHeight * 0.5;
-  float minimumRadius = 0.30 / pixelsPerView;
+  float minimumRadius = ${GROOM.minimumWidthPx} / pixelsPerView;
   float drawnRadius = max(radiusView, minimumRadius);
   // A strand drawn wider than it is covers that much less of each pixel it touches.
   vGroomCoverage = pow(min(1.0, radiusView / drawnRadius), ${GROOM.coverageExp});
@@ -193,12 +224,13 @@ void main() {
   #endif
 }`;
 
-const GROOM_FRAGMENT = /* glsl */ `
+const groomFragment = (part: string) => /* glsl */ `
 #include <common>
 #include <lights_pars_begin>
 uniform float uGroomStack;
 varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomChildEnd;
-varying vec3 vGroomT, vGroomN, vGroomColor;
+varying vec3 vGroomT, vGroomN, vGroomColor, vGroomRest;
+${part}
 float hairLobe(vec3 T, vec3 H, float e) { float d = dot(T, H); return pow(sqrt(max(0.0, 1.0 - d * d)), e); }
 void main() {
   float alpha = vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
@@ -222,6 +254,8 @@ void main() {
   // at desktop size, where each drawn strand stands for several)
   alpha *= smoothstep(0.0, 0.3, t);
   alpha *= 1.0 - vGroomLid * ${GROOM.lidVeil};
+  // where the face wants its coat parted (createGroom's options.part): the closed mouth's line
+  alpha *= groomPart(vGroomRest);
   float occlusion = mix(${GROOM.rootShade}, 1.0, t);
 
   vec3 N = normalize(vGroomN), T = normalize(vGroomT);
@@ -275,18 +309,23 @@ export async function loadGroom(directory: string): Promise<GroomAsset | null> {
 }
 
 /** Original curved strands, camera-facing only across their width. No procedural re-grooming. */
-export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: THREE.Object3D = base.parent!) {
+/**
+ * `options.part`: GLSL defining `float groomPart(vec3 rest)` - how much of a strand to draw at a point of the model's rest
+ * pose (0 parts the coat there). Default: everywhere.
+ */
+export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: THREE.Object3D = base.parent!, options: { part?: string } = {}) {
   const uniforms = {
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
     uGroomWind: { value: new THREE.Vector3() }, uGroomStroke: { value: new THREE.Vector4() }, uGroomStrokeDir: { value: new THREE.Vector2(1, 0) },
     uGroomChild: { value: 0 },
+    uGroomLagBones: { value: null as THREE.DataTexture | null },
   };
   // Its own shader, not MeshStandardMaterial's: a strand is a fibre, not a surface - its light runs along it - and the
   // standard one's per-pixel soft shadow and environment lookups, on millions of sub-pixel strand fragments, were most
   // of the frame.
   const material = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.lights, uniforms]),
-    vertexShader: GROOM_VERTEX, fragmentShader: GROOM_FRAGMENT,
+    vertexShader: GROOM_VERTEX, fragmentShader: groomFragment(options.part ?? 'float groomPart(vec3 rest) { return 1.0; }'),
     lights: true, vertexColors: true, side: THREE.DoubleSide,
     // Blended, not alpha-to-coverage: A2C turns a given alpha into the same MSAA samples every time, so overlapping
     // strands kept landing on the same samples and a dense coat never got past its first strand's coverage - the tail's
@@ -438,8 +477,54 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       return child;
     });
   });
+  // The coat's inertia: a sprung copy of every bone's skinning matrix, chasing the real one (natural frequency, damping
+  // ratio a little under critical - it swings past and settles). The strands bend toward where this copy still has
+  // them, so a leg's swing, a turn of the head, a step's bounce or a run sweep the coat after them and let it settle.
+  // Uploaded in three's boneTexture layout. Before, the coat only knew the whole cat's speed across the screen.
+  const skeleton = base.skeleton;
+  const boneCount = skeleton.bones.length;
+  const lagSize = Math.max(4, Math.ceil(Math.sqrt(boneCount * 4) / 4) * 4);
+  const lagMatrices = new Float32Array(lagSize * lagSize * 4);
+  const lagVelocity = new Float32Array(boneCount * 16);
+  const lagTexture = new THREE.DataTexture(lagMatrices, lagSize, lagSize, THREE.RGBAFormat, THREE.FloatType);
+  lagTexture.needsUpdate = true;
+  material.uniforms.uGroomLagBones.value = lagTexture;
+  const offsetMatrix = new THREE.Matrix4();
+  const target = new Float32Array(16);
+  let lagPrimed = false;
+  function simulate(seconds: number) {
+    const w = 2 * Math.PI * GROOM_LAG.hz, zeta = GROOM_LAG.damping;
+    // a jump (the first frame, a long stall, a teleport) starts the copy where the skeleton is
+    const snap = !lagPrimed || seconds > 0.25;
+    const steps = Math.max(1, Math.ceil(seconds * 240));
+    const dt = seconds / steps;
+    for (let i = 0; i < boneCount; i++) {
+      offsetMatrix.multiplyMatrices(skeleton.bones[i].matrixWorld, skeleton.boneInverses[i]).toArray(target);
+      const o = i * 16;
+      const far = Math.hypot(target[12] - lagMatrices[o + 12], target[13] - lagMatrices[o + 13], target[14] - lagMatrices[o + 14]) > GROOM_LAG.snapDistance;
+      if (snap || far) {
+        lagMatrices.set(target, o);
+        lagVelocity.fill(0, o, o + 16);
+        continue;
+      }
+      for (let k = 0; k < 16; k++) {
+        if (k % 4 === 3) continue; // the bottom row stays 0 0 0 1
+        let x = lagMatrices[o + k], v = lagVelocity[o + k];
+        for (let n = 0; n < steps; n++) {
+          v += ((target[k] - x) * w * w - 2 * zeta * w * v) * dt;
+          x += v * dt;
+        }
+        lagMatrices[o + k] = x; lagVelocity[o + k] = v;
+      }
+    }
+    lagPrimed = true;
+    lagTexture.needsUpdate = true;
+  }
   let density = 1;
   return {
+    /** Advance the coat's inertia; after the skeleton is posed for the frame (world matrices up to date). */
+    simulate,
+    dispose() { lagTexture.dispose(); },
     /** the strands themselves, and (drawn only close up) their child hairs */
     meshes, children: children.flat(), material, materials: [material, ...childMaterials],
     update(seconds: number, viewportHeight: number) {

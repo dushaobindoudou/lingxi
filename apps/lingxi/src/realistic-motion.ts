@@ -36,6 +36,19 @@ export function comfortableWalkPace(stride: number, duration: number, scale: num
   return stride * scale / duration * pixelsPerMetre * 1.4;
 }
 
+/**
+ * The run's playback rate at a sprint. The look-dev Run is a slow gallop - one stride in 1.3 s - and a chase matched to
+ * its own speed galloped in slow motion and crept across the desktop (~270 px/s at desktop size, five seconds a screen).
+ * A kitten tearing after a toy takes about two strides a second.
+ */
+export const SPRINT_RATE = 2.4;
+/** The run at SPRINT_RATE, in logical screen pixels a second. */
+export function sprintPace(stride: number, duration: number, scale: number, pixelX: number, pixelZ: number, yaw: number): number | null {
+  if (stride <= 0 || duration <= 0 || scale <= 0) return null;
+  const pixelsPerMetre = Math.hypot(Math.sin(yaw) / Math.abs(pixelX), Math.cos(yaw) / Math.abs(pixelZ));
+  return stride * scale / duration * pixelsPerMetre * SPRINT_RATE;
+}
+
 /** Match the left forepaw's contact phase when changing between walk and gallop. */
 export function locomotionTransitionPhase(from: string, to: string, phase: number): number {
   const offset: Record<string, number> = { Walk: 0, Run: .47 };

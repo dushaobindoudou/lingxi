@@ -184,6 +184,25 @@ test('setPace scales how far the cat wanders per second, and ignores nonsense', 
   for (const bad of [0, -1, NaN, Infinity]) assert.ok(Math.abs(walked(bad) - full) < 1e-6, `setPace(${bad}) should be ignored`);
 });
 
+test('setSprintPace sets how fast a toy chase runs, and null goes back to a multiple of the walk', () => {
+  const chased = (sprint) => {
+    const engine = createLifeEngine({ bounds: { width: 4000, height: 2000 }, position: { x: 400, y: 1000 }, random: seeded(3) });
+    engine.setPace(0.5);
+    if (sprint !== undefined) engine.setSprintPace(sprint);
+    engine.tick(0, null);
+    engine.setToy('yarn', { x: 3600, y: 1000 });
+    const from = engine.tick(16, null).position;
+    let last = from;
+    for (let t = 32; t <= 1600; t += 16) last = engine.tick(t, null).position;
+    return distance(from, last);
+  };
+  const walkMultiple = chased();
+  const sprint = chased(600);
+  assert.ok(sprint > walkMultiple * 1.5, `the renderer's sprint runs further (${sprint.toFixed(0)} vs ${walkMultiple.toFixed(0)} px)`);
+  assert.ok(Math.abs(chased(null) - walkMultiple) < 1e-6, 'null is the walk multiple again');
+  assert.ok(Math.abs(chased(NaN) - walkMultiple) < 1e-6, 'nonsense is ignored');
+});
+
 test('"auto" mode: idle wandering targets a point ON a work-area edge, not a nearby hop', () => {
   const engine = createLifeEngine({
     bounds: { width: 3000, height: 2000 },

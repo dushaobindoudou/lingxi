@@ -6,13 +6,14 @@ import { createToyProp } from '../src/rig/toys.ts';
 import { pickToyReaction } from '../src/anim/interactions.ts';
 import { createLifeEngine } from '../../../packages/life-engine/src/index.mjs';
 
-for (const id of ['pee-at-you', 'poop-at-you']) {
+const POTTY = { 'pee-at-you': { action: 'potty-pee', mark: 'peeStream' }, 'poop-at-you': { action: 'potty-poop', mark: 'pottyMark' } };
+for (const [id, { action, mark }] of Object.entries(POTTY)) {
   test(`${id} has a complete 8-12 second timeline and a cancellation cleanup`, t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const events = [];
-    const fx = Object.fromEntries(['clear','pottyMark','pottyAccent','speedLines','shake','vignette','hearts','impactFrame','clawSlash','tilt'].map(key => [key, () => events.push(key)]));
+    const fx = Object.fromEntries(['clear','pottyMark','pottyAccent','peeStream','speedLines','shake','vignette','hearts','impactFrame','clawSlash','tilt'].map(key => [key, () => events.push(key)]));
     const context = {
-      engine: { position: {x:500,y:600}, suggestMoveTo: () => events.push('move'), turnTo: () => true, clearIntent: () => events.push('clearIntent') },
+      engine: { position: {x:500,y:600}, suggestMoveTo: () => events.push('move'), turnTo: () => true, clearIntent: () => events.push('clearIntent'), hold: () => events.push('hold') },
       renderer: { setCameraPreset: () => {}, setPerformanceScale: () => events.push('scale'), playAction: clip => { events.push(clip); return true; }, playExpression: () => true },
       fx, viewport: () => ({width:1000,height:800}), petPosition: () => ({x:500,y:600}), restoreCamera: () => events.push('camera'), now: () => 0,
     };
@@ -21,7 +22,7 @@ for (const id of ['pee-at-you', 'poop-at-you']) {
     const runner = createPerformanceRunner(context);
     assert.equal(runner.play(id), true);
     t.mock.timers.tick(6500);
-    assert.ok(events.includes('potty-dig') && events.includes('potty-squat') && events.includes('pottyMark'));
+    assert.ok(events.includes(action) && events.includes(mark) && events.includes('hold'), events.join(' '));
     runner.stop();
     assert.ok(events.includes('clear') && events.includes('camera') && events.includes('scale'));
     const count = events.length;
@@ -29,6 +30,23 @@ for (const id of ['pee-at-you', 'poop-at-you']) {
     assert.equal(events.length, count, 'stopped scene must not emit later beats');
   });
 }
+
+test('a renderer without the staged potty actions (the voxel cat) squats instead', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const played = [];
+  const noop = () => {};
+  const context = {
+    engine: { position: {x:500,y:600}, suggestMoveTo: noop, turnTo: () => true, clearIntent: noop },
+    renderer: { playAction: clip => { if (clip === 'potty-pee' || clip === 'potty-poop') return false; played.push(clip); return true; }, playExpression: () => true },
+    fx: Object.fromEntries(['clear','pottyMark','pottyAccent','peeStream'].map(key => [key, noop])),
+    viewport: () => ({width:1000,height:800}), petPosition: () => ({x:500,y:600}), restoreCamera: noop, now: () => 0,
+  };
+  const runner = createPerformanceRunner(context);
+  runner.play('poop-at-you');
+  t.mock.timers.tick(2000);
+  assert.ok(played.includes('potty-squat'), played.join(' '));
+  runner.stop();
+});
 
 test('potty clips return every channel to zero and stay manual-only', () => {
   for (const id of ['potty-dig','potty-squat']) {
