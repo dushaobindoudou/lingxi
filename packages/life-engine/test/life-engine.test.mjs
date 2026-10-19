@@ -1013,6 +1013,66 @@ test('a slow cat brakes in about a second, not for half a minute', () => {
   assert.ok(crawling < 0.8, `crawled below 40% of its pace for ${crawling.toFixed(1)} s`);
 });
 
+test('realistic autonomous wander keeps whole walking steps until it stops, while voxel arrival still eases', () => {
+  const trip = (natural) => {
+    const engine = createLifeEngine({
+      bounds: { width: 450, height: 350 }, position: { x: 225, y: 175 },
+      speed: 9, energy: 1, random: seeded(21), idleDurationMsRange: [0, 0],
+      brakeSeconds: 2, turnRate: 100, maxTurnRate: 100, minTurnRadius: 1,
+    });
+    engine.setNaturalWander(natural);
+    let snap = engine.tick(0, null);
+    assert.equal(snap.state, 'wander');
+    const speeds = [];
+    let last = snap.position;
+    for (let frame = 1; frame <= 60 * 60; frame += 1) {
+      const destination = snap.target;
+      const remaining = distance(last, destination);
+      snap = engine.tick(frame * 1000 / 60, null);
+      const speed = distance(last, snap.position) * 60;
+      if (remaining > 7 && remaining < 14 && snap.state === 'wander') speeds.push(speed);
+      if (natural) assert.ok(speed < 10, `arrival should not snap the body (${speed.toFixed(1)} px/s)`);
+      last = snap.position;
+      if (snap.state === 'idle') {
+        if (natural) assert.ok(distance(snap.position, destination) < 6, 'stop inside the arrival radius');
+        return speeds;
+      }
+    }
+    assert.fail('wander never reached its destination');
+  };
+  const natural = trip(true);
+  const voxel = trip(false);
+  assert.ok(natural.length > 4 && voxel.length > 4);
+  const average = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  assert.ok(average(natural) > average(voxel) * 1.35,
+    `natural ${average(natural).toFixed(2)} px/s, voxel ${average(voxel).toFixed(2)} px/s`);
+});
+
+test('natural wander alternates a few seconds of walking with a short observation pause', () => {
+  const engine = createLifeEngine({
+    bounds: { width: 900, height: 560 }, position: { x: 450, y: 280 },
+    speed: 12, energy: 1, random: seeded(9), idleDurationMsRange: [0, 0],
+  });
+  engine.setNaturalWander(true);
+  let snap = engine.tick(0, null);
+  let previous = snap.position;
+  let sawWalking = false;
+  let pauseFrames = 0;
+  let resumed = false;
+  for (let frame = 1; frame <= 60 * 20; frame += 1) {
+    snap = engine.tick(frame * 1000 / 60, null);
+    const moved = distance(previous, snap.position) > 1e-6;
+    previous = snap.position;
+    if (snap.state !== 'wander') break;
+    if (moved) {
+      if (pauseFrames > 0) { resumed = true; break; }
+      sawWalking = true;
+    } else if (sawWalking) pauseFrames += 1;
+  }
+  assert.ok(sawWalking && resumed, 'the cat should resume the same trip after looking around');
+  assert.ok(pauseFrames >= 40 && pauseFrames <= 75, `pause lasted ${(pauseFrames / 60).toFixed(2)} s`);
+});
+
 // An intent ends three ways and all three must hand the body back. Only expiry used to.
 test('the cat resumes living after an intent ARRIVES, not just after it expires', () => {
   const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(11) });

@@ -304,10 +304,17 @@ function randomBetween(min, max, random = Math.random) {
 /** The tuned wandering pace (px/s) that setPace scales. */
 export const DEFAULT_WANDER_SPEED = DEFAULTS.speed;
 
+// A small cat covers only a few screen pixels per step. Short walk/observe bouts make a
+// slow *average* wander without slowing the authored walk into a ground-scraping shuffle.
+const NATURAL_WANDER_RHYTHM = Object.freeze({ walkMs: [3500, 5500], pauseMs: [700, 1200] });
+
 export function createLifeEngine(config = {}) {
   const cfg = { ...DEFAULTS, ...config };
   const baseSpeed = cfg.speed; // see setPace
   let sprintSpeed = null; // see setSprintPace
+  let naturalWander = false; // the realistic renderer opts in; voxel keeps its original arrival easing
+  let wanderWalkUntil = null;
+  let wanderPauseUntil = null;
   // Injectable so behaviour can be replayed exactly. Every choice the cat makes runs through
   // here, which is what lets a test pin one seed and compare two builds on the SAME decisions
   // instead of on two different random walks - the difference between measuring a change and
@@ -1090,12 +1097,14 @@ export function createLifeEngine(config = {}) {
    * to get somewhere behind it, the cat has to swing around. The renderer reads the heading
    * directly instead of differentiating position, which removes the noise path entirely.
    */
-  function moveToward(dest, deltaSeconds, requestedSpeed = cfg.speed, avoid = null) {
+  function moveToward(dest, deltaSeconds, requestedSpeed = cfg.speed, avoid = null, taperArrival = true) {
     // Bounded by what the body can actually steer at - see maxTurnRadius.
     const speed = Math.min(requestedSpeed, cfg.maxTurnRate * cfg.maxTurnRadius);
     const d = distance(position, dest);
     if (d <= cfg.arriveThreshold) {
-      position = { ...dest };
+      // A travelling walk can stop within the arrival radius; snapping the last few pixels
+      // after its final planted step would make the whole body slide.
+      if (taperArrival) position = { ...dest };
       return true; // arrived
     }
 
@@ -1104,7 +1113,10 @@ export function createLifeEngine(config = {}) {
     const error = shortestAngle(bearing - heading);
     // Arrival taper first, because the speed it produces is what the turn rate is derived from.
     const brakeDistance = Math.min(cfg.slowingRadius, speed * cfg.brakeSeconds);
-    const arrival = Math.max(cfg.minArrivalSpeedFactor, Math.min(1, d / Math.max(1, brakeDistance)));
+    // The small realistic cat already rests between wander trips. Let it finish each trip at
+    // its walking pace instead of spending the final second in tiny, stride-compressed steps.
+    // Directed travel and toys still use the original braking curve.
+    const arrival = taperArrival ? Math.max(cfg.minArrivalSpeedFactor, Math.min(1, d / Math.max(1, brakeDistance))) : 1;
     const alignmentNow = Math.max(0, Math.cos(error));
     const paceFactor = (cfg.minTurnSpeedFactor + (1 - cfg.minTurnSpeedFactor) * alignmentNow) * arrival;
     const turnRate = Math.min(
@@ -1297,6 +1309,15 @@ export function createLifeEngine(config = {}) {
   function setPace(multiplier) {
     if (typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0) {
       cfg.speed = baseSpeed * Math.min(4, multiplier);
+    }
+  }
+
+  /** Use full walking steps through autonomous arrival; the existing idle window supplies the pause. */
+  function setNaturalWander(enabled) {
+    naturalWander = enabled === true;
+    if (!naturalWander) {
+      wanderWalkUntil = null;
+      wanderPauseUntil = null;
     }
   }
 
@@ -1610,18 +1631,38 @@ export function createLifeEngine(config = {}) {
         state = 'wander';
         target = pickEdgeRestTarget(cursor);
         settledSince = null;
+        wanderWalkUntil = null;
+        wanderPauseUntil = null;
       }
     } else if (state === 'wander') {
       if (!target) target = pickEdgeRestTarget(cursor);
+      if (naturalWander && (!cursor || distance(position, cursor) > cfg.cursorKeepOut)) {
+        if (wanderPauseUntil != null) {
+          if (now < wanderPauseUntil) return snapshot();
+          wanderPauseUntil = null;
+          wanderWalkUntil = null;
+        }
+        wanderWalkUntil ??= now + rand(...NATURAL_WANDER_RHYTHM.walkMs);
+        if (now >= wanderWalkUntil && distance(position, target) > walkSpeed() * 2) {
+          wanderPauseUntil = now + rand(...NATURAL_WANDER_RHYTHM.pauseMs);
+          return snapshot();
+        }
+      } else {
+        // Courtesy takes priority over curiosity: never pause next to the user's pointer.
+        wanderWalkUntil = null;
+        wanderPauseUntil = null;
+      }
       // The cursor is passed as an obstacle here and nowhere else: this is the one state where
       // the cat is going somewhere purely because it felt like it, so it is the one state that
       // can afford to take the long way round. Chasing a toy or obeying an explicit intent must
       // still be able to go where it was told - including right at the pointer.
-      const arrived = moveToward(target, deltaSeconds, walkSpeed(), cursor);
+      const arrived = moveToward(target, deltaSeconds, walkSpeed(), cursor, !naturalWander);
       if (arrived) {
         state = 'idle';
         idleUntil = now + idleWindow();
         target = null;
+        wanderWalkUntil = null;
+        wanderPauseUntil = null;
       }
     }
 
@@ -1730,6 +1771,7 @@ export function createLifeEngine(config = {}) {
     setPersonality,
     setAvoidRadius,
     setPace,
+    setNaturalWander,
     setSprintPace,
     setMargins,
     setEdgePreference,
