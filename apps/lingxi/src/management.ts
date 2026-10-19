@@ -97,6 +97,7 @@ interface Status {
   skin: string;
   camera: string;
   renderStyle?: string;
+  autoEffects?: { enabled: boolean };
 }
 
 /** Mirrors src-tauri's `TaskEvent` struct / packages/contracts' `TaskEvent` interface. */
@@ -1399,6 +1400,28 @@ async function main() {
       });
     });
   }
+
+  const autoEffectsToggle = document.getElementById('auto-effects-enabled') as HTMLInputElement;
+  const autoEffectsStatus = document.getElementById('auto-effects-status') as HTMLElement;
+  const syncAutoEffects = (enabled: boolean) => {
+    autoEffectsToggle.checked = enabled;
+    autoEffectsStatus.textContent = enabled
+      ? '已开启：由 Agent 根据任务内容选择合适时机，偶尔给你小惊喜。'
+      : '已关闭：不会自动播放特效；手动特效仍可使用。';
+  };
+  syncAutoEffects(status.autoEffects?.enabled === true);
+  autoEffectsToggle.addEventListener('change', async () => {
+    autoEffectsToggle.disabled = true;
+    try {
+      await invoke('set_auto_effects', { enabled: autoEffectsToggle.checked });
+      syncAutoEffects(autoEffectsToggle.checked);
+    } catch (error) {
+      const current = await invoke<Status>('get_status');
+      syncAutoEffects(current.autoEffects?.enabled === true);
+      autoEffectsStatus.textContent = `设置未保存：${String(error)}`;
+    } finally { autoEffectsToggle.disabled = false; }
+  });
+  void listen<boolean>('auto-effects-enabled', event => syncAutoEffects(event.payload));
 
   const inputAvoidanceToggle = document.getElementById('input-avoidance-enabled') as HTMLInputElement;
   const inputAvoidancePermission = document.getElementById('input-avoidance-permission') as HTMLButtonElement;

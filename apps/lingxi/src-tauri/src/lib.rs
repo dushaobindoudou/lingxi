@@ -32,6 +32,7 @@ use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 mod tray_badge;
 mod focused_input;
+mod auto_effects;
 
 /// Read-only trust check, never prompting. Mouse tracking needs no permission;
 /// the optional focused-input avoidance does. Its dedicated UI button is the only
@@ -199,7 +200,6 @@ const TRAY_TOYS: [(&str, &str); 4] = [
     ("laser", "激光笔"),
     ("petting", "撸猫"),
 ];
-const TRAY_EFFECTS: [(&str, &str); 3] = [("angry-claw", "愤怒抓屏"), ("kiss-rush", "飞奔亲亲"), ("zoomies", "半夜暴走")];
 
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
 /// stand-in for avoidRadius (and, later, wander speed/rate) until per-trait tuning exists.
@@ -282,6 +282,8 @@ struct PersistedSettings {
     render_style: String,
     #[serde(default = "default_input_avoidance")]
     input_avoidance: bool,
+    #[serde(default)]
+    auto_effects: bool,
 }
 
 fn default_cat_name() -> String {
@@ -326,6 +328,7 @@ impl PersistedSettings {
             camera: default_camera(),
             render_style: default_render_style(),
             input_avoidance: true,
+            auto_effects: false,
         }
     }
 }
@@ -374,6 +377,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
         camera,
         render_style,
         input_avoidance: settings.input_avoidance,
+        auto_effects: settings.auto_effects,
     }
 }
 
@@ -411,6 +415,7 @@ struct TrayState {
     camera: Mutex<String>,
     render_style: Mutex<String>,
     input_avoidance: AtomicBool,
+    auto_effects: auto_effects::AutoEffects,
     /// Where PersistedSettings is written; None only if the OS config dir is
     /// unavailable, in which case settings simply don't persist (app still works).
     settings_path: Option<PathBuf>,
@@ -577,6 +582,7 @@ impl TrayState {
             camera: self.camera.lock().unwrap().clone(),
             render_style: self.render_style.lock().unwrap().clone(),
             input_avoidance: self.input_avoidance.load(Ordering::Relaxed),
+            auto_effects: self.auto_effects.enabled(),
         };
         let Ok(body) = serde_json::to_string_pretty(&settings) else { return };
         if let Some(parent) = path.parent() {
@@ -701,6 +707,7 @@ fn get_status(state: State<TrayState>, power: State<PowerState>) -> serde_json::
         "knownCameras": KNOWN_CAMERAS,
         "renderStyle": *state.render_style.lock().unwrap(),
         "inputAvoidance": state.input_avoidance.load(Ordering::Relaxed),
+        "autoEffects": state.auto_effects.status(std::time::Instant::now()),
         "knownRenderStyles": KNOWN_RENDER_STYLES,
     })
 }
@@ -801,8 +808,22 @@ fn report_capabilities(state: State<CapabilitiesState>, capabilities: serde_json
 }
 
 #[tauri::command]
-fn get_capabilities(state: State<CapabilitiesState>) -> serde_json::Value {
-    state.latest.lock().unwrap().clone()
+fn get_capabilities(state: State<CapabilitiesState>, tray: State<TrayState>) -> serde_json::Value {
+    capabilities_snapshot(&state, &tray)
+}
+
+fn capabilities_snapshot(state: &CapabilitiesState, tray: &TrayState) -> serde_json::Value {
+    let mut value = state.latest.lock().unwrap().clone();
+    if !value.is_object() { value = serde_json::json!({}); }
+    value["autoEffects"] = serde_json::to_value(tray.auto_effects.status(std::time::Instant::now())).unwrap();
+    value
+}
+
+#[tauri::command]
+fn set_auto_effects(app: tauri::AppHandle, state: State<TrayState>, enabled: bool) {
+    state.auto_effects.set_enabled(enabled);
+    state.persist();
+    let _ = app.emit("auto-effects-enabled", enabled);
 }
 
 /// 调试台: play one action clip right now. Same path an agent's `POST /action` takes.
@@ -2695,8 +2716,8 @@ const MAX_HOLD_MS: u64 = 10 * 60 * 1000;
 /// the whole point: the old code silently skipped unrecognised keys and then reported
 /// "empty command", so a caller who wrote `expresssion` was told they had sent nothing at all
 /// and would retry the same misspelling forever.
-const CONTROL_FIELDS: [&str; 20] = [
-    "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform",
+const CONTROL_FIELDS: [&str; 21] = [
+    "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform", "performAutomatic",
     "toy", "say", "sayMs", "resetPosition", "reloadAssets",
     // Bring the main window forward at a page - see MANAGEMENT_PAGES.
     "openManagement",
@@ -3543,6 +3564,15 @@ fn apply_control_command(
             }
         }
     }
+    if command_owned.get("perform").and_then(|v| v.as_str()).is_some_and(|id| KNOWN_PERFORMANCES.contains(&id))
+        && command_owned.get("performAutomatic").and_then(|v| v.as_bool()) != Some(false)
+    {
+        if let Err(reason) = state.auto_effects.may_start(std::time::Instant::now()) {
+            if let Some(object) = command_owned.as_object_mut() { object.remove("perform"); }
+            rejected.push(format!("perform: {reason}"));
+            detail.insert("dropRatherThanRetry".into(), serde_json::json!(true));
+        }
+    }
     let command = &command_owned;
 
     let priority = command
@@ -3697,7 +3727,7 @@ fn apply_control_command(
                 "camera" | "skin" | "action" | "expression" | "perform" | "toy" | "say" | "mode"
                 | "agent" | "priority" | "openManagement" => value.is_string(),
                 "scale" => value.is_number(),
-                "visible" | "resetPosition" | "reloadAssets" => value.is_boolean(),
+                "visible" | "resetPosition" | "reloadAssets" | "performAutomatic" => value.is_boolean(),
                 "holdMs" | "sayMs" | "expiresInMs" => value.is_number(),
                 _ => true,
             };
@@ -3814,8 +3844,17 @@ fn apply_control_command(
     }
     if let Some(id) = command.get("perform").and_then(|v| v.as_str()) {
         if KNOWN_PERFORMANCES.contains(&id) {
-            let _ = app.emit("perform", serde_json::json!({ "id": id }));
-            applied.push(format!("perform={id}"));
+            let automatic = command.get("performAutomatic").and_then(|v| v.as_bool()).unwrap_or(true);
+            match state.auto_effects.try_start(automatic, std::time::Instant::now()) {
+                Ok(()) => {
+                    let _ = app.emit("perform", serde_json::json!({ "id": id, "automatic": automatic }));
+                    applied.push(format!("perform={id}"));
+                }
+                Err(reason) => {
+                    rejected.push(format!("perform: {reason}"));
+                    detail.insert("dropRatherThanRetry".into(), serde_json::json!(true));
+                }
+            }
         } else {
             rejected.push(format!("perform: unknown performance \"{id}\" (see GET /capabilities)"));
         }
@@ -3963,7 +4002,7 @@ fn looks_like_typo(field: &str, key: &str) -> bool {
 fn expected_type_name(field: &str) -> &'static str {
     match field {
         "scale" | "holdMs" | "sayMs" | "expiresInMs" => "a number",
-        "visible" | "resetPosition" | "reloadAssets" => "a boolean",
+        "visible" | "resetPosition" | "reloadAssets" | "performAutomatic" => "a boolean",
         _ => "a string",
     }
 }
@@ -4388,7 +4427,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 // the build it was written against.
                 (tiny_http::Method::Get, "/capabilities") => {
                     let state = app.state::<CapabilitiesState>();
-                    let body = state.latest.lock().unwrap().to_string();
+                    let body = capabilities_snapshot(&state, &app.state::<TrayState>()).to_string();
                     json_response(200, body)
                 }
                 // The whole integration contract, machine-readable, from the running build.
@@ -4655,6 +4694,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                         "catName": *state.cat_name.lock().unwrap(),
                         "activeAgent": *state.active_agent.lock().unwrap(),
                         "behaviorPreset": preset,
+                        "autoEffects": state.auto_effects.status(std::time::Instant::now()),
                     });
                     json_response(200, body.to_string())
                 }
@@ -6445,8 +6485,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     let status_summary = MenuItem::with_id(app, "status-summary", &initial_status, false, None::<&str>)?;
     // Clickable: "有 2 个任务需要留意" is only useful if it takes you to them.
     let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有未读提醒", true, None::<&str>)?;
-    // Every toy and every effect, by name - the tray used to offer one fixed toy ("逗一逗") and
-    // no effect at all, so switching either meant opening the main window.
+    // Toys remain in the tray; performances live on the Play page.
     let toy_items = TRAY_TOYS
         .iter()
         .map(|(kind, name)| MenuItem::with_id(app, format!("toy:{kind}"), *name, true, None::<&str>))
@@ -6458,13 +6497,6 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     toy_entries.push(&toy_separator);
     toy_entries.push(&clear_toy);
     let toy_submenu = Submenu::with_items(app, "玩具", true, &toy_entries)?;
-    let effect_items = TRAY_EFFECTS
-        .iter()
-        .map(|(id, name)| MenuItem::with_id(app, format!("perform:{id}"), *name, true, None::<&str>))
-        .collect::<tauri::Result<Vec<_>>>()?;
-    let effect_entries: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-        effect_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
-    let effect_submenu = Submenu::with_items(app, "特效", true, &effect_entries)?;
     let main_window = MenuItem::with_id(app, "main-window", "打开主界面…", true, None::<&str>)?;
     let toggle_visibility = MenuItem::with_id(app, "toggle-visibility", "隐藏猫咪", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出灵犀", true, None::<&str>)?;
@@ -6479,7 +6511,6 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
             &toggle_visibility,
             &size_submenu,
             &toy_submenu,
-            &effect_submenu,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
@@ -6514,12 +6545,6 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
                         let _ = app.emit("set-toy", serde_json::json!({ "kind": kind }));
                     }
                 }
-                id if id.starts_with("perform:") => {
-                    let effect = &id["perform:".len()..];
-                    if KNOWN_PERFORMANCES.contains(&effect) {
-                        let _ = app.emit("perform", serde_json::json!({ "id": effect }));
-                    }
-                }
                 "toggle-visibility" => {
                     let next = !state.visible.load(Ordering::SeqCst);
                     state.set_visible(app, next);
@@ -6545,6 +6570,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         camera: Mutex::new(DEFAULT_CAMERA.to_string()),
         render_style: Mutex::new(DEFAULT_RENDER_STYLE.to_string()),
         input_avoidance: AtomicBool::new(true),
+        auto_effects: auto_effects::AutoEffects::default(),
         cat_name: Mutex::new(DEFAULT_CAT_NAME.to_string()),
         cat_personality: Mutex::new(String::new()),
         active_agent: Mutex::new(default_active_agent()),
@@ -6559,7 +6585,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
 /// track here; `stop_performance` exists only for cancelling one early.
 #[tauri::command]
 fn perform(app: tauri::AppHandle, id: String) {
-    let _ = app.emit("perform", serde_json::json!({ "id": id }));
+    let _ = app.emit("perform", serde_json::json!({ "id": id, "automatic": false }));
 }
 
 #[tauri::command]
@@ -6883,6 +6909,7 @@ pub fn run() {
             set_camera,
             set_render_style,
             set_input_avoidance,
+            set_auto_effects,
             input_avoidance_status,
             request_input_avoidance_permission,
             focused_input_region,
@@ -7017,6 +7044,7 @@ pub fn run() {
                 let handle = app.handle();
                 // Set this before apply_* writes any restored snapshot back to disk.
                 state.input_avoidance.store(saved.input_avoidance, Ordering::Relaxed);
+                state.auto_effects.set_enabled(saved.auto_effects);
                 state.apply_scale(handle, saved.scale);
                 state.apply_identity(handle, &saved.cat_name, &saved.cat_personality);
                 state.apply_active_agent(handle, &saved.active_agent);
@@ -7760,11 +7788,9 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_offers_every_toy_and_every_effect() {
+    fn the_tray_offers_every_toy() {
         let toys: Vec<&str> = TRAY_TOYS.iter().map(|(id, _)| *id).collect();
-        let effects: Vec<&str> = TRAY_EFFECTS.iter().map(|(id, _)| *id).collect();
         assert_eq!(toys, KNOWN_TOYS.to_vec());
-        assert_eq!(effects, KNOWN_PERFORMANCES.to_vec());
     }
 
     #[test]
@@ -8492,6 +8518,7 @@ command = "node"
         let body = serde_json::json!({ "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE });
         std::fs::write(&path, body.to_string()).unwrap();
         let settings = load_persisted_settings(Some(&path));
+        assert!(!settings.auto_effects, "older installs must not silently opt in to automatic effects");
         assert_eq!(settings.cat_name, DEFAULT_CAT_NAME);
         assert_eq!(settings.cat_personality, "");
         assert_eq!(settings.active_agent, "none");
@@ -8655,6 +8682,7 @@ command = "node"
             camera: "eye-level".to_string(),
             render_style: "realistic".to_string(),
             input_avoidance: false,
+            auto_effects: true,
         };
         // Serialize the same way TrayState::persist does (tmp file + rename) and load
         // it back through the same loader the app startup uses.

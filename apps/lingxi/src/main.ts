@@ -15,6 +15,7 @@ import { inputProtectedRegions } from './input-avoidance.ts';
 import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx, type BubbleAttribution } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
+import { createPerformanceGate } from './fx/performance-gate.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
 import { createPettingSession, bellyIsExposed } from './anim/petting.ts';
@@ -200,6 +201,8 @@ async function main() {
   let userCamera = 'game';
   let currentSkinId = 'honey-mittens';
   let inputAvoidanceEnabled = true;
+  let autoEffectsEnabled = false;
+  let syncAutoEffects: ((enabled: boolean) => void) | null = null;
 
   interface HostStatus {
     scale: number;
@@ -212,6 +215,7 @@ async function main() {
     camera: string;
     renderStyle?: string;
     inputAvoidance?: boolean;
+    autoEffects?: { enabled: boolean };
     /** The five sliders from 主界面. The engine reads these - see applyStatus. */
     personalityTraits?: Partial<Personality>;
   }
@@ -235,6 +239,8 @@ async function main() {
     renderer.setCameraPreset?.(status.camera);
     applyRenderStyle(status.renderStyle);
     inputAvoidanceEnabled = status.inputAvoidance !== false;
+    autoEffectsEnabled = status.autoEffects?.enabled === true;
+    syncAutoEffects?.(autoEffectsEnabled);
     // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
     syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
@@ -503,11 +509,19 @@ async function main() {
     now: () => performance.now(),
   });
 
-  void listen<{ id: string }>('perform', (event) => {
+  const performanceGate = createPerformanceGate(performances, () => {
     petting.setEnabled(false);
     engine.setPetting(false);
     markInteresting();
-    if (!performances.play(event.payload.id)) dlog(`perform: unknown performance ${event.payload.id}`);
+  }, () => !petting.enabled && !engine.toy && engine.state !== 'dragged');
+  syncAutoEffects = enabled => performanceGate.setEnabled(enabled);
+  syncAutoEffects(autoEffectsEnabled);
+  void listen<boolean>('auto-effects-enabled', event => {
+    autoEffectsEnabled = event.payload;
+    performanceGate.setEnabled(event.payload);
+  });
+  void listen<{ id: string; automatic?: boolean }>('perform', event => {
+    performanceGate.play(event.payload.id, event.payload.automatic !== false);
   });
   void listen('perform-stop', () => performances.stop());
 

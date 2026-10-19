@@ -35,7 +35,7 @@
 #   lingxi say <text>
 #   lingxi express <expression> [action]
 #   lingxi do <action>
-#   lingxi perform <id>
+#   lingxi perform <id> [--manual]
 #   lingxi toy <yarn|feather|laser|petting|none>
 #   lingxi look [--camera X] [--skin Y]
 #
@@ -349,6 +349,17 @@ send_request() {
 # Build a JSON object from key=value pairs, with `agent` folded in. Values are passed through
 # jq --arg so quotes, newlines and Chinese text cannot break the encoding - which is exactly the
 # class of bug a hand-rolled printf would have.
+# Read the live opt-in and cooldown; missing policy means an older app, never implicit consent.
+performance_policy() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; p=json.load(sys.stdin).get("autoEffects"); print(int(isinstance(p,dict)), int(isinstance(p,dict) and p.get("enabled") is True), int(isinstance(p,dict) and p.get("remainingCooldownMs",0)==0))'
+  elif command -v node >/dev/null 2>&1; then
+    node -e 'let s="";process.stdin.on("data",c=>s+=c);process.stdin.on("end",()=>{const p=JSON.parse(s).autoEffects;console.log(Number(!!p),Number(p?.enabled===true),Number(!!p&&(p.remainingCooldownMs??0)===0))})'
+  else
+    die "need python3 or node to read automatic-effects preferences"
+  fi
+}
+
 json() { json_typed "$@"; }
 
 # Build a JSON object from key=value pairs, folding in `agent` from the environment.
@@ -384,7 +395,9 @@ import json, sys
 argv = sys.argv[1:]
 out = {}
 for key, value in zip(argv[0::2], argv[1::2]):
-    if value.startswith("number:"):
+    if value.startswith("bool:") and value[5:] in ("true", "false"):
+        out[key] = value[5:] == "true"
+    elif value.startswith("number:"):
         raw = value[7:]
         try:
             out[key] = float(raw) if ("." in raw or "e" in raw.lower()) else int(raw)
@@ -405,7 +418,9 @@ const out = {};
 for (let i = 0; i < argv.length; i += 2) {
   const key = argv[i];
   const value = argv[i + 1];
-  if (value.startsWith("number:")) {
+  if (value === "bool:true" || value === "bool:false") {
+    out[key] = value === "bool:true";
+  } else if (value.startsWith("number:")) {
     const n = Number(value.slice(7));
     // Unparseable stays a string, for the same reason as the python path above: dropping the
     // key makes the failure surface as a missing-field error one layer away from the cause.
@@ -585,7 +600,22 @@ if isinstance(rows, list):
   do)      [ $# -ge 1 ] || die "usage: lingxi do <action>"; request POST /control "$(json action="$1" priority="${LINGXI_PRIORITY:-status}")" ;;
   express) [ $# -ge 1 ] || die "usage: lingxi express <expression> [action]"
            request POST /control "$(json expression="$1" action="${2:-}" priority="${LINGXI_PRIORITY:-status}")" ;;
-  perform) [ $# -ge 1 ] || die "usage: lingxi perform <id>"; request POST /control "$(json perform="$1" priority="${LINGXI_PRIORITY:-report}")" ;;
+  perform)
+    [ $# -ge 1 ] && [ $# -le 2 ] || die "usage: lingxi perform <id> [--manual]"
+    effect_id="$1"; effect_automatic=true
+    if [ $# -eq 2 ]; then
+      [ "$2" = --manual ] || die "usage: lingxi perform <id> [--manual]"
+      effect_automatic=false
+    fi
+    effect_caps="$(request GET /capabilities)"
+    read -r effect_supported effect_enabled effect_ready <<< "$(printf '%s' "$effect_caps" | performance_policy)"
+    if [ "$effect_automatic" = true ] && { [ "$effect_enabled" != 1 ] || [ "$effect_ready" != 1 ]; }; then
+      printf '%s\n' '自动特效已关闭、不受支持或仍在冷却，本次跳过；不重试、不替用户开启。'
+    elif [ "$effect_supported" = 1 ]; then
+      request POST /control "$(json perform="$effect_id" performAutomatic="bool:$effect_automatic" priority="${LINGXI_PRIORITY:-$([ "$effect_automatic" = true ] && echo flavour || echo report)}")"
+    else
+      request POST /control "$(json perform="$effect_id" priority="${LINGXI_PRIORITY:-report}")"
+    fi ;;
   toy)     [ $# -ge 1 ] || die "usage: lingxi toy <yarn|feather|laser|petting|none>"; request POST /control "$(json toy="$1")" ;;
 
   look)
