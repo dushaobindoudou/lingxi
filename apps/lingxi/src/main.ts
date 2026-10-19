@@ -824,15 +824,21 @@ async function main() {
           });
           if (reaction) {
             const deeplyRelaxed = petting && reaction.kind === 'stroke' && now - hoverSince > 9000;
-            renderer.playAction?.(deeplyRelaxed ? 'belly-up' : reaction.clip);
-            renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
+            const movingHand = renderer.activeStyle === 'realistic' && reaction.kind === 'notice' && (petting || strokeDistance > 24);
+            // The realistic rig follows each stroke continuously. Replaying a full clip here used to interrupt the
+            // nuzzle every four seconds; a moving hand must also not start the one-off notice clip first.
+            // The voxel cat still uses its authored affection reaction.
+            if ((renderer.activeStyle !== 'realistic' || reaction.kind !== 'stroke') && !movingHand) {
+              renderer.playAction?.(deeplyRelaxed ? 'belly-up' : reaction.clip);
+              renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
+            }
             if (reaction.kind === 'stroke') {
               const head = renderer.headScreenPoint?.();
               if (head) fx.hearts(head.x, head.y, 3);
               strokeDistance = 0; // start earning the next purr
               pointerReactionUntil = now + 4200;
             } else {
-              pointerReactionUntil = now + 2600;
+              pointerReactionUntil = now + (movingHand ? 350 : 2600);
             }
           }
         }

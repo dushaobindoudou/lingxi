@@ -15,6 +15,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadGroom, createGroom, type GroomAsset } from './realistic-groom.ts';
 import { createFurWind } from './realistic-wind.ts';
+import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
@@ -1588,6 +1589,82 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     }
     if (!active && stageWeight < 2e-3) stagePose = null;
   }
+  // Petting follows the projected bones, so the same overlay works over Sit, Idle, Loaf and the lying clips. Keep its
+  // saved clip pose separate from staging: each layer removes only the rotations it added, in reverse overlay order.
+  const petSaved = new Map<THREE.Object3D, THREE.Quaternion>();
+  const emptyPet: PetWeights = { head: 0, back: 0, rump: 0, headX: 0, headY: 0, contact: 0 };
+  let petTarget: PetWeights = emptyPet;
+  const petPose: PetWeights = { ...emptyPet };
+  let petRelaxTime = 0;
+  let petRelax = 0;
+  const petAxis = new THREE.Vector3(), petParentQ = new THREE.Quaternion(), petTurn = new THREE.Quaternion(), petRootQ = new THREE.Quaternion();
+  const petHeadPoint = new THREE.Vector3();
+  function unoverlayPet() {
+    for (const [bone, q] of petSaved) bone.quaternion.copy(q);
+    petSaved.clear();
+  }
+  function turnPetBone(name: string, axis: THREE.Vector3, angle: number) {
+    const bone = model?.getObjectByName(name);
+    if (!bone?.parent || Math.abs(angle) < 1e-5) return;
+    if (!petSaved.has(bone)) petSaved.set(bone, bone.quaternion.clone());
+    bone.parent.getWorldQuaternion(petParentQ).invert();
+    petAxis.copy(axis).applyQuaternion(petParentQ).normalize();
+    bone.quaternion.premultiply(petTurn.setFromAxisAngle(petAxis, angle));
+  }
+  function samplePet(cursor: { x: number; y: number } | null, enabled: boolean) {
+    if (!cursor || !enabled || !model || !headBone || !chestBone || !pelvisBone || !tailBones[0] || !lastAir) {
+      petTarget = emptyPet;
+      return;
+    }
+    const spine = model.getObjectByName('Spine');
+    if (!spine) { petTarget = emptyPet; return; }
+    model.updateWorldMatrix(true, true);
+    const raised = (bone: THREE.Object3D, height: number) => {
+      bone.getWorldPosition(bonePoint);
+      bonePoint.y += height * effectiveScale();
+      return worldToScreen(bonePoint);
+    };
+    headBone.getWorldPosition(petHeadPoint);
+    petHeadPoint.y += 0.12 * effectiveScale();
+    petTarget = petWeights(cursor, {
+      head: worldToScreen(petHeadPoint),
+      chest: raised(chestBone, 0.055), spine: raised(spine, 0.06), pelvis: raised(pelvisBone, 0.055),
+      tailRoot: raised(tailBones[0], 0.015),
+    }, TARGET_HEIGHT * effectiveScale() / unitsPerPixel, Math.max(0, lastAir.stroke.amount));
+  }
+  function overlayPet(dt: number, interrupted: boolean) {
+    const tau = interrupted ? PET.interrupt : petTarget.contact > 0.01 ? PET.enter : PET.release;
+    const k = 1 - Math.exp(-Math.max(0, dt) / tau);
+    for (const name of ['head', 'back', 'rump', 'contact'] as const) petPose[name] += (petTarget[name] - petPose[name]) * k;
+    if (petTarget.head > 0.01) {
+      petPose.headX += (petTarget.headX - petPose.headX) * k;
+      petPose.headY += (petTarget.headY - petPose.headY) * k;
+    }
+    petRelaxTime = petTarget.contact > 0.1 ? Math.min(PET.relaxSeconds, petRelaxTime + dt) : Math.max(0, petRelaxTime - dt * 2);
+    petRelax = petPose.contact * petRelaxTime / PET.relaxSeconds;
+    if (interrupted || !model || petPose.contact < 1e-3) return;
+    catRoot.getWorldQuaternion(petRootQ);
+    const up = new THREE.Vector3(0, 1, 0);
+    const side = new THREE.Vector3(1, 0, 0).applyQuaternion(petRootQ);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(petRootQ);
+    const head = petPose.head, back = petPose.back, rump = petPose.rump;
+    // Neck begins the nuzzle; the smaller counterturn on Head keeps the eyes on the hand.
+    turnPetBone('Neck', up, head * petPose.headX * PET.headYaw);
+    turnPetBone('Neck', forward, -head * petPose.headX * PET.headRoll);
+    turnPetBone('Head', side, head * (PET.headBump - petPose.headY * PET.headPitch));
+    // Spread the bend across three trunk joints so a seated or curled kitten does not hinge at one seam.
+    turnPetBone('Loin', side, -back * PET.backArch * 0.35);
+    turnPetBone('Spine', side, -back * PET.backArch * 0.4);
+    turnPetBone('Chest', side, back * PET.backArch * 0.25);
+    turnPetBone('Pelvis', side, rump * PET.rumpLift);
+    turnPetBone('Tail0', side, rump * PET.tailLift);
+    turnPetBone('Tail1', side, rump * PET.tailLift * 0.35);
+    turnPetBone('Tail4', side, -rump * PET.tailCurl);
+    turnPetBone('Tail4', up, rump * PET.tailTremble * Math.sin(elapsed * 19));
+    // Relaxed ears splay a little; the face rig's expression and its ear keys remain underneath.
+    turnPetBone('Ear.L', forward, petRelax * PET.earRelax);
+    turnPetBone('Ear.R', forward, -petRelax * PET.earRelax);
+  }
   // Breathing: the clips key the body's Breath shape key (a rise and fall of the flanks and back), but at 4.6 mm on a
   // cat 0.8 tall it is under a pixel at desktop size - a sleeping cat that never breathed. Lying down and asleep it is
   // drawn deeper (BREATH_GAIN), eased in and out, and the strands rise and fall with the skin (realistic-groom). Undone
@@ -1608,7 +1685,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const lying = currentName === 'Sleep' || currentName === 'LieDown' || currentName === 'Loaf' || currentName === 'SideLie';
     breathGain += ((lying ? BREATH_GAIN : 1) - breathGain) * (1 - Math.exp(-Math.max(0, dt) / 0.8));
     breathRaw = body.morphTargetInfluences[breathIndex];
-    body.morphTargetInfluences[breathIndex] = breathRaw * breathGain;
+    const purrBreath = petRelax * (PET.breathBase + PET.breathPulse * (0.5 + 0.5 * Math.sin(elapsed * Math.PI * 2 / PET.breathPeriod)));
+    body.morphTargetInfluences[breathIndex] = Math.max(breathRaw * breathGain, purrBreath);
     groom?.setBreath(body.morphTargetInfluences[breathIndex]);
   }
   function fitCanvasToFrame() {
@@ -1942,8 +2020,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         }
         if (oneShot && elapsed >= oneShot.endsAt && (!settle || oneShot.rising)) oneShot = null;
         if (moving) oneShot = null;
+        // A real stroke is the one already moving the coat. Sample the previous posed rig before the mixer replaces it;
+        // on a walking, turning or staged cat the response yields immediately to locomotion and authored action.
+        const petInterrupted = moving || pivoting || !!oneShot || !!staged || currentName === 'Walk' || currentName === 'Run';
+        samplePet(cursor, !petInterrupted);
         // a settled cat picks something to do now and then (the voxel director's job on the other style)
-        if (moving || state.state !== 'idle' || oneShot || staged) idleSince = elapsed;
+        if (moving || state.state !== 'idle' || oneShot || staged || petTarget.contact > 0.1 || petPose.contact > 0.1) idleSince = elapsed;
         else if (autonomous && elapsed - idleSince > nextIdlePick) {
           const picks = IDLE_PICKS.filter(([c]) => actions[c]);
           let r = Math.random() * picks.reduce((t, [, w]) => t + w, 0);
@@ -1976,6 +2058,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             action.timeScale = name === 'Walk' && pivoting ? PIVOT_CADENCE : name === 'Walk' && moving ? walkCadence(rate) : rate;
           }
         }
+        unoverlayPet();
         unoverlayStage();
         unoverlayHead();
         locomotion?.beforeMixer();
@@ -2002,16 +2085,18 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           clipLids += (clipLidsTarget - clipLids) * k;
           watchForSlowBlink(cursor, !moving && (state.state === 'idle' || state.state === 'play_toy') && !staged);
           const slow = slowBlinkWeight();
-          if (slow > 0) {
+          const petEye = Math.min(0.78, PET.eyeClose * petPose.contact + PET.eyeRelax * petRelax);
+          const eyelid = Math.max(slow, petEye);
+          if (eyelid > 0) {
             // over the face, not instead of it: shut as far as the blink has got, smiling at the lids, the clip's own
             // blinks and any squint giving way to it
             const blinking = { ...faceNow };
             for (const side of ['L', 'R']) {
-              blinking[`Blink.${side}`] = Math.max(blinking[`Blink.${side}`] ?? 0, slow);
-              blinking[`SmileArc.${side}`] = Math.max(blinking[`SmileArc.${side}`] ?? 0, 0.55 * slow);
-              blinking[`Squint.${side}`] = (blinking[`Squint.${side}`] ?? 0) * (1 - slow);
+              blinking[`Blink.${side}`] = Math.max(blinking[`Blink.${side}`] ?? 0, eyelid);
+              blinking[`SmileArc.${side}`] = Math.max(blinking[`SmileArc.${side}`] ?? 0, 0.55 * eyelid);
+              blinking[`Squint.${side}`] = (blinking[`Squint.${side}`] ?? 0) * (1 - eyelid);
             }
-            faceRig.apply(blinking, clipLids * (1 - slow));
+            faceRig.apply(blinking, clipLids * (1 - eyelid));
           } else faceRig.apply(faceNow, clipLids);
         }
       }
@@ -2048,6 +2133,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0);
       overlayHead(deltaSeconds);
       overlayStage(deltaSeconds);
+      overlayPet(deltaSeconds, moving || pivoting || !!oneShot || !!staged || currentName === 'Walk' || currentName === 'Run');
 
       updateToy(state, deltaSeconds);
       if (contextLost) return;

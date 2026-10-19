@@ -104,7 +104,8 @@ function frame(now: number) {
       if (lastStrokePoint) strokeTravel += Math.hypot(cursor.x - lastStrokePoint.x, cursor.y - lastStrokePoint.y);
       lastStrokePoint = { ...cursor };
       if (now > nextPurrAt && pickPointerReaction({ hovering: true, hoverMs: 1000, strokeDistance: strokeTravel })?.kind === 'stroke') {
-        renderer.playAction?.('purr-settle'); renderer.playExpression?.('陶醉', 4200);
+        // Match main.ts: the realistic coat and rig provide the continuous response; no clip interrupts it.
+        if (renderer.activeStyle !== 'realistic') { renderer.playAction?.('purr-settle'); renderer.playExpression?.('陶醉', 4200); }
         nextPurrAt = now + 3500; strokeTravel = 0;
       }
     } else { lastStrokePoint = null; strokeTravel = 0; }
