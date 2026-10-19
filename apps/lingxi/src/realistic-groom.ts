@@ -40,6 +40,7 @@ const GROOM = {
   // the room the cat stands in (the other materials' RoomEnvironment at 0.5): soft light from everywhere
   ambient: '0.32',
   lidVeil: '0.4',
+  lidShine: '0.15',
   // the lids' rows of strands lie about this far apart (model units)
   lidRowSpacing: '0.012',
   // How far a tip trails the body's motion (see the coat's inertia in createGroom): this share of where it would be
@@ -302,6 +303,9 @@ void main() {
   #if NUM_HEMI_LIGHTS > 0
     ambient += getHemisphereLightIrradiance(hemisphereLights[0], N);
   #endif
+  // the lids' strands lie flat, facing the light all together: at the coat's shine every one of them caught it, a white
+  // sparkle over a closed eye
+  shine *= mix(1.0, ${GROOM.lidShine}, vGroomLid);
   vec3 color = base * (diffuse + ambient) * RECIPROCAL_PI * occlusion + shine * RECIPROCAL_PI * t;
   gl_FragColor = vec4(color, alpha);
   #include <tonemapping_fragment>
@@ -368,10 +372,15 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     if (index == null) throw new Error(`Groom joint missing: ${name}`);
     return index;
   });
+  const floats = (b: Block) => new Float32Array(asset.bytes, b.offset, b.count);
+  const strandsOf = (part: GroomPart) => ({ positions: floats(part.positions), colors: floats(part.colors), normals: floats(part.normals), strands: part.strands, points: part.points });
+  const faceCoat = asset.spec.parts.find((part) => part.name === 'LX_Fur_guard_LX_Head');
+  const lidColours = faceCoat ? continueCoatOntoLids(strandsOf(faceCoat), asset.spec.parts.filter((part) => /_LX_Lid/.test(part.name)).map((part) => ({
+    ...strandsOf(part), name: part.name, blink: part.morphs?.Blink ? floats(part.morphs.Blink) : null,
+  }))) : new Map<string, Float32Array>();
   const meshes = asset.spec.parts.map((part) => {
-    const floats = (b: Block) => new Float32Array(asset.bytes, b.offset, b.count);
     const source = floats(part.positions), radii = floats(part.radii);
-    const colors = /_LX_Lid/.test(part.name) ? evened(floats(part.colors), part.points, LID_COLOUR_EVENING) : floats(part.colors);
+    const colors = /_LX_Lid/.test(part.name) ? lidColours.get(part.name) ?? evened(floats(part.colors), part.points, LID_COLOUR_EVENING) : floats(part.colors);
     const normals = floats(part.normals), weights = floats(part.weights);
     const joints = new Uint16Array(asset.bytes, part.joints.offset, part.joints.count);
     const count = part.strands * part.points * 2;
@@ -616,9 +625,109 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
 // The lids' strands take their colour from the face texture under them - the tabby's dark stripes and the muzzle's
 // white side by side. Open, the lid hides them; closed, they lay round the eye as rings of dark and light bands, a
 // striped pad under the lash line. Each lid's coat is drawn this much of the way to its own average (point by point,
-// root to tip); the shader's per-strand melanin keeps it from going flat.
+// root to tip); the shader's per-strand melanin keeps it from going flat. (Only where the face round it can't be read:
+// see continueCoatOntoLids.)
 const LID_COLOUR_EVENING = 0.75;
 const LID_SHADE = 0.8;
+// Evened, though, a closed eye was a felt patch in one flat tan with a hard outline - a mask laid over the face, where
+// the review renders' closed eye is the face's own coat, stripes and all, with a dark lash line across it. So each lid
+// strand takes the coat round the eye, carried in to where it lies with the eye shut (its Blink key): the head's strands
+// in a ring just outside the lids (from this share of the lids' reach, ringWidth wide, model units, within depth of the
+// eye's plane), averaged into sectors round the eye, blended by distance (inverse, to this power, softened over
+// softness) - beside the lid's edge the coat next to it, across the lid a soft mix of the stripes that reach the eye.
+const LID_CONTINUE = { sectors: 32, ringFrom: 0.9, ringWidth: 0.012, depth: 0.03, softness: 0.004, power: 3 };
+
+interface Strands { positions: Float32Array; colors: Float32Array; normals: Float32Array; strands: number; points: number }
+/**
+ * The face's coat carried onto each eye's lids (LID_CONTINUE): per lid, its strands' colours (point by point, as
+ * `colors`), or none for a lid whose eye has no face coat round it. Lids are paired by their side suffix (.L / .R).
+ */
+export function continueCoatOntoLids(head: Strands, lids: (Strands & { name: string; blink: Float32Array | null })[]): Map<string, Float32Array> {
+  const out = new Map<string, Float32Array>();
+  const sides = new Map<string, typeof lids>();
+  for (const lid of lids) {
+    const side = /\.([LR])$/.exec(lid.name)?.[1] ?? '';
+    sides.set(side, [...(sides.get(side) ?? []), lid]);
+  }
+  const P = head.points;
+  for (const pair of sides.values()) {
+    // each lid strand's root with the eye shut
+    const closed = pair.map((lid) => {
+      const roots = new Float32Array(lid.strands * 3);
+      for (let s = 0; s < lid.strands; s++) for (let c = 0; c < 3; c++) {
+        roots[s * 3 + c] = lid.positions[s * lid.points * 3 + c] + (lid.blink ? lid.blink[s * 3 + c] : 0);
+      }
+      return roots;
+    });
+    // the shut eye's centre, and the way it faces (the lids' strands' normals: up and down round a forward mean)
+    const centre = [0, 0, 0], axis = [0, 0, 0];
+    let n = 0;
+    pair.forEach((lid, k) => {
+      for (let s = 0; s < lid.strands; s++) for (let c = 0; c < 3; c++) { centre[c] += closed[k][s * 3 + c]; axis[c] += lid.normals[s * 3 + c]; }
+      n += lid.strands;
+    });
+    if (!n) continue;
+    for (let c = 0; c < 3; c++) centre[c] /= n;
+    const al = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+    for (let c = 0; c < 3; c++) axis[c] /= al;
+    // two directions across the eye, for the sectors' angles
+    const u = Math.abs(axis[1]) < 0.9 ? cross(axis, [0, 1, 0]) : cross(axis, [1, 0, 0]);
+    const ul = Math.hypot(u[0], u[1], u[2]);
+    for (let c = 0; c < 3; c++) u[c] /= ul;
+    const v = cross(axis, u);
+    const across = (x: number, y: number, z: number) => {
+      const q = [x - centre[0], y - centre[1], z - centre[2]];
+      const a = q[0] * u[0] + q[1] * u[1] + q[2] * u[2], b = q[0] * v[0] + q[1] * v[1] + q[2] * v[2];
+      return { depth: q[0] * axis[0] + q[1] * axis[1] + q[2] * axis[2], radius: Math.hypot(a, b), angle: Math.atan2(b, a) };
+    };
+    // how far out the shut lids reach, most of their strands within it
+    const reach: number[] = [];
+    for (const roots of closed) for (let s = 0; s < roots.length / 3; s++) reach.push(across(roots[s * 3], roots[s * 3 + 1], roots[s * 3 + 2]).radius);
+    reach.sort((a, b) => a - b);
+    const from = reach[Math.floor((reach.length - 1) * LID_CONTINUE.ringFrom)];
+    const K = LID_CONTINUE.sectors;
+    const where = new Float64Array(K * 3), colour = new Float64Array(K * P * 3), count = new Float64Array(K);
+    for (let s = 0; s < head.strands; s++) {
+      const r = s * P * 3;
+      const at = across(head.positions[r], head.positions[r + 1], head.positions[r + 2]);
+      if (at.radius < from || at.radius > from + LID_CONTINUE.ringWidth || Math.abs(at.depth) > LID_CONTINUE.depth) continue;
+      const k = Math.min(K - 1, Math.floor((at.angle / (2 * Math.PI) + 0.5) * K));
+      for (let c = 0; c < 3; c++) where[k * 3 + c] += head.positions[r + c];
+      for (let i = 0; i < P * 3; i++) colour[k * P * 3 + i] += head.colors[r + i];
+      count[k]++;
+    }
+    const filled = [...count.keys()].filter((k) => count[k] > 0);
+    if (filled.length < K / 2) continue;
+    for (const k of filled) {
+      for (let c = 0; c < 3; c++) where[k * 3 + c] /= count[k];
+      for (let i = 0; i < P * 3; i++) colour[k * P * 3 + i] /= count[k];
+    }
+    pair.forEach((lid, k) => {
+      const roots = closed[k];
+      const colors = new Float32Array(lid.strands * lid.points * 3);
+      const mix = new Float64Array(P * 3);
+      for (let s = 0; s < lid.strands; s++) {
+        mix.fill(0);
+        let total = 0;
+        for (const j of filled) {
+          const d2 = (roots[s * 3] - where[j * 3]) ** 2 + (roots[s * 3 + 1] - where[j * 3 + 1]) ** 2 + (roots[s * 3 + 2] - where[j * 3 + 2]) ** 2;
+          const w = (d2 + LID_CONTINUE.softness ** 2) ** (-LID_CONTINUE.power / 2);
+          for (let i = 0; i < P * 3; i++) mix[i] += w * colour[j * P * 3 + i];
+          total += w;
+        }
+        // root to tip as the face's strands are (point for point where both have as many)
+        for (let p = 0; p < lid.points; p++) {
+          const at = Math.min(P - 1, Math.round(p * (P - 1) / Math.max(1, lid.points - 1)));
+          for (let c = 0; c < 3; c++) colors[(s * lid.points + p) * 3 + c] = mix[at * 3 + c] / total * LID_SHADE;
+        }
+      }
+      out.set(lid.name, colors);
+    });
+  }
+  return out;
+}
+function cross(a: number[], b: number[]) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+
 function evened(colors: Float32Array, points: number, share: number): Float32Array {
   const strands = colors.length / (points * 3);
   const mean = new Float64Array(points * 3);

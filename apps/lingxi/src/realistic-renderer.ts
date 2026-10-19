@@ -77,6 +77,12 @@ const FUR: Record<string, { len: number; den: number }> = {
 };
 // the lids' short coat (see lidCoat)
 const LID_FUR = { len: 0.007, den: 650 };
+// The lids reach well past the eye: open, all of each lid lies in a ring 0.044-0.065 from the eye's axis, over the face's
+// own coat (the eyeball is 0.0445 in radius, the face's coat starts at 0.042-0.046), and shut, its outer part still
+// does. That ring - lid skin, undercoat and strands - was a flat brown mask round every eye, and an oval with a hard
+// edge on a closed one. Past the eye the lids give way to the face: whole within `from` of the eye's axis, gone by `to`
+// (model units). Their free edge, the lash line over the eyeball, stays.
+const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
 // the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
 const LASH_WIDTH = 0.004;
@@ -477,6 +483,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let tailPhase = 0;
   const shellMaterials: THREE.Material[] = [];
   const ownedMaterials: THREE.Material[] = [];
+  // GLSL `float lidShown(vec3 rest)` (see LID_TUCK), written once the eyes are found
+  let lidTuckGlsl = 'float lidShown(vec3 rest) { return 1.0; }';
   let loaded = false;
   let frameSeconds = 1 / 60;
   let debugInfo: unknown = null;
@@ -630,12 +638,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     ownedMaterials.push(m);
     return m;
   }
-  function shellMaterial(len: number, den: number, t: number, solid = false, underCurves = false) {
+  function shellMaterial(len: number, den: number, t: number, solid = false, underCurves = false, lid = false) {
     // Coverage must not overwrite an already opaque body pixel with fractional framebuffer alpha.
     // Alpha hashing discards strand gaps, while every surviving sample stays opaque on the desktop.
-    // `solid`: an opaque layer of undercoat (no strands), under the original curves.
+    // `solid`: an opaque layer of undercoat (no strands), under the original curves. `lid`: a lid's coat, given way to
+    // the face's past the eye (LID_TUCK).
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, alphaHash: !solid });
     m.onBeforeCompile = (sh) => {
+      sh.uniforms.uLidTuck = { value: lid ? 1 : 0 };
       sh.uniforms.uShell = { value: t };
       sh.uniforms.uLen = { value: len };
       sh.uniforms.uDen = { value: den };
@@ -657,11 +667,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             #endif
             vec3 dir = normalize(nrm + normalize(comb) * 0.55 * uShell);
             transformed += dir * h;`);
-      sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; varying vec3 vRest; varying float vScale;\n'
+      sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; uniform float uLidTuck; varying vec3 vRest; varying float vScale;\n'
         + 'vec3 furHash3(vec3 p){ p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }\n'
-        + MOUTH_GLSL + '\n'
+        + MOUTH_GLSL + '\n' + lidTuckGlsl + '\n'
         + sh.fragmentShader
           .replace('#include <color_fragment>', `#include <color_fragment>
+            // a lid's coat past the eye, dithered out (an opaque layer has no alpha to fade with)
+            if (uLidTuck > 0.5 && lidShown(vRest) <= furHash3(vec3(gl_FragCoord.xy, uShell * 61.0)).x) discard;
             vec3 q = vRest * uDen;
             vec3 cell = floor(q);
             vec3 rnd = furHash3(cell);
@@ -697,9 +709,33 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
             #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v4' : underCurves ? 'realcat-fur-shell-under-curves-v2' : 'realcat-fur-shell-opaque-v6');
+    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v5' : underCurves ? 'realcat-fur-shell-under-curves-v3' : 'realcat-fur-shell-opaque-v7');
     shellMaterials.push(m);
     return m;
+  }
+  /**
+   * GLSL `float lidShown(vec3 rest)`: how much of a lid to draw at a point of its rest pose (shape keys and all) - whole
+   * over the eye, gone past it (LID_TUCK), by the distance from the nearer eye's axis. The lids, face and groom share
+   * one rest space (their nodes carry no transform), so one function serves the lids' skin, undercoat and strands.
+   */
+  function lidTuck(root: THREE.Object3D, lid: THREE.Object3D) {
+    const eyes = ['EyeL', 'EyeR'].map((name) => root.getObjectByName(name)).filter((e): e is THREE.Object3D => !!e);
+    if (eyes.length !== 2) return 'float lidShown(vec3 rest) { return 1.0; }';
+    lid.updateWorldMatrix(true, false);
+    const toLocal = new THREE.Matrix4().copy(lid.matrixWorld).invert();
+    const glsl = (v: THREE.Vector3) => `vec3(${v.x.toFixed(5)}, ${v.y.toFixed(5)}, ${v.z.toFixed(5)})`;
+    const [l, r] = eyes.map((e) => {
+      const centre = e.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
+      // the eye looks along its bone (+y), turned into the lid's space
+      const tip = e.localToWorld(new THREE.Vector3(0, 1, 0)).applyMatrix4(toLocal);
+      return { centre, axis: tip.sub(centre).normalize() };
+    });
+    return `float lidShown(vec3 rest) {
+      vec3 dl = rest - ${glsl(l.centre)}, dr = rest - ${glsl(r.centre)};
+      bool left = dot(dl, dl) < dot(dr, dr);
+      vec3 d = left ? dl : dr, axis = left ? ${glsl(l.axis)} : ${glsl(r.axis)};
+      return 1.0 - smoothstep(${LID_TUCK.from}, ${LID_TUCK.to}, length(d - axis * dot(d, axis)));
+    }`;
   }
   // The lids' own skin is dark brown (lid_color); in the Cycles render they carry their own short hair, in the coat's
   // colour, so a closed or half-closed eye reads as fur with a dark lash line. Here: every lid vertex but the lash
@@ -1088,6 +1124,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const lidMeshes: THREE.SkinnedMesh[] = [];
     root.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && /^LX_Lid(Upper|Lower)\./.test((o.userData.name as string | undefined) ?? '')) lidMeshes.push(o as THREE.SkinnedMesh); });
     const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root, groomAsset ? LID_UNDERCOAT_LIFT : LID_COAT_LIFT);
+    if (lidMeshes.length) lidTuckGlsl = lidTuck(root, lidMeshes[0]);
     const head = root.getObjectByName('LX_Head') as THREE.Mesh | undefined;
     if (head) {
       cleanMouthPaint(head, groomAsset);
@@ -1156,8 +1193,16 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         const s = new THREE.MeshStandardMaterial({
           vertexColors: true, roughness: /Lid/i.test(name) ? 0.85 : 0.9, map: mat?.map ?? null, side: THREE.DoubleSide,
         });
-        s.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>${COAT_GRADE}`); };
-        s.customProgramCacheKey = () => 'realcat-skin';
+        const lid = /^LX_Lid(Upper|Lower)[LR]$/.test(m.name);
+        s.onBeforeCompile = (sh) => {
+          sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>${COAT_GRADE}`);
+          if (!lid) return;
+          // the lid's skin past the eye gives way to the face (LID_TUCK), dithered: it is opaque
+          sh.vertexShader = 'varying vec3 vLidRest;\n' + sh.vertexShader.replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n vLidRest = transformed;');
+          sh.fragmentShader = 'varying vec3 vLidRest;\n' + lidTuckGlsl + '\n' + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+            if (lidShown(vLidRest) <= fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453)) discard;`);
+        };
+        s.customProgramCacheKey = () => (lid ? 'realcat-lid-skin-v1' : 'realcat-skin');
         ownedMaterials.push(s);
         m.material = s;
       } else if (mat?.isMaterial) {
@@ -1181,10 +1226,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         breath: breathLookup(coat[0]),
         // the muzzle's hairs part along the closed mouth's line (drawn in the undercoat), or they lay across it
         part: `${MOUTH_GLSL}
+          ${lidTuckGlsl}
           float groomPart(vec3 rest) {
-            if (rest.z < ${MOUTH.frontFrom}) return 1.0;
+            // the lids' strands past the eye give way to the face's (LID_TUCK)
+            float keep = vGroomLid > 0.5 ? lidShown(rest) : 1.0;
+            if (rest.z < ${MOUTH.frontFrom}) return keep;
             vec2 md = mouthDistance(rest);
-            return smoothstep(${MOUTH.width}, ${MOUTH.width * 3.5}, md.x) * smoothstep(${MOUTH.philtrumWidth}, ${MOUTH.philtrumWidth * 3.5}, md.y);
+            return keep * smoothstep(${MOUTH.width}, ${MOUTH.width * 3.5}, md.x) * smoothstep(${MOUTH.philtrumWidth}, ${MOUTH.philtrumWidth * 3.5}, md.y);
           }`,
       });
       ownedMaterials.push(...groom.materials);
@@ -1222,8 +1270,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     for (const lid of lidFur) {
       for (let i = 1; i <= lidLayers; i++) {
         const s = new THREE.SkinnedMesh(lid.geometry, groom
-          ? shellMaterial(LID_FUR.len / UNDERCOAT_REACH, LID_FUR.den, UNDERCOAT_REACH * i / lidLayers, true, true)
-          : shellMaterial(LID_FUR.len, LID_FUR.den, i / lidLayers));
+          ? shellMaterial(LID_FUR.len / UNDERCOAT_REACH, LID_FUR.den, UNDERCOAT_REACH * i / lidLayers, true, true, true)
+          : shellMaterial(LID_FUR.len, LID_FUR.den, i / lidLayers, false, false, true));
         s.bind(lid.skeleton, lid.bindMatrix);
         // the same influences array: a blink closes the lid's coat with it
         s.morphTargetInfluences = lid.morphTargetInfluences;
