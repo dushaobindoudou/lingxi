@@ -41,6 +41,7 @@ export interface LifeEngineConfig {
   }) => { target: Vec2; touching: boolean; contactPosition?: Vec2; petContactPosition?: Vec2 } | null;
   bounds?: { width: number; height: number };
   position?: Vec2;
+  protectedRegions?: { x: number; y: number; width: number; height: number }[];
   speed?: number;
   idleDurationMsRange?: [number, number];
   wanderRadius?: number;
@@ -74,6 +75,7 @@ export interface LifeEngineConfig {
   margin?: number;
 }
 export interface LifeEngineSnapshot {
+  inputAvoidance: { overlapping: boolean };
   state: BehaviorState;
   position: Vec2;
   facing: 1 | -1;
@@ -180,6 +182,8 @@ export interface LifeEngine {
     top?: number; bottom?: number; left?: number; right?: number;
     worstCorner?: { x: number; y: number };
   }): void;
+  /** Host-expanded text input regions, in engine coordinates. */
+  setProtectedRegions(regions: { x: number; y: number; width: number; height: number }[]): void;
   setMargins(margins: {
     top?: number; bottom?: number; left?: number; right?: number;
     /**

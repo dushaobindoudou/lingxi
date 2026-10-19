@@ -6,7 +6,7 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import type { CursorPoint, DesktopHost, WorkArea } from '../../../packages/desktop-host-contract/index.d.ts';
+import type { CursorPoint, DesktopHost, WorkArea, FocusedInput } from '../../../packages/desktop-host-contract/index.d.ts';
 
 interface MonitorPayload {
   x: number;
@@ -56,6 +56,20 @@ export function createTauriDesktopHost(): DesktopHost {
         cancelled = true;
         void unlistenPromise.then((unlisten) => unlisten());
       };
+    },
+
+    onFocusedInputChange(handler) {
+      let cancelled = false;
+      let receivedEvent = false;
+      const unlistenPromise = listen<FocusedInput | null>('focused-input', event => {
+        receivedEvent = true;
+        if (!cancelled) handler(event.payload);
+      });
+      void unlistenPromise.then(async () => {
+        const initial = await invoke<FocusedInput | null>('focused_input_region').catch(() => null);
+        if (!cancelled && !receivedEvent) handler(initial);
+      });
+      return () => { cancelled = true; void unlistenPromise.then(unlisten => unlisten()); };
     },
 
     async setClickThrough(ignore: boolean) {

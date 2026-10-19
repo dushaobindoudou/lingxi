@@ -28,6 +28,7 @@ Each app release includes `SHA256SUMS.txt`; use `shasum -a 256` to verify downlo
 ## Everyday companion
 
 - Walks, rests and sleeps along the screen edge; pauses when hidden, locked or asleep.
+- Avoids focused input fields and the active editor line after Accessibility permission is enabled in Settings. Detects geometry only, without reading typed text.
 - Responds to petting and double clicks, and plays with yarn, a wand or a laser pointer.
 - Shows the agent's icon and session name on task notifications.
 - Supports reminders, daily repeats and local memories. Reminders wait until you return to the computer.

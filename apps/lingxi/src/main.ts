@@ -11,6 +11,7 @@ import { createTauriDesktopHost } from './desktop-host.ts';
 import { createThreeRenderer } from './renderer.ts';
 import { createRealisticRenderer } from './realistic-renderer.ts';
 import { frameDelta } from './animation-clock.ts';
+import { inputProtectedRegions } from './input-avoidance.ts';
 import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx, type BubbleAttribution } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
@@ -19,7 +20,7 @@ import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/
 import { createLifeEngine, DEFAULT_WANDER_SPEED, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
 import type { Personality } from '../../../packages/life-engine/src/index.d.mts';
 import { createActivityRecorder } from '../../../packages/perception/src/index.mjs';
-import type { WorkArea } from '../../../packages/desktop-host-contract/index.d.ts';
+import type { WorkArea, FocusedInput } from '../../../packages/desktop-host-contract/index.d.ts';
 import type { AIIntent } from '../../../packages/perception-contract/index.d.ts';
 import { listen, emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -196,6 +197,7 @@ async function main() {
   // so the value they restore to has to be tracked here rather than read back off the renderer.
   let userCamera = 'game';
   let currentSkinId = 'honey-mittens';
+  let inputAvoidanceEnabled = true;
 
   interface HostStatus {
     scale: number;
@@ -207,6 +209,7 @@ async function main() {
     skin: string;
     camera: string;
     renderStyle?: string;
+    inputAvoidance?: boolean;
     /** The five sliders from 主界面. The engine reads these - see applyStatus. */
     personalityTraits?: Partial<Personality>;
   }
@@ -229,6 +232,7 @@ async function main() {
     userCamera = status.camera;
     renderer.setCameraPreset?.(status.camera);
     applyRenderStyle(status.renderStyle);
+    inputAvoidanceEnabled = status.inputAvoidance !== false;
     // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
     syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
@@ -292,6 +296,12 @@ async function main() {
   });
 
   let cursor: { x: number; y: number } | null = null;
+  let focusedInput: FocusedInput | null = null;
+  let focusedInputSeenAt = -Infinity;
+  host.onFocusedInputChange?.(input => {
+    focusedInput = input;
+    focusedInputSeenAt = performance.now();
+  });
   let isCaptured = false; // mirrors the host's click-through state, to avoid redundant IPC calls
   let isMouseDown = false;
   let dragStartedAt = 0;
@@ -436,6 +446,7 @@ async function main() {
     renderer.setSkin?.(event.payload);
     syncMargins();
   });
+  void listen<boolean>('input-avoidance-enabled', event => { inputAvoidanceEnabled = event.payload; });
   void listen<string>('set-render-style', (event) => applyRenderStyle(event.payload));
   void listen<string>('set-camera', (event) => {
     userCamera = event.payload;
@@ -759,7 +770,15 @@ async function main() {
       // the realistic cat's legs set its pace (a small one strolls, it does not skate); the voxel cat's legs follow any
       const pace = renderer.locomotionPace?.();
       engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
+      const input = inputAvoidanceEnabled && now - focusedInputSeenAt < 2000 ? focusedInput : null;
+      engine.setProtectedRegions(inputProtectedRegions(input, workArea,
+        renderer.screenExtent?.() ?? { above: 120, below: 20, halfWidth: 80 }));
       const snapshot = engine.tick(now, cursor, pointerOnPet);
+      const yieldingToInput = snapshot.inputAvoidance.overlapping;
+      if (yieldingToInput) performances.stop();
+      // Clear the text immediately while the cat quietly walks out. With no free spot
+      // (a full-window editor without caret bounds), wait invisibly until focus changes.
+      document.documentElement.style.opacity = yieldingToInput ? '0' : '1';
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the
       // gait integrates would be wrong.
@@ -886,7 +905,7 @@ async function main() {
         // reaches this webview at all.
         const toy = snapshot.toy;
         overToy = toy?.kind === 'yarn' && Math.hypot(toy.position.x - cursor.x, toy.position.y - cursor.y) < TOY_GRAB_RADIUS_PX;
-        const shouldCapture = hit || overToy || isMouseDown || isChargingToy;
+        const shouldCapture = !yieldingToInput && (hit || overToy || isMouseDown || isChargingToy);
         if (shouldCapture !== isCaptured) {
           isCaptured = shouldCapture;
           void host.setClickThrough(!isCaptured);
@@ -943,7 +962,7 @@ async function main() {
         updateSuspension();
         // Compare before applying: setSkin rebuilds the rig and repaints both atlases, so
         // calling it every 1.5s because nothing changed would be genuinely expensive.
-        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius, status.renderStyle]);
+        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius, status.renderStyle, status.inputAvoidance]);
         if (json === lastStatusJson) return;
         const missed = lastStatusJson !== '';
         lastStatusJson = json;

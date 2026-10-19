@@ -1394,6 +1394,34 @@ async function main() {
     });
   }
 
+  const inputAvoidanceToggle = document.getElementById('input-avoidance-enabled') as HTMLInputElement;
+  const inputAvoidancePermission = document.getElementById('input-avoidance-permission') as HTMLButtonElement;
+  const inputAvoidanceStatus = document.getElementById('input-avoidance-status') as HTMLElement;
+  async function refreshInputAvoidance() {
+    try {
+      const state = await invoke<{ enabled: boolean; trusted: boolean }>('input_avoidance_status');
+      inputAvoidanceToggle.checked = state.enabled;
+      inputAvoidancePermission.hidden = !state.enabled || state.trusted;
+      inputAvoidanceStatus.textContent = !state.enabled ? '已关闭输入区域避让，鼠标避让仍然生效。'
+        : state.trusted ? '已开启，猫咪会自动让开正在输入的区域。'
+        : '需要给「灵犀」辅助功能权限才能检测输入位置；当前仅有鼠标避让。';
+    } catch { inputAvoidanceStatus.textContent = '暂时无法读取输入避让状态，请稍后重试。'; }
+  }
+  inputAvoidanceToggle.addEventListener('change', async () => {
+    inputAvoidanceToggle.disabled = true;
+    try { await invoke('set_input_avoidance', { enabled: inputAvoidanceToggle.checked }); }
+    finally { inputAvoidanceToggle.disabled = false; await refreshInputAvoidance(); }
+  });
+  inputAvoidancePermission.addEventListener('click', async () => {
+    await invoke('request_input_avoidance_permission');
+    await openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    await refreshInputAvoidance();
+  });
+  void refreshInputAvoidance();
+  window.setInterval(() => {
+    if (!document.hidden && document.getElementById('page-settings')?.classList.contains('active')) void refreshInputAvoidance();
+  }, 2000);
+
   document.getElementById('toggle-visibility')?.addEventListener('click', async () => {
     const current = await invoke<Status>('get_status');
     void invoke('set_companion_visible', { visible: !current.visible });

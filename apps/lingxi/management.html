@@ -409,6 +409,14 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             <p class="hint">开发工具：逐个检查动作、表情和本地接口。</p>
           </div>
 
+          <h2 class="section-gap">输入时不打扰</h2>
+          <div class="card">
+            <label><input id="input-avoidance-enabled" type="checkbox" /> 避开正在输入的区域</label>
+            <p class="hint" id="input-avoidance-status" role="status">检查中…</p>
+            <button id="input-avoidance-permission" class="wide-button secondary" hidden>授权检测输入区域</button>
+            <p class="hint">只检测输入框与文本光标的位置，不读取输入内容、不记录按键。猫咪会让开输入框；大型编辑器优先避开正在输入的那一行。部分应用不提供文本光标位置时，会保护整个输入区域。</p>
+          </div>
+
           <h2 class="section-gap">能力开放（MCP）</h2>
           <div class="card">
             <p class="cat-card-line">状态：<span class="badge" id="mcp-status-badge">检查中…</span></p>
@@ -426,7 +434,7 @@ LINGXI_AGENT_NAME = "Codex"</pre>
           <h2 class="section-gap">它怎么做反应</h2>
           <div class="card">
             <p class="cat-card-line">反应引擎（本地规则，始终开启）：</p>
-            <p class="cat-card-line">· 鼠标是你正在工作的地方，猫会避开它——连落脚点都不选在光标附近。</p>
+            <p class="cat-card-line">· 猫会避开鼠标；开启输入区域检测并授权后，也会避开输入框和正在输入的那一行。</p>
             <p class="cat-card-line">· 放出玩具它就去玩，收走就散了，不需要切换什么模式。</p>
             <p class="cat-card-line">· Agent 报上来的任务状态会变成表情 + 动作 + 一句话（见「Agent 接入」）。</p>
           </div>

@@ -31,35 +31,18 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 mod tray_badge;
+mod focused_input;
 
-/// Read-only Accessibility trust check. NEVER shows the system permission dialog.
-///
-/// This is the ONLY form of the check the app has, and that is deliberate: **nothing here
-/// actually uses the Accessibility permission**. Cursor tracking reads `NSEvent.mouseLocation`,
-/// a plain AppKit property that needs no entitlement (see poll_global_cursor), and dragging
-/// uses ordinary window events. The permission was only ever wanted for a global click and
-/// keystroke listener that has never been built.
-///
-/// Startup used to call a prompting variant, so the app raised a system permission dialog for
-/// a capability it does not use. Worse, the grant does not survive a rebuild: macOS keys TCC
-/// grants on the code signature, and every locally-built bundle is signed afresh, so the user
-/// grants it, rebuilds, and is asked again - "我已经开启授权了依然会弹". Reported twice, and
-/// each previous fix only narrowed WHERE it was asked from rather than asking whether it
-/// should be asked at all.
-///
-/// If a feature that genuinely needs it ever lands, prompt from THAT feature, when the user
-/// turns it on, with `application_is_trusted_with_prompt()` - not at startup for everyone.
-///
-/// Cached for a minute: get_status reports it, and the companion reconciles against get_status
-/// every couple of seconds - each uncached check is a round trip to tccd, for a value that only
-/// changes when the user flips a switch in System Settings.
+/// Read-only trust check, never prompting. Mouse tracking needs no permission;
+/// the optional focused-input avoidance does. Its dedicated UI button is the only
+/// prompting path. Short cache lets a newly granted permission take effect promptly.
 #[cfg(target_os = "macos")]
 fn accessibility_trusted_readonly() -> bool {
     static CHECKED_AT: AtomicU64 = AtomicU64::new(0);
     static TRUSTED: AtomicBool = AtomicBool::new(false);
     let now = now_millis();
     let checked_at = CHECKED_AT.load(Ordering::Relaxed);
-    if checked_at != 0 && now.saturating_sub(checked_at) < 60_000 {
+    if checked_at != 0 && now.saturating_sub(checked_at) < 2_000 {
         return TRUSTED.load(Ordering::Relaxed);
     }
     let trusted = macos_accessibility_client::accessibility::application_is_trusted();
@@ -71,6 +54,70 @@ fn accessibility_trusted_readonly() -> bool {
 #[cfg(not(target_os = "macos"))]
 fn accessibility_trusted_readonly() -> bool {
     true
+}
+
+#[derive(Default)]
+struct FocusedInputState {
+    latest: Mutex<Option<focused_input::FocusedInput>>,
+    observed_at: AtomicU64,
+}
+
+#[tauri::command]
+fn focused_input_region(state: State<FocusedInputState>) -> Option<focused_input::FocusedInput> {
+    if now_millis().saturating_sub(state.observed_at.load(Ordering::Relaxed)) > 2_000 { return None; }
+    state.latest.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn input_avoidance_status(state: State<TrayState>) -> serde_json::Value {
+    serde_json::json!({
+        "enabled": state.input_avoidance.load(Ordering::Relaxed),
+        "trusted": accessibility_trusted_readonly(),
+    })
+}
+
+#[tauri::command]
+fn set_input_avoidance(app: tauri::AppHandle, state: State<TrayState>, enabled: bool) {
+    state.input_avoidance.store(enabled, Ordering::Relaxed);
+    let _ = app.emit("input-avoidance-enabled", enabled);
+    state.persist();
+    if !enabled {
+        *app.state::<FocusedInputState>().latest.lock().unwrap() = None;
+        let _ = app.emit_to("companion", "focused-input", Option::<focused_input::FocusedInput>::None);
+    }
+}
+
+/// Called only by the feature's permission button, never by startup or the poller.
+#[tauri::command]
+fn request_input_avoidance_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    { macos_accessibility_client::accessibility::application_is_trusted_with_prompt() }
+    #[cfg(not(target_os = "macos"))]
+    { false }
+}
+
+fn spawn_focused_input_poller(app: tauri::AppHandle, scale_factor: f64) {
+    thread::spawn(move || {
+        let power = app.state::<PowerState>();
+        let state = app.state::<FocusedInputState>();
+        let mut had_input = false;
+        loop {
+            power.park_while(|p| p.away != 0 || p.tier == TIER_DORMANT);
+            let enabled = app.state::<TrayState>().input_avoidance.load(Ordering::Relaxed);
+            let trusted = enabled && accessibility_trusted_readonly();
+            let input = if trusted { focused_input::sample(scale_factor) } else { None };
+            // A setting change while AX was querying must not re-enable a stale rectangle.
+            let input = if app.state::<TrayState>().input_avoidance.load(Ordering::Relaxed) { input } else { None };
+            let present = input.is_some();
+            *state.latest.lock().unwrap() = input.clone();
+            state.observed_at.store(now_millis(), Ordering::Relaxed);
+            if present || had_input {
+                let _ = app.emit_to("companion", "focused-input", input);
+            }
+            had_input = present;
+            thread::sleep(Duration::from_millis(if trusted { 250 } else { 1000 }));
+        }
+    });
 }
 
 #[derive(Clone, Serialize)]
@@ -226,6 +273,8 @@ struct PersistedSettings {
     camera: String,
     #[serde(default = "default_render_style")]
     render_style: String,
+    #[serde(default = "default_input_avoidance")]
+    input_avoidance: bool,
 }
 
 fn default_cat_name() -> String {
@@ -248,6 +297,8 @@ fn default_camera() -> String {
     DEFAULT_CAMERA.to_string()
 }
 
+fn default_input_avoidance() -> bool { true }
+
 fn default_render_style() -> String {
     DEFAULT_RENDER_STYLE.to_string()
 }
@@ -267,6 +318,7 @@ impl PersistedSettings {
             skin: default_skin(),
             camera: default_camera(),
             render_style: default_render_style(),
+            input_avoidance: true,
         }
     }
 }
@@ -314,6 +366,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
         skin,
         camera,
         render_style,
+        input_avoidance: settings.input_avoidance,
     }
 }
 
@@ -350,6 +403,7 @@ struct TrayState {
     skin: Mutex<String>,
     camera: Mutex<String>,
     render_style: Mutex<String>,
+    input_avoidance: AtomicBool,
     /// Where PersistedSettings is written; None only if the OS config dir is
     /// unavailable, in which case settings simply don't persist (app still works).
     settings_path: Option<PathBuf>,
@@ -515,6 +569,7 @@ impl TrayState {
             skin: self.skin.lock().unwrap().clone(),
             camera: self.camera.lock().unwrap().clone(),
             render_style: self.render_style.lock().unwrap().clone(),
+            input_avoidance: self.input_avoidance.load(Ordering::Relaxed),
         };
         let Ok(body) = serde_json::to_string_pretty(&settings) else { return };
         if let Some(parent) = path.parent() {
@@ -638,6 +693,7 @@ fn get_status(state: State<TrayState>, power: State<PowerState>) -> serde_json::
         "camera": *state.camera.lock().unwrap(),
         "knownCameras": KNOWN_CAMERAS,
         "renderStyle": *state.render_style.lock().unwrap(),
+        "inputAvoidance": state.input_avoidance.load(Ordering::Relaxed),
         "knownRenderStyles": KNOWN_RENDER_STYLES,
     })
 }
@@ -6481,6 +6537,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         skin: Mutex::new(DEFAULT_SKIN.to_string()),
         camera: Mutex::new(DEFAULT_CAMERA.to_string()),
         render_style: Mutex::new(DEFAULT_RENDER_STYLE.to_string()),
+        input_avoidance: AtomicBool::new(true),
         cat_name: Mutex::new(DEFAULT_CAT_NAME.to_string()),
         cat_personality: Mutex::new(String::new()),
         active_agent: Mutex::new(default_active_agent()),
@@ -6813,6 +6870,10 @@ pub fn run() {
             set_skin,
             set_camera,
             set_render_style,
+            set_input_avoidance,
+            input_avoidance_status,
+            request_input_avoidance_permission,
+            focused_input_region,
             report_capabilities,
             get_capabilities,
             play_action,
@@ -6914,8 +6975,8 @@ pub fn run() {
             // setup() runs on the main thread, which is where these observers have to live.
             watch_system_presence(app.handle());
 
-            // Read-only: reports the state, never raises a dialog. The app does not use this
-            // permission at all (see accessibility_trusted_readonly), so asking for it at
+            // Read-only: never raises a dialog. Focused-input avoidance has a dedicated
+            // opt-in permission button; asking for it at
             // startup was pure friction - and a grant that cannot survive a rebuild made it
             // look broken on top of that.
             let trusted = accessibility_trusted_readonly();
@@ -6949,6 +7010,7 @@ pub fn run() {
                 state.apply_skin(handle, &saved.skin);
                 state.apply_camera(handle, &saved.camera);
                 state.apply_render_style(handle, &saved.render_style);
+                state.input_avoidance.store(saved.input_avoidance, Ordering::Relaxed);
                 if !saved.visible {
                     // Same code path as the runtime tray toggle. The companion window
                     // must still be created visible (see the compositing note above);
@@ -6956,6 +7018,9 @@ pub fn run() {
                     state.set_visible(handle, false);
                 }
             }
+
+            app.manage(FocusedInputState::default());
+            spawn_focused_input_poller(app.handle().clone(), scale_factor);
 
             app.manage(PerceptionState { latest_snapshot: Mutex::new(serde_json::json!({})) });
             app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
@@ -8575,6 +8640,7 @@ command = "node"
             skin: "silver-brook".to_string(),
             camera: "eye-level".to_string(),
             render_style: "realistic".to_string(),
+            input_avoidance: false,
         };
         // Serialize the same way TrayState::persist does (tmp file + rename) and load
         // it back through the same loader the app startup uses.

@@ -1,3 +1,4 @@
+import { normalizeRegions, isProtected, safePoint, inputWaypoint, pathProtected } from './protected-regions.mjs';
 // Cat Life Engine (docs/05-technical-architecture.md module boundaries).
 //
 // Pure behavior state machine: no rendering, no DOM, no Tauri. It only knows a 2D
@@ -308,6 +309,11 @@ export function createLifeEngine(config = {}) {
   const rand = (min, max) => randomBetween(min, max, random);
   const toyInteraction = typeof config.toyInteraction === 'function' ? config.toyInteraction : null;
   let bounds = cfg.bounds;
+  let protectedRegions = normalizeRegions(config.protectedRegions);
+  let inputEscapeTarget = null;
+  let avoidingInput = false;
+  const inputBounds = () => ({ left: roamMinX(), right: roamMaxX(), top: roamMinY(), bottom: roamMaxY() });
+  function setProtectedRegions(regions) { protectedRegions = normalizeRegions(regions); }
   let state = 'idle';
   let position = config.position ?? { x: bounds.width / 2, y: bounds.height / 2 };
   let facing = 1; // +1 = facing +x, -1 = facing -x
@@ -637,6 +643,7 @@ export function createLifeEngine(config = {}) {
     //                           there before noticing. Rejecting such targets up front is what
     //                           makes it actually stay out of the user's way.
     const scoreOf = (point) => {
+      if (isProtected(point, protectedRegions)) return -1e12;
       const reach = distance(position, point);
       const clearance = cursor ? distance(point, cursor) : Infinity;
       if (clearance < cfg.cursorKeepOut) return -1e9 + clearance; // disqualified, least-bad first
@@ -652,7 +659,7 @@ export function createLifeEngine(config = {}) {
         bestScore = score;
       }
     }
-    return best;
+    return safePoint(best, protectedRegions, inputBounds()) ?? position;
   }
 
   /**
@@ -1083,16 +1090,25 @@ export function createLifeEngine(config = {}) {
    * directly instead of differentiating position, which removes the noise path entirely.
    */
   function moveToward(dest, deltaSeconds, requestedSpeed = cfg.speed, avoid = null) {
+    const safeDestination = safePoint(dest, protectedRegions, {
+      left: minX(), right: maxX(), top: minY(), bottom: maxY(),
+    });
+    if (!safeDestination) return true;
+    dest = safeDestination;
+    const waypoint = inputWaypoint(position, dest, protectedRegions, {
+      left: minX(), right: maxX(), top: minY(), bottom: maxY(),
+    });
+    if (!waypoint) return true; // wait on this side rather than cross an input field
     // Bounded by what the body can actually steer at - see maxTurnRadius.
     const speed = Math.min(requestedSpeed, cfg.maxTurnRate * cfg.maxTurnRadius);
     const d = distance(position, dest);
-    if (d <= cfg.arriveThreshold) {
+    if (d <= cfg.arriveThreshold && (isProtected(position, protectedRegions) || !pathProtected(position, dest, protectedRegions))) {
       position = { ...dest };
       return true; // arrived
     }
 
     turnTarget = null; // walking sets its own heading; a pending stand-still turn is moot
-    const bearing = detourAround(Math.atan2(dest.y - position.y, dest.x - position.x), avoid);
+    const bearing = detourAround(Math.atan2(waypoint.y - position.y, waypoint.x - position.x), avoid);
     const error = shortestAngle(bearing - heading);
     // Arrival taper first, because the speed it produces is what the turn rate is derived from.
     const arrival = Math.min(1, d / Math.max(1, cfg.slowingRadius));
@@ -1112,14 +1128,16 @@ export function createLifeEngine(config = {}) {
     // destination is directly behind it.
     const alignment = Math.max(0, Math.cos(shortestAngle(bearing - heading)));
     const pace = (cfg.minTurnSpeedFactor + (1 - cfg.minTurnSpeedFactor) * alignment) * arrival;
-    const step = Math.min(d, speed * pace * deltaSeconds);
+    const step = Math.min(d, distance(position, waypoint), speed * pace * deltaSeconds);
     // Clamped, like every other position-setting path. Travelling along a heading rather than
     // straight at a (already clamped) destination means the arc of a turn can now swing wide of
     // the target, and without this that arc could carry the cat off the edge of the desktop.
-    position = {
+    const next = {
       x: clamp(position.x + Math.cos(heading) * step, minX(), maxX()),
       y: clamp(position.y + Math.sin(heading) * step, minY(), maxY()),
     };
+    // Turning arcs and large frame steps must obey the same keep-out as the planned route.
+    if (isProtected(position, protectedRegions) || !pathProtected(position, next, protectedRegions)) position = next;
     facing = Math.cos(heading) >= 0 ? 1 : -1;
     // the step above can itself cover the remaining distance (large speed or delta),
     // so check again rather than always waiting one more tick to notice arrival
@@ -1436,6 +1454,7 @@ export function createLifeEngine(config = {}) {
     const previousPetPosition = { ...position };
     stepToy(deltaSeconds, cursor);
 
+    avoidingInput = state !== 'dragged' && isProtected(position, protectedRegions);
     if (state === 'dragged') {
       // Safety net for a lost mouseup: a real drag calls updateDrag() every frame (the
       // host polls the cursor at 60Hz - see main.ts). If that stream goes quiet for too
@@ -1457,6 +1476,24 @@ export function createLifeEngine(config = {}) {
       }
       return snapshot();
     }
+
+    // Input takes priority over sleep, affection, performances and toys. A drag is an
+    // explicit user action; as soon as it ends, this rule applies again.
+    if (avoidingInput) {
+      if (!inputEscapeTarget || isProtected(inputEscapeTarget, protectedRegions)) {
+        inputEscapeTarget = safePoint(position, protectedRegions, inputBounds());
+      }
+      aiIntent = null;
+      holdUntil = 0;
+      settledSince = null;
+      sleptAt = null;
+      state = inputEscapeTarget ? 'wander' : 'idle';
+      target = inputEscapeTarget;
+      if (inputEscapeTarget) moveToward(inputEscapeTarget, deltaSeconds, walkSpeed());
+      return snapshot();
+    }
+    inputEscapeTarget = null;
+    if (target && isProtected(target, protectedRegions)) target = null;
 
     // Waking comes before every autonomous drive and before the intent handling below,
     // because all of them assume a cat that is up. A disturbance wakes it immediately - and
@@ -1606,6 +1643,7 @@ export function createLifeEngine(config = {}) {
   function snapshot() {
     return {
       state,
+      inputAvoidance: { overlapping: avoidingInput },
       position: { ...position },
       facing,
       heading,
@@ -1706,6 +1744,7 @@ export function createLifeEngine(config = {}) {
     setAvoidRadius,
     setPace,
     setMargins,
+    setProtectedRegions,
     setEdgePreference,
     resetPosition,
     setToy,

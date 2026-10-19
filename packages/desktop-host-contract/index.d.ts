@@ -20,6 +20,12 @@ export interface CursorPoint {
   y: number;
 }
 
+/** Geometry only: no text, selected text or key events leave the OS sampler. */
+export interface FocusedInput {
+  field: { x: number; y: number; width: number; height: number };
+  caret: { x: number; y: number; width: number; height: number } | null;
+}
+
 /**
  * The desktop shell's job, and only its job: own the OS window and report a
  * normalized view of the environment. It does not know about behavior states,
@@ -38,6 +44,9 @@ export interface DesktopHost {
    * see the Rust-side comment in apps/lingxi/src-tauri/src/lib.rs.
    */
   onGlobalCursorMove(handler: (point: CursorPoint) => void): () => void;
+
+  /** Optional on hosts without a native text-focus API. Coordinates match WorkArea. */
+  onFocusedInputChange?(handler: (input: FocusedInput | null) => void): () => void;
 
   /**
    * Toggle whether the window accepts input. `false` while the pointer is over the
