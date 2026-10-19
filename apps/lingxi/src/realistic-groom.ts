@@ -82,6 +82,21 @@ export function coatLength(partName: string) {
 const LID_STRAND_WIDTH = 8;
 // how much more of the lids' coat than of the rest is drawn (see setDensity)
 const LID_DENSITY_LEAD = 0.35;
+// A closed eye's lids were a pad with an edge round it: the face's coat stopped at the eye's rim, where its strands
+// (some 20 mm long there) are groomed away from the eye. Closing, the face's coat round the eye is combed in over the
+// lids instead - each strand laid from its root toward the eye's middle, along the closed lid's dome - leaving the lash
+// line between. Strands rooted within `near` of the eye's axis go all the way, fading out by `far`, only on the face's
+// front (`depth` in front of the eye's centre, back to minus this); laid over this share of their length, never under
+// the shut lid (its dome, measured off lids.glb with Blink on: `crown` in front of the eye's centre on its axis,
+// falling as `fall` times the square of the distance from it, out to `rim`; the face round it stands 1-1.6 cm proud of
+// the lid's edge - the closed eye sits in a hollow, whose wall was the pad's hard edge) and this far above it (model
+// units). `shut`: how much each of the upper lid's keys closes the eye; followed over `settle` seconds and from `from`
+// shut on, so a blink leaves the coat alone (the fur round the eye twitched with every one) and a sleeping, slow-blinking
+// or petted cat's closed eye gets it.
+const EYE_LEAN = {
+  near: 0.056, far: 0.072, depth: 0.012, comb: 0.9, crown: 0.0245, fall: 10.4, rim: 0.045, lift: 0.0015,
+  shut: { Blink: 1, Smile: 0.5, Squint: 0.25 }, settle: 0.35, from: 0.45,
+};
 
 const GROOM_VERTEX = /* glsl */ `
 #include <common>
@@ -92,6 +107,9 @@ attribute vec3 groomTangent;
 attribute vec3 groomPawOffset; // short paw-fibre lift, applied after the exported curve's rest position
 attribute vec3 groomBreath;    // the skin's Breath shape key under the strand's root (createGroom options.breath)
 uniform float uGroomBreath;    // that key's influence this frame
+attribute vec2 groomLean;      // a face strand round an eye: weight (negative round the left eye), its root's distance from the eye's axis
+uniform vec3 uGroomEyeL, uGroomEyeR, uGroomEyeAxisL, uGroomEyeAxisR; // the eyes in the rest pose (createGroom options.eyes)
+uniform vec2 uGroomShut;       // how closed each eye is (left, right)
 attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
 attribute vec3 groomStrand; // length (model units), random 0..1, 1 on the lids' coat
 uniform float uGroomTime, uGroomHeight, uGroomGust;
@@ -151,6 +169,27 @@ void main() {
     vGroomChildEnd = mix(${GROOM.childShortest}, 1.0, fract(h.z * 7.31));
   }
   transformed += groomPawOffset + groomBreath * uGroomBreath;
+  // the face's coat round a closing eye combed in over its lids (EYE_LEAN)
+  vec3 groomT = groomTangent;
+  if (groomLean.x != 0.0) {
+    bool left = groomLean.x < 0.0;
+    float shut = (left ? uGroomShut.x : uGroomShut.y) * abs(groomLean.x);
+    if (shut > 0.001) {
+      vec3 eye = left ? uGroomEyeL : uGroomEyeR, axis = left ? uGroomEyeAxisL : uGroomEyeAxisR;
+      vec3 d = transformed - eye;
+      float depth = dot(d, axis);
+      vec3 across = d - axis * depth;
+      float r = max(length(across), 1e-5);
+      vec3 inward = -across / r;
+      float laid = max(0.0, groomLean.y - groomStrand.x * sqrt(groomData.z) * ${EYE_LEAN.comb});
+      float r2 = mix(r, laid, shut);
+      // over the eye: across the hollow at the face's height, never into the shut lid's dome
+      float dome = ${EYE_LEAN.crown} - ${EYE_LEAN.fall} * r2 * r2 + ${EYE_LEAN.lift};
+      float depth2 = r2 < ${EYE_LEAN.rim} ? max(depth, mix(depth, dome, shut)) : depth;
+      transformed = eye + axis * depth2 - inward * r2;
+      groomT = mix(groomTangent, inward * length(groomTangent), shut);
+    }
+  }
   vec3 groomRest = transformed;
   vGroomRest = groomRest;
   #include <skinning_vertex>
@@ -162,7 +201,7 @@ void main() {
     vec4 restSkin = bindMatrix * vec4(groomRest, 1.0);
     lagDelta = (bindMatrixInverse * ((groomLagMatrix(skinIndex.x) - boneMatX) * restSkin)).xyz;
   #endif
-  vec3 hairTangent = groomTangent;
+  vec3 hairTangent = groomT;
   #ifdef USE_SKINNING
     hairTangent = (skinMatrix * vec4(hairTangent, 0.0)).xyz;
   #endif
@@ -338,6 +377,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   part?: string;
   /** The Breath shape key's offset at a rest-pose point (the skin under a strand's root), or null where it has none. */
   breath?: (x: number, y: number, z: number) => readonly [number, number, number] | null;
+  /** The eyes in the rest pose, left then right: their centres and the way they look (see EYE_LEAN). */
+  eyes?: readonly { centre: readonly [number, number, number]; axis: readonly [number, number, number] }[];
 } = {}) {
   const uniforms = {
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
@@ -345,7 +386,15 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     uGroomChild: { value: 0 },
     uGroomLagBones: { value: null as THREE.DataTexture | null },
     uGroomBreath: { value: 0 },
+    uGroomEyeL: { value: new THREE.Vector3() }, uGroomEyeR: { value: new THREE.Vector3() },
+    uGroomEyeAxisL: { value: new THREE.Vector3(0, 0, 1) }, uGroomEyeAxisR: { value: new THREE.Vector3(0, 0, 1) },
+    uGroomShut: { value: new THREE.Vector2() },
   };
+  const eyes = options.eyes?.length === 2 ? options.eyes : null;
+  if (eyes) {
+    uniforms.uGroomEyeL.value.fromArray(eyes[0].centre); uniforms.uGroomEyeR.value.fromArray(eyes[1].centre);
+    uniforms.uGroomEyeAxisL.value.fromArray(eyes[0].axis).normalize(); uniforms.uGroomEyeAxisR.value.fromArray(eyes[1].axis).normalize();
+  }
   // Its own shader, not MeshStandardMaterial's: a strand is a fibre, not a surface - its light runs along it - and the
   // standard one's per-pixel soft shadow and environment lookups, on millions of sub-pixel strand fragments, were most
   // of the frame.
@@ -367,7 +416,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
   });
-  Object.assign(material.defaultAttributeValues, { groomPawOffset: [0, 0, 0], groomBreath: [0, 0, 0] });
+  Object.assign(material.defaultAttributeValues, { groomPawOffset: [0, 0, 0], groomBreath: [0, 0, 0], groomLean: [0, 0] });
   // merge() cloned the values: keep the material's own uniform objects as the ones update() writes
   Object.assign(uniforms, Object.fromEntries(Object.keys(uniforms).map((k) => [k, material.uniforms[k]])));
   const boneIndex = new Map(base.skeleton.bones.map((b, i) => [(b.userData.name as string | undefined) ?? b.name, i]));
@@ -382,6 +431,9 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   const lidColours = faceCoat ? continueCoatOntoLids(strandsOf(faceCoat), asset.spec.parts.filter((part) => /_LX_Lid/.test(part.name)).map((part) => ({
     ...strandsOf(part), name: part.name, blink: part.morphs?.Blink ? floats(part.morphs.Blink) : null,
   }))) : new Map<string, Float32Array>();
+  // the upper lids' shape keys, for how closed each eye is (EYE_LEAN)
+  const shutters: { left: boolean; influences: number[]; keys: Record<string, number> }[] = [];
+  const eyeShut = [0, 0];
   const meshes = asset.spec.parts.map((part) => {
     const source = floats(part.positions), radii = floats(part.radii);
     const colors = /_LX_Lid/.test(part.name) ? lidColours.get(part.name) ?? evened(floats(part.colors), part.points, LID_COLOUR_EVENING) : floats(part.colors);
@@ -403,6 +455,24 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
           const d = roots[order[slot]];
           if (d) for (let k = 0; k < part.points * 2; k++) breath.set(d, ((slot * part.points * 2) + k) * 3);
         }
+      }
+    }
+    // the face's strands round each eye (EYE_LEAN): which eye, how much, and how far out their roots are
+    let lean: Float32Array | null = null;
+    if (eyes && FACE.test(part.name)) {
+      lean = new Float32Array(count * 2);
+      for (let slot = 0; slot < part.strands; slot++) {
+        const root = order[slot] * part.points * 3;
+        let best: [number, number] | null = null;
+        eyes.forEach((eye, k) => {
+          const d = [0, 1, 2].map((c) => source[root + c] - eye.centre[c]);
+          const al = Math.hypot(...eye.axis);
+          const depth = (d[0] * eye.axis[0] + d[1] * eye.axis[1] + d[2] * eye.axis[2]) / al;
+          const r = Math.sqrt(Math.max(0, d[0] ** 2 + d[1] ** 2 + d[2] ** 2 - depth * depth));
+          const weight = depth < -EYE_LEAN.depth ? 0 : 1 - THREE.MathUtils.smoothstep(r, EYE_LEAN.near, EYE_LEAN.far);
+          if (weight > 0 && (!best || Math.abs(best[0]) < weight)) best = [k === 0 ? -weight : weight, r];
+        });
+        if (best) for (let k = 0; k < part.points * 2; k++) lean.set(best, ((slot * part.points * 2) + k) * 2);
       }
     }
     const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
@@ -467,6 +537,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     ] as const) geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
     if (pawOffset) geometry.setAttribute('groomPawOffset', new THREE.BufferAttribute(pawOffset, 3));
     if (breath) geometry.setAttribute('groomBreath', new THREE.BufferAttribute(breath, 3));
+    if (lean) geometry.setAttribute('groomLean', new THREE.BufferAttribute(lean, 2));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     let lid: THREE.Mesh | undefined;
     if (part.morphTarget) root.traverse((o) => {
@@ -490,6 +561,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     }
     const mesh = new THREE.SkinnedMesh(geometry, material);
     mesh.name = part.name;
+    const upper = /LidUpper\.([LR])$/.exec(part.morphTarget ?? '');
+    if (lid?.morphTargetInfluences && upper) shutters.push({ left: upper[1] === 'L', influences: lid.morphTargetInfluences, keys: lid.morphTargetDictionary! });
     if (lid) {
       mesh.morphTargetInfluences = lid.morphTargetInfluences;
       mesh.morphTargetDictionary = lid.morphTargetDictionary;
@@ -551,6 +624,18 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   const target = new Float32Array(16);
   let lagPrimed = false;
   function simulate(seconds: number) {
+    if (eyes) {
+      const shut = [0, 0];
+      for (const s of shutters) {
+        let v = 0;
+        for (const [key, share] of Object.entries(EYE_LEAN.shut)) v += (s.influences[s.keys[key] ?? -1] ?? 0) * share;
+        shut[s.left ? 0 : 1] = Math.max(shut[s.left ? 0 : 1], Math.min(1, v));
+      }
+      const k = 1 - Math.exp(-Math.max(0, seconds) / EYE_LEAN.settle);
+      for (let i = 0; i < 2; i++) eyeShut[i] += (shut[i] - eyeShut[i]) * k;
+      const lean = (v: number) => THREE.MathUtils.smoothstep(v, EYE_LEAN.from, 1);
+      uniforms.uGroomShut.value.set(lean(eyeShut[0]), lean(eyeShut[1]));
+    }
     const w = 2 * Math.PI * GROOM_LAG.hz, zeta = GROOM_LAG.damping;
     // a jump (the first frame, a long stall, a teleport) starts the copy where the skeleton is
     const snap = !lagPrimed || seconds > 0.25;

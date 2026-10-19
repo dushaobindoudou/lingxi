@@ -721,18 +721,23 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
    * over the eye, gone past it (LID_TUCK), by the distance from the nearer eye's axis. The lids, face and groom share
    * one rest space (their nodes carry no transform), so one function serves the lids' skin, undercoat and strands.
    */
-  function lidTuck(root: THREE.Object3D, lid: THREE.Object3D) {
+  /** The eyes (left, right) in a lid's rest space - the face's and the groom's too (their nodes carry no transform). */
+  function eyeFrames(root: THREE.Object3D, lid: THREE.Object3D) {
     const eyes = ['EyeL', 'EyeR'].map((name) => root.getObjectByName(name)).filter((e): e is THREE.Object3D => !!e);
-    if (eyes.length !== 2) return 'float lidShown(vec3 rest) { return 1.0; }';
+    if (eyes.length !== 2) return null;
     lid.updateWorldMatrix(true, false);
     const toLocal = new THREE.Matrix4().copy(lid.matrixWorld).invert();
-    const glsl = (v: THREE.Vector3) => `vec3(${v.x.toFixed(5)}, ${v.y.toFixed(5)}, ${v.z.toFixed(5)})`;
-    const [l, r] = eyes.map((e) => {
+    return eyes.map((e) => {
       const centre = e.getWorldPosition(new THREE.Vector3()).applyMatrix4(toLocal);
       // the eye looks along its bone (+y), turned into the lid's space
       const tip = e.localToWorld(new THREE.Vector3(0, 1, 0)).applyMatrix4(toLocal);
       return { centre, axis: tip.sub(centre).normalize() };
     });
+  }
+  function lidTuck(eyes: { centre: THREE.Vector3; axis: THREE.Vector3 }[] | null) {
+    if (!eyes) return 'float lidShown(vec3 rest) { return 1.0; }';
+    const glsl = (v: THREE.Vector3) => `vec3(${v.x.toFixed(5)}, ${v.y.toFixed(5)}, ${v.z.toFixed(5)})`;
+    const [l, r] = eyes;
     return `float lidShown(vec3 rest) {
       vec3 dl = rest - ${glsl(l.centre)}, dr = rest - ${glsl(r.centre)};
       bool left = dot(dl, dl) < dot(dr, dr);
@@ -1127,7 +1132,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const lidMeshes: THREE.SkinnedMesh[] = [];
     root.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && /^LX_Lid(Upper|Lower)\./.test((o.userData.name as string | undefined) ?? '')) lidMeshes.push(o as THREE.SkinnedMesh); });
     const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root, groomAsset ? LID_UNDERCOAT_LIFT : LID_COAT_LIFT);
-    if (lidMeshes.length) lidTuckGlsl = lidTuck(root, lidMeshes[0]);
+    const eyes = lidMeshes.length ? eyeFrames(root, lidMeshes[0]) : null;
+    lidTuckGlsl = lidTuck(eyes);
     const head = root.getObjectByName('LX_Head') as THREE.Mesh | undefined;
     if (head) {
       cleanMouthPaint(head, groomAsset);
@@ -1227,6 +1233,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (!coat.length) throw new Error('Groom needs a skinned coat mesh');
       groom = createGroom(groomAsset, coat[0], root, {
         breath: breathLookup(coat[0]),
+        eyes: eyes?.map((e) => ({ centre: e.centre.toArray(), axis: e.axis.toArray() })),
         // the muzzle's hairs part along the closed mouth's line (drawn in the undercoat), or they lay across it
         part: `${MOUTH_GLSL}
           ${lidTuckGlsl}
