@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "directory": "characters/lingxi-realistic/current",
   "archive": {
-    "url": "https://github.com/dushaobindoudou/lingxi/releases/download/models-2026-09-30/lingxi-realistic-runtime-2951b5f.tar.gz",
-    "sha256": "2cc171e6030f04a1ae97608f54de4d348337c1e7f4bf0d04d7fe1c7dbd7bf514"
+    "url": "https://github.com/dushaobindoudou/lingxi/releases/download/models-2026-09-30/lingxi-realistic-runtime-2951b5f-portable.tar.gz",
+    "sha256": "a9420169162ba85625d597abe6828adfb0932c8ae8e3cc43c3f861e8f2d85d7c"
   },
   "files": {
     "cat.glb": {
