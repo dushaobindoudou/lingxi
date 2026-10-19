@@ -3373,6 +3373,15 @@ fn validate_intent(intent: &serde_json::Value) -> Result<(), String> {
     }
 }
 
+/// The control fields that take over the cat's performance, and so contend for the stage.
+const STAGE_FIELDS: [&str; 5] = ["expression", "action", "say", "perform", "toy"];
+
+/// Whether a command still has something to play after its stage fields drew `rejected` preflight messages. Each field
+/// contributes at most one, so fewer messages than fields present means at least one field plays.
+fn stage_still_plays(command: &serde_json::Value, rejected: usize) -> bool {
+    rejected < STAGE_FIELDS.iter().filter(|field| command.get(**field).is_some()).count()
+}
+
 fn apply_control_command(
     app: &tauri::AppHandle,
     command: &serde_json::Value,
@@ -3484,10 +3493,7 @@ fn apply_control_command(
         .get("__stageAlreadyHeld")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let wants_stage = !already_held
-        && ["expression", "action", "say", "perform", "toy"]
-            .iter()
-            .any(|field| command.get(*field).is_some());
+    let wants_stage = !already_held && STAGE_FIELDS.iter().any(|field| command.get(*field).is_some());
     // Pre-flight the stage-worthy fields BEFORE claiming the stage. The order used to be claim
     // first, validate later, so a command like `{"agent":"a","action":"not-a-clip"}` held the
     // stage for its whole hold window with the agent's badge on screen, then came back 400 -
@@ -3531,7 +3537,11 @@ fn apply_control_command(
     } else {
         Vec::new()
     };
-    let wants_stage = wants_stage && stage_preflight_rejected.is_empty();
+    // The stage is refused only when NOTHING stage-worthy would play. Refusing it for any one bad field cost every
+    // bubble its attribution on the realistic cat: a reaction from the user's library names a clip or face only the
+    // voxel cat has, that field was rejected, and the line was still said - but with no agent-stage, so no icon and no
+    // session name.
+    let wants_stage = wants_stage && stage_still_plays(command, stage_preflight_rejected.len());
     let mut stage_denied: Option<String> = None;
     let hold = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
     if wants_stage {
@@ -6975,6 +6985,18 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         path
+    }
+
+    #[test]
+    fn a_line_that_still_plays_keeps_the_stage_and_its_icon() {
+        // Codex's turn-end reaction on the realistic cat: the library's clip and face are voxel-only and rejected, the
+        // line is said - and must still claim the stage, or the bubble shows no icon.
+        let reaction = serde_json::json!({ "agent": "codex", "action": "wb-wave-flag", "expression": "收工", "say": "好了" });
+        assert!(stage_still_plays(&reaction, 2));
+        // nothing left to play: no stage
+        assert!(!stage_still_plays(&reaction, 3));
+        assert!(!stage_still_plays(&serde_json::json!({ "agent": "codex", "action": "nope" }), 1));
+        assert!(stage_still_plays(&serde_json::json!({ "say": "hi" }), 0));
     }
 
     #[test]

@@ -13,11 +13,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { loadGroom, createGroom, HAIR_KEY, HAIR_SPECULAR_GLSL } from './realistic-groom.ts';
+import { loadGroom, createGroom } from './realistic-groom.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
-import { comfortableWalkPace, locomotionClip, locomotionRate } from './realistic-motion.ts';
+import { createLocomotion, steeringStrideScale } from './realistic-locomotion.ts';
+import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase } from './realistic-motion.ts';
+import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 
 export interface RealisticRendererOptions {
   /** URL of the exported GLB. */
@@ -39,6 +41,9 @@ export type ReadyRenderer = Renderer & { readonly ready: Promise<void> };
 // Same apparent size as the voxel cat at scale 1. rig/cameras.ts says "the cat is ~0.8 tall", but the voxel cat's head
 // and body measure 1.24x that on screen (harness, scale .5: 77 px against the realistic cat's 62 at .8).
 const TARGET_HEIGHT = 1.0;
+// The toys (rig/toys.ts) are modelled in the voxel cat's units. This many of them make one standing cat here, so the
+// yarn ball is about a quarter of the cat's height, as it is beside the voxel cat.
+const TOY_UNITS_PER_CAT = 16;
 const MIN_HIT_RADIUS_PX = 40;
 const MAX_FACING_YAW = Math.PI * 0.42;
 const VELOCITY_SMOOTHING_SECONDS = 0.22;
@@ -74,6 +79,17 @@ const ACTION_CLIPS: Record<string, string> = {
   greeting: 'Happy', affection: 'Happy', 'head-bump': 'Happy', 'purr-settle': 'Happy',
   hiss: 'Bite', sit: 'Sit', loaf: 'Loaf', 'belly-up': 'BellyUp', 'scratch-ear': 'ScratchEar',
   'wash-face': 'WashFace', 'groom-side': 'GroomSide',
+  // the rest of the voxel library (and the WorkBuddy pack in it): the nearest clip, so a reaction written for the voxel
+  // cat still moves this one instead of being rejected outright
+  startle: 'Jump', 'play-peek': 'LieDown', 'roll-left': 'BellyUp', 'roll-right': 'BellyUp', 'sniff-floor': 'Curious',
+  meow: 'Happy', 'shake-head': 'Curious', 'shake-fur': 'GroomSide', 'rear-up': 'Stretch', 'kiss-nuzzle': 'Happy',
+  'slow-blink': 'Loaf', 'tail-greeting': 'Happy', 'tail-sweep': 'Sit', 'tail-tip': 'Curious', 'tail-wrap': 'Loaf',
+  'tail-alert': 'Curious', 'wb-deploy': 'Stretch', 'wb-review': 'Curious', 'wb-suspend': 'Loaf', 'wb-wave-flag': 'PawPlay',
+};
+// Faces the voxel library has and face.json does not (the task-state set): the nearest face this cat can make.
+const EXPRESSION_ALIASES: Record<string, string> = {
+  待命: '认真', 排队中: '安然', 构建中: '认真', 绿灯: '开心', 红灯: '不爽', 上线: '期待', 待你确认: '好奇', 超时: '委屈',
+  收工: '满足', 摸鱼: '放松',
 };
 // What a settled cat does on its own between the host's requests (weights). Loops are held for a while, then released.
 const IDLE_PICKS: [string, number][] = [
@@ -84,6 +100,25 @@ const IDLE_PICKS: [string, number][] = [
 const LOOPING = new Set(['Idle', 'Walk', 'Run', 'Sleep', 'SideLie', 'Loaf', 'Sit', 'LieDown']);
 // Clips that carry the body across the floor; the engine owns position, so their horizontal travel is removed.
 const TRAVELLING = ['Walk', 'Run', 'Jump'];
+// The tail's carriage while a clip that leaves it alone plays. The standing clips never move Tail0, Tail1 or Tail4 (a few
+// degrees on Tail2-3 at most), so the tail stuck straight out back and down in its rest pose, a stick. Per bone, Tail0
+// (root) to Tail4: `lift` (degrees, up about the cat's own side axis, each on top of the one before - a negative tip
+// curls it back over) and `sway` (degrees, side to side, a wave running root to tip once per `period` seconds). Clips
+// not listed (sitting, lying, grooming, sleeping) pose the tail themselves and get nothing.
+// Rest segments run -32, -29, -15, +11, +36 degrees from level; walking lifts them to about 30, 50, 55, 45, 30 (the
+// happy kitten's raised tail, tip hooked), standing to about -25, -20, -8, 5, 20 (low, hanging in a soft curve: any
+// higher and from the front the tip stood up behind the head like a tuft).
+const TAIL_WALK = { lift: [62, 17, -9, -36, -40], sway: [3, 4, 6, 8, 10], period: 1.5 };
+const TAIL_STAND = { lift: [7, 2, -2, -13, -10], sway: [2, 3, 5, 7, 9], period: 3.2 };
+const TAIL_RUN = { lift: [37, 2, -12, -26, -22], sway: [1, 2, 3, 4, 5], period: 0.9 };
+const TAIL_CARRIAGE: Record<string, { lift: number[]; sway: number[]; period: number }> = {
+  Walk: TAIL_WALK, Happy: TAIL_WALK, Curious: TAIL_WALK,
+  Run: TAIL_RUN, Jump: TAIL_RUN,
+  Idle: TAIL_STAND, Turn: TAIL_STAND, Yawn: TAIL_STAND, Bite: TAIL_STAND, Knead: TAIL_STAND, Stretch: TAIL_STAND, PawPlay: TAIL_STAND,
+};
+const TAIL_EASE_SECONDS = 0.35;
+// how far (radians) the sway wave lags from one tail bone to the next
+const TAIL_WAVE_LAG = 0.6;
 // The coat's color attribute is the SKIN under the Cycles hair, darker and duller than the golden caramel the hair
 // shader makes of it: richer and a touch warmer here, on the shells and the bare skin alike.
 // The face a clip implies while it plays and nothing is held (the voxel cat's actions carry theirs in actions.json).
@@ -249,11 +284,20 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let nextIdlePick = 6 + Math.random() * 6;
   const bones: THREE.Bone[] = [];
   let headBone: THREE.Bone | null = null;
+  // Tail0..Tail4, and the model's own frame their lift and sway axes are given in (see TAIL_CARRIAGE)
+  const tailBones: THREE.Bone[] = [];
+  let tailFrame: THREE.Object3D | null = null;
+  const tailLift = [0, 0, 0, 0, 0];
+  const tailSway = [0, 0, 0, 0, 0];
+  let tailPhase = 0;
   const shellMaterials: THREE.Material[] = [];
   const ownedMaterials: THREE.Material[] = [];
   let loaded = false;
   let frameSeconds = 1 / 60;
   let debugInfo: unknown = null;
+  let locomotion: ReturnType<typeof createLocomotion> | null = null;
+  let steeringTurnRate = 0;
+  let walkStrideScale = 1;
   let groom: ReturnType<typeof createGroom> | null = null;
   let textureAudit: { material: string; texture: string | null }[] = [];
   let groundSpeed = 0;
@@ -335,7 +379,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // length, combed back and down along the body (the comb turns with the bones), anti-aliased in screen space, dark at
   // the roots (the coat's own occlusion) and lit through at the rim where the eye grazes the coat - the soft halo the
   // Cycles renders have.
-  function shellMaterial(len: number, den: number, t: number, solid = false) {
+  // `underCurves`: the shells sit under the original groom, which draws the coat's edge and carries the hair highlight.
+  // They get neither: on the outer shells both read as a milky film over the stripes - the hair highlight along one
+  // smooth comb direction is a broad sheen, not lines along strands, and the rim lit every bulge's edge (thigh,
+  // shoulder) as a pale see-through oval.
+  function shellMaterial(len: number, den: number, t: number, solid = false, underCurves = false) {
     // Coverage must not overwrite an already opaque body pixel with fractional framebuffer alpha.
     // Alpha hashing discards strand gaps, while every surviving sample stays opaque on the desktop.
     // `solid`: an opaque layer of undercoat (no strands), under the original curves.
@@ -345,8 +393,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       sh.uniforms.uLen = { value: len };
       sh.uniforms.uDen = { value: den };
       sh.uniforms.uRim = { value: new THREE.Color(0xffd9b8) };
-      sh.uniforms.uHairKey = { value: HAIR_KEY };
-      sh.vertexShader = 'uniform float uShell; uniform float uLen; attribute float furScale; varying vec3 vRest; varying float vScale; varying vec3 vHairT;\n'
+      sh.vertexShader = 'uniform float uShell; uniform float uLen; attribute float furScale; varying vec3 vRest; varying float vScale;\n'
         + sh.vertexShader
           .replace('#include <begin_vertex>', '#include <begin_vertex>\n vScale = furScale;')
           // strands sit on the surface as its shape keys move it (a closing lid's coat would otherwise smear)
@@ -362,10 +409,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
               comb = (skinMatrix * vec4(comb, 0.0)).xyz;
             #endif
             vec3 dir = normalize(nrm + normalize(comb) * 0.55 * uShell);
-            transformed += dir * h;
-            // the strands' direction for the hair highlight: out and combed back
-            vHairT = normalize(mat3(modelViewMatrix) * normalize(nrm * 0.35 + normalize(comb)));`);
-      sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; varying vec3 vRest; varying float vScale; varying vec3 vHairT;\n' + HAIR_SPECULAR_GLSL + '\n'
+            transformed += dir * h;`);
+      sh.fragmentShader = 'uniform float uShell; uniform float uDen; uniform vec3 uRim; varying vec3 vRest; varying float vScale;\n'
         + 'vec3 furHash3(vec3 p){ p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }\n'
         + sh.fragmentShader
           .replace('#include <color_fragment>', `#include <color_fragment>
@@ -388,14 +433,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             // the coat's occlusion: roots deep, tips light
             diffuseColor.rgb *= mix(0.60, 1.08, smoothstep(0.0, 0.85, uShell));
             ${COAT_GRADE}`)
-          .replace('#include <opaque_fragment>', `
+          .replace('#include <opaque_fragment>', underCurves ? '#include <opaque_fragment>' : `
             // light through the coat's edge where the view grazes it
             float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
             outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
-            outgoingLight += hairSpecular(normalize(vHairT), normalize(normal), normalize(vViewPosition), diffuseColor.rgb) * uShell;
             #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v2' : 'realcat-fur-shell-opaque-v4');
+    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v3' : underCurves ? 'realcat-fur-shell-under-curves-v1' : 'realcat-fur-shell-opaque-v5');
     shellMaterials.push(m);
     return m;
   }
@@ -565,6 +609,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (o.name === 'Head') headBone = o as THREE.Bone;
       }
     });
+    for (let i = 0; i <= 4; i++) {
+      const b = root.getObjectByName(`Tail${i}`) as THREE.Bone | undefined;
+      if (b?.isBone) tailBones.push(b);
+    }
+    tailFrame = tailBones.length === 5 ? root : null;
+    if (tailFrame) for (let i = 0; i < 5; i++) tailClipPose[i].copy(tailBones[i].quaternion);
 
     const coat: THREE.SkinnedMesh[] = [];
     root.traverse((o) => {
@@ -623,7 +673,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       for (let i = 1; i <= total; i++) {
         const outer = groom && i > layers;
         const t = !groom ? i / shellCount : outer ? UNDERCOAT_REACH + (1 - UNDERCOAT_REACH) * (i - layers) / OUTER_LAYERS : UNDERCOAT_REACH * i / layers;
-        const s = new THREE.SkinnedMesh(base.geometry, shellMaterial(f.len, f.den, t, groom != null && !outer));
+        const s = new THREE.SkinnedMesh(base.geometry, shellMaterial(f.len, f.den, t, groom != null && !outer, groom != null));
         s.bind(base.skeleton, base.bindMatrix);
         s.morphTargetInfluences = base.morphTargetInfluences;
         s.morphTargetDictionary = base.morphTargetDictionary;
@@ -665,6 +715,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     catRoot.add(root);
     model = root;
     catRoot.scale.setScalar(effectiveScale());
+    locomotion = createLocomotion(root);
     play('Idle');
     loaded = true;
   });
@@ -672,7 +723,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   function play(name: string, once = false) {
     const next = actions[name];
     if (!next || (next === current && !once)) return false;
+    const phase = current ? locomotionTransitionPhase(currentName, name, current.time / current.getClip().duration) : 0;
     next.reset();
+    next.time = phase * next.getClip().duration;
     next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
     next.clampWhenFinished = once;
     next.timeScale = 1;
@@ -713,10 +766,84 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     rect.y1 = Math.max(rect.y1, sx.y + r * 0.5);
     return rect;
   }
+  // The toy the life engine says exists, if any - followed, never set: render() mounts and unmounts it from state.toy.
+  let toyProp: ToyProp | null = null;
+  let toyKind: ToyKind | null = null;
+  function removeToy() {
+    if (!toyProp) return;
+    scene.remove(toyProp.object);
+    if (toyProp.worldLayer) scene.remove(toyProp.worldLayer);
+    toyProp.dispose();
+    toyProp = null;
+  }
+  function updateToy(state: Parameters<Renderer['render']>[0], deltaSeconds: number) {
+    const toyState = (state as {
+      toy?: { kind: string; position: { x: number; y: number }; velocity: { x: number; y: number }; charge?: number } | null;
+    }).toy ?? null;
+    // the user's size, not a performance's zoom - the same rule as the voxel cat
+    const toyScale = (TARGET_HEIGHT * modelScale) / TOY_UNITS_PER_CAT;
+    if (toyState?.kind !== toyKind) {
+      removeToy();
+      toyKind = (toyState?.kind as ToyKind | undefined) ?? null;
+      if (toyKind) {
+        toyProp = createToyProp(toyKind);
+        scene.add(toyProp.object);
+        // world layers are added unscaled and unmoved - see ToyProp.worldLayer
+        if (toyProp.worldLayer) scene.add(toyProp.worldLayer);
+      }
+    }
+    if (!toyProp || !toyState) return;
+    toyProp.object.scale.setScalar(toyScale);
+    toyProp.setWorldScale?.(toyScale);
+    // the toy's own anchor height lands exactly on its logical screen point (for the cursor toys: on the pointer)
+    toyProp.object.position.copy(screenToWorld(toyState.position.x, toyState.position.y, toyProp.anchorHeight * toyScale));
+    toyProp.update(deltaSeconds, Math.hypot(toyState.velocity.x, toyState.velocity.y), toyState.charge ?? 0, {
+      x: toyState.velocity.x * worldPerPixelX,
+      z: toyState.velocity.y * worldPerPixelZ,
+      scale: 1 / Math.max(1e-6, toyScale),
+    });
+    if ((state as { batted?: boolean }).batted) toyProp.struck?.();
+  }
+  // On top of the clip's pose: ease toward the playing clip's carriage, then turn each bone about the model's side axis
+  // (lift) and up axis (sway), both carried into its parent's frame, root first so every bone builds on the one before.
+  // The mixer only writes a bone when its value changes (PropertyMixer.apply), and Tail0/1/4 hold one value through the
+  // standing clips - so the clip's pose is kept here and put back before each mixer update (uncarryTail), or the turns
+  // would pile up frame on frame.
+  const tailClipPose = Array.from({ length: 5 }, () => new THREE.Quaternion());
+  function uncarryTail() {
+    if (tailFrame) for (let i = 0; i < 5; i++) tailBones[i].quaternion.copy(tailClipPose[i]);
+  }
+  const tailAxis = new THREE.Vector3();
+  const tailFrameQ = new THREE.Quaternion();
+  const tailParentQ = new THREE.Quaternion();
+  const tailTurn = new THREE.Quaternion();
+  function carryTail(deltaSeconds: number) {
+    if (!tailFrame) return;
+    const pose = TAIL_CARRIAGE[currentName];
+    const k = deltaSeconds > 0 ? 1 - Math.exp(-deltaSeconds / TAIL_EASE_SECONDS) : 1;
+    for (let i = 0; i < 5; i++) {
+      tailLift[i] += ((pose?.lift[i] ?? 0) - tailLift[i]) * k;
+      tailSway[i] += ((pose?.sway[i] ?? 0) - tailSway[i]) * k;
+    }
+    tailPhase = (tailPhase + deltaSeconds * Math.PI * 2 / (pose?.period ?? TAIL_STAND.period)) % (Math.PI * 2);
+    tailFrame.getWorldQuaternion(tailFrameQ);
+    for (let i = 0; i < 5; i++) tailClipPose[i].copy(tailBones[i].quaternion);
+    for (let i = 0; i < 5; i++) {
+      const bone = tailBones[i];
+      bone.parent!.getWorldQuaternion(tailParentQ).invert();
+      tailAxis.set(1, 0, 0).applyQuaternion(tailFrameQ).applyQuaternion(tailParentQ);
+      bone.quaternion.premultiply(tailTurn.setFromAxisAngle(tailAxis, THREE.MathUtils.degToRad(tailLift[i])));
+      tailAxis.set(0, 1, 0).applyQuaternion(tailFrameQ).applyQuaternion(tailParentQ);
+      const sway = tailSway[i] * Math.sin(tailPhase - i * TAIL_WAVE_LAG);
+      bone.quaternion.premultiply(tailTurn.setFromAxisAngle(tailAxis, THREE.MathUtils.degToRad(sway)));
+    }
+  }
   function fitCanvasToFrame() {
     const drawn = measureDrawnRect();
     catRect = drawn;
-    const full = performanceScale != null;
+    // the whole frame while a toy is out: the yarn ball rolls anywhere and the laser's trail is a world layer, and a
+    // canvas cropped to the cat would cut both off
+    const full = performanceScale != null || toyProp != null;
     const x0 = full ? 0 : Math.max(0, Math.floor(drawn.x0 - FIT_PADDING_PX));
     const y0 = full ? 0 : Math.max(0, Math.floor(drawn.y0 - FIT_PADDING_PX));
     const x1 = full ? width : Math.min(width, Math.ceil(drawn.x1 + FIT_PADDING_PX));
@@ -815,7 +942,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       oneShot = { id, clip, endsAt: elapsed + ms / 1000 };
       return true;
     },
-    playExpression(name: string, holdMs = EXPRESSION_HOLD_MS) {
+    playExpression(requested: string, holdMs = EXPRESSION_HOLD_MS) {
+      const name = faceSpec?.expressions[requested] ? requested : EXPRESSION_ALIASES[requested] ?? requested;
       if (!faceRig || !faceSpec?.expressions[name]) return false;
       heldExpression = { name, until: elapsed + Math.max(0, holdMs) / 1000 };
       return true;
@@ -863,13 +991,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           clip: currentName, timeScale: current ? +current.timeScale.toFixed(2) : null,
           speedPx: +Math.hypot(velocityX, velocityY).toFixed(1),
           groundSpeed: +groundSpeed.toFixed(4),
-          animatedGroundSpeed: current && strides[currentName] ? +(strides[currentName] * effectiveScale() / current.getClip().duration * current.timeScale).toFixed(4) : 0,
+          animatedGroundSpeed: current && strides[currentName] ? +(strides[currentName] * (currentName === 'Walk' ? walkStrideScale : 1) * effectiveScale() / current.getClip().duration * current.timeScale).toFixed(4) : 0,
           worldPerPixel: [+worldPerPixelX.toFixed(5), +worldPerPixelZ.toFixed(5)], effectiveScale: +effectiveScale().toFixed(4),
           strides: Object.fromEntries(Object.entries(strides).map(([k, v]) => [k, { metres: +v.toFixed(3), seconds: +(actions[k]?.getClip().duration ?? 0).toFixed(3) }])),
         },
         clips: Object.keys(actions),
         actions: Object.keys(ACTION_CLIPS).filter((id) => actions[ACTION_CLIPS[id]]),
-        expressions: faceRig && faceSpec ? Object.keys(faceSpec.expressions) : [],
+        expressions: faceRig && faceSpec
+          ? [...Object.keys(faceSpec.expressions), ...Object.keys(EXPRESSION_ALIASES).filter((n) => !faceSpec!.expressions[n] && faceSpec!.expressions[EXPRESSION_ALIASES[n]])]
+          : [],
         faceProblems,
         cameras: CAMERA_PRESETS.map((p) => ({ id: p.id, name: p.name })),
       };
@@ -912,6 +1042,41 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const moving = (state.state === 'wander' || state.state === 'ai_directed' || state.state === 'play_toy' || state.state === 'follow_cursor')
         && groundSpeed > 1e-4;
 
+      const headingScreen = (state as { heading?: number }).heading;
+      if (headingScreen !== undefined && moving) {
+        facingAngle = Math.atan2(Math.cos(headingScreen) * worldPerPixelX, Math.sin(headingScreen) * worldPerPixelZ);
+        settledSince = null;
+      } else if (headingScreen === undefined && moving) {
+        facingAngle = Math.atan2(velocityX * worldPerPixelX, velocityY * worldPerPixelZ);
+        settledSince = null;
+      } else {
+        settledSince ??= elapsed;
+        if (elapsed - settledSince > SETTLE_DELAY_SECONDS) {
+          let presentation = 0;
+          if (cursor) {
+            const tx = cursor.x - state.position.x;
+            const ty = cursor.y - state.position.y;
+            if (Math.hypot(tx, ty) > 40) {
+              const raw = Math.atan2(tx * worldPerPixelX, ty * worldPerPixelZ);
+              const folded = Math.abs(raw) > Math.PI / 2 ? Math.sign(raw) * (Math.PI - Math.abs(raw)) : raw;
+              presentation = Math.max(-MAX_FACING_YAW, Math.min(MAX_FACING_YAW, folded));
+            }
+          }
+          facingAngle = presentation;
+        }
+      }
+      const previousYaw = bodyYaw;
+      if (state.state === 'dragged') bodyYaw = facingAngle;
+      else {
+        const toTurn = Math.atan2(Math.sin(facingAngle - bodyYaw), Math.cos(facingAngle - bodyYaw));
+        const maxStep = TURN_RATE * deltaSeconds;
+        bodyYaw += Math.abs(toTurn) <= maxStep ? toTurn : Math.sign(toTurn) * maxStep;
+      }
+      catRoot.rotation.y = bodyYaw;
+      const yawRate = deltaSeconds > 0 ? Math.atan2(Math.sin(bodyYaw - previousYaw), Math.cos(bodyYaw - previousYaw)) / deltaSeconds : 0;
+      steeringTurnRate += ((moving ? yawRate : 0) - steeringTurnRate) * (1 - Math.exp(-deltaSeconds / .16));
+      walkStrideScale = steeringStrideScale(steeringTurnRate);
+
       // --- which clip ---
       if (loaded) {
         if (oneShot && elapsed >= oneShot.endsAt) oneShot = null;
@@ -941,11 +1106,18 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         else want = 'Idle';
         if (want !== currentName && !(oneShot && want === oneShot.clip && currentName === want)) play(want, oneShot != null && !LOOPING.has(want));
         // stride-matched playback: one clip cycle per stride of ground actually covered
-        if (current && (currentName === 'Walk' || currentName === 'Run') && strides[currentName] > 0) {
-          current.timeScale = locomotionRate(groundDistance, deltaSeconds, strides[currentName], effectiveScale(), current.getClip().duration);
-        } else if (current) current.timeScale = 1;
+        // Both sides of a crossfade must advance by the same ground distance.
+        for (const name of ['Walk', 'Run']) {
+          const action = actions[name];
+          if (action?.isRunning() && strides[name] > 0) {
+            action.timeScale = locomotionRate(groundDistance, deltaSeconds, strides[name] * (name === 'Walk' ? walkStrideScale : 1), effectiveScale(), action.getClip().duration);
+          }
+        }
+        locomotion?.beforeMixer();
         faceRig?.beforeMixer();
+        uncarryTail();
         mixer!.update(deltaSeconds);
+        carryTail(deltaSeconds);
         if (faceRig && faceSpec) {
           const want = wantedExpression();
           if (want.name !== faceName) {
@@ -982,38 +1154,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       shadowCatcher.position.set(stand.x, 0.002, stand.z);
       shadowCatcher.scale.setScalar(reach * 2.5);
 
-      const headingScreen = (state as { heading?: number }).heading;
-      if (headingScreen !== undefined && moving) {
-        facingAngle = Math.atan2(Math.cos(headingScreen) * worldPerPixelX, Math.sin(headingScreen) * worldPerPixelZ);
-        settledSince = null;
-      } else if (headingScreen === undefined && moving) {
-        facingAngle = Math.atan2(velocityX * worldPerPixelX, velocityY * worldPerPixelZ);
-        settledSince = null;
-      } else {
-        settledSince ??= elapsed;
-        if (elapsed - settledSince > SETTLE_DELAY_SECONDS) {
-          let presentation = 0;
-          if (cursor) {
-            const tx = cursor.x - state.position.x;
-            const ty = cursor.y - state.position.y;
-            if (Math.hypot(tx, ty) > 40) {
-              const raw = Math.atan2(tx * worldPerPixelX, ty * worldPerPixelZ);
-              const folded = Math.abs(raw) > Math.PI / 2 ? Math.sign(raw) * (Math.PI - Math.abs(raw)) : raw;
-              presentation = Math.max(-MAX_FACING_YAW, Math.min(MAX_FACING_YAW, folded));
-            }
-          }
-          facingAngle = presentation;
-        }
-      }
-      if (state.state === 'dragged') bodyYaw = facingAngle;
-      else {
-        const toTurn = Math.atan2(Math.sin(facingAngle - bodyYaw), Math.cos(facingAngle - bodyYaw));
-        const maxStep = TURN_RATE * deltaSeconds;
-        bodyYaw += Math.abs(toTurn) <= maxStep ? toTurn : Math.sign(toTurn) * maxStep;
-      }
-      catRoot.rotation.y = bodyYaw;
+      locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0);
       if (headBone && cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
 
+      updateToy(state, deltaSeconds);
       if (contextLost) return;
       scene.updateMatrixWorld();
       if (fitCanvas) {
@@ -1061,6 +1205,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       (shadowCatcher.material as THREE.Material).dispose();
       (shadow.material as THREE.Material).dispose();
       shadowTexture.dispose();
+      removeToy();
       envTarget.dispose();
       pmrem.dispose();
       renderer.dispose();

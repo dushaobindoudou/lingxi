@@ -24,3 +24,10 @@ export function comfortableWalkPace(stride: number, duration: number, scale: num
   // at ~1.3x, an unhurried stroll.
   return stride * scale / duration * pixelsPerMetre * 1.4;
 }
+
+/** Match the left forepaw's contact phase when changing between walk and gallop. */
+export function locomotionTransitionPhase(from: string, to: string, phase: number): number {
+  const offset: Record<string, number> = { Walk: 0, Run: .47 };
+  if (!(from in offset) || !(to in offset)) return 0;
+  return ((phase + offset[from] - offset[to]) % 1 + 1) % 1;
+}
