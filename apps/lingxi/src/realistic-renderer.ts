@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadGroom, createGroom } from './realistic-groom.ts';
+import { createFurWind } from './realistic-wind.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -66,13 +67,18 @@ const LID_FUR = { len: 0.007, den: 650 };
 // At the default .25 the cat is ~350 px tall and draws ~30% of them (see Groom.setDensity).
 const GROOM_FULL_DENSITY_PX = 1200;
 const GROOM_MIN_DENSITY = 0.12;
-// With the original groom: solid shells out to this share of the coat's length, then stranded shells to its tip (the
-// solid coat alone read smooth, a plush toy, and the user still saw too little fur).
-const UNDERCOAT_LAYERS = 8;
-const UNDERCOAT_REACH = 0.62;
+// With the original groom: an opaque undercoat out to this share of the coat's length, under the strands. Short: at
+// .62 it buried every strand groomed flat along the body - the chest, the middle of the face, the flanks seen from the
+// front - and close up the cat was a smooth painted surface with hair only round its outline. At .3 the strands lie on
+// top everywhere and the undercoat only closes the gaps between them. Opaque layers hide each other but at the edge,
+// so a few are enough.
+const UNDERCOAT_LAYERS = 4;
+const UNDERCOAT_REACH = 0.3;
 // No stranded shells since the strands blend (realistic-groom): they accumulate into the coat's fluffy edge
 // themselves, and the 12 layers this once had cost a quarter of the frame for no visible difference at desktop size.
 const OUTER_LAYERS = 0;
+// how far round the pointer a stroke reaches into the coat (CSS px; a fingertip-to-palm sized patch)
+const STROKE_RADIUS_PX = 44;
 
 // The host's action ids (data/actions.json, main.ts) -> the GLB's clips. Approximate where the look-dev cat has no
 // exact clip; everything not listed is reported unsupported (false), never silently "played".
@@ -152,6 +158,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // Gentle, film-like roll-off: the white chest and paws keep their texture instead of clipping.
+  // (AgX is what Blender's own view transform is, so the Cycles review renders and this agree; Neutral and ACES both
+  // pushed the coat to a saturated orange)
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.toneMappingExposure = 1.3;
 
@@ -165,7 +173,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // side goes cold or dark, and a warm rim from behind that lights the coat's edge into a soft halo.
   // Soft shadows, from the key only: the cat grounded on the floor and shaded under its own chin and between its legs.
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   const KEY_OFFSET = new THREE.Vector3(-1.3, 2.4, 2.2);
   const key = new THREE.DirectionalLight(0xffe9d2, 2.4);
   key.position.copy(KEY_OFFSET);
@@ -305,6 +313,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let steeringTurnRate = 0;
   let walkStrideScale = 1;
   let groom: ReturnType<typeof createGroom> | null = null;
+  const furWind = createFurWind();
+  let lastAir: ReturnType<typeof furWind.update> | null = null;
   let textureAudit: { material: string; texture: string | null }[] = [];
   let groundSpeed = 0;
   const autonomous = options.autonomous ?? true;
@@ -988,7 +998,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         style: 'realistic',
         debug: debugInfo,
         textures: textureAudit,
-        fur: groom ? { mode: 'original-curves', strands: groom.meshes.reduce((n, m) => n + m.geometry.getAttribute('position').count / 12, 0), parts: groom.meshes.length, density: +groom.density.toFixed(2) }
+        fur: groom ? { mode: 'original-curves', strands: groom.meshes.reduce((n, m) => n + m.geometry.getAttribute('position').count / 12, 0), parts: groom.meshes.length, density: +groom.density.toFixed(2),
+          air: lastAir && { wind: +Math.hypot(...lastAir.wind).toFixed(3), gust: +lastAir.gust.toFixed(2), stroke: +lastAir.stroke.amount.toFixed(3) } }
           : { mode: 'shells', layers: shellCount },
         animation: { elapsed: +elapsed.toFixed(3), clipTime: current ? +current.time.toFixed(3) : null, fps: +(1 / frameSeconds).toFixed(1), drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
         torsoScreenPoint: torso ? worldToScreen(torso) : null,
@@ -1016,7 +1027,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     render(state, deltaSeconds, cursor) {
       elapsed += deltaSeconds;
       if (deltaSeconds > 0) frameSeconds += (deltaSeconds - frameSeconds) * .08;
-      groom?.update(elapsed, Math.hypot(velocityX, velocityY) / 60, renderer.domElement.height);
+      groom?.update(elapsed, renderer.domElement.height);
       groom?.setDensity(Math.max(GROOM_MIN_DENSITY, TARGET_HEIGHT * effectiveScale() / unitsPerPixel * renderer.getPixelRatio() / GROOM_FULL_DENSITY_PX));
       lastAnchor = { x: state.position.x, y: state.position.y };
 
@@ -1046,6 +1057,18 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       }
       const groundDistance = Math.hypot(dx * worldPerPixelX, dy * worldPerPixelZ);
       groundSpeed = deltaSeconds > 0 ? groundDistance / deltaSeconds : 0;
+      if (groom) {
+        // the coat in the air: its velocity in cat heights a second (a kitten's trot and a big cat's look the same)
+        const catHeight = TARGET_HEIGHT * effectiveScale();
+        const over = cursor != null && catRect != null && cursor.x >= catRect.x0 && cursor.x <= catRect.x1 && cursor.y >= catRect.y0 && cursor.y <= catRect.y1;
+        const air = lastAir = furWind.update(deltaSeconds, { x: velocityX * worldPerPixelX / catHeight, y: 0, z: velocityY * worldPerPixelZ / catHeight }, cursor ? { x: cursor.x, y: cursor.y, over } : null);
+        // the pointer in the canvas's own NDC (a canvas fitted to the cat is a window onto the full frame)
+        const view = fitCanvas && canvasRect.width ? canvasRect : { x: 0, y: 0, width, height };
+        groom.setWind(air.wind, air.gust, {
+          x: (air.stroke.x - view.x) / view.width * 2 - 1, y: 1 - (air.stroke.y - view.y) / view.height * 2,
+          radius: STROKE_RADIUS_PX * unitsPerPixel, dx: air.stroke.dx, dy: -air.stroke.dy, amount: air.stroke.amount,
+        });
+      }
       const moving = (state.state === 'wander' || state.state === 'ai_directed' || state.state === 'play_toy' || state.state === 'follow_cursor')
         && groundSpeed > 1e-4;
 

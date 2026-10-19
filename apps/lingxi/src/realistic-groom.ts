@@ -12,38 +12,198 @@ export interface GroomSpec {
 }
 export interface GroomAsset { spec: GroomSpec; bytes: ArrayBuffer }
 
-/**
- * Hair highlights (Kajiya-Kay, two lobes) - what made the review render's coat read as hair rather than felt: Cycles'
- * Principled Hair puts a thin bright line ACROSS each strand, along its direction, and a second, coat-coloured one
- * shifted toward the tip. A plain surface material (roughness .86) had neither. `T` view-space strand direction,
- * `N` view-space normal, `V` toward the eye; the key light's direction (world) comes in as uHairKey.
- */
-export const HAIR_SPECULAR_GLSL = `
-  uniform vec3 uHairKey;
-  vec3 hairSpecular(vec3 T, vec3 N, vec3 V, vec3 base) {
-    vec3 L = normalize((viewMatrix * vec4(uHairKey, 0.0)).xyz);
-    vec3 H = normalize(L + V);
-    float lit = clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0);
-    vec3 T1 = normalize(T + N * 0.08);
-    vec3 T2 = normalize(T - N * 0.22);
-    float d1 = dot(T1, H), d2 = dot(T2, H);
-    float s1 = pow(sqrt(max(0.0, 1.0 - d1 * d1)), 90.0);
-    float s2 = pow(sqrt(max(0.0, 1.0 - d2 * d2)), 22.0);
-    return (vec3(1.0, 0.97, 0.92) * s1 * 0.22 + base * s2 * 0.32) * lit;
-  }`;
-export const HAIR_KEY = new THREE.Vector3(-1.3, 2.4, 2.2).normalize();
+// How a strand is shaded, matched by eye against the Cycles review renders (Principled Hair) at desktop size and close up:
+// - coverage: square root of the drawn width's true share - the physical (linear) share left the coat thin
+// - absorption: Principled Hair scatters light through many strands, each absorbing - the mass reads darker and richer
+//   than one strand's colour. Raising the colour to this power stands in for it; white stays white
+// - melanin: no two hairs are the same shade. Without it every strand matched the undercoat under it and close up the
+//   coat read as a painted, smooth surface - the variation is what makes single hairs visible
+// - occlusion: light reaches a root through the coat over it - roots in shade, tips in the light
+// - three highlight lobes along the strand (Marschner): R, a thin white line off the surface, shifted toward the root;
+//   TRT, through the hair and back, broader and in the coat's own colour, toward the tip; TT, straight through - the
+//   warm glow of a backlit coat's edge
+const GROOM = {
+  coverageExp: '0.50',
+  absorption: '1.45',
+  melanin: '0.30',
+  rootShade: '0.62',
+  // diffuse wrap: light carries round a fur volume further than round a hard surface
+  wrap: '0.45',
+  r: { shift: '0.10', exp: '110.0', strength: '1.2' },
+  glossFocus: '4.0',
+  trt: { shift: '-0.18', exp: '28.0', strength: '1.4' },
+  tt: { exp: '5.0', strength: '1.6' },
+  // the room the cat stands in (the other materials' RoomEnvironment at 0.5): soft light from everywhere
+  ambient: '0.32',
+} as const;
 
-// How the strands are coloured and how much of a pixel each covers, matched by eye against the Cycles review renders at
-// desktop size (light background, side and front):
-// - coverage: square root of the drawn width's true share - the physical (linear) share left the 40%-sampled coat thin
-// - absorption: the review render's Principled Hair scatters light through many strands, each absorbing - the mass
-//   reads darker and richer than one strand's colour (the tail's grey-brown 142,112,88 is a deep banded brown there).
-//   Raising the colour to this power stands in for it; white stays white
-// - the coat grade the undercoat and skin get (COAT_GRADE), so strands do not veil them in another shade
-// - the white highlight lobe at a fraction: on blended strands every lit strand's highlight adds up to a sheen
-const GROOM_COVERAGE_EXP = '0.50';
-const GROOM_ABSORPTION = '1.60';
-const GROOM_SPECULAR = '0.40';
+const GROOM_VERTEX = /* glsl */ `
+#include <common>
+#include <color_pars_vertex>
+#include <morphtarget_pars_vertex>
+#include <skinning_pars_vertex>
+attribute vec3 groomTangent;
+attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
+attribute vec2 groomStrand; // length (model units), random 0..1
+uniform float uGroomTime, uGroomHeight, uGroomGust;
+uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axes
+uniform vec4 uGroomStroke;  // pointer (NDC xy), radius (view units), bend
+uniform vec2 uGroomStrokeDir;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow;
+varying vec3 vGroomT, vGroomN, vGroomColor;
+#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
+  struct DirectionalLightShadow { float shadowIntensity; float shadowBias; float shadowNormalBias; float shadowRadius; vec2 shadowMapSize; };
+  uniform DirectionalLightShadow directionalLightShadows[ NUM_DIR_LIGHT_SHADOWS ];
+  uniform mat4 directionalShadowMatrix[ NUM_DIR_LIGHT_SHADOWS ];
+  #ifdef SHADOWMAP_TYPE_PCF
+    uniform sampler2DShadow directionalShadowMap[ NUM_DIR_LIGHT_SHADOWS ];
+  #else
+    uniform sampler2D directionalShadowMap[ NUM_DIR_LIGHT_SHADOWS ];
+  #endif
+#endif
+void main() {
+  #include <color_vertex>
+  #include <morphinstance_vertex>
+  #include <morphcolor_vertex>
+  #include <beginnormal_vertex>
+  #include <morphnormal_vertex>
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
+  #include <defaultnormal_vertex>
+  #include <begin_vertex>
+  #include <morphtarget_vertex>
+  #include <skinning_vertex>
+  vec3 hairTangent = groomTangent;
+  #ifdef USE_SKINNING
+    hairTangent = (skinMatrix * vec4(hairTangent, 0.0)).xyz;
+  #endif
+  vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+  vec3 N = normalize(transformedNormal);
+  vec3 T = normalize(mat3(modelViewMatrix) * hairTangent);
+  float viewScale = length(modelViewMatrix[0].xyz);
+  float along = groomData.z, t = sqrt(along);
+  float strandLength = groomStrand.x * viewScale;
+
+  // Air. A gust travels through the coat as waves (rest position, so they keep their place on the body as it moves);
+  // each strand flutters a little on its own. The bend can lift a strand off the body, never push it into it.
+  float wave = sin(dot(position, vec3(0.0, 7.0, 17.0)) - uGroomTime * 5.5 + 1.7 * sin(dot(position.xz, vec2(13.0, 4.0)) + uGroomTime * 0.9));
+  float flutter = sin(uGroomTime * (7.0 + 3.0 * groomStrand.y) + groomData.w);
+  vec3 bend = (viewMatrix * vec4(uGroomWind, 0.0)).xyz;
+  bend *= 1.0 + uGroomGust * 0.55 * wave + 0.12 * flutter;
+  bend += cross(N, bend) * 0.25 * flutter;
+  // a hand through the coat: the strands under the pointer go along with it, lifting a little
+  vec2 fromPointer = (projectionMatrix * mvPosition).xy - uGroomStroke.xy;
+  fromPointer /= vec2(projectionMatrix[0][0], projectionMatrix[1][1]);
+  float touch = uGroomStroke.w * exp(-dot(fromPointer, fromPointer) / max(1e-6, uGroomStroke.z * uGroomStroke.z));
+  bend += vec3(uGroomStrokeDir, 0.0) * touch + N * abs(touch) * 0.6;
+  bend -= N * min(0.0, dot(bend, N));
+  // slow breathing of the coat, so a still cat's fur is never frozen
+  bend += vec3(sin(uGroomTime * 1.7 + groomData.w), 0.25 * sin(uGroomTime * 1.3 + groomData.w), 0.45 * cos(uGroomTime * 1.5 + groomData.w)) * 0.012;
+  vec3 tipShift = bend * strandLength;
+  // the tip moves along an arc, not out of the strand's length: what it gains sideways it loses along the strand
+  vec3 shiftView = tipShift * along - T * (dot(tipShift, tipShift) / max(1e-6, 2.0 * strandLength)) * along * along;
+  mvPosition.xyz += shiftView;
+  T = normalize(T * strandLength + 2.0 * t * tipShift);
+
+  vGroomT = T;
+  vGroomColor = vColor.rgb;
+  vGroomN = N;
+  vGroomAlong = along;
+  vGroomRandom = groomStrand.y;
+  vec2 across = vec2(-T.y, T.x);
+  across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
+  float radiusView = groomData.y * viewScale;
+  float minimumRadius = 0.30 / (projectionMatrix[1][1] * uGroomHeight * 0.5);
+  float drawnRadius = max(radiusView, minimumRadius);
+  // A strand drawn wider than it is covers that much less of each pixel it touches.
+  vGroomCoverage = pow(min(1.0, radiusView / drawnRadius), ${GROOM.coverageExp});
+  vGroomEdge = groomData.x;
+  mvPosition.xy += across * groomData.x * drawnRadius;
+  gl_Position = projectionMatrix * mvPosition;
+
+  // The key light's shadow, looked up once per strand point rather than for every pixel of every strand: a hair is
+  // far thinner than a shadow-map texel, and per pixel this lookup was half the coat's cost.
+  vGroomShadow = 1.0;
+  #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
+    vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
+    worldPosition.xyz += (vec4(shiftView, 0.0) * viewMatrix).xyz;
+    vec3 worldNormal = inverseTransformDirection(N, viewMatrix);
+    vec4 shadowCoord = directionalShadowMatrix[0] * (worldPosition + vec4(worldNormal * directionalLightShadows[0].shadowNormalBias, 0.0));
+    shadowCoord.xyz /= shadowCoord.w;
+    shadowCoord.z += directionalLightShadows[0].shadowBias;
+    if (all(greaterThanEqual(shadowCoord.xyz, vec3(0.0))) && all(lessThanEqual(shadowCoord.xyz, vec3(1.0)))) {
+      vec2 texel = directionalLightShadows[0].shadowRadius / directionalLightShadows[0].shadowMapSize;
+      #ifdef SHADOWMAP_TYPE_PCF
+        float lit = (texture(directionalShadowMap[0], vec3(shadowCoord.xy + vec2(-0.7, -0.3) * texel, shadowCoord.z))
+          + texture(directionalShadowMap[0], vec3(shadowCoord.xy + vec2(0.3, -0.7) * texel, shadowCoord.z))
+          + texture(directionalShadowMap[0], vec3(shadowCoord.xy + vec2(0.7, 0.3) * texel, shadowCoord.z))
+          + texture(directionalShadowMap[0], vec3(shadowCoord.xy + vec2(-0.3, 0.7) * texel, shadowCoord.z))) * 0.25;
+      #else
+        float lit = step(shadowCoord.z, texture(directionalShadowMap[0], shadowCoord.xy).r);
+      #endif
+      vGroomShadow = mix(1.0, lit, directionalLightShadows[0].shadowIntensity);
+    }
+  #endif
+}`;
+
+const GROOM_FRAGMENT = /* glsl */ `
+#include <common>
+#include <lights_pars_begin>
+uniform float uGroomStack;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow;
+varying vec3 vGroomT, vGroomN, vGroomColor;
+float hairLobe(vec3 T, vec3 H, float e) { float d = dot(T, H); return pow(sqrt(max(0.0, 1.0 - d * d)), e); }
+void main() {
+  float alpha = vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
+  // each strand drawn stands for uGroomStack of them (see setDensity): the opacity of that many overlapping
+  alpha = 1.0 - pow(1.0 - min(alpha, 0.999), uGroomStack);
+  vec3 base = pow(max(vGroomColor, vec3(1e-4)), vec3(${GROOM.absorption}));
+  base *= 1.0 + ${GROOM.melanin} * (vGroomRandom - 0.5);
+  // the coat grade the undercoat and skin get (COAT_GRADE), so strands do not veil them in another shade
+  float lumC = dot(base, vec3(0.2126, 0.7152, 0.0722));
+  base = max(mix(vec3(lumC), base, 1.25) * vec3(1.06, 1.0, 0.90), 0.0);
+  float t = sqrt(vGroomAlong);
+  // the root rises out of the undercoat: drawn from inside it, a strand's dark root showed as a speck (most of all
+  // at desktop size, where each drawn strand stands for several)
+  alpha *= smoothstep(0.0, 0.3, t);
+  float occlusion = mix(${GROOM.rootShade}, 1.0, t);
+
+  vec3 N = normalize(vGroomN), T = normalize(vGroomT);
+  vec3 V = vec3(0.0, 0.0, 1.0); // the desktop camera is orthographic
+  vec3 tR = normalize(T + N * ${GROOM.r.shift}), tTRT = normalize(T + N * ${GROOM.trt.shift});
+  vec3 coatTint = sqrt(base);
+  vec3 diffuse = vec3(0.0), shine = vec3(0.0);
+  #if NUM_DIR_LIGHTS > 0
+    #pragma unroll_loop_start
+    for (int i = 0; i < NUM_DIR_LIGHTS; i++) { {
+      vec3 L = directionalLights[ i ].direction;
+      vec3 C = directionalLights[ i ].color * (UNROLLED_LOOP_INDEX == 0 ? vGroomShadow : 1.0);
+      float nl = dot(N, L);
+      float lit = clamp((nl + ${GROOM.wrap}) / (1.0 + ${GROOM.wrap}), 0.0, 1.0);
+      float tl = dot(T, L);
+      diffuse += C * lit * mix(1.0, sqrt(max(0.0, 1.0 - tl * tl)), 0.3);
+      vec3 H = normalize(L + V);
+      // the coat's gloss gathers where its surface faces the half-vector: a soft band across a round head or flank
+      // (strand lobes alone lit every strand at once and greyed the whole coat over rather than making it shine)
+      float facing = smoothstep(-0.2, 0.3, nl) * (0.25 + 0.75 * pow(max(0.0, dot(N, H)), ${GROOM.glossFocus}));
+      shine += C * facing * (vec3(1.0, 0.98, 0.95) * hairLobe(tR, H, ${GROOM.r.exp}) * ${GROOM.r.strength}
+        + base * hairLobe(tTRT, H, ${GROOM.trt.exp}) * ${GROOM.trt.strength});
+      // through the hair: a light behind the cat, seen past the coat's edge
+      float behind = max(0.0, -dot(L, V));
+      float edge = 1.0 - abs(dot(N, V));
+      shine += C * coatTint * pow(behind, ${GROOM.tt.exp}) * edge * edge * ${GROOM.tt.strength} * (0.3 + 0.7 * t);
+    } }
+    #pragma unroll_loop_end
+  #endif
+  vec3 ambient = vec3(${GROOM.ambient}) * PI;
+  #if NUM_HEMI_LIGHTS > 0
+    ambient += getHemisphereLightIrradiance(hemisphereLights[0], N);
+  #endif
+  vec3 color = base * (diffuse + ambient) * RECIPROCAL_PI * occlusion + shine * RECIPROCAL_PI * t;
+  gl_FragColor = vec4(color, alpha);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
 
 export async function loadGroom(directory: string): Promise<GroomAsset | null> {
   const response = await fetch(`${directory}groom.json`);
@@ -60,15 +220,23 @@ export async function loadGroom(directory: string): Promise<GroomAsset | null> {
 
 /** Original curved strands, camera-facing only across their width. No procedural re-grooming. */
 export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: THREE.Object3D = base.parent!) {
-  const uniforms = { uGroomTime: { value: 0 }, uGroomMotion: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uHairKey: { value: HAIR_KEY } };
-  const material = new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: .86, metalness: 0, side: THREE.DoubleSide,
+  const uniforms = {
+    uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
+    uGroomWind: { value: new THREE.Vector3() }, uGroomStroke: { value: new THREE.Vector4() }, uGroomStrokeDir: { value: new THREE.Vector2(1, 0) },
+  };
+  // Its own shader, not MeshStandardMaterial's: a strand is a fibre, not a surface - its light runs along it - and the
+  // standard one's per-pixel soft shadow and environment lookups, on millions of sub-pixel strand fragments, were most
+  // of the frame.
+  const material = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.lights, uniforms]),
+    vertexShader: GROOM_VERTEX, fragmentShader: GROOM_FRAGMENT,
+    lights: true, vertexColors: true, side: THREE.DoubleSide,
     // Blended, not alpha-to-coverage: A2C turns a given alpha into the same MSAA samples every time, so overlapping
     // strands kept landing on the same samples and a dense coat never got past its first strand's coverage - the tail's
     // 15k dark-brown strands read as a pale grey haze round a thin core. Blended strands accumulate as fur does. They
     // draw after the opaque body and undercoat (transparent pass) and are depth-tested against them, but write no
     // depth, so a strand in front never punches a hole in the ones behind it.
-    alphaToCoverage: false, transparent: true, depthWrite: false,
+    transparent: true, depthWrite: false,
     // DoubleSide + transparent would draw every strand twice (back faces, then front); a ribbon has no inside
     forceSinglePass: true,
     // Explicit source-over alpha preserves an already opaque torso: replacing alpha
@@ -77,63 +245,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
   });
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = `attribute vec3 groomTangent;
-attribute vec4 groomData;
-uniform float uGroomTime, uGroomMotion, uGroomHeight;
-varying float vGroomEdge, vGroomCoverage, vGroomAlong;
-varying vec3 vHairT;\n` + shader.vertexShader;
-    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-      // Roots stay fixed. Slow breathing and movement bend only the outer part of each strand.
-      float phase = groomData.w;
-      float bend = groomData.z * (0.00045 + uGroomMotion * 0.0012);
-      transformed += vec3(sin(uGroomTime * 1.7 + phase), 0.25 * sin(uGroomTime * 1.3 + phase),
-                          0.45 * cos(uGroomTime * 1.5 + phase)) * bend;
-    `);
-    shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
-      vec3 hairTangent = groomTangent;
-      #ifdef USE_SKINNING
-        hairTangent = (skinMatrix * vec4(hairTangent, 0.0)).xyz;
-      #endif
-      vec3 tangentView = normalize(mat3(modelViewMatrix) * hairTangent);
-      vHairT = tangentView;
-      vGroomAlong = groomData.z;
-      vec2 across = vec2(-tangentView.y, tangentView.x);
-      across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
-      float radiusView = groomData.y * length(modelViewMatrix[0].xyz);
-      float minimumRadius = 0.30 / (projectionMatrix[1][1] * uGroomHeight * 0.5);
-      float drawnRadius = max(radiusView, minimumRadius);
-      // A strand drawn wider than it is covers that much less of each pixel it touches.
-      vGroomCoverage = pow(min(1.0, radiusView / drawnRadius), ${GROOM_COVERAGE_EXP});
-      vGroomEdge = groomData.x;
-      mvPosition.xy += across * groomData.x * drawnRadius;
-      gl_Position = projectionMatrix * mvPosition;
-    `);
-    shader.fragmentShader = 'uniform float uGroomStack;\nvarying float vGroomEdge, vGroomCoverage, vGroomAlong;\nvarying vec3 vHairT;\n' + HAIR_SPECULAR_GLSL + '\n' + shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-      diffuseColor.a *= vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
-      // each strand drawn stands for uGroomStack of them (see setDensity): the opacity of that many overlapping
-      diffuseColor.a = 1.0 - pow(1.0 - min(diffuseColor.a, 0.999), uGroomStack);
-      // roots in the coat's own shade, tips in the light (groomData.z runs root 0 -> tip 1, squared)
-      diffuseColor.rgb = pow(max(diffuseColor.rgb, vec3(1e-4)), vec3(${GROOM_ABSORPTION}));
-      diffuseColor.rgb *= mix(0.62, 1.05, sqrt(vGroomAlong));
-      { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-        diffuseColor.rgb = max(mix(vec3(lumC), diffuseColor.rgb, 1.25) * vec3(1.06, 1.0, 0.90), 0.0); }
-    `);
-    // Use the groom's outward surface normal on both sides of the thin ribbon.
-    shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-      #ifdef DOUBLE_SIDED
-        normal *= faceDirection;
-      #endif
-    `);
-    shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
-      outgoingLight += diffuseColor.rgb * 0.055 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);
-      outgoingLight += hairSpecular(normalize(vHairT), normal, normalize(vViewPosition), diffuseColor.rgb) * sqrt(vGroomAlong) * ${GROOM_SPECULAR};
-      #include <opaque_fragment>
-    `);
-  };
-  material.customProgramCacheKey = () => 'original-groom-v4-density';
+  // merge() cloned the values: keep the material's own uniform objects as the ones update() writes
+  Object.assign(uniforms, Object.fromEntries(Object.keys(uniforms).map((k) => [k, material.uniforms[k]])));
   const boneIndex = new Map(base.skeleton.bones.map((b, i) => [(b.userData.name as string | undefined) ?? b.name, i]));
   const jointMap = asset.spec.jointNames.map((name) => {
     const index = boneIndex.get(name);
@@ -147,7 +260,7 @@ varying vec3 vHairT;\n` + shader.vertexShader;
     const joints = new Uint16Array(asset.bytes, part.joints.offset, part.joints.count);
     const count = part.strands * part.points * 2;
     const position = new Float32Array(count * 3), color = new Float32Array(count * 3), normal = new Float32Array(count * 3);
-    const tangent = new Float32Array(count * 3), data = new Float32Array(count * 4), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
+    const tangent = new Float32Array(count * 3), data = new Float32Array(count * 4), strandData = new Float32Array(count * 2), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
     const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
     // Strands in a shuffled order, so any leading run of them (setDensity's draw range) is an even sample of the part.
     const order = shuffledOrder(part.strands);
@@ -155,6 +268,12 @@ varying vec3 vHairT;\n` + shader.vertexShader;
     for (let slot = 0; slot < part.strands; slot++) {
       const strand = order[slot];
       const phase = ((strand * .61803398875) % 1) * Math.PI * 2;
+      const random = (Math.imul(strand + 1, 0x9e3779b1) >>> 0) / 4294967296;
+      let strandLength = 0;
+      for (let point = 1; point < part.points; point++) {
+        const a = (strand * part.points + point - 1) * 3, b = a + 3;
+        strandLength += Math.hypot(source[b] - source[a], source[b + 1] - source[a + 1], source[b + 2] - source[a + 2]);
+      }
       for (let point = 0; point < part.points; point++) {
         const p = strand * part.points + point;
         const before = (strand * part.points + Math.max(0, point - 1)) * 3;
@@ -169,6 +288,7 @@ varying vec3 vHairT;\n` + shader.vertexShader;
             tangent[v * 3 + c] = source[after + c] - source[before + c];
           }
           data.set([side ? 1 : -1, radii[p] * part.widthCompensation, (point / (part.points - 1)) ** 2, phase], v * 4);
+          strandData[v * 2] = strandLength; strandData[v * 2 + 1] = random;
           for (let c = 0; c < 4; c++) {
             const offset = (part.skinPerPoint ? p : strand) * 4 + c;
             skinIndex[v * 4 + c] = jointMap[joints[offset]];
@@ -185,7 +305,7 @@ varying vec3 vHairT;\n` + shader.vertexShader;
     const geometry = new THREE.BufferGeometry();
     for (const [name, array, size] of [
       ['position', position, 3], ['color', color, 3], ['normal', normal, 3], ['groomTangent', tangent, 3],
-      ['groomData', data, 4], ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
+      ['groomData', data, 4], ['groomStrand', strandData, 2], ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
     ] as const) geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     let lid: THREE.Mesh | undefined;
@@ -230,10 +350,18 @@ varying vec3 vHairT;\n` + shader.vertexShader;
   let density = 1;
   return {
     meshes, material,
-    update(seconds: number, motion: number, viewportHeight: number) {
+    update(seconds: number, viewportHeight: number) {
       uniforms.uGroomTime.value = seconds;
-      uniforms.uGroomMotion.value = THREE.MathUtils.clamp(motion, 0, 1);
       uniforms.uGroomHeight.value = viewportHeight;
+    },
+    /** The air (see realistic-wind.ts); the stroke already in NDC, its radius in view units. */
+    setWind(wind: readonly [number, number, number], gust: number, stroke?: { x: number; y: number; radius: number; dx: number; dy: number; amount: number }) {
+      uniforms.uGroomWind.value.set(wind[0], wind[1], wind[2]);
+      uniforms.uGroomGust.value = gust;
+      if (stroke) {
+        uniforms.uGroomStroke.value.set(stroke.x, stroke.y, stroke.radius, stroke.amount);
+        uniforms.uGroomStrokeDir.value.set(stroke.dx, stroke.dy);
+      } else uniforms.uGroomStroke.value.w = 0;
     },
     /**
      * Draw only this share of every part's strands, each standing for 1/share of them. Small on the desktop a cat is a
