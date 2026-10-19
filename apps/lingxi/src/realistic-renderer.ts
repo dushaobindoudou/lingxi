@@ -58,6 +58,10 @@ const PIVOT_CADENCE = 1.1;
 // Standing, it shows itself three-quarter on, never square on: square on its body hid the hind legs - a double-click
 // (the pointer on the cat, straight in front of it) turned it to face the user and its hind legs seemed to vanish.
 const MIN_PRESENT_YAW = 0.5;
+// The head's steadying while walking: how much of the step's sway it takes out, and over how long it averages (a
+// stride is ~1.5 s)
+const HEAD_STEADY_SHARE = 0.75;
+const HEAD_STEADY_SECONDS = 1.2;
 const SETTLE_DELAY_SECONDS = 0.5;
 const CAMERA_EASE_SECONDS = 0.55;
 const CAMERA_DISTANCE = 6;
@@ -72,6 +76,15 @@ const FUR: Record<string, { len: number; den: number }> = {
 };
 // the lids' short coat (see lidCoat)
 const LID_FUR = { len: 0.007, den: 650 };
+const LID_UNDERCOAT_LAYERS = 3;
+// the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
+const LASH_WIDTH = 0.004;
+// Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's
+// dome still showed through a closing lid's edge (world units)
+const LID_SOLIDIFY_OUT = 0.0022;
+// the lids' undercoat lifted to their own strands' brightness: the ring average round the eye takes in the dark tabby
+// stripes, and a closed lid read as a dark pad over the eye
+const LID_UNDERCOAT_LIFT = 1.5;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor.
 // At the default .25 the cat is ~350 px tall and draws ~30% of them (see Groom.setDensity).
 const GROOM_FULL_DENSITY_PX = 1200;
@@ -118,7 +131,14 @@ const IDLE_PICKS: [string, number][] = [
   ['Knead', 0.8], ['Sit', 1.5], ['Loaf', 1.2],
 ];
 // Loops: held until something else is asked for.
-const LOOPING = new Set(['Idle', 'Walk', 'Run', 'Sleep', 'SideLie', 'Loaf', 'Sit', 'LieDown']);
+const LOOPING = new Set(['Idle', 'Walk', 'Run', 'Sleep']);
+// Clips that settle into a pose: where in the clip the pose is reached, and how the cat gets up again. Sit sits, holds
+// and stands up within itself ('rest': play on from the hold); the others end lying down ('reverse': play back to get
+// up). Looped, as they were, a sitting cat stood up and sat down again every two seconds and a lying one popped back
+// up to standing at every loop - the legs jumping.
+const SETTLE_CLIPS: Record<string, { hold: number; rise: 'rest' | 'reverse' }> = {
+  Sit: { hold: 0.5, rise: 'rest' }, Loaf: { hold: 1, rise: 'reverse' }, LieDown: { hold: 1, rise: 'reverse' }, SideLie: { hold: 1, rise: 'reverse' },
+};
 // Clips that carry the body across the floor; the engine owns position, so their horizontal travel is removed.
 const TRAVELLING = ['Walk', 'Run', 'Jump'];
 // The tail's carriage while a clip that leaves it alone plays. The standing clips never move Tail0, Tail1 or Tail4 (a few
@@ -302,11 +322,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const strides: Record<string, number> = {}; // metres of ground per clip cycle (travelling clips)
   let current: THREE.AnimationAction | null = null;
   let currentName = '';
-  let oneShot: { id: string; clip: string; endsAt: number } | null = null;
+  let oneShot: { id: string; clip: string; endsAt: number; rising?: boolean } | null = null;
   let idleSince = 0;
   let nextIdlePick = 6 + Math.random() * 6;
   const bones: THREE.Bone[] = [];
   let headBone: THREE.Bone | null = null;
+  let pelvisBone: THREE.Object3D | null = null;
+  let chestBone: THREE.Object3D | null = null;
+  const bodyCentre = new THREE.Vector3();
+  const bodyPoint = new THREE.Vector3();
   // Tail0..Tail4, and the model's own frame their lift and sway axes are given in (see TAIL_CARRIAGE)
   const tailBones: THREE.Bone[] = [];
   let tailFrame: THREE.Object3D | null = null;
@@ -473,8 +497,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // line takes the coat's colour round the eye - the average over a ring above it (per-vertex samples drew the
   // forehead's stripes, or below the eye the white muzzle, as streaks and blocks on a closed eye) - and grows a short
   // shell coat (furScale 0 on the lash line).
+  // (the stranded shells' lit tips draw the coat ~1.4x brighter; the groom's solid undercoat is shaded as the face's)
   const LID_COAT_LIFT = 1.4;
-  function lidCoat(lids: THREE.SkinnedMesh[], head: THREE.Mesh | undefined, root: THREE.Object3D) {
+  function lidCoat(lids: THREE.SkinnedMesh[], head: THREE.Mesh | undefined, root: THREE.Object3D, lift = LID_COAT_LIFT) {
     const hc = head?.geometry.getAttribute('color');
     if (!head || !hc || !lids.length) return [];
     const hp = head.geometry.getAttribute('position');
@@ -485,6 +510,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const eye = root.getObjectByName(((m.userData.name as string | undefined) ?? '').endsWith('.R') ? 'EyeR' : 'EyeL');
       if (!lc || !eye) continue;
       const centre = eye.getWorldPosition(new THREE.Vector3());
+      solidifyLid(m, centre);
       const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(eye.getWorldQuaternion(new THREE.Quaternion()));
       const sum = [0, 0, 0];
       let n = 0;
@@ -498,11 +524,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       }
       if (!n) continue;
       // the vertex colour is the skin under the coat; the shells' lit tips draw the coat ~1.4x brighter
-      for (let c = 0; c < 3; c++) sum[c] = Math.min(1, (sum[c] / n) * LID_COAT_LIFT) * n;
+      for (let c = 0; c < 3; c++) sum[c] = Math.min(1, (sum[c] / n) * lift) * n;
       const scale = new Float32Array(lc.count);
+      const fromLash = lashDistance(m, centre);
       for (let i = 0; i < lc.count; i++) {
-        const lum = 0.2126 * lc.getX(i) + 0.7152 * lc.getY(i) + 0.0722 * lc.getZ(i);
-        const coat = THREE.MathUtils.smoothstep(lum, 0.012, 0.05);
+        // the lash line by where it is - the lid's free edge, the one of its two open rims nearer the eye - not by how
+        // dark it is: the lid's skin is dark in patches all over, and every dark vertex stayed bare, dark skin, which
+        // showed between the rows of lid strands as rings of dark bands round a closed eye
+        const coat = THREE.MathUtils.smoothstep(fromLash[i], LASH_WIDTH * 0.4, LASH_WIDTH);
         lc.setXYZ(i, THREE.MathUtils.lerp(lc.getX(i), sum[0] / n, coat), THREE.MathUtils.lerp(lc.getY(i), sum[1] / n, coat), THREE.MathUtils.lerp(lc.getZ(i), sum[2] / n, coat));
         scale[i] = coat;
       }
@@ -510,6 +539,56 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       m.geometry.setAttribute('furScale', new THREE.BufferAttribute(scale, 1));
     }
     return lids;
+  }
+  /**
+   * The lid's outer face as Blender's Solidify draws it (2.2 mm thick, centred: the outer face 1.1 mm out). lids.glb
+   * carries the lid's middle surface only, which lies on the eyeball itself - closing, the lid slid into the eye and
+   * the eye showed through it: a squint or a closed eye was drawn by the lid's strands alone, over a lid that wasn't
+   * there. Pushed out along its normal, away from the eye.
+   */
+  function solidifyLid(mesh: THREE.Mesh, eye: THREE.Vector3) {
+    const pos = mesh.geometry.getAttribute('position');
+    const nrm = mesh.geometry.getAttribute('normal');
+    if (!nrm) return;
+    const toLocal = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+    const eyeLocal = eye.clone().applyMatrix4(toLocal);
+    const scale = mesh.matrixWorld.getMaxScaleOnAxis() || 1;
+    const p = new THREE.Vector3(), n = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i); n.fromBufferAttribute(nrm, i).normalize();
+      if (n.dot(p.clone().sub(eyeLocal)) < 0) n.negate();
+      p.addScaledVector(n, LID_SOLIDIFY_OUT / scale);
+      pos.setXYZ(i, p.x, p.y, p.z);
+    }
+    pos.needsUpdate = true;
+    mesh.geometry.computeBoundingSphere();
+  }
+  /** Each vertex's distance (world) to the lid's free edge: of the mesh's open rims, the one nearer the eye. */
+  function lashDistance(mesh: THREE.Mesh, eye: THREE.Vector3): Float32Array {
+    const pos = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    const world = Array.from({ length: pos.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld));
+    const out = new Float32Array(pos.count).fill(Infinity);
+    if (!index) return out;
+    // an edge used by one triangle only lies on an open rim; welded by position (the export splits vertices at seams)
+    const key = (i: number) => world[i].toArray().map((c) => c.toFixed(5)).join(',');
+    const edges = new Map<string, number>();
+    const tri = index.array;
+    for (let t = 0; t < tri.length; t += 3) for (let e = 0; e < 3; e++) {
+      const a = key(tri[t + e]), b = key(tri[t + (e + 1) % 3]);
+      const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+      edges.set(k, (edges.get(k) ?? 0) + 1);
+    }
+    const rim = new Set<string>();
+    for (const [k, n] of edges) if (n === 1) for (const end of k.split('|')) rim.add(end);
+    const rimPoints = world.filter((_, i) => rim.has(key(i)));
+    if (!rimPoints.length) return out;
+    // two rims, round the eye and away from it: the nearer half of the rim points
+    const near = [...rimPoints].sort((a, b) => a.distanceTo(eye) - b.distanceTo(eye));
+    const cut = (near[0].distanceTo(eye) + near[near.length - 1].distanceTo(eye)) / 2;
+    const lash = near.filter((p) => p.distanceTo(eye) < cut);
+    for (let i = 0; i < world.length; i++) for (const p of lash) out[i] = Math.min(out[i], world[i].distanceTo(p));
+    return out;
   }
   function furScaleAttribute(mesh: THREE.SkinnedMesh, bonePos: Record<string, THREE.Vector3>) {
     const pos = mesh.geometry.getAttribute('position');
@@ -526,10 +605,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
         let s = 1;
-        // the front of the face keeps a short coat (the review renders' features are crisp); cheeks and crown stay full
+        // the front of the face keeps a shorter coat (the review renders' features are crisp); cheeks and crown stay
+        // full. Only a little shorter since the undercoat is short itself: at .3 its edge ringed the eyes and muzzle
+        // with a visible circular seam
         if (nrm) {
           nv.fromBufferAttribute(nrm, i).applyMatrix3(toWorldDir).normalize();
-          s = Math.min(s, THREE.MathUtils.lerp(1, 0.3, THREE.MathUtils.smoothstep(nv.z, 0.35, 0.8)));
+          s = Math.min(s, THREE.MathUtils.lerp(1, 0.7, THREE.MathUtils.smoothstep(nv.z, 0.35, 0.8)));
           // the cheeks: the sides of the lower head carry the long fluff that makes the kitten's head round
           const side = THREE.MathUtils.smoothstep(Math.abs(nv.x), 0.45, 0.85) * THREE.MathUtils.smoothstep(-nv.y, -0.2, 0.3);
           s *= 1 + 0.4 * side;
@@ -617,7 +698,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     }
     const lidMeshes: THREE.SkinnedMesh[] = [];
     root.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && /^LX_Lid(Upper|Lower)\./.test((o.userData.name as string | undefined) ?? '')) lidMeshes.push(o as THREE.SkinnedMesh); });
-    const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root);
+    const lidFur = lidCoat(lidMeshes, root.getObjectByName('LX_Head') as THREE.Mesh | undefined, root, groomAsset ? LID_UNDERCOAT_LIFT : LID_COAT_LIFT);
     // Rest pose stands: its height sets the metres -> world units factor, so either style draws the same size.
     const box = new THREE.Box3().setFromObject(root);
     restHeight = Math.max(0.2, box.max.y - box.min.y);
@@ -632,6 +713,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         bones.push(o as THREE.Bone);
         bonePos[o.name.replace(/[._]/g, '')] = o.getWorldPosition(new THREE.Vector3());
         if (o.name === 'Head') headBone = o as THREE.Bone;
+        if (o.name === 'Pelvis') pelvisBone = o;
+        if (o.name === 'Chest') chestBone = o;
       }
     });
     for (let i = 0; i <= 4; i++) {
@@ -710,9 +793,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         base.parent!.add(s);
       }
     }
-    for (const lid of groom ? [] : lidFur) {
-      for (let i = 1; i <= Math.ceil(shellCount / 2); i++) {
-        const s = new THREE.SkinnedMesh(lid.geometry, shellMaterial(LID_FUR.len, LID_FUR.den, i / Math.ceil(shellCount / 2)));
+    // With the original groom the lids grow the same opaque undercoat as the face round them, under their own strands:
+    // bare, a closed lid was a smooth flat brown disc, cut off where it met the face's undercoat - a patch over the eye.
+    // Same shading as the face's (the undercoat's reach), just short.
+    const lidLayers = groom ? LID_UNDERCOAT_LAYERS : Math.ceil(shellCount / 2);
+    for (const lid of lidFur) {
+      for (let i = 1; i <= lidLayers; i++) {
+        const s = new THREE.SkinnedMesh(lid.geometry, groom
+          ? shellMaterial(LID_FUR.len / UNDERCOAT_REACH, LID_FUR.den, UNDERCOAT_REACH * i / lidLayers, true, true)
+          : shellMaterial(LID_FUR.len, LID_FUR.den, i / lidLayers));
         s.bind(lid.skeleton, lid.bindMatrix);
         // the same influences array: a blink closes the lid's coat with it
         s.morphTargetInfluences = lid.morphTargetInfluences;
@@ -745,6 +834,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     loaded = true;
   });
 
+  /** Seconds a settled clip takes to get up again (0 for any other clip). */
+  function riseSeconds(clip: string) {
+    const settle = SETTLE_CLIPS[clip];
+    const duration = actions[clip]?.getClip().duration ?? 0;
+    return settle ? (settle.rise === 'reverse' ? settle.hold : 1 - settle.hold) * duration : 0;
+  }
   function play(name: string, once = false) {
     const next = actions[name];
     if (!next || (next === current && !once)) return false;
@@ -863,6 +958,36 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       bone.quaternion.premultiply(tailTurn.setFromAxisAngle(tailAxis, THREE.MathUtils.degToRad(sway)));
     }
   }
+  // The head on top of the clip: steadied while the cat walks (a cat's head holds still while its body swings under
+  // it - the clip's head nodding side to side with every step read as a dazed, wobbling gait) and pitched for the
+  // camera. Undone before the mixer: the mixer writes a bone only when its value changes, so on a held pose (sleep)
+  // an overlay left in place added up frame after frame.
+  const headClipPose = new THREE.Quaternion();
+  let headOverlaid = false;
+  let headSteady: THREE.Quaternion | null = null;
+  const rootQ = new THREE.Quaternion(), headQ = new THREE.Quaternion(), parentQ = new THREE.Quaternion();
+  function unoverlayHead() {
+    if (headBone && headOverlaid) headBone.quaternion.copy(headClipPose);
+    headOverlaid = false;
+  }
+  function overlayHead(dt: number) {
+    if (!headBone?.parent) return;
+    headClipPose.copy(headBone.quaternion);
+    headOverlaid = true;
+    headBone.parent.updateWorldMatrix(true, false);
+    catRoot.getWorldQuaternion(rootQ);
+    // the head relative to the body's facing, and a slow average of it: what the head would hold without the steps
+    const relative = headBone.getWorldQuaternion(headQ).premultiply(rootQ.clone().invert());
+    headSteady ??= relative.clone();
+    headSteady.slerp(relative, 1 - Math.exp(-Math.max(0, dt) / HEAD_STEADY_SECONDS));
+    let gait = 0;
+    for (const name of ['Walk', 'Run']) if (actions[name]?.isRunning()) gait += actions[name].getEffectiveWeight();
+    if (gait > 0.001) {
+      relative.slerp(headSteady, HEAD_STEADY_SHARE * Math.min(1, gait));
+      headBone.quaternion.copy(headBone.parent.getWorldQuaternion(parentQ).invert().multiply(relative.premultiply(rootQ)));
+    }
+    if (cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
+  }
   function fitCanvasToFrame() {
     const drawn = measureDrawnRect();
     catRect = drawn;
@@ -964,7 +1089,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if (!clip || !actions[clip]) return false;
       const loop = LOOPING.has(clip);
       play(clip, !loop);
-      const ms = loop ? 4000 : actions[clip].getClip().duration * 1000;
+      const ms = loop || SETTLE_CLIPS[clip] ? 4000 : actions[clip].getClip().duration * 1000;
       oneShot = { id, clip, endsAt: elapsed + ms / 1000 };
       return true;
     },
@@ -977,7 +1102,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     get playingAction() {
       if (!oneShot) return null;
       const remainingMs = Math.max(0, (oneShot.endsAt - elapsed) * 1000);
-      return remainingMs > 0 ? { id: oneShot.id, remainingMs, legFree: false } : null;
+      const rising = oneShot.rising ? 0 : riseSeconds(oneShot.clip) * 1000;
+      return remainingMs + rising > 0 ? { id: oneShot.id, remainingMs: remainingMs + rising, legFree: false } : null;
     },
     get currentExpression() {
       return faceRig ? wantedExpression() : { name: DEFAULT_EXPRESSION, held: false };
@@ -1017,6 +1143,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         gait: {
           clip: currentName, timeScale: current ? +current.timeScale.toFixed(2) : null,
           speedPx: +Math.hypot(velocityX, velocityY).toFixed(1),
+          yaw: +bodyYaw.toFixed(3), facing: +facingAngle.toFixed(3), turnRate: +steeringTurnRate.toFixed(3),
           groundSpeed: +groundSpeed.toFixed(4),
           animatedGroundSpeed: current && strides[currentName] ? +(strides[currentName] * (currentName === 'Walk' ? walkStrideScale : 1) * effectiveScale() / current.getClip().duration * current.timeScale).toFixed(4) : 0,
           worldPerPixel: [+worldPerPixelX.toFixed(5), +worldPerPixelZ.toFixed(5)], effectiveScale: +effectiveScale().toFixed(4),
@@ -1127,7 +1254,21 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
 
       // --- which clip ---
       if (loaded) {
-        if (oneShot && elapsed >= oneShot.endsAt) oneShot = null;
+        const settle = oneShot ? SETTLE_CLIPS[oneShot.clip] : undefined;
+        const settled = settle && current === actions[oneShot!.clip] ? current : null;
+        if (oneShot && settled && settle) {
+          // settle into the pose and hold it; when the time is up, get up (the rest of the clip, or the clip backwards)
+          const holdAt = settle.hold * settled.getClip().duration;
+          if (!oneShot.rising && elapsed < oneShot.endsAt && settled.time >= holdAt - 1e-3) { settled.time = holdAt; settled.timeScale = 0; }
+          else if (!oneShot.rising && elapsed >= oneShot.endsAt) {
+            oneShot.rising = true;
+            oneShot.endsAt = elapsed + riseSeconds(oneShot.clip);
+            settled.paused = false;
+            settled.time = holdAt;
+            settled.timeScale = settle.rise === 'reverse' ? -1 : 1;
+          }
+        }
+        if (oneShot && elapsed >= oneShot.endsAt && (!settle || oneShot.rising)) oneShot = null;
         if (moving) oneShot = null;
         // a settled cat picks something to do now and then (the voxel director's job on the other style)
         if (moving || state.state !== 'idle' || oneShot) idleSince = elapsed;
@@ -1138,7 +1279,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           if (pick) {
             const loop = LOOPING.has(pick);
             play(pick, !loop);
-            oneShot = { id: pick, clip: pick, endsAt: elapsed + (loop ? 6 + Math.random() * 6 : actions[pick].getClip().duration) };
+            oneShot = { id: pick, clip: pick, endsAt: elapsed + (loop || SETTLE_CLIPS[pick] ? 6 + Math.random() * 6 : actions[pick].getClip().duration) };
           }
           idleSince = elapsed;
           nextIdlePick = 6 + Math.random() * 6;
@@ -1162,6 +1303,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             action.timeScale = name === 'Walk' && pivoting ? PIVOT_CADENCE : name === 'Walk' && moving ? walkCadence(rate) : rate;
           }
         }
+        unoverlayHead();
         locomotion?.beforeMixer();
         faceRig?.beforeMixer();
         uncarryTail();
@@ -1190,6 +1332,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const stand = screenToWorld(state.position.x, state.position.y, 0);
       catRoot.position.set(stand.x, 0, stand.z);
       shadow.position.copy(screenToWorld(state.position.x, state.position.y, 0.004));
+      // under the body, not the paws' anchor: sitting or lying the body moves back over the ground, and a contact
+      // shadow left at the paws made the cat float above it
+      if (pelvisBone && chestBone) {
+        catRoot.updateMatrixWorld(true);
+        const body = pelvisBone.getWorldPosition(bodyCentre).add(chestBone.getWorldPosition(bodyPoint)).multiplyScalar(0.5);
+        shadow.position.x = body.x; shadow.position.z = body.z;
+      }
       const spread = TARGET_HEIGHT * (performanceScale ?? modelScale) * 0.95;
       shadow.scale.set(spread, spread * 0.62, 1);
       // the key light and its shadow frustum ride with the cat, sized to it
@@ -1204,7 +1353,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       shadowCatcher.scale.setScalar(reach * 2.5);
 
       locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0);
-      if (headBone && cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
+      overlayHead(deltaSeconds);
 
       updateToy(state, deltaSeconds);
       if (contextLost) return;

@@ -29,12 +29,20 @@ const GROOM = {
   rootShade: '0.62',
   // diffuse wrap: light carries round a fur volume further than round a hard surface
   wrap: '0.45',
-  r: { shift: '0.10', exp: '110.0', strength: '1.2' },
-  glossFocus: '4.0',
-  trt: { shift: '-0.18', exp: '28.0', strength: '1.4' },
+  // tight and bright, gathered into a band (glossFocus): a broad lobe lit a little of every hair at once and washed
+  // the coat in a grey haze - dull - instead of a few hairs catching the light in bright lines
+  r: { shift: '0.10', exp: '240.0', strength: '2.0' },
+  glossFocus: '8.0',
+  trt: { shift: '-0.18', exp: '60.0', strength: '1.5' },
   tt: { exp: '5.0', strength: '1.6' },
   // the room the cat stands in (the other materials' RoomEnvironment at 0.5): soft light from everywhere
   ambient: '0.32',
+  lidVeil: '0.4',
+  // Close up a drawn strand opens into a small lock of hairs (three, fanning toward the tip, each its own length and
+  // shade): from this many device pixels per model unit (the cat ~0.8 units tall: ~1000 is a cat ~800 px tall) to
+  // full at the second, the lock's ribbon this many times the strand's own width. Far off the lock is sub-pixel and
+  // a strand stays one hair; close up single hairs were a sparse scatter of hairlines, the coat thin and dull.
+  clumpFrom: '900.0', clumpFull: '2200.0', clumpSpread: '4.5',
 } as const;
 
 const GROOM_VERTEX = /* glsl */ `
@@ -44,12 +52,12 @@ const GROOM_VERTEX = /* glsl */ `
 #include <skinning_pars_vertex>
 attribute vec3 groomTangent;
 attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
-attribute vec2 groomStrand; // length (model units), random 0..1
+attribute vec3 groomStrand; // length (model units), random 0..1, 1 on the lids' coat
 uniform float uGroomTime, uGroomHeight, uGroomGust;
 uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axes
 uniform vec4 uGroomStroke;  // pointer (NDC xy), radius (view units), bend
 uniform vec2 uGroomStrokeDir;
-varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomClump, vGroomHair;
 varying vec3 vGroomT, vGroomN, vGroomColor;
 #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
   struct DirectionalLightShadow { float shadowIntensity; float shadowBias; float shadowNormalBias; float shadowRadius; vec2 shadowMapSize; };
@@ -110,11 +118,16 @@ void main() {
   vGroomN = N;
   vGroomAlong = along;
   vGroomRandom = groomStrand.y;
+  vGroomLid = groomStrand.z;
   vec2 across = vec2(-T.y, T.x);
   across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
   float radiusView = groomData.y * viewScale;
-  float minimumRadius = 0.30 / (projectionMatrix[1][1] * uGroomHeight * 0.5);
-  float drawnRadius = max(radiusView, minimumRadius);
+  float pixelsPerView = projectionMatrix[1][1] * uGroomHeight * 0.5;
+  float minimumRadius = 0.30 / pixelsPerView;
+  vGroomClump = smoothstep(${GROOM.clumpFrom}, ${GROOM.clumpFull}, pixelsPerView * viewScale);
+  float drawnRadius = max(radiusView * mix(1.0, ${GROOM.clumpSpread}, vGroomClump), minimumRadius);
+  // one hair's half-width, in the ribbon's own across units (-1..1)
+  vGroomHair = radiusView / drawnRadius;
   // A strand drawn wider than it is covers that much less of each pixel it touches.
   vGroomCoverage = pow(min(1.0, radiusView / drawnRadius), ${GROOM.coverageExp});
   vGroomEdge = groomData.x;
@@ -150,22 +163,47 @@ const GROOM_FRAGMENT = /* glsl */ `
 #include <common>
 #include <lights_pars_begin>
 uniform float uGroomStack;
-varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomClump, vGroomHair;
 varying vec3 vGroomT, vGroomN, vGroomColor;
 float hairLobe(vec3 T, vec3 H, float e) { float d = dot(T, H); return pow(sqrt(max(0.0, 1.0 - d * d)), e); }
 void main() {
   float alpha = vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
+  // close up: the lock's hairs across the ribbon (see GROOM.clump*)
+  float shade = 1.0;
+  if (vGroomClump > 0.001) {
+    float fw = max(fwidth(vGroomEdge), 1e-3);
+    float w = max(vGroomHair, 0.5 * fw);
+    float thin = min(1.0, 2.0 * vGroomHair / fw);
+    float along = sqrt(vGroomAlong);
+    float bare = 1.0, shadeSum = 0.0, weight = 0.0;
+    for (int k = 0; k < 3; k++) {
+      vec3 h = fract(sin(vec3(1.7, 9.2, 4.3) * (vGroomRandom * 91.7 + float(k) * 13.1)) * 43758.5453);
+      // spread across the ribbon, fanning out from root to tip; each ends at its own length
+      float centre = ((float(k) - 1.0) * 0.6 + (h.x - 0.5) * 0.35) * (0.35 + 0.65 * along);
+      float hair = thin * (1.0 - smoothstep(w - 0.5 * fw, w + 0.5 * fw, abs(vGroomEdge - centre)));
+      hair *= 1.0 - smoothstep(0.72 + 0.28 * h.y - 0.08, 0.72 + 0.28 * h.y, along);
+      bare *= 1.0 - hair;
+      shadeSum += hair * (0.82 + 0.36 * h.z); weight += hair;
+    }
+    alpha = mix(alpha, 1.0 - bare, vGroomClump);
+    shade = mix(1.0, weight > 0.0 ? shadeSum / weight : 1.0, vGroomClump);
+  }
   // each strand drawn stands for uGroomStack of them (see setDensity): the opacity of that many overlapping
   alpha = 1.0 - pow(1.0 - min(alpha, 0.999), uGroomStack);
   vec3 base = pow(max(vGroomColor, vec3(1e-4)), vec3(${GROOM.absorption}));
-  base *= 1.0 + ${GROOM.melanin} * (vGroomRandom - 0.5);
+  base *= (1.0 + ${GROOM.melanin} * (vGroomRandom - 0.5)) * shade;
   // the coat grade the undercoat and skin get (COAT_GRADE), so strands do not veil them in another shade
   float lumC = dot(base, vec3(0.2126, 0.7152, 0.0722));
   base = max(mix(vec3(lumC), base, 1.25) * vec3(1.06, 1.0, 0.90), 0.0);
-  float t = sqrt(vGroomAlong);
+  // The lids' short coat is drawn even from root to tip: 20k strands rooted in rows on a lid a centimetre across,
+  // anything that changes along a strand - the root fading in, the tip out, the shaded root - lined up row by row
+  // into rings of light and dark bands round a closed eye. So for it the shading's along-the-strand parameter is held
+  // at the tip, and it is a light veil over the lids' own undercoat.
+  float t = mix(sqrt(vGroomAlong), 1.0, vGroomLid);
   // the root rises out of the undercoat: drawn from inside it, a strand's dark root showed as a speck (most of all
   // at desktop size, where each drawn strand stands for several)
   alpha *= smoothstep(0.0, 0.3, t);
+  alpha *= 1.0 - vGroomLid * ${GROOM.lidVeil};
   float occlusion = mix(${GROOM.rootShade}, 1.0, t);
 
   vec3 N = normalize(vGroomN), T = normalize(vGroomT);
@@ -255,15 +293,17 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   });
   const meshes = asset.spec.parts.map((part) => {
     const floats = (b: Block) => new Float32Array(asset.bytes, b.offset, b.count);
-    const source = floats(part.positions), colors = floats(part.colors), radii = floats(part.radii);
+    const source = floats(part.positions), radii = floats(part.radii);
+    const colors = /_LX_Lid/.test(part.name) ? evened(floats(part.colors), part.points, LID_COLOUR_EVENING) : floats(part.colors);
     const normals = floats(part.normals), weights = floats(part.weights);
     const joints = new Uint16Array(asset.bytes, part.joints.offset, part.joints.count);
     const count = part.strands * part.points * 2;
     const position = new Float32Array(count * 3), color = new Float32Array(count * 3), normal = new Float32Array(count * 3);
-    const tangent = new Float32Array(count * 3), data = new Float32Array(count * 4), strandData = new Float32Array(count * 2), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
+    const tangent = new Float32Array(count * 3), data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
     const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
     // Strands in a shuffled order, so any leading run of them (setDensity's draw range) is an even sample of the part.
     const order = shuffledOrder(part.strands);
+    const lidCoat = /_LX_Lid/.test(part.name) ? 1 : 0;
     let ii = 0;
     for (let slot = 0; slot < part.strands; slot++) {
       const strand = order[slot];
@@ -288,7 +328,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
             tangent[v * 3 + c] = source[after + c] - source[before + c];
           }
           data.set([side ? 1 : -1, radii[p] * part.widthCompensation, (point / (part.points - 1)) ** 2, phase], v * 4);
-          strandData[v * 2] = strandLength; strandData[v * 2 + 1] = random;
+          strandData.set([strandLength, random, lidCoat], v * 3);
           for (let c = 0; c < 4; c++) {
             const offset = (part.skinPerPoint ? p : strand) * 4 + c;
             skinIndex[v * 4 + c] = jointMap[joints[offset]];
@@ -305,7 +345,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const geometry = new THREE.BufferGeometry();
     for (const [name, array, size] of [
       ['position', position, 3], ['color', color, 3], ['normal', normal, 3], ['groomTangent', tangent, 3],
-      ['groomData', data, 4], ['groomStrand', strandData, 2], ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
+      ['groomData', data, 4], ['groomStrand', strandData, 3], ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
     ] as const) geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     let lid: THREE.Mesh | undefined;
@@ -380,6 +420,20 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     },
     get density() { return density; },
   };
+}
+
+// The lids' strands take their colour from the face texture under them - the tabby's dark stripes and the muzzle's
+// white side by side. Open, the lid hides them; closed, they lay round the eye as rings of dark and light bands, a
+// striped pad under the lash line. Each lid's coat is drawn this much of the way to its own average (point by point,
+// root to tip); the shader's per-strand melanin keeps it from going flat.
+const LID_COLOUR_EVENING = 0.75;
+function evened(colors: Float32Array, points: number, share: number): Float32Array {
+  const strands = colors.length / (points * 3);
+  const mean = new Float64Array(points * 3);
+  for (let i = 0; i < colors.length; i++) mean[i % (points * 3)] += colors[i] / strands;
+  const out = new Float32Array(colors.length);
+  for (let i = 0; i < colors.length; i++) out[i] = colors[i] + (mean[i % (points * 3)] - colors[i]) * share;
+  return out;
 }
 
 /** A fixed shuffle of 0..n-1 (the same every load, so the cat never looks different between runs). */

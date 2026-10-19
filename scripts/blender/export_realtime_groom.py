@@ -2,12 +2,13 @@
 
 blender -b <round>/lingxi-short-fur-rig-v5.blend --python <this file> -- \
   --out <app>/public/characters/lingxi-realistic/current --budget 240000 \
-  --share _LX_Tail=1 --share _LX_Legs=1 --share SoleSrc=1 --share guard_LX_Body=.5 --share _LX_Lid=.25
+  --share _LX_Tail=1 --share _LX_Legs=1 --share SoleSrc=1 --share _LX_Lid=1 --share guard_LX_Body=.5
 
 --budget sets the share of every source not named by a --share (substring of the source name, first match wins).
 A uniform share starved the tail: the fullest part of the coat, it read as a thin core in a haze at 40%, while the
-eyelids' dense short coat cost as much and is barely visible at desktop size. The legs' and soles' coats are short and
-few: at 40% the legs read bare.
+eyelids' dense short coat cost as much and is barely visible at desktop size - but thinned, a closed lid's coat was a
+coarse brush. The legs' and soles' coats are short and few: at 40% the legs read bare. (The output folder needs the
+cat.glb the groom is for: its hash goes into groom.json.)
 
 Only original strand indices are sampled. Positions, point colours, tapered radii and
 per-point weights come from the Blender sources. Coordinates are converted to glTF Y-up.
