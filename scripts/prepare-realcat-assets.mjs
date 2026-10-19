@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Production character assets are explicit, hashed inputs. Local look-dev files are never copied wholesale.
-import { readFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
+import { readFileSync, existsSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -37,12 +37,11 @@ export async function prepareRealcatAssets() {
   const staging = mkdtempSync(join(tmpdir(), 'lingxi-realcat-'));
   try {
     console.log('Downloading the pinned realistic cat runtime assets…');
-    const response = await fetch(realcatManifest.archive.url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`Realistic cat archive: HTTP ${response.status}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (sha256(bytes) !== realcatManifest.archive.sha256) throw new Error('Realistic cat archive checksum mismatch');
     const archive = join(staging, 'runtime.tar.gz');
-    writeFileSync(archive, bytes);
+    // curl respects the developer's proxy settings, unlike Node 22's built-in fetch.
+    execFileSync('curl', ['--fail', '--location', '--silent', '--show-error', '--retry', '2',
+      '--connect-timeout', '15', '--max-time', '180', '--output', archive, realcatManifest.archive.url], { stdio: 'inherit' });
+    if (sha256(readFileSync(archive)) !== realcatManifest.archive.sha256) throw new Error('Realistic cat archive checksum mismatch');
     const entries = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).trim().split('\n').sort();
     if (JSON.stringify(entries) !== JSON.stringify(Object.keys(realcatManifest.files).sort())) throw new Error('Unexpected paths in realistic cat archive');
     const extracted = join(staging, 'files');
