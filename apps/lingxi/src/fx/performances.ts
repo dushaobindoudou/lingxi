@@ -143,15 +143,6 @@ function rumpOf(context: PerformanceContext) {
 function playFirst(context: PerformanceContext, ...ids: string[]) {
   for (const id of ids) if (context.renderer.playAction?.(id)) return;
 }
-/**
- * Where on the pane a stream or a flung poop lands: in front of the cat, kept well inside the screen (aimed at the cat's
- * feet, a cat standing low put the splash on the screen's bottom edge, half of it off it).
- */
-function onPane(context: PerformanceContext, at: { x: number; y: number }) {
-  const { width, height } = context.viewport();
-  return { x: Math.min(width * 0.9, Math.max(width * 0.1, at.x)), y: Math.min(height * 0.8, Math.max(height * 0.15, at.y)) };
-}
-
 /** The potty marks' size for the cat at POTTY_HEIGHT: 1 is a cat ~250 px tall. */
 function pottySize(context: PerformanceContext) {
   return (POTTY_HEIGHT * context.viewport().height) / 250;
@@ -469,7 +460,9 @@ export const PERFORMANCES: PerformanceDef[] = [
         run(context) {
           const rump = () => rumpOf(context), start = rump();
           const cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.peeStream(rump, onPane(context, { x: start.x + 0.1 * cat, y: start.y + 0.42 * cat }), 3500, pottySize(context));
+          // onto the floor just out from under the rump, toward the viewer
+          const ground = context.renderer.rumpScreenPoint?.(true) ?? { x: start.x, y: start.y + 0.35 * cat };
+          context.fx.peeStream(rump, { x: ground.x + 0.06 * cat * Math.sign(ground.x - context.petPosition().x || 1), y: ground.y + 0.04 * cat }, 3500, pottySize(context));
         },
       },
       {
@@ -501,7 +494,7 @@ export const PERFORMANCES: PerformanceDef[] = [
   {
     id: 'poop-at-you',
     name: '对着你拉屎',
-    description: '走到你面前，转身把屁股对着你蹲下，回过头来盯着你使劲，飘起几缕味道；起来刨沙盖好，得意地走开，露出一小坨卡通便便',
+    description: '走到你面前，转身把屁股对着你蹲下，回过头来盯着你；噗地放个屁，一坨便便像冰淇淋一样一圈圈落在地上；起来刨沙埋好，得意地走开',
     durationMs: 10800,
     beats: [
       {
@@ -524,33 +517,30 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        // out of its rump and flung at the viewer: it squashes onto the glass below the cat and slides down it
-        atMs: 4800,
+        // settled in the squat: a little puff of air first
+        atMs: 3900,
         run(context) {
-          const from = rumpOf(context), cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.flingPoop(from, onPane(context, { x: from.x - 0.05 * cat, y: from.y + 0.42 * cat }), pottySize(context));
+          const from = rumpOf(context), size = pottySize(context);
+          context.fx.fart?.(from, size, { x: from.x < context.viewport().width / 2 ? -0.6 : 0.6, y: -0.8 });
+          context.renderer.playExpression?.('惊吓', 600);
         },
       },
       {
-        atMs: 5500,
+        // and down it comes onto the floor under the rump, round and round like soft serve; buried when the cat digs
+        atMs: 4700,
         run(context) {
-          const from = rumpOf(context), cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.flingPoop(from, onPane(context, { x: from.x + 0.16 * cat, y: from.y + 0.36 * cat }), pottySize(context) * 0.8);
+          const size = pottySize(context);
+          const ground = context.renderer.rumpScreenPoint?.(true) ?? context.petPosition();
+          context.fx.softServe?.(() => rumpOf(context), ground, size, 1500, 8100 - 4700, 10600 - 4700);
+          context.renderer.playExpression?.('认真', 1800);
         },
       },
       {
-        atMs: 5400,
+        atMs: 6400,
         run(context) {
+          context.renderer.playExpression?.('满足', 1500);
           const at = context.petPosition(), size = pottySize(context);
-          context.fx.pottyAccent('scent', at.x + 70 * size, at.y - 30 * size);
-        },
-      },
-      {
-        atMs: 6100,
-        run(context) {
-          context.renderer.playExpression?.('满足', 1800);
-          const at = context.petPosition(), size = pottySize(context);
-          context.fx.pottyAccent('scent', at.x - 70 * size, at.y - 20 * size);
+          context.fx.pottyAccent('scent', at.x - 60 * size, at.y - 20 * size);
         },
       },
       {

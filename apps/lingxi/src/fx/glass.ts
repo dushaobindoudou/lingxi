@@ -35,7 +35,7 @@ interface Stream { from: () => { x: number; y: number }; to: { x: number; y: num
 // grow, two or three merged into one swollen bubble a quarter of the cat's height)
 const PEE = {
   slideRadius: 9, gravity: 520, drag: 2.2, stickPerSecond: 1.6, lifeFrom: 6, lifeTo: 9.5, mergeAt: 0.8,
-  drop: 3, spread: 15, reach: 55, every: 0.028, largest: 13,
+  drop: 2.5, spread: 10, reach: 55, every: 0.024, largest: 10,
 };
 // a poop sags down the pane slowly and in fits (catching on it), and smears in uneven streaks: sliding at a drop's pace
 // and leaving one even band it read as two potatoes on stalks
@@ -52,44 +52,25 @@ function dropSprite(kind: Kind, variant: number): HTMLCanvasElement {
   if (kind === 'pee') {
     g.save();
     g.translate(m, m);
-    // a faint shade under it, so it reads over a light desktop as well as a dark one
-    const shade = g.createRadialGradient(0, r * 0.1, r * 0.6, 0, r * 0.1, r * 1.04);
-    shade.addColorStop(0, 'rgba(0, 0, 0, 0.07)');
-    shade.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    g.fillStyle = shade;
-    g.beginPath(); g.arc(0, r * 0.1, r * 1.04, 0, Math.PI * 2); g.fill();
-    // bottom-heavy on an upright pane
-    const outline = () => { g.beginPath(); g.ellipse(0, r * 0.04, r, r * 0.96, 0, 0, Math.PI * 2); };
-    outline();
-    g.save();
-    g.clip();
-    // the body: nearly clear, a little pee-yellow, deeper toward the rim
-    const body = g.createRadialGradient(0, -r * 0.25, r * 0.1, 0, 0, r);
-    body.addColorStop(0, 'rgba(255, 248, 214, 0.08)');
-    body.addColorStop(0.7, 'rgba(236, 206, 112, 0.15)');
-    body.addColorStop(1, 'rgba(160, 118, 30, 0.32)');
+    // A drop on a pane: a little round bead in the liquid's own pale colour, a touch deeper toward the bottom where it
+    // pools, its edge soft (no outline), one small sharp reflection. (A clear middle inside a dark ring, a bright
+    // crescent and a big highlight drew soap bubbles; a flat top over a dark bottom, little mushrooms.)
+    const body = g.createRadialGradient(0, -r * 0.1, r * 0.05, 0, r * 0.05, r);
+    body.addColorStop(0, 'rgba(244, 222, 140, 0.34)');
+    body.addColorStop(0.62, 'rgba(226, 192, 88, 0.40)');
+    body.addColorStop(0.86, 'rgba(196, 154, 54, 0.36)');
+    body.addColorStop(1, 'rgba(196, 154, 54, 0)');
     g.fillStyle = body;
-    g.fillRect(-r, -r, r * 2, r * 2);
-    // the dark upper rim: the room's darker upper half, turned over
-    const rim = g.createLinearGradient(0, -r, 0, r * 0.3);
-    rim.addColorStop(0, 'rgba(46, 32, 8, 0.55)');
-    rim.addColorStop(1, 'rgba(46, 32, 8, 0)');
-    g.strokeStyle = rim; g.lineWidth = r * 0.22;
-    outline(); g.stroke();
-    // the bright crescent inside the lower edge, where the light comes through focused
-    const caustic = g.createRadialGradient(0, r * 0.62, r * 0.05, 0, r * 0.62, r * 0.62);
-    caustic.addColorStop(0, 'rgba(255, 252, 232, 0.75)');
-    caustic.addColorStop(1, 'rgba(255, 252, 232, 0)');
-    g.fillStyle = caustic;
-    g.beginPath(); g.ellipse(0, r * 0.62, r * 0.66, r * 0.3, 0, 0, Math.PI * 2); g.fill();
-    g.restore();
-    // a thin edge, and the light's reflection: one sharp spot up and to the left, a fleck beside it
-    g.strokeStyle = 'rgba(70, 52, 14, 0.22)'; g.lineWidth = r * 0.035;
-    outline(); g.stroke();
-    g.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    g.beginPath(); g.ellipse(-r * 0.36, -r * 0.44, r * 0.2, r * 0.12, -0.6, 0, Math.PI * 2); g.fill();
-    g.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    g.beginPath(); g.arc(r * 0.16, -r * 0.6, r * 0.05, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(0, 0, r, r * 0.94, 0, 0, Math.PI * 2); g.fill();
+    // deeper along the bottom, inside the edge
+    const pool = g.createRadialGradient(0, r * 0.55, r * 0.05, 0, r * 0.55, r * 0.6);
+    pool.addColorStop(0, 'rgba(176, 132, 40, 0.30)');
+    pool.addColorStop(1, 'rgba(176, 132, 40, 0)');
+    g.fillStyle = pool;
+    g.beginPath(); g.ellipse(0, r * 0.5, r * 0.7, r * 0.34, 0, 0, Math.PI * 2); g.fill();
+    // one small sharp reflection up and to the left
+    g.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    g.beginPath(); g.ellipse(-r * 0.34, -r * 0.36, r * 0.12, r * 0.08, -0.6, 0, Math.PI * 2); g.fill();
     g.restore();
     return c;
   }

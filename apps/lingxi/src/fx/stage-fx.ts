@@ -21,6 +21,7 @@ export interface BubbleAttribution {
 }
 
 import { createGlass, type Glass } from './glass.ts';
+import { createPottyFx } from './potty-fx.ts';
 
 export interface StageFx {
   mount(container: HTMLElement): void;
@@ -34,11 +35,16 @@ export interface StageFx {
   /** The petting hand (the 撸猫 toy) at the pointer, or hidden with null. On the glass, over the cat: as a prop in
    *  the 3D scene it stood on the floor under the pointer's spot - behind the cat whenever the pointer was on it. */
   petHand(at: { x: number; y: number } | null): void;
-  /** A stream of pee from `from` (asked again every frame: the cat's own rump) at the viewer, splashing on the glass at
-   *  `to` into drops that gather and run down it like rain (fx/glass). `scale` sizes it (1: a cat ~250 px tall). */
+  /** A stream of pee from `from` (asked again every frame: the cat's own rump) down onto the floor at `to`, a puddle
+   *  spreading there and drying off after (fx/potty-fx). `scale` sizes it (1: a cat ~250 px tall). */
   peeStream(from: () => { x: number; y: number }, to: { x: number; y: number }, durationMs: number, scale?: number): void;
   /** A poop flung from `from` at the viewer: it squashes onto the glass at `to`, sticks, and sags down it. */
   flingPoop(from: { x: number; y: number }, to: { x: number; y: number }, scale?: number): void;
+  /** A soft-serve poop coming down from the rump (`from`, asked every frame) onto the floor at `at` over `buildMs`,
+   *  buried under sand from `coverAtMs`, gone by `goneAtMs` (fx/potty-fx). */
+  softServe(from: () => { x: number; y: number }, at: { x: number; y: number }, scale: number, buildMs: number, coverAtMs: number, goneAtMs: number): void;
+  /** A few soft puffs of air from under the tail at `at`, drifting toward `drift`. */
+  fart(at: { x: number; y: number }, scale?: number, drift?: { x: number; y: number }): void;
   /** Two light sprays of sand and a few wavy scent lines. */
   pottyAccent(kind: 'sand' | 'scent', x: number, y: number): void;
   /** Shake the cat (the WebGL canvas), not the marks - the marks are on the glass. */
@@ -433,6 +439,7 @@ export function createStageFx(): StageFx {
   let floor: HTMLDivElement | null = null;
   let hand: HTMLDivElement | null = null;
   let glass: Glass | null = null;
+  const potty = createPottyFx(() => floor ?? layer, () => layer);
   let handAt: { x: number; y: number } | null = null;
   let handTilt = 0;
   /** Who the next bubble speaks for, or null for the cat speaking as itself. */
@@ -580,11 +587,20 @@ export function createStageFx(): StageFx {
     },
 
     peeStream(from, to, durationMs, scale = 1) {
-      glass?.stream(from, to, durationMs / 1000, scale);
+      // onto the floor, a puddle (drops on the glass, round with a highlight, read as bubbles)
+      potty.puddle(from, to, durationMs, scale);
     },
 
     flingPoop(from, to, scale = 1) {
       glass?.fling(from, to, scale);
+    },
+
+    softServe(from, at, scale, buildMs, coverAtMs, goneAtMs) {
+      potty.softServe(from, at, scale, buildMs, coverAtMs, goneAtMs);
+    },
+
+    fart(at, scale = 1, drift) {
+      potty.fart(at, scale, drift);
     },
 
     pottyMark(kind, x, y, durationMs, scale = 1) {
@@ -884,6 +900,7 @@ export function createStageFx(): StageFx {
       if (layer) layer.replaceChildren();
       floor?.replaceChildren();
       glass?.clear();
+      potty.clear();
       shakeTarget?.classList.remove('lingxi-fx-shaking');
       shakeTarget?.classList.remove('lingxi-fx-tilted');
     },
