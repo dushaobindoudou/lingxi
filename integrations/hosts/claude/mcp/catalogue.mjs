@@ -25,7 +25,7 @@ export const catalogue = [
   { name: 'lingxi_state',         purpose: '读当前状态：位置、在做什么、心情',           risk: '低' },
   { name: 'lingxi_say',           purpose: '让猫在头顶气泡里说一句话',                   risk: '低' },
   { name: 'lingxi_express',       purpose: '设置表情',                                   risk: '低' },
-  { name: 'lingxi_perform',       purpose: '播放全屏特效（发布版无特效菜单，由你判断时机）', risk: '中' },
+  { name: 'lingxi_perform',       purpose: '播放特效；自动播放需在设置开启，手动点播在玩法', risk: '中' },
   { name: 'lingxi_play',          purpose: '放出或收走玩具，猫会去玩',                   risk: '低' },
   { name: 'lingxi_remember',      purpose: '写入一条关于主人的记忆（会落盘）',           risk: '中' },
   { name: 'lingxi_recall',        purpose: '读回猫记住的关于主人的事',                   risk: '中' },

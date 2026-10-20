@@ -333,6 +333,7 @@ async function main() {
   let lastAffectionLine: string | null = null;
   let toyReactionUntil = 0;
   const petting = createPettingSession();
+  let lastPettingPointerAt = -Infinity;
   let bellyDurationMs = 0;
   let lastPettingRegion: string | null = null;
 
@@ -357,7 +358,10 @@ async function main() {
       next.x <= size.width + CURSOR_OUT_OF_BOUNDS_SLACK_PX &&
       next.y >= -CURSOR_OUT_OF_BOUNDS_SLACK_PX &&
       next.y <= size.height + CURSOR_OUT_OF_BOUNDS_SLACK_PX;
-    cursor = withinBounds ? next : null;
+    // A delivered DOM event is newer than the asynchronous native cursor relay.
+    if (!(petting.pressed && performance.now() - lastPettingPointerAt < 180)) {
+      cursor = withinBounds ? next : null;
+    }
   });
 
   void listen<boolean>('accessibility-permission', (event) => {
@@ -609,14 +613,20 @@ async function main() {
 
   window.addEventListener('mousedown', (event) => {
     if (event.button !== 0) return;
-    if (!isCaptured || !cursor) return;
     if (petting.enabled) {
-      if (renderer.hitTest(cursor, true)) {
+      const point = { x: event.clientX, y: event.clientY };
+      if (renderer.pettingHitTest?.(point, false) != null) {
+        cursor = point;
+        lastPettingPointerAt = performance.now();
         petting.press();
-        engineRecorder.record({ type: 'click_on_pet', at: performance.now(), position: cursor });
+        isCaptured = true;
+        void host.setClickThrough(false);
+        markInteresting();
+        engineRecorder.record({ type: 'click_on_pet', at: lastPettingPointerAt, position: point });
       }
       return;
     }
+    if (!isCaptured || !cursor) return;
     // Clicking the yarn ball picks it UP and starts winding a throw, rather than grabbing the
     // cat. Whichever of the two the pointer is actually over wins - see the hit test in frame().
     if (overToy && engine.toy?.kind === 'yarn') {
@@ -631,6 +641,12 @@ async function main() {
     engineRecorder.record({ type: 'click_on_pet', at: dragStartedAt, position: cursor });
   });
   window.addEventListener('mousemove', (event) => {
+    if (petting.enabled) {
+      cursor = { x: event.clientX, y: event.clientY };
+      lastPettingPointerAt = performance.now();
+      markInteresting();
+      return;
+    }
     // Aim comes from the pointer's recent travel, so a flick throws the ball the way you
     // flicked it. Sampled here rather than from the relayed cursor for the same latency reason
     // the drag path documents below.
@@ -825,7 +841,9 @@ async function main() {
       // no relay round-trip) - nothing to do here for dragging specifically.
       // The engine's radial fallback is useful in headless tests, but the live cat has an
       // actual silhouette. Use that for touch so approaching from below cannot trigger early.
-      const pointerOnPet = cursor ? renderer.hitTest(cursor, true) : false;
+      const pointerOnPet = cursor ? petting.enabled
+        ? renderer.pettingHitTest?.(cursor, false) != null
+        : renderer.hitTest(cursor, true) : false;
       // the realistic cat's legs set its pace (a small one strolls, it does not skate); the voxel cat's legs follow any
       const pace = renderer.locomotionPace?.();
       engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
@@ -974,7 +992,7 @@ async function main() {
       }
 
       if (cursor) {
-        const hit = renderer.hitTest(cursor);
+        const hit = petting.enabled ? pointerOnPet : renderer.hitTest(cursor);
         if (hit !== wasHit) {
           wasHit = hit;
           engineRecorder.record({ type: hit ? 'cursor_entered_pet' : 'cursor_left_pet', at: now });
