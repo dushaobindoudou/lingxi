@@ -53,8 +53,15 @@ const GROOM = {
 // Close up the coat gets denser rather than coarser: each drawn strand gains up to this many child hairs beside it, the
 // way an offline groom interpolates children between its guides - fine single hairs, a parent's copy moved a little
 // across the skin and ending at its own length. (A strand widened into a lock of three hairs had been tried: close up it
-// read as yarn, parallel threads in a ribbon.) Drawn only once the cat is big on screen (setDensity above 1).
-export const GROOM_CHILDREN = 2;
+// read as yarn, parallel threads in a ribbon.) Drawn only once the cat is big on screen (setDensity above 1), this many
+// more for each step of density past it. Two, coming in one per step, left a zoomed-in head a thin veil of hairs over its
+// smooth undercoat (the user: "头上的毛有点透明的感觉…放大非常难看").
+export const GROOM_CHILDREN = 4;
+const CHILDREN_PER_DENSITY = 3;
+// ...and close up each strand is drawn as though this many more overlapped it (up to `extra`, from density `from` to
+// `full`): at its own coverage a zoomed-in coat let the painted undercoat through. Small, the stack already makes up for
+// the strands left out (setDensity).
+const CLOSE_STACK = { extra: 0.5, from: 1, full: 2 };
 // The coat's inertia (simulate): Hz, damping ratio, and a jump (model units) that is a teleport, not a motion
 const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
 // The coat a touch shorter than the Blender groom (the tail its own): longer (1.15-1.25, tried to make
@@ -699,8 +706,9 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         if (share > 0) mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * Math.min(1, share))) * (mesh.userData.groomIndicesPerStrand as number));
       };
       for (const mesh of meshes) drawn(mesh, density);
-      children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, density - 1 - k); });
-      uniforms.uGroomStack.value = 1 / Math.min(1, density);
+      children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, (density - 1) * CHILDREN_PER_DENSITY - k); });
+      uniforms.uGroomStack.value = density < 1 ? 1 / density
+        : 1 + CLOSE_STACK.extra * THREE.MathUtils.smoothstep(density, CLOSE_STACK.from, CLOSE_STACK.full);
     },
     get density() { return density; },
   };
