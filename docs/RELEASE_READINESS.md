@@ -1,6 +1,6 @@
 # v1.0.0 发布准备记录
 
-核对日期：2026-10-19。目标：首个正式版。此记录不会代替发布提交、签名产物与真实安装验收。
+核对日期：2026-10-20。目标：首个正式版。此记录不会代替发布提交、签名产物与真实安装验收。
 
 ## 已修复
 
@@ -31,7 +31,7 @@
 | 私密漏洞报告 | 已开启，与 SECURITY.md 中的报告入口一致 |
 | Apple 发布 Secrets | 检查时未配置；本机无可用代码签名身份 |
 
-main 上最近的远程 CI 仍是旧提交失败记录；此次修复在[草稿 PR #26](https://github.com/dushaobindoudou/lingxi/pull/26)验证，正式合并后还应核对发布提交上的检查。
+发布变更通过 [PR #26](https://github.com/dushaobindoudou/lingxi/pull/26) 合并；以该 PR 最新提交及 main 上两项 CI 结果为准。GitHub 保护与安全设置于 2026-10-20 再次通过 API 核对，开放 Dependabot 安全告警为 0。
 
 ## 渠道状态
 
@@ -66,12 +66,19 @@ Dependabot 的开放 PR 中包含主版本升级；本次未批量合并。当�
 - [ ] 发布 npm 1.0.0，确认安装器取到的 Latest 是应用版本，而非模型资产版本。
 - [ ] 确认推广文案与许可证的非商业使用条款一致。
 
-本次准备工作不自动推送 tag、发布 GitHub Release、发布 npm 或提交官方目录审核。
+用户已授权合并与发布 GitHub Release、npm 及仓库插件分发；官方目录审核仍是独立流程，本次不宣称已通过审核。npm 官方 registry 登录已验证，发布使用 registry.npmjs.org。
+
+## 合并范围
+
+- 已合并 `feat/realcat-style`、两条行走修正工作树历史及 `lookdev/b4-review`、`lookdev/v5-face-calib`、`lookdev/v6-ref-match` 的已提交代码；`main` 与旧发布分支的能力也在当前分支中。
+- 写实猫保留毛发、胡须、接触阴影、步态、跳跃、五种手动特效与连续轻抚反馈；恢复精确的按住左键轻抚规则，按真实姿态识别头部、身体、露出的腹部，悬停不触发。旧 `petting` 客户端仍兼容当前 `pet` 标识。
+- 建模工具、参考与历史审计保留在源码中，开发页面和探针不进入应用与 npm 包。跨分支合并未重新烘焙正式模型，仍使用固定哈希的六个发布资源。
+- 自动特效遵守默认关闭、实时能力检查、全 Agent 共享 10 分钟冷却；手动特效位于玩法页，托盘只移除特效子菜单。Skill 与四个宿主副本一致，结构校验通过。
 
 ## 本机验证结果
 
-- `npm run validate`：项目检查通过，267 项 JavaScript 测试通过，包含两种形态往返切换、加载失败保留原猫及快速取消切换。
-- `cargo test --locked --lib`：84 项 Rust 测试通过，包含形态设置的持久化与旧版兼容。
+- `npm run validate`：项目检查通过，341 项 JavaScript 测试通过，包含两种形态往返切换、加载失败保留原猫及快速取消切换。
+- `cargo test --locked --lib`：90 项 Rust 测试通过，包含形态设置的持久化与旧版兼容。
 - `cargo check --locked --release`：正式编译配置通过，开发调试窗口已受编译条件保护。
 - `claude plugin validate .` 与独立 Claude 插件校验：通过。
 - macOS hook 去重的两个定向场景：通过。
