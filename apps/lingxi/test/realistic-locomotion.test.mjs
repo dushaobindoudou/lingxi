@@ -49,8 +49,8 @@ test('steering bends the torso without accumulating offsets into the next mixer 
   assert.ok(chest.quaternion.angleTo(authored) < 1e-7, 'restore the authored pose before the mixer');
 });
 
-test('run flight and an in-place walk pivot retain the authored skeleton', () => {
-  for (const [clipName, moving] of [['Run', true], ['Walk', false]]) {
+test('an in-place walk pivot retains the authored skeleton', () => {
+  for (const [clipName, moving] of [['Walk', false]]) {
     const a = readMotion(), b = readMotion();
     const mixerA = new THREE.AnimationMixer(a.root), mixerB = new THREE.AnimationMixer(b.root);
     const actionA = mixerA.clipAction(a.clips[clipName].clip).play();

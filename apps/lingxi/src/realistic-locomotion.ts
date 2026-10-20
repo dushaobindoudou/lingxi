@@ -5,10 +5,17 @@ const wrap = (n: number) => ((n % 1) + 1) % 1;
 const smooth = (n: number) => { const t = THREE.MathUtils.clamp(n, 0, 1); return t * t * (3 - 2 * t); };
 
 export const steeringStrideScale = (turnRate: number) => 1 / (1 + Math.min(1.5, Math.abs(turnRate) * 1.5));
-/** Metres and radians in the unscaled cat (~0.8 m tall). All additions are confined to travelling Walk. */
+/** Metres and radians in the unscaled cat (~0.8 m tall). */
 export const KITTEN_WALK = {
   stride: 0.72, support: 0.62, release: 0.08, frontLift: 0.025, rearLift: 0.016,
   load: 0.018, shoulderPitch: 0.010, hipSway: 0.014, tailSway: 0.025, headNod: 0.009,
+};
+/** A small, elastic overlay on the authored gallop; the clip still owns paw timing and flight. */
+export const KITTEN_RUN = {
+  fadeSeconds: .18, hipRise: .004, shoulderRise: .012, chestReach: .006,
+  loinStretch: .045, spineStretch: .060, chestPitch: .045,
+  tailLift: [.23, .13, .07, .02, 0], tailFlick: [.025, .035, .055, .075, .10],
+  headNod: .025, earBack: .045,
 };
 
 /** Keep the authored bend plane while placing a two-bone chain in world space. */
@@ -66,14 +73,19 @@ export function createLocomotion(root: THREE.Object3D) {
   const joints = chain.flatMap(([name, share]) => { const bone = find(name); return bone ? [{ bone, share }] : []; });
   const pelvis = find("Pelvis");
   const chest = find("Chest"), tail = find("Tail0");
+  const runBones = Object.fromEntries(['Loin', 'Spine', 'Chest', 'Head', 'EarL', 'EarR', 'Tail0', 'Tail1', 'Tail2', 'Tail3', 'Tail4'].map(name => [name, find(name)]));
   let pelvisPosition: THREE.Vector3 | null = null;
+  let chestPosition: THREE.Vector3 | null = null;
   const saved = new Map<THREE.Object3D, THREE.Quaternion>();
   let bend = 0;
+  let runWeight = 0;
   function save(bone: THREE.Object3D) { if (!saved.has(bone)) saved.set(bone, bone.quaternion.clone()); }
   return {
     beforeMixer() {
       if (pelvis && pelvisPosition) pelvis.position.copy(pelvisPosition);
       pelvisPosition = null;
+      if (chest && chestPosition) chest.position.copy(chestPosition);
+      chestPosition = null;
       for (const [bone, quaternion] of saved) bone.quaternion.copy(quaternion);
       saved.clear();
     },
@@ -82,6 +94,8 @@ export function createLocomotion(root: THREE.Object3D) {
       bend += (wanted - bend) * (1 - Math.exp(-Math.max(0, dt) / .16));
       root.updateWorldMatrix(true, true);
       const walking = moving && clip === 'Walk';
+      const running = moving && clip === 'Run';
+      runWeight += ((running ? 1 : 0) - runWeight) * (1 - Math.exp(-Math.max(0, dt) / KITTEN_RUN.fadeSeconds));
       // the hips roll about the way the cat faces (the model's +z), not about whichever way the pelvis bone points
       const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
       // Capture the mixer pose before moving the torso; IK then keeps paw contacts independent of body load.
@@ -99,10 +113,14 @@ export function createLocomotion(root: THREE.Object3D) {
         return root.localToWorld(local);
       });
       // Forepaws land half a cycle apart. The torso yields just after contact, then recovers over planted legs.
+      const cycle = 2 * Math.PI * phase;
+      // At mid-flight the back lengthens; at the two paw landings it gathers like a kitten's spring.
+      const extension = -Math.cos(cycle);
       const load = walking ? -KITTEN_WALK.load * Math.cos(4 * Math.PI * phase - .2 * Math.PI) : 0;
-      if (pelvis && (Math.abs(bend) > 1e-5 || walking)) {
+      if (pelvis && (Math.abs(bend) > 1e-5 || walking || runWeight > 1e-4)) {
         pelvisPosition = pelvis.position.clone();
-        const drop = up.clone().multiplyScalar((load - .025 * Math.min(1, Math.abs(bend) / .18)) * root.getWorldScale(new THREE.Vector3()).y);
+        const runRise = KITTEN_RUN.hipRise * runWeight * Math.cos(cycle + .15);
+        const drop = up.clone().multiplyScalar((load + runRise - .025 * Math.min(1, Math.abs(bend) / .18)) * root.getWorldScale(new THREE.Vector3()).y);
         const parent = pelvis.parent!;
         const point = pelvis.getWorldPosition(new THREE.Vector3()).add(drop);
         pelvis.position.copy(parent.worldToLocal(point));
@@ -123,6 +141,48 @@ export function createLocomotion(root: THREE.Object3D) {
         save(chest);
         chest.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -KITTEN_WALK.shoulderPitch * Math.cos(4 * Math.PI * phase - .2 * Math.PI)));
         chest.updateWorldMatrix(false, true);
+      }
+      if (runWeight > 1e-4) {
+        // Opposed hip/shoulder lift reads as a bound instead of the authored whole-body bob.
+        if (chest) {
+          chestPosition = chest.position.clone();
+          const point = chest.getWorldPosition(new THREE.Vector3())
+            .addScaledVector(up, -KITTEN_RUN.shoulderRise * runWeight * Math.cos(cycle + .15) * root.getWorldScale(new THREE.Vector3()).y)
+            .addScaledVector(forward, KITTEN_RUN.chestReach * extension * runWeight * root.getWorldScale(new THREE.Vector3()).z);
+          chest.position.copy(chest.parent!.worldToLocal(point));
+          chest.updateWorldMatrix(false, true);
+        }
+        const pitch = new THREE.Vector3(1, 0, 0).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
+        for (const [name, amount] of [['Loin', KITTEN_RUN.loinStretch], ['Spine', -KITTEN_RUN.spineStretch], ['Chest', KITTEN_RUN.chestPitch]] as const) {
+          const bone = runBones[name];
+          if (!bone) continue;
+          save(bone);
+          turnAbout(bone, pitch, amount * extension * runWeight);
+          bone.updateWorldMatrix(false, true);
+        }
+        const head = runBones.Head;
+        if (head) {
+          save(head);
+          // The renderer steadies the gaze after this pass, leaving only a tiny contact nod.
+          turnAbout(head, pitch, KITTEN_RUN.headNod * Math.cos(cycle - .35) * runWeight);
+          head.updateWorldMatrix(false, true);
+        }
+        for (const [name, sign] of [['EarL', 1], ['EarR', -1]] as const) {
+          const ear = runBones[name];
+          if (!ear) continue;
+          save(ear);
+          turnAbout(ear, forward, sign * KITTEN_RUN.earBack * runWeight);
+          ear.updateWorldMatrix(false, true);
+        }
+        // carryTail already sets the raised carriage and slow spring. These small phase-lagged
+        // turns are added afterward, so the tip follows the body instead of snapping with it.
+        for (let i = 0; i < 5; i++) {
+          const bone = runBones[`Tail${i}`];
+          if (!bone) continue;
+          save(bone);
+          turnAbout(bone, pitch, (KITTEN_RUN.tailLift[i] + KITTEN_RUN.tailFlick[i] * Math.sin(cycle - .45 - i * .32)) * runWeight);
+          bone.updateWorldMatrix(false, true);
+        }
       }
       if (walking && tail) {
         save(tail);
@@ -148,7 +208,7 @@ export function createLocomotion(root: THREE.Object3D) {
           if (release >= 1) leg.anchor = null;
         } else leg.anchor = null;
         leg.lastPhase = p;
-        if (!moving && Math.abs(bend) < 1e-5) return;
+        if (!moving && Math.abs(bend) < 1e-5 && runWeight < 1e-4) return;
         for (const bone of [leg.upper, leg.lower, leg.paw]) save(bone);
         placePaw(leg.upper, leg.lower, leg.paw, targets[i]);
       });
