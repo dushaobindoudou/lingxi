@@ -40,8 +40,11 @@ async function files(dir) {
  * unavailable git yields an empty set and those links are simply not flagged.
  */
 function ignoredPaths(paths) {
- if(!paths.length) return new Set();
- const r=spawnSync('git',['check-ignore','--stdin'],{cwd:root,input:paths.join('\n'),encoding:'utf8'});
+ // A link outside the checkout is never an ignored project asset. Passing one to git
+ // rejects the entire batch and hides the valid ignore matches on clean CI machines.
+ const local=paths.filter((path)=>path!=='..'&&!path.startsWith('../'));
+ if(!local.length) return new Set();
+ const r=spawnSync('git',['check-ignore','--stdin'],{cwd:root,input:local.join('\n')+'\n',encoding:'utf8'});
  // 0 = some matched, 1 = none matched; anything else (128: not a repo, or git missing) is
  // "cannot tell", never a reason to fail the check.
  if(r.error||(r.status!==0&&r.status!==1)) return new Set();
