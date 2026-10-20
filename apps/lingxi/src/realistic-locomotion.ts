@@ -12,7 +12,7 @@ export const KITTEN_WALK = {
 };
 
 /** Keep the authored bend plane while placing a two-bone chain in world space. */
-function placePaw(upper: THREE.Object3D, lower: THREE.Object3D, paw: THREE.Object3D, target: THREE.Vector3) {
+export function placePaw(upper: THREE.Object3D, lower: THREE.Object3D, paw: THREE.Object3D, target: THREE.Vector3) {
   const a = upper.getWorldPosition(new THREE.Vector3());
   const b = lower.getWorldPosition(new THREE.Vector3());
   const c = paw.getWorldPosition(new THREE.Vector3());
