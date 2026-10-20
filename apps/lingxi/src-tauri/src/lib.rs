@@ -6471,8 +6471,8 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     let status_summary = MenuItem::with_id(app, "status-summary", &initial_status, false, None::<&str>)?;
     // Clickable: "有 2 个任务需要留意" is only useful if it takes you to them.
     let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有未读提醒", true, None::<&str>)?;
-    // Every toy and every effect, by name - the tray used to offer one fixed toy ("逗一逗") and
-    // no effect at all, so switching either meant opening the main window.
+    // Keep every toy in the tray. Full-screen effects are manual controls for debug builds;
+    // release builds leave their timing to the skill while keeping perform routes available.
     let toy_items = TRAY_TOYS
         .iter()
         .map(|(kind, name)| MenuItem::with_id(app, format!("toy:{kind}"), *name, true, None::<&str>))
@@ -6484,32 +6484,38 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     toy_entries.push(&toy_separator);
     toy_entries.push(&clear_toy);
     let toy_submenu = Submenu::with_items(app, "玩具", true, &toy_entries)?;
-    let effect_items = TRAY_EFFECTS
-        .iter()
-        .map(|(id, name)| MenuItem::with_id(app, format!("perform:{id}"), *name, true, None::<&str>))
-        .collect::<tauri::Result<Vec<_>>>()?;
-    let effect_entries: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-        effect_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
-    let effect_submenu = Submenu::with_items(app, "特效", true, &effect_entries)?;
+    let effect_submenu = if cfg!(debug_assertions) {
+        let effect_items = TRAY_EFFECTS
+            .iter()
+            .map(|(id, name)| MenuItem::with_id(app, format!("perform:{id}"), *name, true, None::<&str>))
+            .collect::<tauri::Result<Vec<_>>>()?;
+        let effect_entries: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+            effect_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+        Some(Submenu::with_items(app, "特效", true, &effect_entries)?)
+    } else {
+        None
+    };
     let main_window = MenuItem::with_id(app, "main-window", "打开主界面…", true, None::<&str>)?;
     let toggle_visibility = MenuItem::with_id(app, "toggle-visibility", "隐藏猫咪", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出灵犀", true, None::<&str>)?;
 
-    let menu = Menu::with_items(
-        app,
-        &[
-            &status_summary,
-            &attention_summary,
-            &PredefinedMenuItem::separator(app)?,
-            &main_window,
-            &toggle_visibility,
-            &size_submenu,
-            &toy_submenu,
-            &effect_submenu,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
+    let status_separator = PredefinedMenuItem::separator(app)?;
+    let quit_separator = PredefinedMenuItem::separator(app)?;
+    let mut menu_entries: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
+        &status_summary,
+        &attention_summary,
+        &status_separator,
+        &main_window,
+        &toggle_visibility,
+        &size_submenu,
+        &toy_submenu,
+    ];
+    if let Some(ref submenu) = effect_submenu {
+        menu_entries.push(submenu);
+    }
+    menu_entries.push(&quit_separator);
+    menu_entries.push(&quit);
+    let menu = Menu::with_items(app, &menu_entries)?;
 
     // A full-color pastel icon (even with an outline) is too low-contrast/detailed to read
     // at real menu-bar size (~20px) against both light and dark menu bars - confirmed by

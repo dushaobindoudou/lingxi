@@ -148,7 +148,8 @@ export const tools = [
     description:
       'Run one of the scripted full-screen set pieces (it charges the screen, speed lines, ' +
       'impact flash, the lot). These take over the screen for several seconds, so save them for ' +
-      'moments that earn it - a long build finally going green, not every file write.',
+      'moments that earn it - a long build finally going green, not every file write. ' +
+      'Release builds have no effects menu; you judge when to use this.',
     inputSchema: {
       type: 'object',
       properties: {

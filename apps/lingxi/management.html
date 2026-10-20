@@ -350,14 +350,16 @@ LINGXI_AGENT_NAME = "Codex"</pre>
           <button id="say-button" class="wide-button">说出来</button>
           <p class="hint" id="say-result" aria-live="polite"></p>
 
-          <h2 class="section-gap">特效</h2>
-          <p class="hint">
-            几秒钟的整屏演出：走位、身体动作、表情、镜头和屏幕特效一起编排。特效层不接收任何鼠标事件，
-            演出期间你照常点按钮、切窗口都不受影响。
-          </p>
-          <div class="camera-options play-options" id="performance-options"></div>
-          <p class="hint" id="performance-result" aria-live="polite"></p>
-          <button id="stop-performance" class="wide-button secondary">停止当前特效</button>
+          <section id="performance-section" hidden>
+            <h2 class="section-gap">特效</h2>
+            <p class="hint">
+              几秒钟的整屏演出：走位、身体动作、表情、镜头和屏幕特效一起编排。特效层不接收任何鼠标事件，
+              演出期间你照常点按钮、切窗口都不受影响。
+            </p>
+            <div class="camera-options play-options" id="performance-options"></div>
+            <p class="hint" id="performance-result" aria-live="polite"></p>
+            <button id="stop-performance" class="wide-button secondary">停止当前特效</button>
+          </section>
         </section>
 
         <!-- 6.4 外观 -->

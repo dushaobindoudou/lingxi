@@ -437,24 +437,29 @@ function renderPlayPage() {
       }),
     );
   }
-  const shows = document.getElementById('performance-options');
-  if (shows) {
-    shows.replaceChildren(
-      ...PERFORMANCES.map((entry) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.append(
-          Object.assign(document.createElement('b'), { textContent: entry.name }),
-          Object.assign(document.createElement('span'), { textContent: entry.description }),
-        );
-        button.addEventListener('click', () => {
-          void invoke('perform', { id: entry.id });
-          const note = document.getElementById('performance-result');
-          if (note) note.textContent = `正在表演：${entry.name}（几秒钟后自己结束，也可以点「停止当前特效」）`;
-        });
-        return button;
-      }),
-    );
+  const performanceSection = document.getElementById('performance-section');
+  if (performanceSection && import.meta.env.DEV) {
+    performanceSection.hidden = false;
+    const shows = document.getElementById('performance-options');
+    if (shows) {
+      shows.replaceChildren(
+        ...PERFORMANCES.map((entry) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.append(
+            Object.assign(document.createElement('b'), { textContent: entry.name }),
+            Object.assign(document.createElement('span'), { textContent: entry.description }),
+          );
+          button.addEventListener('click', () => {
+            void invoke('perform', { id: entry.id });
+            const note = document.getElementById('performance-result');
+            if (note) note.textContent = `正在表演：${entry.name}（几秒钟后自己结束，也可以点「停止当前特效」）`;
+          });
+          return button;
+        }),
+      );
+    }
+    document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
   }
   document.getElementById('clear-toy')?.addEventListener('click', () => void invoke('clear_toy'));
   const sayInput = document.getElementById('say-input') as HTMLInputElement | null;
@@ -479,7 +484,6 @@ function renderPlayPage() {
   sayInput?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') say();
   });
-  document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
 }
 
 function renderPerception(snapshot: PerceptionSnapshot) {
