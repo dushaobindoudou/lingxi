@@ -522,6 +522,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const shellMaterials: THREE.Material[] = [];
   const ownedMaterials: THREE.Material[] = [];
   const whiskerBends = [new THREE.Vector3(), new THREE.Vector3()];
+  // the narrowest a whisker is drawn, in its own model units (set each frame from WHISKER.minimumWidthPx)
+  const whiskerMinRadius = { value: 0 };
+  let whiskerMesh: THREE.Object3D | null = null;
   let whiskerSprings: WhiskerSpring[] = [
     { position: [0, 0, 0], velocity: [0, 0, 0] },
     { position: [0, 0, 0], velocity: [0, 0, 0] },
@@ -798,6 +801,33 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const tip = e.localToWorld(new THREE.Vector3(0, 1, 0)).applyMatrix4(toLocal);
       return { centre, axis: tip.sub(centre).normalize() };
     });
+  }
+  /**
+   * A whisker drawn `reach` times as long along its own curve: each ring of the tube (the vertices sharing a u, root 0
+   * to tip 1) keeps its shape round the centreline, and the centreline is stretched out from the root. One bone carries
+   * the whole whisker, so the rest pose can be edited as it is.
+   */
+  function lengthenWhisker(geometry: THREE.BufferGeometry, reach: number) {
+    const pos = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
+    if (!pos || !uv || reach === 1) return;
+    const rings = new Map<number, { sum: THREE.Vector3; n: number }>();
+    const key = (i: number) => Math.round(uv.getX(i) * 1000);
+    for (let i = 0; i < pos.count; i++) {
+      const ring = rings.get(key(i)) ?? rings.set(key(i), { sum: new THREE.Vector3(), n: 0 }).get(key(i))!;
+      ring.sum.x += pos.getX(i); ring.sum.y += pos.getY(i); ring.sum.z += pos.getZ(i); ring.n++;
+    }
+    const root = rings.get(Math.min(...rings.keys()));
+    if (!root) return;
+    const rootCentre = root.sum.clone().divideScalar(root.n);
+    const centre = new THREE.Vector3(), p = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      const ring = rings.get(key(i))!;
+      centre.copy(ring.sum).divideScalar(ring.n);
+      p.fromBufferAttribute(pos, i).sub(centre).add(centre.sub(rootCentre).multiplyScalar(reach).add(rootCentre));
+      pos.setXYZ(i, p.x, p.y, p.z);
+    }
+    pos.needsUpdate = true;
+    geometry.computeBoundingSphere();
   }
   function lidTuck(eyes: { centre: THREE.Vector3; axis: THREE.Vector3 }[] | null) {
     if (!eyes) return 'float lidShown(vec3 rest) { return 1.0; }';
@@ -1290,6 +1320,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         const length = new Float32Array(uv.count);
         for (let i = 0; i < uv.count; i++) length[i] = uv.getX(i);
         whisker.geometry.setAttribute('whiskerLength', new THREE.BufferAttribute(length, 1));
+        lengthenWhisker(whisker.geometry, WHISKER.reach);
+        whiskerMesh ??= whisker;
         // The asset already narrows toward its tip; reduce its oversized 1.36 mm root without changing its curve.
         const fiber = new THREE.MeshStandardMaterial({
           color: 0xfff3df, roughness: 0.52, metalness: 0, side: THREE.DoubleSide,
@@ -1297,20 +1329,27 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         });
         fiber.onBeforeCompile = (sh) => {
           sh.uniforms.uWhiskerBend = { value: whiskerBends[side] };
-          sh.vertexShader = 'attribute float whiskerLength; uniform vec3 uWhiskerBend; varying float vWhiskerLength;\n' + sh.vertexShader
+          sh.uniforms.uWhiskerMinRadius = whiskerMinRadius;
+          sh.vertexShader = 'attribute float whiskerLength; uniform vec3 uWhiskerBend; uniform float uWhiskerMinRadius; varying float vWhiskerLength, vWhiskerCover;\n' + sh.vertexShader
             .replace('#include <begin_vertex>', `#include <begin_vertex>
               vWhiskerLength = whiskerLength;
-              transformed -= normal * ((1.0 - ${WHISKER.width.toFixed(3)}) * mix(0.00068, 0.000045, whiskerLength));
+              float exported = mix(0.00068, 0.000045, whiskerLength);
+              transformed -= normal * ((1.0 - ${WHISKER.width.toFixed(3)}) * exported);
+              // never under the minimum on screen (a thinner one broke into a row of sparkling dots), drawn as faint as
+              // it is thin
+              float radius = ${WHISKER.width.toFixed(3)} * exported;
+              transformed += normal * max(0.0, uWhiskerMinRadius - radius);
+              vWhiskerCover = radius / max(radius, uWhiskerMinRadius);
               transformed += uWhiskerBend * (whiskerLength * whiskerLength);`);
-          sh.fragmentShader = 'varying float vWhiskerLength;\n' + sh.fragmentShader
+          sh.fragmentShader = 'varying float vWhiskerLength, vWhiskerCover;\n' + sh.fragmentShader
             .replace('#include <color_fragment>', `#include <color_fragment>
-              diffuseColor.a *= (1.0 - smoothstep(${WHISKER.fadeFrom.toFixed(2)}, 1.0, vWhiskerLength));`)
+              diffuseColor.a *= (1.0 - smoothstep(${WHISKER.fadeFrom.toFixed(2)}, 1.0, vWhiskerLength)) * sqrt(vWhiskerCover);`)
             .replace('#include <opaque_fragment>', `
               // A weak grazing glow catches the warm rim light without turning the fiber into a white wire.
               outgoingLight += vec3(0.16, 0.12, 0.08) * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);
               #include <opaque_fragment>`);
         };
-        fiber.customProgramCacheKey = () => 'realcat-whisker-v2';
+        fiber.customProgramCacheKey = () => 'realcat-whisker-v3';
         ownedMaterials.push(fiber);
         m.material = fiber;
         m.receiveShadow = false;
@@ -1693,6 +1732,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (cameraHeadPitch) headBone.rotation.x += cameraHeadPitch;
   }
   function animateWhiskers(seconds: number, cursor: { x: number; y: number } | null) {
+    if (whiskerMesh) {
+      // a device pixel in the whisker's own model units
+      const perPixel = unitsPerPixel / renderer.getPixelRatio() / Math.max(1e-6, whiskerMesh.getWorldScale(bonePoint).x);
+      whiskerMinRadius.value = WHISKER.minimumWidthPx * 0.5 * perPixel;
+    }
     if (!headBone) return;
     headBone.getWorldQuaternion(currentHeadQ);
     const continuous = whiskersPrimed && seconds > 0 && seconds <= 0.25;

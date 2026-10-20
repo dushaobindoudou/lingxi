@@ -5,6 +5,12 @@ export const WHISKER = {
   width: 0.6,
   opacity: 0.95,
   fadeFrom: 0.75, // the last quarter of a whisker fades to nothing: it ended bright and blunt
+  // Drawn this much longer than exported, along their own curve (no thicker): at 0.22 m they reached only a little past
+  // the kitten's fluffy cheeks and lay buried in its white muzzle fur - from the front three-quarters there were no
+  // whiskers to see. A kitten's whiskers span one and a half to two widths of its face.
+  reach: 1.5,
+  // never drawn narrower than this (device pixels; see the renderer's whisker material)
+  minimumWidthPx: 0.9,
   hz: 3.1,
   damping: 0.56,
   maxBend: 0.025, // a little over a tenth of the ~0.22 m whisker length
