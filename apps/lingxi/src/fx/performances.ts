@@ -143,6 +143,15 @@ function rumpOf(context: PerformanceContext) {
 function playFirst(context: PerformanceContext, ...ids: string[]) {
   for (const id of ids) if (context.renderer.playAction?.(id)) return;
 }
+/**
+ * Where on the pane a stream or a flung poop lands: in front of the cat, kept well inside the screen (aimed at the cat's
+ * feet, a cat standing low put the splash on the screen's bottom edge, half of it off it).
+ */
+function onPane(context: PerformanceContext, at: { x: number; y: number }) {
+  const { width, height } = context.viewport();
+  return { x: Math.min(width * 0.9, Math.max(width * 0.1, at.x)), y: Math.min(height * 0.8, Math.max(height * 0.15, at.y)) };
+}
+
 /** The potty marks' size for the cat at POTTY_HEIGHT: 1 is a cat ~250 px tall. */
 function pottySize(context: PerformanceContext) {
   return (POTTY_HEIGHT * context.viewport().height) / 250;
@@ -460,7 +469,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         run(context) {
           const rump = () => rumpOf(context), start = rump();
           const cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.peeStream(rump, { x: start.x + 0.08 * cat, y: start.y + 0.55 * cat }, 2300, pottySize(context));
+          context.fx.peeStream(rump, onPane(context, { x: start.x + 0.1 * cat, y: start.y + 0.42 * cat }), 2300, pottySize(context));
         },
       },
       {
@@ -518,14 +527,14 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 4800,
         run(context) {
           const from = rumpOf(context), cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.flingPoop(from, { x: from.x - 0.05 * cat, y: from.y + 0.5 * cat }, pottySize(context));
+          context.fx.flingPoop(from, onPane(context, { x: from.x - 0.05 * cat, y: from.y + 0.42 * cat }), pottySize(context));
         },
       },
       {
         atMs: 5500,
         run(context) {
           const from = rumpOf(context), cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.flingPoop(from, { x: from.x + 0.14 * cat, y: from.y + 0.42 * cat }, pottySize(context) * 0.8);
+          context.fx.flingPoop(from, onPane(context, { x: from.x + 0.16 * cat, y: from.y + 0.36 * cat }), pottySize(context) * 0.8);
         },
       },
       {

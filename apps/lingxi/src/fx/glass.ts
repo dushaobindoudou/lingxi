@@ -3,8 +3,13 @@
 // way rain runs down a window. A poop flies at the pane, squashes flat, sticks, and sags slowly down it, smearing.
 //
 // A 2D canvas over the stage, pointer-events none, running its own frame loop only while something is on the glass. The
-// drops are sprites drawn once per kind (a lens: a dark lower rim, a bright highlight up and to the left, a little
-// shadow) and stretched as they run.
+// drops are sprites drawn once per kind and stretched as they run; a running drop wets the pane behind it (a second
+// canvas that dries off slowly).
+//
+// The pane is right in front of the viewer, the cat behind it: what reaches it is big on screen, and a drop of water on
+// a window is a lens - it shows the room behind it upside down, so its upper rim reads dark and a bright crescent
+// gathers inside its lower edge, with one sharp reflection of the light up and to the left; almost clear, barely tinted.
+// (Drawn as small solid beads below the cat, the first version read as pebbles on the floor, not wet on the glass.)
 
 type Kind = 'pee' | 'poop';
 interface Drop {
@@ -19,13 +24,25 @@ interface Drop {
   /** a poop's squash as it lands (1 = settled) */
   squash: number;
   variant: number;
+  /** the effect's scale it came with (1 = a cat ~250 px tall) */
+  scale: number;
 }
 interface Flight { from: { x: number; y: number }; to: { x: number; y: number }; t: number; seconds: number; r: number; scale: number }
 interface Stream { from: () => { x: number; y: number }; to: { x: number; y: number }; age: number; seconds: number; scale: number; nextDrop: number }
 
-const PEE = { slideRadius: 6.5, gravity: 520, drag: 2.2, stickPerSecond: 1.6, lifeFrom: 6, lifeTo: 9.5, mergeAt: 0.8 };
-const POOP = { slideRadius: 7, gravity: 26, drag: 1.2, lifeFrom: 7.5, lifeTo: 9 };
-const SPRITE = 96;
+// sizes in CSS px for a cat ~250 px tall (the effect's `scale`): drops `drop` (smallest + up to `spread`) splashed within
+// `reach` of where the stream hits; a drop over `slideRadius` runs down; merging, none grows past `largest` (left to
+// grow, two or three merged into one swollen bubble a quarter of the cat's height)
+const PEE = {
+  slideRadius: 9, gravity: 520, drag: 2.2, stickPerSecond: 1.6, lifeFrom: 6, lifeTo: 9.5, mergeAt: 0.8,
+  drop: 3, spread: 15, reach: 55, every: 0.028, largest: 13,
+};
+// a poop sags down the pane slowly and in fits (catching on it), and smears in uneven streaks: sliding at a drop's pace
+// and leaving one even band it read as two potatoes on stalks
+const POOP = { slideRadius: 9, gravity: 14, drag: 1.8, stickPerSecond: 1.2, lifeFrom: 7.5, lifeTo: 9, size: 30 };
+// how fast the wet trails dry: the share of what is left wiped each frame
+const DRY = 0.012;
+const SPRITE = 128;
 
 function dropSprite(kind: Kind, variant: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -33,38 +50,57 @@ function dropSprite(kind: Kind, variant: number): HTMLCanvasElement {
   const g = c.getContext('2d')!;
   const m = SPRITE / 2, r = SPRITE * 0.42;
   if (kind === 'pee') {
-    // the shadow it casts on the pane's far side, a little down
-    g.fillStyle = 'rgba(70, 50, 10, 0.10)';
-    g.beginPath(); g.ellipse(m + r * 0.08, m + r * 0.16, r, r, 0, 0, Math.PI * 2); g.fill();
-    // the body: a lens - clear in the middle, the light bending dark at the lower rim
-    const body = g.createRadialGradient(m - r * 0.2, m - r * 0.25, r * 0.1, m, m, r);
-    body.addColorStop(0, 'rgba(255, 246, 196, 0.16)');
-    body.addColorStop(0.6, 'rgba(242, 214, 120, 0.26)');
-    body.addColorStop(0.9, 'rgba(170, 128, 36, 0.50)');
-    body.addColorStop(1, 'rgba(120, 88, 20, 0.0)');
+    g.save();
+    g.translate(m, m);
+    // a faint shade under it, so it reads over a light desktop as well as a dark one
+    const shade = g.createRadialGradient(0, r * 0.1, r * 0.6, 0, r * 0.1, r * 1.04);
+    shade.addColorStop(0, 'rgba(0, 0, 0, 0.07)');
+    shade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    g.fillStyle = shade;
+    g.beginPath(); g.arc(0, r * 0.1, r * 1.04, 0, Math.PI * 2); g.fill();
+    // bottom-heavy on an upright pane
+    const outline = () => { g.beginPath(); g.ellipse(0, r * 0.04, r, r * 0.96, 0, 0, Math.PI * 2); };
+    outline();
+    g.save();
+    g.clip();
+    // the body: nearly clear, a little pee-yellow, deeper toward the rim
+    const body = g.createRadialGradient(0, -r * 0.25, r * 0.1, 0, 0, r);
+    body.addColorStop(0, 'rgba(255, 248, 214, 0.08)');
+    body.addColorStop(0.7, 'rgba(236, 206, 112, 0.15)');
+    body.addColorStop(1, 'rgba(160, 118, 30, 0.32)');
     g.fillStyle = body;
-    g.beginPath(); g.arc(m, m, r, 0, Math.PI * 2); g.fill();
-    // the rim, darker along the bottom where the drop is thickest
-    const rim = g.createLinearGradient(0, m - r, 0, m + r);
-    rim.addColorStop(0, 'rgba(150, 110, 30, 0.10)');
-    rim.addColorStop(1, 'rgba(110, 76, 14, 0.45)');
-    g.strokeStyle = rim; g.lineWidth = r * 0.10;
-    g.beginPath(); g.arc(m, m, r * 0.94, 0, Math.PI * 2); g.stroke();
-    // highlights: the window's light, up and to the left; its refraction, low and to the right
-    g.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    g.beginPath(); g.ellipse(m - r * 0.38, m - r * 0.42, r * 0.22, r * 0.14, -0.6, 0, Math.PI * 2); g.fill();
-    g.fillStyle = 'rgba(255, 252, 225, 0.35)';
-    g.beginPath(); g.ellipse(m + r * 0.30, m + r * 0.45, r * 0.30, r * 0.12, -0.3, 0, Math.PI * 2); g.fill();
+    g.fillRect(-r, -r, r * 2, r * 2);
+    // the dark upper rim: the room's darker upper half, turned over
+    const rim = g.createLinearGradient(0, -r, 0, r * 0.3);
+    rim.addColorStop(0, 'rgba(46, 32, 8, 0.55)');
+    rim.addColorStop(1, 'rgba(46, 32, 8, 0)');
+    g.strokeStyle = rim; g.lineWidth = r * 0.22;
+    outline(); g.stroke();
+    // the bright crescent inside the lower edge, where the light comes through focused
+    const caustic = g.createRadialGradient(0, r * 0.62, r * 0.05, 0, r * 0.62, r * 0.62);
+    caustic.addColorStop(0, 'rgba(255, 252, 232, 0.75)');
+    caustic.addColorStop(1, 'rgba(255, 252, 232, 0)');
+    g.fillStyle = caustic;
+    g.beginPath(); g.ellipse(0, r * 0.62, r * 0.66, r * 0.3, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+    // a thin edge, and the light's reflection: one sharp spot up and to the left, a fleck beside it
+    g.strokeStyle = 'rgba(70, 52, 14, 0.22)'; g.lineWidth = r * 0.035;
+    outline(); g.stroke();
+    g.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    g.beginPath(); g.ellipse(-r * 0.36, -r * 0.44, r * 0.2, r * 0.12, -0.6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    g.beginPath(); g.arc(r * 0.16, -r * 0.6, r * 0.05, 0, Math.PI * 2); g.fill();
+    g.restore();
     return c;
   }
   // poop: an uneven soft blob, shaded, glossy on top, with a few darker lumps
-  const bumps = 9;
+  const bumps = 13;
   const rnd = (i: number) => (Math.sin((i + 1) * 12.9898 * (variant + 1)) * 43758.5453) % 1;
   g.beginPath();
   for (let i = 0; i <= bumps * 4; i++) {
     const a = (i / (bumps * 4)) * Math.PI * 2;
-    const k = 1 + 0.10 * Math.sin(a * 3 + variant) + 0.06 * Math.abs(rnd(i % bumps));
-    const x = m + Math.cos(a) * r * k, y = m + Math.sin(a) * r * k * 0.92;
+    const k = 1 + 0.12 * Math.sin(a * 3 + variant) + 0.12 * Math.abs(rnd(i % bumps));
+    const x = m + Math.cos(a) * r * k, y = m + Math.sin(a) * r * k * 0.82;
     if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
   }
   g.closePath();
@@ -132,11 +168,11 @@ export function createGlass(host: HTMLElement): Glass {
     if (!frame) { last = performance.now(); frame = requestAnimationFrame(tick); }
   }
 
-  function add(kind: Kind, x: number, y: number, r: number, vx = 0, vy = 0): Drop {
+  function add(kind: Kind, x: number, y: number, r: number, vx = 0, vy = 0, scale = 1): Drop {
     const p = kind === 'pee' ? PEE : POOP;
     const drop: Drop = {
       kind, x, y, r, vx, vy, age: 0, life: p.lifeFrom + Math.random() * (p.lifeTo - p.lifeFrom),
-      stuck: Math.random() * 0.4, trail: 0, squash: kind === 'poop' ? 0 : 1, variant: Math.floor(Math.random() * 3),
+      stuck: Math.random() * 0.4, trail: 0, squash: kind === 'poop' ? 0 : 1, variant: Math.floor(Math.random() * 3), scale,
     };
     drops.push(drop);
     return drop;
@@ -150,11 +186,11 @@ export function createGlass(host: HTMLElement): Glass {
       if (s.age > s.seconds) { streams.splice(i, 1); continue; }
       s.nextDrop -= dt;
       while (s.nextDrop <= 0) {
-        s.nextDrop += 0.03;
+        s.nextDrop += PEE.every;
         // the glass is right in front of the viewer: what hits it is big, and spatters wide
-        const a = Math.random() * Math.PI * 2, d = Math.abs(gauss()) * 30 * s.scale;
-        const r = (2 + Math.random() ** 2 * 9) * s.scale;
-        add('pee', s.to.x + Math.cos(a) * d, s.to.y + Math.sin(a) * d * 0.8, r, Math.cos(a) * 60 * s.scale, Math.sin(a) * 40 * s.scale);
+        const a = Math.random() * Math.PI * 2, d = Math.abs(gauss()) * PEE.reach * s.scale;
+        const r = (PEE.drop + Math.random() ** 2 * PEE.spread) * s.scale;
+        add('pee', s.to.x + Math.cos(a) * d, s.to.y + Math.sin(a) * d * 0.8, r, Math.cos(a) * 60 * s.scale, Math.sin(a) * 40 * s.scale, s.scale);
       }
     }
     // flung poops: fly, then squash onto the pane with a spatter round them
@@ -166,7 +202,7 @@ export function createGlass(host: HTMLElement): Glass {
       add('poop', f.to.x, f.to.y, f.r);
       for (let k = 0; k < 9; k++) {
         const a = Math.random() * Math.PI * 2, d = f.r * (1.1 + Math.random() * 1.6);
-        add('poop', f.to.x + Math.cos(a) * d, f.to.y + Math.sin(a) * d, (0.8 + Math.random() * 2.4) * f.scale).squash = 1;
+        add('poop', f.to.x + Math.cos(a) * d, f.to.y + Math.sin(a) * d, (1.2 + Math.random() * 3.5) * f.scale).squash = 1;
       }
     }
     for (let i = drops.length - 1; i >= 0; i--) {
@@ -183,12 +219,20 @@ export function createGlass(host: HTMLElement): Glass {
         d.vy *= Math.exp(-dt * p.drag);
         d.vx += (Math.random() - 0.5) * 30 * dt;
         // stick-slip: a run catches on the glass now and then
-        if (d.kind === 'pee' && Math.random() < PEE.stickPerSecond * dt) d.stuck = 0.08 + Math.random() * 0.35;
+        if (Math.random() < (d.kind === 'pee' ? PEE.stickPerSecond : POOP.stickPerSecond) * dt) d.stuck = 0.08 + Math.random() * (d.kind === 'pee' ? 0.35 : 0.8);
       } else d.vy *= Math.exp(-dt * 25);
       const dy = d.vy * dt;
       d.x += d.vx * dt; d.y += dy;
       if (dy > 0) {
         d.trail += dy;
+        if (d.kind === 'pee' && smearG && d.r > 3) {
+          // a running drop wets the pane behind it: a faint streak with a glint down one side
+          smearG.lineCap = 'round';
+          smearG.strokeStyle = 'rgba(214, 184, 96, 0.07)'; smearG.lineWidth = d.r * 0.85 * dpr;
+          smearG.beginPath(); smearG.moveTo(d.x * dpr, (d.y - dy - d.r * 0.4) * dpr); smearG.lineTo(d.x * dpr, (d.y - d.r * 0.4) * dpr); smearG.stroke();
+          smearG.strokeStyle = 'rgba(255, 255, 255, 0.10)'; smearG.lineWidth = Math.max(1, d.r * 0.14) * dpr;
+          smearG.beginPath(); smearG.moveTo((d.x - d.r * 0.25) * dpr, (d.y - dy - d.r * 0.4) * dpr); smearG.lineTo((d.x - d.r * 0.25) * dpr, (d.y - d.r * 0.4) * dpr); smearG.stroke();
+        }
         if (d.kind === 'pee' && d.trail > d.r * 1.2 && d.r > 2.5) {
           // a run leaves a line of little drops behind it, and gets that much smaller
           d.trail = 0;
@@ -198,8 +242,18 @@ export function createGlass(host: HTMLElement): Glass {
         }
         if (d.kind === 'poop' && smearG && d.r > 3) {
           // and a poop smears
-          smearG.fillStyle = 'rgba(110, 72, 42, 0.05)';
-          smearG.beginPath(); smearG.ellipse(d.x * dpr, (d.y - d.r * 0.4) * dpr, d.r * 0.85 * dpr, d.r * 0.5 * dpr, 0, 0, Math.PI * 2); smearG.fill();
+          // a few uneven streaks across its width, now and then a blot
+          smearG.lineCap = 'round';
+          for (let k = 0; k < 4; k++) {
+            const off = (Math.sin(k * 2.3 + d.variant) * 0.55) * d.r;
+            smearG.strokeStyle = `rgba(${96 + k * 6}, ${60 + k * 4}, 32, ${0.03 + 0.05 * Math.random()})`;
+            smearG.lineWidth = d.r * (0.12 + 0.22 * Math.random()) * dpr;
+            smearG.beginPath(); smearG.moveTo((d.x + off) * dpr, (d.y - dy - d.r * 0.5) * dpr); smearG.lineTo((d.x + off) * dpr, (d.y - d.r * 0.5) * dpr); smearG.stroke();
+          }
+          if (Math.random() < 0.08) {
+            smearG.fillStyle = 'rgba(92, 58, 30, 0.10)';
+            smearG.beginPath(); smearG.ellipse((d.x + (Math.random() - 0.5) * d.r) * dpr, (d.y - d.r * 0.6) * dpr, d.r * 0.25 * dpr, d.r * 0.18 * dpr, 0, 0, Math.PI * 2); smearG.fill();
+          }
         }
       }
       if (d.age > d.life || d.y - d.r > height) drops.splice(i, 1);
@@ -217,7 +271,7 @@ export function createGlass(host: HTMLElement): Glass {
         const area = big.r * big.r + small.r * small.r;
         big.x = (big.x * big.r * big.r + small.x * small.r * small.r) / area;
         big.y = (big.y * big.r * big.r + small.y * small.r * small.r) / area;
-        big.r = Math.sqrt(area);
+        big.r = Math.min(Math.sqrt(area), PEE.largest * big.scale);
         big.vy = Math.max(big.vy, small.vy);
         big.stuck = Math.min(big.stuck, 0.05);
         big.age = Math.min(big.age, small.age);
@@ -232,12 +286,12 @@ export function createGlass(host: HTMLElement): Glass {
     if (!g || !canvas) return;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, canvas.width, canvas.height);
-    // the smear, fading out with the poops on the glass
+    // the wet trails and the smear, drying off - slower while a poop is still up there
     if (smear) {
       const poopLeft = drops.some((d) => d.kind === 'poop' && d.r > 3);
-      if (!poopLeft && smearG) {
+      if (smearG) {
         smearG.globalCompositeOperation = 'destination-out';
-        smearG.fillStyle = 'rgba(0,0,0,0.04)';
+        smearG.fillStyle = `rgba(0,0,0,${poopLeft ? DRY * 0.25 : DRY})`;
         smearG.fillRect(0, 0, smear.width, smear.height);
         smearG.globalCompositeOperation = 'source-over';
       }
@@ -271,35 +325,35 @@ export function createGlass(host: HTMLElement): Glass {
     const fadeIn = Math.min(1, s.age / 0.15), fadeOut = Math.min(1, (s.seconds - s.age) / 0.3);
     const alpha = Math.min(fadeIn, fadeOut);
     if (alpha <= 0) return;
-    // out of the rump and down at the viewer, thickening as it comes nearer
+    // out of the rump and at the viewer: thin where it leaves the cat, thick as it reaches the pane in front of the eye
     const cx = (from.x + to.x) / 2 + (to.x - from.x) * 0.2, cy = from.y + (to.y - from.y) * 0.15;
-    const steps = 18;
-    for (let pass = 0; pass < 2; pass++) {
-      g.beginPath();
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * cx + t * t * to.x;
-        const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * cy + t * t * to.y;
-        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-      }
-      g.lineCap = 'round';
-      g.strokeStyle = pass ? `rgba(255, 252, 220, ${0.7 * alpha})` : `rgba(236, 204, 96, ${0.8 * alpha})`;
-      g.lineWidth = (pass ? 0.9 : 2.6) * s.scale;
-      g.setLineDash(pass ? [4 * s.scale, 9 * s.scale] : []);
-      g.lineDashOffset = -s.age * 240 * s.scale;
-      g.stroke();
+    const at = (t: number) => ({
+      x: (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * cx + t * t * to.x,
+      y: (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * cy + t * t * to.y,
+    });
+    const steps = 22;
+    g.lineCap = 'round';
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps, t1 = (i + 1) / steps;
+      if (t1 > 0.9) break;
+      const a = at(t0), b = at(t1), w = (1.2 + 6 * t1 ** 1.6) * s.scale;
+      // the stream itself, a translucent amber, and the light along its near edge
+      g.strokeStyle = `rgba(222, 184, 70, ${0.72 * alpha})`; g.lineWidth = w;
+      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+      g.strokeStyle = `rgba(255, 252, 232, ${0.65 * alpha})`; g.lineWidth = w * 0.28;
+      g.beginPath(); g.moveTo(a.x - w * 0.2, a.y); g.lineTo(b.x - w * 0.2, b.y); g.stroke();
     }
-    g.setLineDash([]);
-    // breaking up into drops just before the glass
-    g.fillStyle = `rgba(240, 212, 110, ${0.7 * alpha})`;
-    for (let k = 0; k < 4; k++) {
-      const t = 0.82 + ((s.age * 3 + k * 0.23) % 0.18);
-      const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * cx + t * t * to.x + Math.sin(k * 7 + s.age * 20) * 3 * s.scale;
-      const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * cy + t * t * to.y;
-      g.beginPath(); g.arc(x, y, (1.2 + k * 0.4) * s.scale, 0, Math.PI * 2); g.fill();
+    const flicker = Math.sin(s.age * 40) * 0.5 + 0.5;
+    g.globalAlpha = alpha;
+    // breaking into big drops just before the pane
+    for (let k = 0; k < 5; k++) {
+      const t = 0.88 + ((s.age * 2.5 + k * 0.21) % 0.12);
+      const p = at(t);
+      const r = (2.5 + k * 0.9 + flicker) * s.scale;
+      g.drawImage(sprite('pee', 0), p.x + Math.sin(k * 7 + s.age * 20) * 4 * s.scale - r * 1.19, p.y - r * 1.19, r * 2.38, r * 2.38);
     }
+    g.globalAlpha = 1;
   }
-
   function tick(now: number) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
@@ -321,7 +375,7 @@ export function createGlass(host: HTMLElement): Glass {
       start();
     },
     fling(from, to, scale) {
-      flights.push({ from, to, t: 0, seconds: 0.32, r: 20 * scale, scale });
+      flights.push({ from, to, t: 0, seconds: 0.32, r: POOP.size * scale, scale });
       start();
     },
     clear() {
