@@ -24,6 +24,9 @@ export interface Vitals {
 export type ToyKind = 'yarn' | 'feather' | 'laser' | 'pet';
 export interface ToyState {
   kind: ToyKind;
+  /** The feather wand's rigid handle position; present only for feather. */
+  hand?: Vec2;
+  /** Interactive point: the feather for a wand, the body for other toys. */
   position: Vec2;
   velocity: Vec2;
   /** 0 normally; 0..1 while the user is holding the yarn ball and winding up a throw. */
@@ -66,7 +69,8 @@ export interface LifeEngineConfig {
   toyFriction?: number;
   toyRestSpeed?: number;
   toyBounceLoss?: number;
-  toyFeatherLag?: number;
+  toyFeatherReach?: number;
+  toyFeatherDrop?: number;
   dragStaleMs?: number;
   busyWindowMs?: number;
   cursorMoveEpsilon?: number;

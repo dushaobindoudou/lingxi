@@ -31,6 +31,32 @@ for (const [id, { action, mark }] of Object.entries(POTTY)) {
   });
 }
 
+test('pee finishes and drips before the leg lowers, fur shakes, and walking resumes', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const events = [];
+  const noop = () => {};
+  const context = {
+    engine: { position: {x:500,y:600}, suggestMoveTo: () => events.push('move'), turnTo: noop, clearIntent: noop, hold: ms => events.push(['hold', ms]) },
+    renderer: { setCameraPreset: noop, setPerformanceScale: noop, playAction: action => { events.push(action); return true; }, playExpression: noop },
+    fx: { peeStream: (_from, _to, ms) => events.push(['stream', ms]), clear: noop },
+    viewport: () => ({width:1000,height:800}), petPosition: () => ({x:500,y:600}), restoreCamera: noop, now: () => 0,
+  };
+  const runner = createPerformanceRunner(context);
+  runner.play('pee-at-you');
+  t.mock.timers.tick(6700);
+  assert.ok(events.some(event => Array.isArray(event) && event[0] === 'stream' && event[1] === 3500));
+  assert.ok(events.some(event => Array.isArray(event) && event[0] === 'hold' && event[1] >= 7500));
+  assert.equal(events.includes('shake-fur'), false, 'the leg stays up through the end of the stream');
+  t.mock.timers.tick(799);
+  assert.equal(events.includes('shake-fur'), false, 'the last drops get a separate pause');
+  t.mock.timers.tick(1);
+  assert.equal(events.includes('shake-fur'), true);
+  assert.equal(events.filter(event => event === 'move').length, 1, 'shaking finishes before departure');
+  t.mock.timers.tick(1800);
+  assert.equal(events.filter(event => event === 'move').length, 2);
+  runner.stop();
+});
+
 test('a renderer without the staged potty actions (the voxel cat) squats instead', t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const played = [];

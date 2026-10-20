@@ -484,12 +484,16 @@ test('the yarn ball rolls, slows down, and never leaves the work area', () => {
   assert.deepEqual(engine.toy.velocity, { x: 0, y: 0 });
 });
 
-test('the wand trails the cursor instead of snapping to it, and the laser is pinned to it', () => {
+test('the cursor holds the wand while the cat chases its distant feather', () => {
   const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 } });
   engine.setToy('feather', { x: 100, y: 100 });
-  engine.tick(0, { x: 900, y: 700 });
-  const afterOneFrame = engine.tick(1000 / 60, { x: 900, y: 700 }).toy.position;
-  assert.ok(afterOneFrame.x > 100 && afterOneFrame.x < 900, 'the wand tip lags the hand');
+  const first = engine.tick(0, { x: 300, y: 400 }).toy;
+  assert.deepEqual(first.hand, { x: 300, y: 400 }, 'the handle follows the pointer immediately');
+  assert.ok(first.position.x > first.hand.x + 60, 'the feather is out toward the cat');
+  const moved = engine.tick(1000 / 60, { x: 320, y: 400 }).toy;
+  assert.deepEqual(moved.hand, { x: 320, y: 400 });
+  assert.ok(moved.position.x > moved.hand.x + 60, 'the cat still targets the feather after the hand moves');
+  assert.ok(moved.velocity.x > 0, 'the feather reports its travel to the chase');
 
   engine.setToy('laser', { x: 100, y: 100 });
   const laser = engine.tick(100, { x: 640, y: 480 }).toy.position;

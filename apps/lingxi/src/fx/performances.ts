@@ -439,7 +439,7 @@ export const PERFORMANCES: PerformanceDef[] = [
     id: 'pee-at-you',
     name: '对着你尿尿',
     description: '走到你面前，转身把屁股对着你、抬起一条后腿，一道尿朝屏幕射过来，溅在玻璃上往下流；抖抖毛，得意地走开',
-    durationMs: 9200,
+    durationMs: 11000,
     beats: [
       {
         atMs: 0,
@@ -457,7 +457,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 1500,
         run(context) {
           context.engine.clearIntent();
-          context.engine.hold?.(6400, context.now());
+          context.engine.hold?.(7800, context.now());
           playFirst(context, 'potty-pee', 'potty-squat');
           context.renderer.playExpression?.('认真', 4500);
         },
@@ -469,18 +469,19 @@ export const PERFORMANCES: PerformanceDef[] = [
         run(context) {
           const rump = () => rumpOf(context), start = rump();
           const cat = POTTY_HEIGHT * context.viewport().height;
-          context.fx.peeStream(rump, onPane(context, { x: start.x + 0.1 * cat, y: start.y + 0.42 * cat }), 2300, pottySize(context));
+          context.fx.peeStream(rump, onPane(context, { x: start.x + 0.1 * cat, y: start.y + 0.42 * cat }), 3500, pottySize(context));
         },
       },
       {
-        atMs: 6100,
+        // Let the stream end at 6700 and leave time for the last drops before lowering the leg.
+        atMs: 7500,
         run(context) {
           context.renderer.playExpression?.('得意', 1600);
           context.renderer.playAction?.('shake-fur');
         },
       },
       {
-        atMs: 7700,
+        atMs: 9300,
         run(context) {
           const { width, height } = context.viewport();
           context.renderer.setPerformanceScale?.(null, 1.2);
@@ -488,7 +489,7 @@ export const PERFORMANCES: PerformanceDef[] = [
         },
       },
       {
-        atMs: 9200,
+        atMs: 11000,
         run(context) {
           context.renderer.setPerformanceScale?.(null, 0.3);
           context.restoreCamera();

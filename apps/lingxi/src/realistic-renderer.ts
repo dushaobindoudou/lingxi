@@ -187,7 +187,7 @@ const TAIL_RUN = { lift: [37, 2, -12, -26, -22], sway: [1, 2, 3, 4, 5], period: 
 // clip's: the squat's sit wraps the tail round the paws, and a squatting cat holds it up and back, quivering. The sit
 // pitches the pelvis up ~60 degrees, so the root lifts that much just to stand level behind.
 // How long a held pose is held for these host actions (ms, once reached), where a set piece times its beats round it
-const ACTION_HOLD_MS: Record<string, number> = { 'potty-squat': 2000, 'potty-poop': 2600, 'potty-pee': 3200, 'potty-dig': POTTY_DIG.duration * 1000 };
+const ACTION_HOLD_MS: Record<string, number> = { 'potty-squat': 2000, 'potty-poop': 2600, 'potty-pee': 5800, 'potty-dig': POTTY_DIG.duration * 1000 };
 // Set pieces that stage the cat before they play: it turns on the spot to `yaw` (0 faces the viewer, PI away; the side
 // it already shows), and only then acts - a standing cat is otherwise always shown three-quarter on to the viewer, and an
 // action freezes its facing. Over the clip: `look` turns the chest, neck and head round to the viewer (over its
@@ -1546,7 +1546,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   }
   function updateToy(state: Parameters<Renderer['render']>[0], deltaSeconds: number) {
     const toyState = (state as {
-      toy?: { kind: string; position: { x: number; y: number }; velocity: { x: number; y: number }; charge?: number } | null;
+      toy?: { kind: string; position: { x: number; y: number }; hand?: { x: number; y: number }; velocity: { x: number; y: number }; charge?: number } | null;
     }).toy ?? null;
     // the user's size, not a performance's zoom - the same rule as the voxel cat
     const toyScale = (TARGET_HEIGHT * modelScale) / TOY_UNITS_PER_CAT;
@@ -1563,8 +1563,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (!toyProp || !toyState) return;
     toyProp.object.scale.setScalar(toyScale);
     toyProp.setWorldScale?.(toyScale);
-    // the toy's own anchor height lands exactly on its logical screen point (for the cursor toys: on the pointer)
-    toyProp.object.position.copy(screenToWorld(toyState.position.x, toyState.position.y, toyProp.anchorHeight * toyScale));
+    // The wand's handle follows the pointer while the logical position tracks its feather.
+    const anchor = toyState.kind === 'feather' ? toyState.hand ?? toyState.position : toyState.position;
+    toyProp.object.position.copy(screenToWorld(anchor.x, anchor.y, toyProp.anchorHeight * toyScale));
+    toyProp.aimWand?.((state.position.x - anchor.x) * worldPerPixelX, (state.position.y - anchor.y) * worldPerPixelZ);
     toyProp.update(deltaSeconds, Math.hypot(toyState.velocity.x, toyState.velocity.y), toyState.charge ?? 0, {
       x: toyState.velocity.x * worldPerPixelX,
       z: toyState.velocity.y * worldPerPixelZ,

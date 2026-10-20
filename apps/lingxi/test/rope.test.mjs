@@ -49,19 +49,33 @@ test('the rendered wand feather lags a moving prop instead of staying rigidly at
     prop.object.scale.setScalar(scale);
     const plume = prop.object.children.find((child) => child instanceof THREE.Group);
     const string = prop.object.children.find((child) => child instanceof THREE.Line);
-    assert.ok(plume && string, 'the wand has a visible feather and string');
+    const rod = prop.object.children.find((child) => child instanceof THREE.Mesh && child.geometry.type === 'CylinderGeometry');
+    assert.ok(plume && string && rod, 'the wand has a visible rod, string, and feather');
+    prop.aimWand(1, 0);
+    prop.object.updateMatrixWorld(true);
+    const hand = prop.object.getWorldPosition(new THREE.Vector3());
+    const rodEnds = [new THREE.Vector3(0, 8, 0), new THREE.Vector3(0, -8, 0)].map(point => rod.localToWorld(point));
+    assert.ok(rodEnds.some(end => end.distanceTo(hand) < 1e-6), 'one end of the rod sits exactly in the pointer hand');
+    assert.ok(Math.abs(rodEnds[0].distanceTo(rodEnds[1]) / scale - 16) < 1e-6, 'the rod is longer than the cat');
+    prop.aimWand(-1, 0);
+    prop.object.updateMatrixWorld(true);
+    const farEnd = new THREE.Vector3(0, 8, 0).applyMatrix4(rod.matrixWorld);
+    const nearEnd = new THREE.Vector3(0, -8, 0).applyMatrix4(rod.matrixWorld);
+    assert.ok(Math.min(farEnd.x, nearEnd.x) < hand.x - 15 * scale, 'the rod turns toward a cat on the other side');
+    prop.aimWand(1, 0);
     for (let frame = 0; frame < 180; frame += 1) prop.update(step, 0, 0);
     let greatestLag = 0;
     for (let frame = 1; frame <= 12; frame += 1) {
       prop.object.position.x = frame * 1.2 * scale;
       prop.update(step, 0, 0);
       prop.object.updateMatrixWorld(true);
-      const handX = prop.object.position.x + 1.6 * scale;
+      const tip = new THREE.Vector3().fromBufferAttribute(string.geometry.getAttribute('position'), 0);
+      string.localToWorld(tip);
+      const handX = tip.x;
       const featherX = plume.getWorldPosition(new THREE.Vector3()).x;
       greatestLag = Math.max(greatestLag, (handX - featherX) / scale);
-      const first = new THREE.Vector3().fromBufferAttribute(string.geometry.getAttribute('position'), 0);
-      string.localToWorld(first);
-      assert.ok(Math.abs(first.x - handX) < 1e-6, 'the string stays attached to the rod tip');
+      const rodTip = rodEnds.find(end => end.distanceTo(hand) > 1e-6);
+      assert.ok(Math.abs(tip.x - (rodTip.x + frame * 1.2 * scale)) < 1e-6, 'the string stays attached to the rigid rod tip');
     }
     prop.dispose();
     assert.ok(greatestLag > 2, `at scale ${scale}, the visible feather lagged only ${greatestLag.toFixed(2)} voxels`);

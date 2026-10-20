@@ -57,8 +57,8 @@ export const INTERACTION_MODES = Object.freeze(['free']);
  *   'yarn'   毛线球  - free physics. You throw it; it rolls, slows, bounces off the screen
  *                      edges. The cat chases it down and BATS it, which re-launches it. The
  *                      cat can therefore keep its own game going with no input from you.
- *   'feather' 逗猫棒 - you move it (it trails the cursor on a lag, like a real wand's tip
- *                      lagging your hand). The cat chases and pounces but never truly holds
+ *   'feather' 逗猫棒 - the cursor holds the rod; its feather hangs out toward the cat.
+ *                      The cat chases and pounces but never truly holds
  *                      it. This is the one that needs a human.
  *   'laser'  激光笔  - pinned exactly to the cursor, and batting does nothing at all, because
  *                      that is the joke: it can never be caught.
@@ -219,10 +219,8 @@ const DEFAULTS = Object.freeze({
   toyFriction: 1.9, // per-second exponential decay of the yarn ball's speed
   toyRestSpeed: 12, // below this the ball counts as stopped
   toyBounceLoss: 0.62, // speed kept after bouncing off a screen edge
-  // Per-second catch-up rate of the wand tip toward the cursor. High enough that the wand is
-  // effectively ON your pointer (the ask was for the cursor to BE the toy), but not infinite -
-  // the small remaining whip is what the cat overshoots and pounces at.
-  toyFeatherLag: 16,
+  toyFeatherReach: 85, // screen-space estimate of the rod's reach toward the cat
+  toyFeatherDrop: 25, // the string hangs below the rod tip; the renderer simulates its swing
   toyChargeMaxMs: 900, // hold this long for a full-power throw
   toyThrowSpeedMin: 260, // px/s at zero charge
   toyThrowSpeedMax: 1250, // px/s at full charge
@@ -805,6 +803,7 @@ export function createLifeEngine(config = {}) {
         y: clamp(spawn.y, minY(), maxY()),
       },
       velocity: { x: 0, y: 0 },
+      ...(kind === 'feather' ? { hand: { x: clamp(spawn.x, 0, bounds.width), y: clamp(spawn.y, 0, bounds.height) } } : {}),
     };
     lastBatAt = -Infinity;
     charge = null;
@@ -891,6 +890,7 @@ export function createLifeEngine(config = {}) {
       x: clamp(point.x, minX(), maxX()),
       y: clamp(point.y, minY(), maxY()),
     };
+    if (toy.kind === 'feather') toy.hand = { ...toy.position };
     toy.velocity = { x: 0, y: 0 };
   }
 
@@ -938,16 +938,19 @@ export function createLifeEngine(config = {}) {
       return;
     }
     if (toy.kind === 'feather') {
-      // Trails the cursor with a lag - a wand tip does not teleport with your hand, and the
-      // lag is exactly what gives the cat something to overshoot.
+      // The handle is rigidly on the pointer. Only the rendered Verlet string lags it.
+      // Aim toward the cat so the feather, rather than the user's hand, is the chase target.
       const previous = toy.position;
-      if (cursor) {
-        const catchUp = 1 - Math.exp(-deltaSeconds * cfg.toyFeatherLag);
-        toy.position = {
-          x: clamp(toy.position.x + (cursor.x - toy.position.x) * catchUp, loX, hiX),
-          y: clamp(toy.position.y + (cursor.y - toy.position.y) * catchUp, loY, hiY),
-        };
-      }
+      if (cursor) toy.hand = { x: clamp(cursor.x, 0, bounds.width), y: clamp(cursor.y, 0, bounds.height) };
+      const dx = position.x - toy.hand.x;
+      const dy = position.y - toy.hand.y;
+      const length = Math.hypot(dx, dy);
+      const directionX = length > 1e-6 ? dx / length : (position.x < bounds.width / 2 ? 1 : -1);
+      const directionY = length > 1e-6 ? dy / length : 0;
+      toy.position = {
+        x: clamp(toy.hand.x + directionX * cfg.toyFeatherReach, loX, hiX),
+        y: clamp(toy.hand.y + directionY * cfg.toyFeatherReach + cfg.toyFeatherDrop, loY, hiY),
+      };
       toy.velocity = deltaSeconds > 0 ? {
         x: (toy.position.x - previous.x) / deltaSeconds,
         y: (toy.position.y - previous.y) / deltaSeconds,
@@ -1166,6 +1169,9 @@ export function createLifeEngine(config = {}) {
       x: clamp(position.x, minX(), maxX()),
       y: clamp(position.y, minY(), maxY()),
     };
+    if (toy?.kind === 'feather') {
+      toy.hand = { x: clamp(toy.hand.x, 0, bounds.width), y: clamp(toy.hand.y, 0, bounds.height) };
+    }
   }
 
   /** User grabbed the character (window drag start). Position becomes host-driven. */
@@ -1391,7 +1397,7 @@ export function createLifeEngine(config = {}) {
     // toy at NaN is a cat at NaN one frame later. Where the body gets reset, the toy gets
     // taken away: it "rolled off the desk". Cheaper than repairing a corrupt toy into
     // somewhere plausible, and a broken toy is not worth a second enforcement round.
-    if (toy && !isFinitePoint(toy.position)) {
+    if (toy && (!isFinitePoint(toy.position) || (toy.kind === 'feather' && !isFinitePoint(toy.hand)))) {
       clearToy();
       repaired = true;
     }
@@ -1714,6 +1720,7 @@ export function createLifeEngine(config = {}) {
         ? {
             kind: toy.kind,
             position: { ...toy.position },
+            ...(toy.kind === 'feather' ? { hand: { ...toy.hand } } : {}),
             velocity: { ...toy.velocity },
             /** 0 when not being held, 0..1 while the user winds up a throw. */
             charge: chargeAmount,
@@ -1785,7 +1792,7 @@ export function createLifeEngine(config = {}) {
     moveToy,
     get toy() {
       return toy
-        ? { kind: toy.kind, position: { ...toy.position }, velocity: { ...toy.velocity }, held: toyHeld, charge: chargeAmount }
+        ? { kind: toy.kind, position: { ...toy.position }, ...(toy.kind === 'feather' ? { hand: { ...toy.hand } } : {}), velocity: { ...toy.velocity }, held: toyHeld, charge: chargeAmount }
         : null;
     },
     tick,

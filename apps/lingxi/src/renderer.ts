@@ -1156,7 +1156,7 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
       // the renderer simply follows whatever the life engine says exists - there is no second
       // copy of "is there a toy right now" to fall out of sync.
       const toyState = (state as {
-        toy?: { kind: string; position: { x: number; y: number }; velocity: { x: number; y: number }; charge?: number } | null;
+        toy?: { kind: string; position: { x: number; y: number }; hand?: { x: number; y: number }; velocity: { x: number; y: number }; charge?: number } | null;
       }).toy ?? null;
       if (toyState?.kind !== toyKind) {
         if (toyProp) {
@@ -1176,11 +1176,12 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
         }
       }
       if (toyProp && toyState) {
-        // Placed so the toy's own anchor height lands exactly on its logical screen point -
-        // which for the cursor-driven toys means exactly on the pointer.
+        // The wand is anchored to the hand; its logical position is the feather the cat chases.
+        const anchor = toyState.kind === 'feather' ? toyState.hand ?? toyState.position : toyState.position;
         const toyScale = VOXEL_TO_WORLD * modelScale;
-        const at = screenToWorld(toyState.position.x, toyState.position.y, toyProp.anchorHeight * toyScale);
+        const at = screenToWorld(anchor.x, anchor.y, toyProp.anchorHeight * toyScale);
         toyProp.object.position.copy(at);
+        toyProp.aimWand?.((state.position.x - anchor.x) * worldPerPixelX, (state.position.y - anchor.y) * worldPerPixelZ);
         const toySpeed = Math.hypot(toyState.velocity.x, toyState.velocity.y);
         toyProp.update(deltaSeconds, toySpeed, toyState.charge ?? 0, {
           // Logical velocity mapped onto the ground plane, so a ball rolls the way it travels.
