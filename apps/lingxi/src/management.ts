@@ -438,7 +438,8 @@ function renderPlayPage() {
     );
   }
   const performanceSection = document.getElementById('performance-section');
-  if (performanceSection && import.meta.env.DEV) {
+  // dev, or a test build made with VITE_LINGXI_DEV_EFFECTS=1 (the tray reads the same switch); a release hides it
+  if (performanceSection && (import.meta.env.DEV || import.meta.env.VITE_LINGXI_DEV_EFFECTS === '1')) {
     performanceSection.hidden = false;
     const shows = document.getElementById('performance-options');
     if (shows) {

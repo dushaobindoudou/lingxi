@@ -6459,6 +6459,13 @@ fn spawn_cursor_poller(_app: tauri::AppHandle, _screen_height_points: f64, _scal
     eprintln!("[lingxi-desktop] global cursor polling is only implemented for macOS so far");
 }
 
+/// Whether the tray (and the main window) offer the scripted effects by hand: in debug builds, and in a test build
+/// made with `VITE_LINGXI_DEV_EFFECTS=1` (the same switch the main window reads). A release leaves their timing to
+/// the skill; the perform routes stay either way.
+fn manual_effects_enabled() -> bool {
+    cfg!(debug_assertions) || option_env!("VITE_LINGXI_DEV_EFFECTS") == Some("1")
+}
+
 fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::Result<TrayState> {
     let size_small = CheckMenuItem::with_id(app, "size-small", "小 (0.25x)", true, false, None::<&str>)?;
     let size_medium = CheckMenuItem::with_id(app, "size-medium", "中 (0.5x)", true, false, None::<&str>)?;
@@ -6484,7 +6491,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     toy_entries.push(&toy_separator);
     toy_entries.push(&clear_toy);
     let toy_submenu = Submenu::with_items(app, "玩具", true, &toy_entries)?;
-    let effect_submenu = if cfg!(debug_assertions) {
+    let effect_submenu = if manual_effects_enabled() {
         let effect_items = TRAY_EFFECTS
             .iter()
             .map(|(id, name)| MenuItem::with_id(app, format!("perform:{id}"), *name, true, None::<&str>))
