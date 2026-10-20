@@ -24,6 +24,7 @@ import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, typ
 import { createLocomotion, KITTEN_WALK, steeringStrideScale } from './realistic-locomotion.ts';
 import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
+import { createNeckBlend, neckShellScale } from './realistic-neck.ts';
 
 export interface RealisticRendererOptions {
   /** URL of the exported GLB. */
@@ -916,7 +917,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       joints.needsUpdate = weights.needsUpdate = true;
     }
   }
-  function furScaleAttribute(mesh: THREE.SkinnedMesh, bonePos: Record<string, THREE.Vector3>) {
+  function furScaleAttribute(mesh: THREE.SkinnedMesh, bonePos: Record<string, THREE.Vector3>, neckBlend: (x: number, y: number, z: number) => number) {
     const pos = mesh.geometry.getAttribute('position');
     const out = new Float32Array(pos.count).fill(1);
     if (mesh.name.startsWith('LX_Body')) {
@@ -955,7 +956,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         // Start the ramp inside the head's actual eye opening and keep a little undercoat at its edge.
         for (const e of eyes) s = Math.min(s, 0.28 + 0.72 * THREE.MathUtils.smoothstep(v.distanceTo(e), 0.037, 0.061));
         if (nose) s = Math.min(s, THREE.MathUtils.clamp((v.distanceTo(nose) - 0.012) / 0.05, 0.25, 1));
-        out[i] = s;
+        out[i] = s * neckShellScale(neckBlend(v.x, v.y, v.z));
       }
     }
     mesh.geometry.setAttribute('furScale', new THREE.BufferAttribute(out, 1));
@@ -1287,11 +1288,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       if ((m as THREE.SkinnedMesh).isSkinnedMesh && FUR[base]) coat.push(m as THREE.SkinnedMesh);
     });
     coatBody = coat.find((m) => m.morphTargetDictionary?.Breath != null) ?? null;
+    const body = coat.find((m) => m.name.startsWith('LX_Body'));
+    const neckBlend = body ? createNeckBlend(body.geometry.getAttribute('position').array) : () => 0;
     if (groomAsset) {
       if (!coat.length) throw new Error('Groom needs a skinned coat mesh');
       groom = createGroom(groomAsset, coat[0], root, {
         breath: breathLookup(coat[0]),
         eyes: eyes?.map((e) => ({ centre: e.centre.toArray(), axis: e.axis.toArray() })),
+        neckBlend,
         // the muzzle's hairs part along the closed mouth's line (drawn in the undercoat), or they lay across it
         part: `${MOUTH_GLSL}
           ${lidTuckGlsl}
@@ -1314,7 +1318,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const layers = groom ? UNDERCOAT_LAYERS : shellCount;
     for (const base of coat) {
       const f = FUR[base.name.split('.')[0].replace(/_\d+$/, '')];
-      furScaleAttribute(base, bonePos);
+      furScaleAttribute(base, bonePos, neckBlend);
       const total = groom ? layers + OUTER_LAYERS : layers;
       for (let i = 1; i <= total; i++) {
         const outer = groom && i > layers;

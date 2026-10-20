@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { neckStrandScale } from './realistic-neck.ts';
 
 interface Block { offset: number; count: number }
 interface GroomPart {
@@ -399,6 +400,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   breath?: (x: number, y: number, z: number) => readonly [number, number, number] | null;
   /** The eyes in the rest pose, left then right: their centres and the way they look (see EYE_LEAN). */
   eyes?: readonly EyeFrame[];
+  /** Rest-pose proximity to the shoulder, shared with the head's solid undercoat. */
+  neckBlend?: (x: number, y: number, z: number) => number;
 } = {}) {
   const uniforms = {
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
@@ -501,6 +504,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const pawLength = part.name.includes('_under_') ? 0.006 : 0.012;
     const spacing = rootSpacing(source, part.strands, part.points);
     const shorten = coatLength(part.name);
+    const headCoat = FACE.test(part.name);
+    const guard = part.name.startsWith('LX_Fur_guard_');
     let ii = 0;
     for (let slot = 0; slot < part.strands; slot++) {
       const strand = order[slot];
@@ -512,15 +517,19 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         strandLength += Math.hypot(source[b] - source[a], source[b + 1] - source[a + 1], source[b + 2] - source[a + 2]);
       }
       const root = strand * part.points * 3;
+      // The exported lower rear cheek guards are longer than the shoulder's coat. Ease their tips into the shoulder
+      // where the two skins actually meet, keeping the free round muzzle and all strand roots in their original place.
+      const strandShorten = shorten * (headCoat && options.neckBlend
+        ? neckStrandScale(options.neckBlend(source[root], source[root + 1], source[root + 2]), guard) : 1);
       // The exported paw curves are only 2-6 mm long, shorter than the body's opaque undercoat. Let their tips clear
       // that layer without lengthening the already groomed ankle. Leave downward-facing sole fibres and pads alone.
       const paw = pawCoat
         ? (1 - THREE.MathUtils.smoothstep(source[root + 1], 0.055, 0.13))
           * THREE.MathUtils.smoothstep(normals[strand * 3 + 1], -0.65, -0.2)
         : 0;
-      const pawExtension = paw * Math.max(0, pawLength - strandLength * shorten);
+      const pawExtension = paw * Math.max(0, pawLength - strandLength * strandShorten);
       const pawScale = pawExtension / Math.max(strandLength, 1e-6);
-      strandLength = strandLength * shorten + pawExtension;
+      strandLength = strandLength * strandShorten + pawExtension;
       for (let point = 0; point < part.points; point++) {
         const p = strand * part.points + point;
         const before = (strand * part.points + Math.max(0, point - 1)) * 3;
@@ -529,7 +538,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         for (let side = 0; side < 2; side++) {
           const v = out * 2 + side;
           for (let c = 0; c < 3; c++) {
-            position[v * 3 + c] = source[root + c] + (source[p * 3 + c] - source[root + c]) * shorten;
+            position[v * 3 + c] = source[root + c] + (source[p * 3 + c] - source[root + c]) * strandShorten;
             if (pawOffset) pawOffset[v * 3 + c] = (source[p * 3 + c] - source[root + c]) * pawScale;
             color[v * 3 + c] = colors[p * 3 + c];
             normal[v * 3 + c] = normals[strand * 3 + c];
