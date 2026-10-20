@@ -71,8 +71,9 @@ cam.rotation_euler=(target-cam.location).to_track_quat('-Z','Y').to_euler()
 # preferred the -0.05 look side by side - kept here for reference, not in use.)
 s.view_settings.exposure=-0.05
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'lingxi-short-fur-rig-v5.blend'),compress=True)
-clips=json.loads((OUT/'animations.json').read_text());lie=next(c for c in clips if c['name']=='LieDown')
-s.frame_set(int(lie['start']+.72*(lie['end']-lie['start'])))
-s.render.filepath=str(OUT/'portrait.png');bpy.ops.render.render(write_still=True)
+if not os.environ.get('V6_SKIP_PORTRAIT'):
+ clips=json.loads((OUT/'animations.json').read_text());lie=next(c for c in clips if c['name']=='LieDown')
+ s.frame_set(int(lie['start']+.72*(lie['end']-lie['start'])))
+ s.render.filepath=str(OUT/'portrait.png');bpy.ops.render.render(write_still=True)
 result={'native_curves':sum(o.type=='CURVES' for o in s.objects)}
 print('NATIVE_FUR',json.dumps(result))

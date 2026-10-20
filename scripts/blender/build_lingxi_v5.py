@@ -2035,6 +2035,14 @@ def groom(o,n,length,reg,layer='guard',root_filter=None,bind_as=None,color_at=No
  if o.name.startswith('LX_Lid'):normal*=np.where(normal[:,1]>0,-1,1)[:,None]
  direction=fur_direction(root,reg)
  tangent=direction-(direction*normal).sum(1)[:,None]*normal;tangent/=np.maximum(np.linalg.norm(tangent,axis=1)[:,None],1e-8)
+ if SCATTER>0:
+  # Interlock the pile. The authored direction is a smooth FIELD, so every strand in a patch
+  # grows the same way and the coat reads as combed hair with troughs between the strands.
+  # Real pile crosses itself: rotate each strand about the surface normal by its own angle.
+  bit=np.cross(normal,tangent);bit/=np.maximum(np.linalg.norm(bit,axis=1)[:,None],1e-8)
+  ang=rng.normal(0,SCATTER,(n,1))
+  tangent=tangent*np.cos(ang)+bit*np.sin(ang)
+  tangent/=np.maximum(np.linalg.norm(tangent,axis=1)[:,None],1e-8)
  scale=.55 if layer=='under' else 1.0
  t=np.linspace(0,1,NP)[None,:,None];ln=length*scale*rng.uniform(.6,1.35,(n,1,1))
  stray=rng.random(n)<.025;ln[stray]*=1.4                       # a few long flyaway hairs
