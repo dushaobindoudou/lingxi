@@ -36,7 +36,7 @@
 #   lingxi express <expression> [action]
 #   lingxi do <action>
 #   lingxi perform <id> [--manual]
-#   lingxi toy <yarn|feather|laser|petting|none>
+#   lingxi toy <yarn|feather|laser|pet|none>
 #   lingxi look [--camera X] [--skin Y]
 #
 #   lingxi remember <text> [kind]
@@ -616,7 +616,7 @@ if isinstance(rows, list):
     else
       request POST /control "$(json perform="$effect_id" priority="${LINGXI_PRIORITY:-report}")"
     fi ;;
-  toy)     [ $# -ge 1 ] || die "usage: lingxi toy <yarn|feather|laser|petting|none>"; request POST /control "$(json toy="$1")" ;;
+  toy)     [ $# -ge 1 ] || die "usage: lingxi toy <yarn|feather|laser|pet|none>"; request POST /control "$(json toy="$1")" ;;
 
   look)
     camera=""; skin=""

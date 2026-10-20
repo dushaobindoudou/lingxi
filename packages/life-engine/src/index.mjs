@@ -58,13 +58,14 @@ export const INTERACTION_MODES = Object.freeze(['free']);
  *   'yarn'   毛线球  - free physics. You throw it; it rolls, slows, bounces off the screen
  *                      edges. The cat chases it down and BATS it, which re-launches it. The
  *                      cat can therefore keep its own game going with no input from you.
- *   'feather' 逗猫棒 - you move it (it trails the cursor on a lag, like a real wand's tip
- *                      lagging your hand). The cat chases and pounces but never truly holds
+ *   'feather' 逗猫棒 - the cursor holds the rod; its feather hangs out toward the cat.
+ *                      The cat chases and pounces but never truly holds
  *                      it. This is the one that needs a human.
  *   'laser'  激光笔  - pinned exactly to the cursor, and batting does nothing at all, because
  *                      that is the joke: it can never be caught.
+ *   'pet'    撸猫    - a hand follows the cursor; the cat rests for strokes instead of chasing it.
  */
-export const TOY_KINDS = Object.freeze(['yarn', 'feather', 'laser']);
+export const TOY_KINDS = Object.freeze(['yarn', 'feather', 'laser', 'pet']);
 
 const DEFAULTS = Object.freeze({
   bounds: { width: 1280, height: 800 },
@@ -219,6 +220,8 @@ const DEFAULTS = Object.freeze({
   toyFriction: 1.9, // per-second exponential decay of the yarn ball's speed
   toyRestSpeed: 12, // below this the ball counts as stopped
   toyBounceLoss: 0.62, // speed kept after bouncing off a screen edge
+  toyFeatherReach: 85, // screen-space estimate of the rod's reach toward the cat
+  toyFeatherDrop: 25, // the string hangs below the rod tip; the renderer simulates its swing
   toyChargeMaxMs: 900, // hold this long for a full-power throw
   toyThrowSpeedMin: 260, // px/s at zero charge
   toyThrowSpeedMax: 1250, // px/s at full charge
@@ -252,8 +255,14 @@ const DEFAULTS = Object.freeze({
   // what keeps them consistent.
   maxTurnRadius: 200,
   // Distance at which the cat starts slowing for its destination. Without an arrival taper it
-  // can only ever fly past a close target and come back around.
+  // can only ever fly past a close target and come back around. At most this far, and at most
+  // brakeSeconds of travel at the current pace: 120 px suits the tuned 90 px/s, but a cat slowed
+  // to 15 px/s (setPace) spent most of every walk inside it, decaying for half a minute.
   slowingRadius: 120,
+  brakeSeconds: 1.0,
+  // Share of the pace kept until the destination is reached: the taper is linear in distance, so
+  // without a floor the last few pixels take forever (and a stride-matched walk plays at 0.07x).
+  minArrivalSpeedFactor: 0.4,
   // Speed retained when the destination is at right angles or behind. Well under 1 so sharp
   // corners are taken slowly (and a full reversal is close to a pivot in place), which is both
   // how animals move and what keeps the turning circle from overshooting the target.
@@ -294,9 +303,17 @@ function randomBetween(min, max, random = Math.random) {
 /** The tuned wandering pace (px/s) that setPace scales. */
 export const DEFAULT_WANDER_SPEED = DEFAULTS.speed;
 
+// A small cat covers only a few screen pixels per step. Short walk/observe bouts make a
+// slow *average* wander without slowing the authored walk into a ground-scraping shuffle.
+const NATURAL_WANDER_RHYTHM = Object.freeze({ walkMs: [3500, 5500], pauseMs: [700, 1200] });
+
 export function createLifeEngine(config = {}) {
   const cfg = { ...DEFAULTS, ...config };
   const baseSpeed = cfg.speed; // see setPace
+  let sprintSpeed = null; // see setSprintPace
+  let naturalWander = false; // the realistic renderer opts in; voxel keeps its original arrival easing
+  let wanderWalkUntil = null;
+  let wanderPauseUntil = null;
   // Injectable so behaviour can be replayed exactly. Every choice the cat makes runs through
   // here, which is what lets a test pin one seed and compare two builds on the SAME decisions
   // instead of on two different random walks - the difference between measuring a change and
@@ -770,7 +787,7 @@ export function createLifeEngine(config = {}) {
    * Put a toy on the desktop. Spawns clear of the cat so there is something to run at, rather
    * than materialising under its nose. An unknown kind is ignored rather than throwing - this
    * is reachable from a tray click and from an agent's HTTP POST.
-   * @param {'yarn'|'feather'|'laser'} kind
+   * @param {'yarn'|'feather'|'laser'|'pet'} kind
    * @param {{x:number,y:number}|null} [at] where to drop it; defaults to a point across the
    *   work area from the cat.
    */
@@ -784,7 +801,7 @@ export function createLifeEngine(config = {}) {
     // computation turns it into a NaN heading, which is how the cat vanished the last time
     // this class of input slipped through. A spawn point that is not a point falls back to
     // the default "across the work area" placement.
-    const spawn = isFinitePoint(at)
+    const spawn = kind === 'pet' ? position : isFinitePoint(at)
       ? at
       : {
           x: position.x < bounds.width / 2 ? bounds.width * 0.75 : bounds.width * 0.25,
@@ -797,10 +814,11 @@ export function createLifeEngine(config = {}) {
         y: clamp(spawn.y, minY(), maxY()),
       },
       velocity: { x: 0, y: 0 },
+      ...(kind === 'feather' ? { hand: { x: clamp(spawn.x, 0, bounds.width), y: clamp(spawn.y, 0, bounds.height) } } : {}),
     };
     lastBatAt = -Infinity;
     charge = null;
-    // The yarn ball arrives in your hand; the other two are cursor-driven anyway.
+    // The yarn ball arrives in your hand; the other props are cursor-driven.
     toyHeld = kind === 'yarn';
   }
 
@@ -884,6 +902,7 @@ export function createLifeEngine(config = {}) {
       x: clamp(point.x, minX(), maxX()),
       y: clamp(point.y, minY(), maxY()),
     };
+    if (toy.kind === 'feather') toy.hand = { ...toy.position };
     toy.velocity = { x: 0, y: 0 };
   }
 
@@ -919,9 +938,9 @@ export function createLifeEngine(config = {}) {
       return;
     }
 
-    if (toy.kind === 'laser' || toy.kind === 'feather') {
-      // The wand grip and laser follow the hand; only the rope supplies lag.
-      // With no cursor, keep the last placement instead of losing the toy.
+    if (toy.kind === 'laser' || toy.kind === 'pet') {
+      // Pinned to the cursor exactly. With no cursor it simply stays where it last was, which
+      // reads as the dot being held still rather than the toy vanishing.
       const previous = toy.position;
       if (cursor) toy.position = { x: clamp(cursor.x, loX, hiX), y: clamp(cursor.y, loY, hiY) };
       toy.velocity = deltaSeconds > 0 ? {
@@ -930,6 +949,27 @@ export function createLifeEngine(config = {}) {
       } : { x: 0, y: 0 };
       return;
     }
+    if (toy.kind === 'feather') {
+      // The handle is rigidly on the pointer. Only the rendered Verlet string lags it.
+      // Aim toward the cat so the feather, rather than the user's hand, is the chase target.
+      const previous = toy.position;
+      if (cursor) toy.hand = { x: clamp(cursor.x, 0, bounds.width), y: clamp(cursor.y, 0, bounds.height) };
+      const dx = position.x - toy.hand.x;
+      const dy = position.y - toy.hand.y;
+      const length = Math.hypot(dx, dy);
+      const directionX = length > 1e-6 ? dx / length : (position.x < bounds.width / 2 ? 1 : -1);
+      const directionY = length > 1e-6 ? dy / length : 0;
+      toy.position = {
+        x: clamp(toy.hand.x + directionX * cfg.toyFeatherReach, loX, hiX),
+        y: clamp(toy.hand.y + directionY * cfg.toyFeatherReach + cfg.toyFeatherDrop, loY, hiY),
+      };
+      toy.velocity = deltaSeconds > 0 ? {
+        x: (toy.position.x - previous.x) / deltaSeconds,
+        y: (toy.position.y - previous.y) / deltaSeconds,
+      } : { x: 0, y: 0 };
+      return;
+    }
+
     // 'yarn': free physics - roll, slow down, bounce off the edges of the desktop.
     const decay = Math.exp(-deltaSeconds * cfg.toyFriction);
     toy.velocity = { x: toy.velocity.x * decay, y: toy.velocity.y * decay };
@@ -965,7 +1005,7 @@ export function createLifeEngine(config = {}) {
       moveToward(
         target,
         deltaSeconds,
-        cfg.speed * cfg.toyChaseSpeedMultiplier * traitFactor(personality.playfulness, 0.25),
+        (sprintSpeed ?? cfg.speed * cfg.toyChaseSpeedMultiplier) * traitFactor(personality.playfulness, 0.25),
       );
       // Contact must be evaluated AFTER this frame's movement, not on the stale
       // gap from before moving. The renderer also sweeps the ball's trajectory.
@@ -1073,7 +1113,7 @@ export function createLifeEngine(config = {}) {
    * to get somewhere behind it, the cat has to swing around. The renderer reads the heading
    * directly instead of differentiating position, which removes the noise path entirely.
    */
-  function moveToward(dest, deltaSeconds, requestedSpeed = cfg.speed, avoid = null) {
+  function moveToward(dest, deltaSeconds, requestedSpeed = cfg.speed, avoid = null, taperArrival = true) {
     const safeDestination = safePoint(dest, protectedRegions, {
       left: minX(), right: maxX(), top: minY(), bottom: maxY(),
     });
@@ -1087,7 +1127,7 @@ export function createLifeEngine(config = {}) {
     const speed = Math.min(requestedSpeed, cfg.maxTurnRate * cfg.maxTurnRadius);
     const d = distance(position, dest);
     if (d <= cfg.arriveThreshold && (isProtected(position, protectedRegions) || !pathProtected(position, dest, protectedRegions))) {
-      position = { ...dest };
+      if (taperArrival) position = { ...dest };
       return true; // arrived
     }
 
@@ -1095,7 +1135,11 @@ export function createLifeEngine(config = {}) {
     const bearing = detourAround(Math.atan2(waypoint.y - position.y, waypoint.x - position.x), avoid);
     const error = shortestAngle(bearing - heading);
     // Arrival taper first, because the speed it produces is what the turn rate is derived from.
-    const arrival = Math.min(1, d / Math.max(1, cfg.slowingRadius));
+    const brakeDistance = Math.min(cfg.slowingRadius, speed * cfg.brakeSeconds);
+    // The small realistic cat already rests between wander trips. Let it finish each trip at
+    // its walking pace instead of spending the final second in tiny, stride-compressed steps.
+    // Directed travel and toys still use the original braking curve.
+    const arrival = taperArrival ? Math.max(cfg.minArrivalSpeedFactor, Math.min(1, d / Math.max(1, brakeDistance))) : 1;
     const alignmentNow = Math.max(0, Math.cos(error));
     const paceFactor = (cfg.minTurnSpeedFactor + (1 - cfg.minTurnSpeedFactor) * alignmentNow) * arrival;
     const turnRate = Math.min(
@@ -1147,6 +1191,9 @@ export function createLifeEngine(config = {}) {
       x: clamp(position.x, minX(), maxX()),
       y: clamp(position.y, minY(), maxY()),
     };
+    if (toy?.kind === 'feather') {
+      toy.hand = { x: clamp(toy.hand.x, 0, bounds.width), y: clamp(toy.hand.y, 0, bounds.height) };
+    }
   }
 
   /** User grabbed the character (window drag start). Position becomes host-driven. */
@@ -1294,6 +1341,25 @@ export function createLifeEngine(config = {}) {
     }
   }
 
+  /** Use full walking steps through autonomous arrival; the existing idle window supplies the pause. */
+  function setNaturalWander(enabled) {
+    naturalWander = enabled === true;
+    if (!naturalWander) {
+      wanderWalkUntil = null;
+      wanderPauseUntil = null;
+    }
+  }
+
+  /**
+   * The pace a chase runs at (px/s), from the renderer's own gallop: a multiple of the walk ran the realistic cat's
+   * slow look-dev gallop in slow motion. Null (or nonsense) goes back to that multiple. Bounded by what the body can
+   * steer at, like every pace (moveToward).
+   * @param {number|null} pxPerSecond
+   */
+  function setSprintPace(pxPerSecond) {
+    sprintSpeed = typeof pxPerSecond === 'number' && Number.isFinite(pxPerSecond) && pxPerSecond > 0 ? pxPerSecond : null;
+  }
+
   /**
    * Retained only so an older caller (a persisted setting, an agent written against the
    * previous build) does not blow up. There is one mode now - see INTERACTION_MODES - and this
@@ -1354,7 +1420,7 @@ export function createLifeEngine(config = {}) {
     // toy at NaN is a cat at NaN one frame later. Where the body gets reset, the toy gets
     // taken away: it "rolled off the desk". Cheaper than repairing a corrupt toy into
     // somewhere plausible, and a broken toy is not worth a second enforcement round.
-    if (toy && !isFinitePoint(toy.position)) {
+    if (toy && (!isFinitePoint(toy.position) || (toy.kind === 'feather' && !isFinitePoint(toy.hand)))) {
       clearToy();
       repaired = true;
     }
@@ -1528,6 +1594,12 @@ export function createLifeEngine(config = {}) {
     // while there is something to play with, that IS what the cat wants to do. It is outranked
     // only by a drag and by an explicit AI intent, both handled above.
     if (toy) {
+      if (toy.kind === 'pet') {
+        // A hand on the cat is attention, not prey. Stay where the user found it.
+        state = 'idle';
+        target = null;
+        return snapshot();
+      }
       // A jump/strike owns the legs until landing. The toy still moves in stepToy.
       if (now < toyHoldUntil) { state = 'play_toy'; target = null; return snapshot(); }
       chaseToy(now, deltaSeconds, previousToyPosition, previousPetPosition);
@@ -1618,18 +1690,38 @@ export function createLifeEngine(config = {}) {
         state = 'wander';
         target = pickEdgeRestTarget(cursor);
         settledSince = null;
+        wanderWalkUntil = null;
+        wanderPauseUntil = null;
       }
     } else if (state === 'wander') {
       if (!target) target = pickEdgeRestTarget(cursor);
+      if (naturalWander && (!cursor || distance(position, cursor) > cfg.cursorKeepOut)) {
+        if (wanderPauseUntil != null) {
+          if (now < wanderPauseUntil) return snapshot();
+          wanderPauseUntil = null;
+          wanderWalkUntil = null;
+        }
+        wanderWalkUntil ??= now + rand(...NATURAL_WANDER_RHYTHM.walkMs);
+        if (now >= wanderWalkUntil && distance(position, target) > walkSpeed() * 2) {
+          wanderPauseUntil = now + rand(...NATURAL_WANDER_RHYTHM.pauseMs);
+          return snapshot();
+        }
+      } else {
+        // Courtesy takes priority over curiosity: never pause next to the user's pointer.
+        wanderWalkUntil = null;
+        wanderPauseUntil = null;
+      }
       // The cursor is passed as an obstacle here and nowhere else: this is the one state where
       // the cat is going somewhere purely because it felt like it, so it is the one state that
       // can afford to take the long way round. Chasing a toy or obeying an explicit intent must
       // still be able to go where it was told - including right at the pointer.
-      const arrived = moveToward(target, deltaSeconds, walkSpeed(), cursor);
+      const arrived = moveToward(target, deltaSeconds, walkSpeed(), cursor, !naturalWander);
       if (arrived) {
         state = 'idle';
         idleUntil = now + idleWindow();
         target = null;
+        wanderWalkUntil = null;
+        wanderPauseUntil = null;
       }
     }
 
@@ -1682,6 +1774,7 @@ export function createLifeEngine(config = {}) {
         ? {
             kind: toy.kind,
             position: { ...toy.position },
+            ...(toy.kind === 'feather' ? { hand: { ...toy.hand } } : {}),
             velocity: { ...toy.velocity },
             /** 0 when not being held, 0..1 while the user winds up a throw. */
             charge: chargeAmount,
@@ -1739,13 +1832,15 @@ export function createLifeEngine(config = {}) {
     setPersonality,
     setAvoidRadius,
     setPace,
+    setNaturalWander,
+    setSprintPace,
     setMargins,
     setProtectedRegions,
     setEdgePreference,
     resetPosition,
     setToy,
     clearToy,
-    setPetting(enabled) { petting = Boolean(enabled); if (petting) clearToy(); },
+    setPetting(enabled) { petting = Boolean(enabled); if (petting && toy?.kind !== 'pet') clearToy(); },
     throwToy,
     beginCharge,
     releaseCharge,
@@ -1753,7 +1848,7 @@ export function createLifeEngine(config = {}) {
     moveToy,
     get toy() {
       return toy
-        ? { kind: toy.kind, position: { ...toy.position }, velocity: { ...toy.velocity }, held: toyHeld, charge: chargeAmount }
+        ? { kind: toy.kind, position: { ...toy.position }, ...(toy.kind === 'feather' ? { hand: { ...toy.hand } } : {}), velocity: { ...toy.velocity }, held: toyHeld, charge: chargeAmount }
         : null;
     },
     tick,

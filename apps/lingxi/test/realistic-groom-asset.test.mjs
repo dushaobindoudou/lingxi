@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { createGroom } from '../src/realistic-groom.ts';
+import { coatLength, createGroom } from '../src/realistic-groom.ts';
 
 const directory = new URL('../public/characters/lingxi-realistic/current/', import.meta.url);
 test('original groom is paired with this model and follows its animated skeleton without losing curvature',
@@ -46,7 +46,11 @@ test('original groom is paired with this model and follows its animated skeleton
     const base = model.scene.getObjectByName('LX_Body');
     const groom = createGroom({ spec, bytes }, base);
     groom.meshes.forEach(m => base.parent.add(m));
-    assert.equal(groom.meshes.reduce((sum, m) => sum + m.geometry.getAttribute('position').count / 12, 0), spec.strands);
+    // every part's strands but the lids' (not drawn: a closed lid is skin and undercoat in the face's colour)
+    const drawn = spec.parts.filter((p) => !/_LX_Lid/.test(p.name)).reduce((sum, p) => sum + p.strands, 0);
+    assert.ok(drawn < spec.strands, 'the groom still carries lid strands to leave out');
+    assert.equal(groom.meshes.reduce((sum, m) => sum + m.geometry.getAttribute('position').count / 12, 0), drawn);
+    assert.ok(groom.meshes.every((m) => !/_LX_Lid/.test(m.name)));
     const mixer = new THREE.AnimationMixer(model.scene);
     const walk = model.animations.find(a => a.name === 'Walk');
     mixer.clipAction(walk).play();
@@ -62,7 +66,9 @@ test('original groom is paired with this model and follows its animated skeleton
         for (const strand of [0, Math.floor(part.strands / 2), part.strands - 1]) {
           for (const point of [0, 2, 5]) {
             const index = strand * 6 + point;
-            const rest = new THREE.Vector3().fromArray(positions, index * 3);
+            // the coat drawn a little shorter than groomed: each point drawn in toward its root
+            const root = new THREE.Vector3().fromArray(positions, strand * 18);
+            const rest = new THREE.Vector3().fromArray(positions, index * 3).sub(root).multiplyScalar(coatLength(part.name)).add(root);
             if (part.morphTarget) {
               for (const [key, mi] of Object.entries(mesh.morphTargetDictionary)) {
                 const block = part.morphs[key];
@@ -79,7 +85,9 @@ test('original groom is paired with this model and follows its animated skeleton
               expected.addScaledVector(rest.clone().applyMatrix4(transform), weights[offset]);
             }
             expected.applyMatrix4(base.bindMatrixInverse);
-            const actual = mesh.getVertexPosition(index * 2, new THREE.Vector3());
+            // strands are drawn in a shuffled order (setDensity draws a leading run of them)
+            const slot = mesh.userData.groomOrder.indexOf(strand);
+            const actual = mesh.getVertexPosition((slot * 6 + point) * 2, new THREE.Vector3());
             assert.ok(actual.distanceTo(expected) < 1e-6, `${mesh.name}, strand ${strand}, point ${point}, t ${t}`);
           }
           const a = new THREE.Vector3().fromArray(positions, strand * 18);
@@ -88,6 +96,14 @@ test('original groom is paired with this model and follows its animated skeleton
         }
       }
     }
+    // a small cat draws an even share of every part, each strand as opaque as the ones it stands for
+    groom.setDensity(0.3);
+    for (const mesh of groom.meshes) {
+      const strands = mesh.userData.groomStrands;
+      assert.equal(mesh.geometry.drawRange.count, Math.max(1, Math.round(strands * 0.3)) * 30, mesh.name);
+      assert.equal(new Set(mesh.userData.groomOrder).size, strands, `${mesh.name}: the shuffle must keep every strand`);
+    }
+    assert.equal(groom.density, 0.3);
     for (const mesh of groom.meshes) mesh.geometry.dispose();
     groom.material.dispose();
   });

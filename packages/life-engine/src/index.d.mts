@@ -21,9 +21,12 @@ export interface Vitals {
   sleptAt: number | null;
   wokeAt: number | null;
 }
-export type ToyKind = 'yarn' | 'feather' | 'laser';
+export type ToyKind = 'yarn' | 'feather' | 'laser' | 'pet';
 export interface ToyState {
   kind: ToyKind;
+  /** The feather wand's rigid handle position; present only for feather. */
+  hand?: Vec2;
+  /** Interactive point: the feather for a wand, the body for other toys. */
   position: Vec2;
   velocity: Vec2;
   /** 0 normally; 0..1 while the user is holding the yarn ball and winding up a throw. */
@@ -69,6 +72,8 @@ export interface LifeEngineConfig {
   toyBounceLoss?: number;
   /** @deprecated Ignored: the rendered rope now supplies the feather lag. */
   toyFeatherLag?: number;
+  toyFeatherReach?: number;
+  toyFeatherDrop?: number;
   dragStaleMs?: number;
   busyWindowMs?: number;
   cursorMoveEpsilon?: number;
@@ -124,6 +129,10 @@ export interface LifeEngine {
   setBounds(bounds: { width: number; height: number }): void;
   /** Scale movement to the renderer's stride at the current size. */
   setPace(multiplier: number): void;
+  /** Finish autonomous trips at walking pace, then rest; used by the realistic renderer. */
+  setNaturalWander(enabled: boolean): void;
+  /** The pace (px/s) a chase runs at, from the renderer's gallop; null returns to a multiple of the walk. */
+  setSprintPace(pxPerSecond: number | null): void;
   beginDrag(cursor: Vec2): void;
   updateDrag(cursor: Vec2): void;
   endDrag(now: number): void;

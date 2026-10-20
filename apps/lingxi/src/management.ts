@@ -136,13 +136,15 @@ const TOYS = [
   { kind: 'yarn', name: '毛线球', description: '会滚会反弹，猫拍一爪又飞出去，能自己玩下去' },
   { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，猫靠近会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '钉死在光标上，拍到也抓不住' },
-  { kind: 'petting', name: '撸猫', description: '按住左键轻轻摸头和身体；翻身后可以摸肚皮' },
+  { kind: 'pet', name: '撸猫', description: '用手来回顺毛，猫会停下来享受呼噜' },
 ] as const;
 
 const PERFORMANCES = [
   { id: 'angry-claw', name: '愤怒抓屏', description: '炸毛冲到屏幕中间，对着你连抓两爪，留下爪痕并震屏' },
   { id: 'kiss-rush', name: '飞奔亲亲', description: '从另一头跑过来，闭眼亲一下，爱心飘满屏' },
   { id: 'zoomies', name: '半夜暴走', description: '贴着四角疯跑一圈，跑完自己坐下喘气' },
+  { id: 'pee-at-you', name: '对着你尿尿', description: '认真刨沙、蹲下一会儿，留下一小滩亮晶晶的水渍' },
+  { id: 'poop-at-you', name: '对着你拉屎', description: '留下一小坨卡通便便，刨沙盖好后得意走开' },
 ] as const;
 
 const PET_STATE_LABELS: Record<string, string> = {
@@ -416,7 +418,7 @@ function renderPlayPage() {
   const toys = document.getElementById('toy-options');
   const markToy = (kind: string | null) => {
     const controls = document.getElementById('petting-controls');
-    if (controls) controls.hidden = kind !== 'petting';
+    if (controls) controls.hidden = kind !== 'pet' && kind !== 'petting';
     toys?.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
       button.classList.toggle('active', button.dataset.kind === kind);
     });
@@ -440,24 +442,30 @@ function renderPlayPage() {
       }),
     );
   }
-  const shows = document.getElementById('performance-options');
-  if (shows) {
-    shows.replaceChildren(
-      ...PERFORMANCES.map((entry) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.append(
-          Object.assign(document.createElement('b'), { textContent: entry.name }),
-          Object.assign(document.createElement('span'), { textContent: entry.description }),
-        );
-        button.addEventListener('click', () => {
-          void invoke('perform', { id: entry.id });
-          const note = document.getElementById('performance-result');
-          if (note) note.textContent = `正在表演：${entry.name}（几秒钟后自己结束，也可以点「停止当前特效」）`;
-        });
-        return button;
-      }),
-    );
+  const performanceSection = document.getElementById('performance-section');
+  // Manual performances remain on Play; the tray keeps only common entries.
+  if (performanceSection) {
+    performanceSection.hidden = false;
+    const shows = document.getElementById('performance-options');
+    if (shows) {
+      shows.replaceChildren(
+        ...PERFORMANCES.map((entry) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.append(
+            Object.assign(document.createElement('b'), { textContent: entry.name }),
+            Object.assign(document.createElement('span'), { textContent: entry.description }),
+          );
+          button.addEventListener('click', () => {
+            void invoke('perform', { id: entry.id });
+            const note = document.getElementById('performance-result');
+            if (note) note.textContent = `正在表演：${entry.name}（几秒钟后自己结束，也可以点「停止当前特效」）`;
+          });
+          return button;
+        }),
+      );
+    }
+    document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
   }
   document.getElementById('petting-belly')?.addEventListener('click', () => void invoke('petting_belly'));
   document.getElementById('clear-toy')?.addEventListener('click', () => void invoke('clear_toy'));
@@ -483,7 +491,6 @@ function renderPlayPage() {
   sayInput?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') say();
   });
-  document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
 }
 
 function renderPerception(snapshot: PerceptionSnapshot) {

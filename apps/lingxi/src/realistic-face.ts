@@ -32,10 +32,10 @@ export interface IrisUniforms {
   uSpark: { value: number };
 }
 
-// Blender's resting pupil (build_lingxi_v5.py PUPIL) and this renderer's, about the same: .38 left only a thin rim of the
-// golden iris the review render shows round the pupil, and the eyes read dark and blank at desktop size.
+// Keep the exported rig's .33 control values, but expose more of the textured iris at desktop size. A larger black
+// pupil swallowed the warm radial detail, especially after the eye was downsampled to the companion's actual size.
 const BLENDER_PUPIL = 0.33;
-export const APP_PUPIL = 0.34;
+export const APP_PUPIL = 0.29;
 // Iris-UV shift per unit of look (V6_GAZE_UV): Blender subtracts (x, -y) from its UV; glTF's v runs the other way.
 const GAZE_UV = 0.30;
 // Shape keys allowed past 1 (build_lingxi_v5.py slider_max): the lick's tongue reach.
@@ -53,6 +53,13 @@ export function expressionValues(spec: FaceSpec, name: string): Record<string, n
     for (const [k, v] of Object.entries(spec.layers[layer]?.[e[layer]] ?? {})) out[k] = (out[k] ?? 0) + v;
   }
   for (const [k, v] of Object.entries(spec.expression_extras?.[name] ?? {})) out[k] = (out[k] ?? 0) + v;
+  // The exported smile lifts the separate philtrum/upper lip, but barely moves the lower lip.
+  // At the look-dev value 1.4 their centre edges separate; keep the smile at the corners
+  // without opening a slit under the nose (including expressions that add more corner lift).
+  if (e.mouth === 'cat') for (const side of ['L', 'R']) {
+    const key = `MouthCornerUp.${side}`;
+    if (out[key] > 0) out[key] *= 0.45;
+  }
   return out;
 }
 

@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { createRope } from './rope.ts';
 
-export type ToyKind = 'yarn' | 'feather' | 'laser';
+export type ToyKind = 'yarn' | 'feather' | 'laser' | 'pet';
 
 export interface ToyProp {
   /** Added to / removed from the scene by the renderer. */
@@ -29,6 +29,8 @@ export interface ToyProp {
   readonly worldLayer?: THREE.Object3D;
   /** Told the current voxel->world scale, for props whose world layer has to match the prop. */
   setWorldScale?(scale: number): void;
+  /** Aim the rigid wand from the pointer toward the cat in the ground plane. */
+  aimWand?(x: number, z: number): void;
   /** Actual interactive part in world space (the plume, not the wand handle). */
   contactSphere(target: THREE.Sphere): THREE.Sphere;
   /**
@@ -51,7 +53,22 @@ export interface ToyProp {
 /** Voxel units, matching the rig's own scale (the cat is ~13 units tall). */
 export const YARN_RADIUS = 2.0;
 export const LASER_RADIUS = 0.85;
-export const FEATHER_HAND_HEIGHT = 10;
+export const FEATHER_HAND_HEIGHT = 11;
+
+/**
+ * Petting has no prop in the scene: the hand is drawn on the glass at the pointer (stage-fx petHand). A prop stands on
+ * the floor under the pointer's spot, which with the pointer on the cat's back is behind the cat.
+ */
+function createPetHand(): ToyProp {
+  const group = new THREE.Group();
+  return {
+    object: group,
+    anchorHeight: 0,
+    contactSphere(target) { target.center.copy(group.position); target.radius = 0; return target; },
+    update() {},
+    dispose() {},
+  };
+}
 
 function disposeTree(root: THREE.Object3D) {
   root.traverse((object) => {
@@ -161,21 +178,18 @@ function createYarn(): ToyProp {
 function createFeather(): ToyProp {
   const group = new THREE.Group();
 
-  // Grip at the origin; the string attaches to the OTHER endpoint.
-  const rodTip = new THREE.Vector3(-18, 9, 0);
+  // The hand is the group's origin. A cat-height rod extends sideways and slightly down.
+  const ROD_LENGTH = 16;
+  const ROD_DROP = 2.5;
   const rod = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.16, 0.16, rodTip.length(), 5),
+    new THREE.CylinderGeometry(0.16, 0.16, ROD_LENGTH, 5),
     new THREE.MeshStandardMaterial({ color: 0x8a6a4f, roughness: 1 }),
   );
-  rod.position.copy(rodTip).multiplyScalar(0.5);
-  rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), rodTip.clone().normalize());
   group.add(rod);
   const grip = new THREE.Mesh(
     new THREE.CylinderGeometry(0.32, 0.32, 3, 8),
     new THREE.MeshStandardMaterial({ color: 0x403b38, roughness: 0.9 }),
   );
-  grip.position.copy(rodTip).normalize().multiplyScalar(1.5);
-  grip.quaternion.copy(rod.quaternion);
   group.add(grip);
 
   // The soft part. Five links of string between the rod tip and the feather.
@@ -217,7 +231,20 @@ function createFeather(): ToyProp {
   plume.add(knot);
   group.add(plume);
 
-
+  const rodTip = new THREE.Vector3();
+  const rodAxis = new THREE.Vector3(0, 1, 0);
+  const rodDirection = new THREE.Vector3();
+  const aimWand = (x: number, z: number) => {
+    const length = Math.hypot(x, z);
+    const reach = Math.sqrt(ROD_LENGTH * ROD_LENGTH - ROD_DROP * ROD_DROP);
+    rodTip.set(length > 1e-6 ? x / length * reach : reach, -ROD_DROP, length > 1e-6 ? z / length * reach : 0);
+    rod.position.copy(rodTip).multiplyScalar(0.5);
+    rodDirection.copy(rodTip).normalize();
+    rod.quaternion.setFromUnitVectors(rodAxis, rodDirection);
+    grip.position.copy(rodDirection).multiplyScalar(1.5);
+    grip.quaternion.copy(rod.quaternion);
+  };
+  aimWand(1, 0);
   const strike = new THREE.Vector3();
   const forward = new THREE.Vector3();
   const localPoint = new THREE.Vector3();
@@ -233,6 +260,7 @@ function createFeather(): ToyProp {
     // The hand must be above the full rope length. Its logical point is still on
     // the cursor; the interactive point below is the actual dangling feather.
     anchorHeight: FEATHER_HAND_HEIGHT,
+    aimWand,
     contactSphere(target) {
       plume.localToWorld(target.center.set(0, 1.4, 0));
       target.radius = 2 * group.getWorldScale(worldScaleVector).x;
@@ -397,6 +425,7 @@ function createLaser(): ToyProp {
 }
 
 export function createToyProp(kind: ToyKind): ToyProp {
+  if (kind === 'pet') return createPetHand();
   if (kind === 'feather') return createFeather();
   if (kind === 'laser') return createLaser();
   return createYarn();

@@ -73,3 +73,22 @@ test('a swept toy-contact correction cannot place the body inside an input', () 
   const snapshot = engine.tick(0, null);
   assert.equal(contains(input, snapshot.position), false, 'collision correction bypassed input avoidance');
 });
+
+test('continuous petting and precise touch share one hand while input protection still wins', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 700 }, position: { x: 500, y: 400 } });
+  engine.setToy('pet');
+  engine.setPetting(true);
+  const held = engine.tick(0, { x: 510, y: 380 });
+  assert.equal(held.toy.kind, 'pet', 'the hand remains available for continuous pose feedback');
+  assert.deepEqual(held.toy.position, { x: 510, y: 380 });
+  assert.deepEqual(held.position, { x: 500, y: 400 }, 'touching holds the cat instead of chasing the hand');
+  engine.setProtectedRegions([input]);
+  assert.equal(engine.tick(16, { x: 510, y: 380 }).inputAvoidance.overlapping, true);
+  run(engine, 32);
+  assert.equal(contains(input, engine.position), false, 'the petting mode must yield to the active input');
+  engine.setPetting(false); engine.clearToy(); engine.setProtectedRegions([]);
+  engine.setToy('feather', { x: 700, y: 400 });
+  const next = engine.tick(7000, { x: 710, y: 400 });
+  assert.equal(next.toy.kind, 'feather');
+  assert.deepEqual(next.toy.hand, { x: 710, y: 400 }, 'ending petting restores ordinary toy play');
+});

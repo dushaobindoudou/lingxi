@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { locomotionRate, locomotionClip, comfortableWalkPace } from '../src/realistic-motion.ts';
+import { locomotionRate, locomotionClip, comfortableWalkPace, walkCadence, WALK_CADENCE } from '../src/realistic-motion.ts';
 
 // Distances and durations read from the integrated ZZZ3 GLB's Root translation channels.
 const walk = { stride: .15789473, seconds: 1.95833337 };
@@ -36,4 +36,11 @@ test('preferred wander speed scales with the cat and the projected direction', (
   assert.ok(Math.abs(side / front - 2.5) < 1e-8);
   assert.ok(Math.abs(comfortableWalkPace(walk.stride, walk.seconds, 1.26, .006, .015, 0) / front - 2) < 1e-8);
   assert.equal(comfortableWalkPace(0, 1, 1, .006, .015, 0), null);
+});
+
+test('the walk keeps a believable cadence: no slow-motion arrival, no pattering in a turn', () => {
+  assert.equal(walkCadence(0), 0, 'a stopped cat does not step');
+  assert.equal(walkCadence(0.07), WALK_CADENCE.min);
+  assert.equal(walkCadence(3.2), WALK_CADENCE.max);
+  assert.equal(walkCadence(1.29), 1.29);
 });

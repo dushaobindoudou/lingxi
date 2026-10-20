@@ -186,11 +186,15 @@ const DEFAULT_RENDER_STYLE: &str = "voxel";
 /// simulation (rolling, bouncing, batting); Rust only routes the request. Unlike the theme and
 /// camera settings these are deliberately NOT persisted: a toy left on the desktop across a
 /// restart would be clutter the user never asked for twice.
-const KNOWN_TOYS: [&str; 4] = ["yarn", "feather", "laser", "petting"];
+const KNOWN_TOYS: [&str; 4] = ["yarn", "feather", "laser", "pet"];
+fn canonical_toy(kind: &str) -> &str {
+    if kind == "petting" { "pet" } else { kind }
+}
+
 
 /// Scripted set-pieces ("特效"). Ids must match src/fx/performances.ts's PERFORMANCES, which
 /// owns the actual choreography.
-const KNOWN_PERFORMANCES: [&str; 3] = ["angry-claw", "kiss-rush", "zoomies"];
+const KNOWN_PERFORMANCES: [&str; 5] = ["angry-claw", "kiss-rush", "zoomies", "pee-at-you", "poop-at-you"];
 
 /// The tray's 玩具 and 特效 submenus: every known id with the name 主界面 gives it. A test keeps
 /// these in step with KNOWN_TOYS / KNOWN_PERFORMANCES, so a new toy cannot be missing here.
@@ -198,7 +202,7 @@ const TRAY_TOYS: [(&str, &str); 4] = [
     ("yarn", "毛线球"),
     ("feather", "逗猫棒"),
     ("laser", "激光笔"),
-    ("petting", "撸猫"),
+    ("pet", "撸猫"),
 ];
 
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
@@ -1503,6 +1507,42 @@ fn claude_session_label(raw: &serde_json::Value) -> (Option<String>, bool) {
 /// a grey two-letter badge cut from a UUID and the 主界面 could not match it to the Claude mark.
 /// Nobody could tell who was talking. Now the mark comes from the identity and the name from the
 /// session (see claude_session_label), and concurrent sessions still get a row each.
+/// How a hook's text reads, as a task-event mood. Claude's hooks carry no mood - and without one every turn got the same
+/// plain reaction, whether it had just got the tests green, failed again, or the person had typed 烦死了. The words are
+/// read for a few unmistakable signs only (the reaction map's moods), anything else stays `focused`; failure words are
+/// read before success words, so "没通过" is not taken for "通过". The text itself is not kept.
+fn hook_mood(text: &str) -> &'static str {
+    let lower = text.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| lower.contains(w));
+    if has(&["还是失败", "又失败", "仍然失败", "没通过", "未通过", "没修好", "还是不行", "还是不对", "又不对", "又错", "没成功",
+        "失败了", "报错", "崩溃", "搞不定", "烦死", "烦", "气死", "怎么还", "still fail", "still broken", "failed again"]) {
+        return "frustrated";
+    }
+    if has(&["抱歉", "对不起", "遗憾", "可惜", "sorry", "unfortunately"]) {
+        return "sad";
+    }
+    if has(&["妈妈", "爸爸", "家人", "老婆", "老公", "女朋友", "男朋友", "孩子", "宝宝", "生日", "纪念日", "想你", "情书"]) {
+        return "tender";
+    }
+    if has(&["好累", "太累", "累了", "困了", "熬夜", "通宵", "好晚", "睡不着", "exhausted"]) {
+        return "weary";
+    }
+    if has(&["紧急", "赶紧", "来不及", "deadline", "上生产", "线上故障", "不可逆", "风险", "回滚", "数据丢", "小心"]) {
+        return "anxious";
+    }
+    if has(&["通过", "全绿", "成功", "修好", "已修复", "修复了", "搞定", "跑通", "太好了", "好多了", "好了不少", "完美", "厉害",
+        "passed", "all green", "fixed", "works now", "great", "perfect", "✅"]) {
+        return "proud";
+    }
+    if has(&["哈哈", "好玩", "有趣", "试试看", "随便玩", "取个名", "lol"]) {
+        return "playful";
+    }
+    if has(&["为什么", "为啥", "怎么回事", "是不是", "调研", "研究一下", "原理", "why ", "how does"]) {
+        return "curious";
+    }
+    "focused"
+}
+
 fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEvent {
     let session = raw.get("session_id").and_then(|v| v.as_str()).map(|s| s.chars().take(128).collect::<String>());
     let session_id = session.clone().unwrap_or_else(|| "unknown-session".to_string());
@@ -1515,9 +1555,14 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
     // silently dropped on the path most users take.
     let mut result: Option<String> = None;
     let mut echo = false;
+    // read from the turn's own words (hook_mood); a prompt's text is read here and not kept
+    let mut mood = "focused";
     let (state, summary) = match hook_event_name {
         "SessionStart" => ("queued".to_string(), "会话开始".to_string()),
-        "UserPromptSubmit" => ("running".to_string(), "新一轮对话开始".to_string()),
+        "UserPromptSubmit" => {
+            mood = hook_mood(raw.get("prompt").and_then(|v| v.as_str()).unwrap_or(""));
+            ("running".to_string(), "新一轮对话开始".to_string())
+        }
         "Notification" => {
             // Claude raises this for permission prompts, plain questions, and a run of things that
             // are not waiting on the user at all (auth_success, computer_use_enter, ...). Current
@@ -1565,6 +1610,9 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
                 ("needs_input".to_string(), "回复末尾有问题等你回答".to_string())
             } else {
                 result = turn_line(reply);
+                // the reply's opening is what the turn came to (the skill asks for the conclusion first)
+                let opening: String = reply.chars().take(400).collect();
+                mood = hook_mood(&opening);
                 let reason = raw.get("stop_reason").and_then(|v| v.as_str()).unwrap_or("end_turn");
                 ("completed".to_string(), format!("本轮回复完成（{reason}）"))
             }
@@ -1624,6 +1672,7 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         // its row leaves 主界面 instead of sitting there as "running" forever.
         "SessionEnd" => ("ended".to_string(), "会话结束".to_string()),
         "StopFailure" => {
+            mood = "frustrated";
             let error_type = raw.get("error_type").and_then(|v| v.as_str()).unwrap_or("unknown");
             ("failed".to_string(), format!("本轮因错误终止（{error_type}）"))
         }
@@ -1645,12 +1694,12 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         sequence,
         observed_at,
         summary: summary.chars().take(240).collect(), // docs/09's 240-char cap
-        // Claude's hooks say nothing about what KIND of work it was - they are conversation
-        // lifecycle events, not task events. "chat" is the honest answer, not a guess.
+        // Claude's hooks say nothing about what KIND of work it was - they are conversation lifecycle events. "chat" is
+        // the honest answer: guessed from a mention of 测试, a turn that only wrote a test got 测试全绿～. How it FELT is
+        // read off the turn's own words where they say so plainly (hook_mood); an agent that knows better posts a task
+        // event itself.
         kind: "chat".to_string(),
-        // Nor anything about how it FELT. An agent that wants the cat to respond to the content
-        // of the work posts a task event itself rather than relying on the hook.
-        mood: "focused".to_string(),
+        mood: mood.to_string(),
         progress: None,
         session,
         label,
@@ -3499,6 +3548,9 @@ fn apply_control_command(
     // everything else it asked for.
     let permission = identity.permission;
     let mut command_owned = command.clone();
+    if let Some(kind) = command_owned.get("toy").and_then(|v| v.as_str()).map(|kind| canonical_toy(kind).to_string()) {
+        command_owned["toy"] = serde_json::json!(kind);
+    }
     let asked: String = command
         .as_object()
         .map(|o| {
@@ -5266,6 +5318,19 @@ fn builtin_reaction(
     kind: &str,
     mood: &str,
 ) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
+    if let Some(found) = builtin_mood_reaction(state, kind, mood) {
+        return Some(found);
+    }
+    builtin_lifecycle_reaction(state, kind)
+}
+
+/// The built-in table's rows that answer HOW IT FELT (a known mood, with or without the kind) - None for a mood it has
+/// nothing particular for. Split out so a mood can outrank a user's mood-agnostic override (see react_to_task_event).
+fn builtin_mood_reaction(
+    state: &str,
+    kind: &str,
+    mood: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     // --- all three known: this exact thing, feeling this exact way ---------------------------
     //
     // Only fully-specified entries belong here. A wildcard mood in this block would shadow the
@@ -5290,6 +5355,9 @@ fn builtin_reaction(
         ("completed", "sad") => return Some(("安心", Some("tail-wrap"), Some("做完了。我在这儿。"))),
         ("completed", "playful") => return Some(("玩心", Some("hop-catch"), Some("嘿嘿，成了！"))),
         ("completed", "anxious") => return Some(("放松", Some("purr-settle"), Some("过啦，可以松口气了"))),
+        // the turn is over but the thing is not fixed yet (read off the reply by hook_mood): met, not cheered
+        ("completed", "frustrated") => return Some(("安心", Some("paw-reach"), Some("这轮先到这儿，还没全好…我陪你"))),
+        ("completed", "curious") => return Some(("好奇", Some("curious-tilt"), Some("原来是这样～"))),
 
         // Failed. Deliberately NOT angry - see the design rule above.
         ("failed", "frustrated") => return Some(("委屈", Some("paw-reach"), Some("唔…这个真的难。歇一下再来？"))),
@@ -5318,7 +5386,14 @@ fn builtin_reaction(
         ("running", "frustrated") => return Some(("认真", Some("ear-listen"), None)),
         _ => {}
     }
+    None
+}
 
+/// The built-in table's rows for what sort of work it was, and the plain lifecycle - when the mood adds nothing.
+fn builtin_lifecycle_reaction(
+    state: &str,
+    kind: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     // --- what sort of work it was, when the mood adds nothing beyond the default ---------------
     match (state, kind) {
         ("completed", "deploy") => return Some(("得意", Some("stretch-front"), Some("上线啦！"))),
@@ -5925,10 +6000,20 @@ fn should_react(app: &tauri::AppHandle, event: &TaskEvent) -> bool {
         }
     }
     let previous = seen.insert(event.task_id.clone(), event.progress.unwrap_or(0.0));
+    // A change of heart mid-task is worth a look (silent: running reactions carry no line) - the person typing 还是不对
+    // after an hour on it, or 太好了 - but not the same mood again, and not the plain default.
+    let mut moods = state.moods.lock().unwrap();
+    if !moods.contains_key(&event.task_id) && moods.len() >= SEEN_CAP {
+        if let Some(victim) = moods.keys().next().cloned() {
+            moods.remove(&victim);
+        }
+    }
+    let before_mood = moods.insert(event.task_id.clone(), event.mood.clone());
+    let mood_turned = event.mood != "focused" && before_mood.as_deref() != Some(event.mood.as_str());
     match (previous, event.progress) {
         (None, _) => true,                                   // first sighting of this task
-        (Some(before), Some(now)) => before < 0.5 && now >= 0.5, // crossed halfway
-        _ => false,
+        (Some(before), Some(now)) => (before < 0.5 && now >= 0.5) || mood_turned, // crossed halfway
+        _ => mood_turned,
     }
 }
 
@@ -5936,6 +6021,8 @@ fn should_react(app: &tauri::AppHandle, event: &TaskEvent) -> bool {
 #[derive(Default)]
 struct TaskProgressState {
     seen: Mutex<HashMap<String, f64>>,
+    /// the last mood each task reacted with (should_react)
+    moods: Mutex<HashMap<String, String>>,
 }
 
 /// What each agent is doing RIGHT NOW, as opposed to what has happened.
@@ -6083,9 +6170,18 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
             entry.get("say").and_then(|v| v.as_str()).map(str::to_string),
         ))
     };
-    // Most specific override wins, and a user override at any level beats the built-in table.
+    // Most specific override wins, and a user override beats the built-in table at its own level. One exception, the
+    // table's own rule: how it FELT outranks what sort of work it was. A definite mood (not the default) gets its
+    // built-in row before an override that does not mention mood ("completed:chat" in an action pack made every
+    // finished turn 收工, whether it had just got everything green or was still broken). Override "state:mood" or
+    // "state:kind:mood" to change those rows too.
+    let felt = || {
+        if event.mood == "focused" { return None; }
+        builtin_mood_reaction(&event.state, &event.kind, &event.mood).map(|(e, a, l)| (e.to_string(), a.map(str::to_string), l.map(str::to_string)))
+    };
     let resolved = lookup(&format!("{}:{}:{}", event.state, event.kind, event.mood))
         .or_else(|| lookup(&format!("{}:{}", event.state, event.mood)))
+        .or_else(felt)
         .or_else(|| lookup(&format!("{}:{}", event.state, event.kind)))
         .or_else(|| lookup(&event.state))
         .or_else(|| lookup(&event.mood))
@@ -6757,6 +6853,7 @@ fn say(app: tauri::AppHandle, text: String, duration_ms: Option<u64>) {
 /// 玩具: put a toy on the desktop, or take it away.
 #[tauri::command]
 fn set_toy(app: tauri::AppHandle, kind: String) {
+    let kind = canonical_toy(&kind).to_string();
     let _ = app.emit("set-toy", serde_json::json!({ "kind": kind }));
 }
 
@@ -7617,6 +7714,33 @@ mod tests {
     }
 
     #[test]
+    fn hook_events_read_the_turns_mood_off_its_own_words() {
+        let claude = |name: &str, extra: serde_json::Value| {
+            let mut raw = serde_json::json!({ "session_id": "s1", "hook_event_name": name });
+            for (k, v) in extra.as_object().unwrap() { raw[k] = v.clone(); }
+            normalize_claude_hook_event(&raw, 1)
+        };
+        // the end of a turn: what it came to
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "登录测试已修复，18 项全部通过。" })).mood, "proud");
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "测试还是没通过，卡在超时上。" })).mood, "frustrated");
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "改好了按钮的颜色。" })).mood, "focused");
+        // a failure word before a success word: 没通过 is not 通过
+        assert_eq!(hook_mood("这次没通过"), "frustrated");
+        assert_eq!(claude("StopFailure", serde_json::json!({ "error_type": "rate_limit" })).mood, "frustrated");
+        // the person's own words, read and not kept
+        let prompt = claude("UserPromptSubmit", serde_json::json!({ "prompt": "还是不对，烦死了，密码 hunter2" }));
+        assert_eq!(prompt.mood, "frustrated");
+        assert!(!prompt.summary.contains("hunter2"));
+        assert_eq!(claude("UserPromptSubmit", serde_json::json!({ "prompt": "帮我给妈妈写封信" })).mood, "tender");
+        assert_eq!(claude("UserPromptSubmit", serde_json::json!({ "prompt": "看了效果好了不少" })).mood, "proud");
+        // a conversation turn is still 'chat' whatever it mentions - a guessed 'test' made 测试全绿～ out of "加了测试"
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "加了一个测试，还没跑。" })).kind, "chat");
+        // the reaction for a turn that ended unfixed meets it, and does not cheer
+        let (_, _, line) = builtin_reaction("completed", "chat", "frustrated").unwrap();
+        assert!(!line.unwrap_or("").contains("搞定"));
+    }
+
+    #[test]
     fn normalize_claude_hook_event_maps_each_known_event_to_the_right_task_state() {
         let user_prompt = serde_json::json!({ "session_id": "s1", "hook_event_name": "UserPromptSubmit" });
         assert_eq!(normalize_claude_hook_event(&user_prompt, 1).state, "running");
@@ -7785,6 +7909,14 @@ mod tests {
         assert_eq!(claude("SessionEnd", serde_json::json!({ "reason": "exit" })).state, "ended");
         let url = claude("Notification", serde_json::json!({ "notification_type": "elicitation_url_dialog", "message": "x" }));
         assert_eq!(url.state, "needs_input");
+    }
+
+    #[test]
+    fn legacy_petting_clients_keep_the_current_pet_capability() {
+        assert_eq!(canonical_toy("petting"), "pet");
+        assert_eq!(canonical_toy("pet"), "pet");
+        assert!(KNOWN_TOYS.contains(&canonical_toy("petting")));
+        assert_eq!(canonical_toy("feather"), "feather");
     }
 
     #[test]

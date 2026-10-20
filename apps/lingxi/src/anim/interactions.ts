@@ -16,7 +16,7 @@
 // without any of them.
 
 export interface ToySituation {
-  kind: 'yarn' | 'feather' | 'laser';
+  kind: 'yarn' | 'feather' | 'laser' | 'pet';
   /** Distance from the cat to the toy, in logical pixels. */
   distance: number;
   /** How fast the toy itself is travelling, px/s. */
@@ -46,6 +46,7 @@ const FAST_TOY = 220;
  */
 export function pickToyReaction(situation: ToySituation, random = Math.random): Reaction | null {
   const { kind, distance, toySpeed, held, playingClip } = situation;
+  if (kind === 'pet') return null;
   // A contact swat must not starve the wand jump on every approach.
   if (playingClip && !(kind === 'feather' && playingClip === 'toy-swat')) return null;
 

@@ -10,6 +10,7 @@ import { frameDelta } from './animation-clock.ts';
 import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
 import { createStageFx } from './fx/stage-fx.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
+import { pickPointerReaction } from './anim/interactions.ts';
 import { createLifeEngine, DEFAULT_WANDER_SPEED } from '../../../packages/life-engine/src/index.mjs';
 
 const log = document.getElementById('log')!;
@@ -35,11 +36,15 @@ if (params.get('bg')) document.documentElement.style.background = document.body.
 const REALISTIC_URL = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
 const renderer = createRendererSwitcher({
   voxel: () => createThreeRenderer(),
-  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32), originalGroom: params.get('fur') !== 'shells', autonomous: !params.has('still'), clipBlinks: !params.has('noblink') }),
+  realistic: () => createRealisticRenderer({ assetUrl: REALISTIC_URL, shells: Number(params.get('shells') ?? 32), originalGroom: params.get('fur') !== 'shells', autonomous: !params.has('still'), clipBlinks: !params.has('noblink'), fitCanvasToCat: params.has('fit') }),
 });
 if (params.get('style') === 'realistic') {
   void renderer.switchStyle('realistic').then((r) => { say(`style realistic: ${JSON.stringify(r)}`);
-    if (r.applied) readyAt = performance.now();
+    if (r.applied) {
+      readyAt = performance.now();
+      if (params.get('perform')) setTimeout(() => performances.play(params.get('perform')!), 300);
+      if (params.get('toy') === 'pet') engine.setToy('pet');
+    }
     // ?expr=<name>: hold that expression (look-dev face sheets); ?clip=<host action id> plays one first
     if (params.get('clip')) say(`clip ${params.get('clip')}: ${renderer.playAction?.(params.get('clip')!)}`);
     if (params.get('expr')) say(`expr ${params.get('expr')}: ${renderer.playExpression?.(params.get('expr')!, 1e9)}`);
@@ -52,7 +57,7 @@ const fx = createStageFx();
 fx.mount(stage);
 say('renderer + fx mounted');
 // for scripted look-dev captures (Chrome DevTools protocol): the renderer, to hold expressions and find the head
-(window as unknown as { __harness: unknown }).__harness = { renderer };
+(window as unknown as { __harness: unknown }).__harness = { renderer, get engine() { return engine; } };
 
 const width = stage.clientWidth;
 const height = stage.clientHeight;
@@ -80,10 +85,12 @@ function frame(now: number) {
     lastFrameAt = now;
     const pace = renderer.locomotionPace?.();
     engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
+    engine.setNaturalWander(renderer.activeStyle === 'realistic');
+    engine.setSprintPace(renderer.sprintPace?.() ?? null);
     // ?still=1: a fixed, centred, idle cat for look-dev comparisons (no wandering between screenshots)
     let snapshot = params.has('still')
       ? ({ ...engine.tick(now, null), state: 'idle', position: { x: width / 2, y: height * 0.62 }, facing: 1 } as ReturnType<typeof engine.tick>)
-      : engine.tick(now, cursor);
+      : engine.tick(now, cursor, cursor ? renderer.hitTest(cursor, true) : false);
     if (params.has('walk') && readyAt != null) {
       const speed = Number(params.get('walk'));
       const span = width * .5;
@@ -93,6 +100,17 @@ function frame(now: number) {
         position: { x: width * .25 + (forward ? p : span * 2 - p), y: height * .68 } };
     }
     renderer.render(snapshot, dt, cursor);
+    fx.petHand(snapshot.toy?.kind === 'pet' ? cursor : null);
+    if (params.get('toy') === 'pet' && snapshot.toy?.kind === 'pet' && cursor && renderer.hitTest(cursor, true)) {
+      if (lastStrokePoint) strokeTravel += Math.hypot(cursor.x - lastStrokePoint.x, cursor.y - lastStrokePoint.y);
+      lastStrokePoint = { ...cursor };
+      if (now > nextPurrAt && pickPointerReaction({ hovering: true, hoverMs: 1000, strokeDistance: strokeTravel })?.kind === 'stroke') {
+        // Match main.ts: the realistic coat and rig provide the continuous response; no clip interrupts it.
+        if (renderer.activeStyle !== 'realistic') renderer.playAction?.('purr-settle');
+        renderer.playExpression?.('陶醉', 4200);
+        nextPurrAt = now + 3500; strokeTravel = 0;
+      }
+    } else { lastStrokePoint = null; strokeTravel = 0; }
     if (params.has('audit') && readyAt != null && now >= nextAuditAt) {
       nextAuditAt = now + 2000;
       const d = renderer.describeCapabilities?.() as { textures?: unknown; torsoScreenPoint?: { x: number; y: number }; gait?: unknown; fur?: unknown; animation?: unknown };
@@ -124,6 +142,10 @@ function frame(now: number) {
 }
 requestAnimationFrame(frame);
 
+let lastStrokePoint: { x: number; y: number } | null = null;
+let strokeTravel = 0;
+let nextPurrAt = 0;
+
 // Dev probe: lets a driving script (or the console) reach the live objects to measure what
 // actually moves on screen, instead of reasoning about what should. Harness-only.
 const performances = createPerformanceRunner({
@@ -139,3 +161,7 @@ const performances = createPerformanceRunner({
   renderer, engine, stage, fx, performances,
   switchStyle: (style: RenderStyle) => renderer.switchStyle(style),
 };
+if (params.get('style') !== 'realistic') {
+  if (params.get('perform')) setTimeout(() => performances.play(params.get('perform')!), 300);
+  if (params.get('toy') === 'pet') engine.setToy('pet');
+}

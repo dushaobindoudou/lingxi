@@ -184,6 +184,25 @@ test('setPace scales how far the cat wanders per second, and ignores nonsense', 
   for (const bad of [0, -1, NaN, Infinity]) assert.ok(Math.abs(walked(bad) - full) < 1e-6, `setPace(${bad}) should be ignored`);
 });
 
+test('setSprintPace sets how fast a toy chase runs, and null goes back to a multiple of the walk', () => {
+  const chased = (sprint) => {
+    const engine = createLifeEngine({ bounds: { width: 4000, height: 2000 }, position: { x: 400, y: 1000 }, random: seeded(3) });
+    engine.setPace(0.5);
+    if (sprint !== undefined) engine.setSprintPace(sprint);
+    engine.tick(0, null);
+    engine.setToy('yarn', { x: 3600, y: 1000 });
+    const from = engine.tick(16, null).position;
+    let last = from;
+    for (let t = 32; t <= 1600; t += 16) last = engine.tick(t, null).position;
+    return distance(from, last);
+  };
+  const walkMultiple = chased();
+  const sprint = chased(600);
+  assert.ok(sprint > walkMultiple * 1.5, `the renderer's sprint runs further (${sprint.toFixed(0)} vs ${walkMultiple.toFixed(0)} px)`);
+  assert.ok(Math.abs(chased(null) - walkMultiple) < 1e-6, 'null is the walk multiple again');
+  assert.ok(Math.abs(chased(NaN) - walkMultiple) < 1e-6, 'nonsense is ignored');
+});
+
 test('"auto" mode: idle wandering targets a point ON a work-area edge, not a nearby hop', () => {
   const engine = createLifeEngine({
     bounds: { width: 3000, height: 2000 },
@@ -465,12 +484,16 @@ test('the yarn ball rolls, slows down, and never leaves the work area', () => {
   assert.deepEqual(engine.toy.velocity, { x: 0, y: 0 });
 });
 
-test('the wand handle and laser follow the pointer exactly', () => {
+test('the cursor holds the wand while the cat chases its distant feather', () => {
   const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 } });
   engine.setToy('feather', { x: 100, y: 100 });
-  engine.tick(0, { x: 900, y: 700 });
-  const afterOneFrame = engine.tick(1000 / 60, { x: 900, y: 700 }).toy.position;
-  assert.deepEqual(afterOneFrame, { x: 900, y: 700 }, 'the held wand handle follows the hand; the rendered rope supplies lag');
+  const first = engine.tick(0, { x: 300, y: 400 }).toy;
+  assert.deepEqual(first.hand, { x: 300, y: 400 }, 'the handle follows the pointer immediately');
+  assert.ok(first.position.x > first.hand.x + 60, 'the feather is out toward the cat');
+  const moved = engine.tick(1000 / 60, { x: 320, y: 400 }).toy;
+  assert.deepEqual(moved.hand, { x: 320, y: 400 });
+  assert.ok(moved.position.x > moved.hand.x + 60, 'the cat still targets the feather after the hand moves');
+  assert.ok(moved.velocity.x > 0, 'the feather reports its travel to the chase');
 
   engine.setToy('laser', { x: 100, y: 100 });
   const laser = engine.tick(100, { x: 640, y: 480 }).toy.position;
@@ -970,6 +993,88 @@ test('an outside driver cannot park the cat for 27 hours', () => {
     if (distance(snap.position, last) > 1) { moved = true; break; }
   }
   assert.ok(moved, 'the cat must come back to life within the hold cap');
+});
+
+// The realistic cat drawn small walks at ~10-20 px/s (setPace). A taper sized for the 90 px/s pace (slowingRadius,
+// 120 px) put most of every walk inside it at those speeds: the speed decayed exponentially for half a minute and the
+// stride-matched walk played at 0.07x - a cat that looked stuck. Braking has to scale with the pace.
+test('a slow cat brakes in about a second, not for half a minute', () => {
+  const engine = createLifeEngine({ bounds: { width: 1000, height: 800 }, position: { x: 500, y: 400 }, random: seeded(21) });
+  engine.setPace(15 / 90);
+  engine.suggestMoveTo({ x: 600, y: 400 }, 0, 120000);
+  const dt = 1 / 60;
+  let arrivedAt = -1;
+  let crawling = 0;
+  let previous = { ...engine.position };
+  for (let f = 1; f <= 60 * 60 && arrivedAt < 0; f += 1) {
+    const snap = engine.tick(f * 1000 * dt, null);
+    const speed = distance(snap.position, previous) / dt;
+    previous = { ...snap.position };
+    if (snap.intent === null) arrivedAt = f * dt;
+    else if (speed > 0 && speed < 15 * 0.4) crawling += dt;
+  }
+  assert.ok(arrivedAt > 0 && arrivedAt < 100 / 15 + 1.5, `100 px at 15 px/s should take ~7 s, took ${arrivedAt.toFixed(1)} s`);
+  assert.ok(crawling < 0.8, `crawled below 40% of its pace for ${crawling.toFixed(1)} s`);
+});
+
+test('realistic autonomous wander keeps whole walking steps until it stops, while voxel arrival still eases', () => {
+  const trip = (natural) => {
+    const engine = createLifeEngine({
+      bounds: { width: 450, height: 350 }, position: { x: 225, y: 175 },
+      speed: 9, energy: 1, random: seeded(21), idleDurationMsRange: [0, 0],
+      brakeSeconds: 2, turnRate: 100, maxTurnRate: 100, minTurnRadius: 1,
+    });
+    engine.setNaturalWander(natural);
+    let snap = engine.tick(0, null);
+    assert.equal(snap.state, 'wander');
+    const speeds = [];
+    let last = snap.position;
+    for (let frame = 1; frame <= 60 * 60; frame += 1) {
+      const destination = snap.target;
+      const remaining = distance(last, destination);
+      snap = engine.tick(frame * 1000 / 60, null);
+      const speed = distance(last, snap.position) * 60;
+      if (remaining > 7 && remaining < 14 && snap.state === 'wander') speeds.push(speed);
+      if (natural) assert.ok(speed < 10, `arrival should not snap the body (${speed.toFixed(1)} px/s)`);
+      last = snap.position;
+      if (snap.state === 'idle') {
+        if (natural) assert.ok(distance(snap.position, destination) < 6, 'stop inside the arrival radius');
+        return speeds;
+      }
+    }
+    assert.fail('wander never reached its destination');
+  };
+  const natural = trip(true);
+  const voxel = trip(false);
+  assert.ok(natural.length > 4 && voxel.length > 4);
+  const average = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  assert.ok(average(natural) > average(voxel) * 1.35,
+    `natural ${average(natural).toFixed(2)} px/s, voxel ${average(voxel).toFixed(2)} px/s`);
+});
+
+test('natural wander alternates a few seconds of walking with a short observation pause', () => {
+  const engine = createLifeEngine({
+    bounds: { width: 900, height: 560 }, position: { x: 450, y: 280 },
+    speed: 12, energy: 1, random: seeded(9), idleDurationMsRange: [0, 0],
+  });
+  engine.setNaturalWander(true);
+  let snap = engine.tick(0, null);
+  let previous = snap.position;
+  let sawWalking = false;
+  let pauseFrames = 0;
+  let resumed = false;
+  for (let frame = 1; frame <= 60 * 20; frame += 1) {
+    snap = engine.tick(frame * 1000 / 60, null);
+    const moved = distance(previous, snap.position) > 1e-6;
+    previous = snap.position;
+    if (snap.state !== 'wander') break;
+    if (moved) {
+      if (pauseFrames > 0) { resumed = true; break; }
+      sawWalking = true;
+    } else if (sawWalking) pauseFrames += 1;
+  }
+  assert.ok(sawWalking && resumed, 'the cat should resume the same trip after looking around');
+  assert.ok(pauseFrames >= 40 && pauseFrames <= 75, `pause lasted ${(pauseFrames / 60).toFixed(2)} s`);
 });
 
 // An intent ends three ways and all three must hand the body back. Only expiry used to.

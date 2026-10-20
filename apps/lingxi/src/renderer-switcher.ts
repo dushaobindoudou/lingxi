@@ -31,11 +31,13 @@ export function createRendererSwitcher(factories: Record<RenderStyle, Factory>, 
   let lastFrame: { state: FrameState; cursor: { x: number; y: number } | null } | null = null;
   let pendingStyle: RenderStyle | null = null;
 
-  async function switchStyle(style: RenderStyle): Promise<{ applied: boolean; error?: string }> {
-    if (style === activeStyle && pendingStyle == null) return { applied: true };
+  // a rebuild of the active style is under way (see Renderer.needsRebuild)
+  let rebuilding = false;
+  async function switchStyle(style: RenderStyle, rebuild = false): Promise<{ applied: boolean; error?: string }> {
+    if (!rebuild && style === activeStyle && pendingStyle == null) return { applied: true };
     if (style === pendingStyle) return { applied: false };
     const mine = ++generation;
-    pendingStyle = style === activeStyle ? null : style;
+    pendingStyle = style === activeStyle && !rebuild ? null : style;
     if (pendingStyle == null) return { applied: true }; // asked back for what is already showing
     let next: (Renderer & { readonly ready?: Promise<void> }) | null = null;
     try {
@@ -80,13 +82,23 @@ export function createRendererSwitcher(factories: Record<RenderStyle, Factory>, 
     playExpression: (name, holdMs) => active.playExpression?.(name, holdMs) ?? false,
     get playingAction() { return active.playingAction ?? null; },
     headScreenPoint: () => active.headScreenPoint?.() ?? { x: lastFrame?.state.position.x ?? 0, y: lastFrame?.state.position.y ?? 0 },
+    rumpScreenPoint: (onGround?: boolean) => active.rumpScreenPoint?.(onGround) ?? { x: lastFrame?.state.position.x ?? 0, y: (lastFrame?.state.position.y ?? 0) - (onGround ? 0 : (active.screenExtent?.().above ?? 120) * 0.35) },
     screenExtent: () => active.screenExtent?.() ?? { above: 120, below: 20, halfWidth: 80 },
     get currentExpression() { return active.currentExpression ?? { name: '安然', held: false }; },
     get headYaw() { return active.headYaw ?? 0; },
     probeUnproject: (x, y) => active.probeUnproject?.(x, y) ?? false,
     locomotionPace: () => active.locomotionPace?.() ?? null,
+    sprintPace: () => active.sprintPace?.() ?? null,
     describeCapabilities: () => ({ style: activeStyle, ...(active.describeCapabilities?.() as object ?? {}) }),
-    render(state, dt, cursor) { lastFrame = { state, cursor }; active.render(state, dt, cursor); },
+    render(state, dt, cursor) {
+      lastFrame = { state, cursor };
+      active.render(state, dt, cursor);
+      // the GPU lost what it held (a restarted GPU process, a reset): the same style built afresh, swapped in when ready
+      if (active.needsRebuild && !rebuilding) {
+        rebuilding = true;
+        void switchStyle(activeStyle, true).finally(() => { rebuilding = false; });
+      }
+    },
     hitTest: (point, precise) => active.hitTest(point, precise),
     dispose() { generation++; active.dispose(); },
   };

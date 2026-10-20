@@ -50,7 +50,7 @@ const TOY_CATALOGUE = [
   { kind: 'yarn', name: '毛线球', description: '会滚、会撞墙反弹；猫追上去拍一爪又飞出去，能自己玩下去' },
   { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，靠近时猫会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '死死钉在光标上，拍到也抓不住（这就是笑点）' },
-  { kind: 'petting', name: '撸猫', description: '按住左键轻轻摸头和身体；翻身后可以摸肚皮' },
+  { kind: 'pet', name: '撸猫', description: '用小手在猫身上来回顺毛，越摸越放松' },
 ];
 
 async function main() {
@@ -527,10 +527,10 @@ async function main() {
 
   void listen<{ kind: string }>('set-toy', (event) => {
     markInteresting();
-    if (event.payload.kind === 'petting') {
+    if (event.payload.kind === 'pet' || event.payload.kind === 'petting') {
       performances.stop();
-      engine.clearToy();
       engine.clearIntent();
+      engine.setToy('pet');
       engine.setPetting(true);
       petting.setEnabled(true);
       lastPettingRegion = null;
@@ -555,7 +555,7 @@ async function main() {
     engine.clearToy();
   });
   void listen('request-play-mode', () => {
-    void emit('play-mode', { kind: petting.enabled ? 'petting' : engine.toy?.kind ?? null });
+    void emit('play-mode', { kind: petting.enabled ? 'pet' : engine.toy?.kind ?? null });
   });
   void listen('petting-belly', () => {
     if (!petting.enabled) return;
@@ -833,6 +833,8 @@ async function main() {
       const input = inputAvoidanceEnabled && now - focusedInputSeenAt < 2000 ? focusedInput : null;
       engine.setProtectedRegions(inputProtectedRegions(input, workArea,
         renderer.screenExtent?.() ?? { above: 120, below: 20, halfWidth: 80 }));
+      engine.setNaturalWander(renderer.activeStyle === 'realistic');
+      engine.setSprintPace(renderer.sprintPace?.() ?? null);
       const snapshot = engine.tick(now, cursor, pointerOnPet);
       const yieldingToInput = snapshot.inputAvoidance.overlapping;
       if (yieldingToInput) performances.stop();
@@ -865,6 +867,7 @@ async function main() {
       }
       document.documentElement.style.cursor = petting.enabled && pointerOnPet
         ? petting.pressed ? 'grabbing' : 'grab' : '';
+      fx.petHand(!yieldingToInput && snapshot.toy?.kind === 'pet' ? cursor : null);
 
       // --- sleep, made visible ----------------------------------------------------------
       //
@@ -899,7 +902,8 @@ async function main() {
       // because it happened to wander onto a cursor you had parked and forgotten about
       // ("鼠标主动放到他身上的时候应该是亲近"). The same flag stops it fleeing, so the two
       // halves of the reaction finally agree with each other.
-      if (!petting.enabled && !snapshot.toy && !yieldingToInput && cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
+      const petToy = snapshot.toy?.kind === 'pet';
+      if (!yieldingToInput && !petting.pressed && cursor && wasHit && (petToy || (!petting.enabled && !snapshot.toy && snapshot.pointer?.byUser)) && !isMouseDown && !isChargingToy) {
         if (hoverSince === 0) {
           hoverSince = now;
           strokeDistance = 0;
@@ -913,18 +917,26 @@ async function main() {
           const reaction = pickPointerReaction({
             hovering: true,
             hoverMs: now - hoverSince,
-            strokeDistance,
+            strokeDistance: petToy ? strokeDistance * 1.5 : strokeDistance,
           });
           if (reaction) {
-            renderer.playAction?.(reaction.clip);
-            renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
+            const deeplyRelaxed = petToy && reaction.kind === 'stroke' && now - hoverSince > 9000;
+            const movingHand = renderer.activeStyle === 'realistic' && reaction.kind === 'notice' && (petToy || strokeDistance > 24);
+            // The realistic rig follows each stroke continuously. Replaying a full clip here used to interrupt the
+            // nuzzle every four seconds; a moving hand must also not start the one-off notice clip first.
+            // The voxel cat still uses its authored affection reaction. The face's contentment stays on both: without
+            // it the realistic cat took its strokes wide-eyed.
+            if ((renderer.activeStyle !== 'realistic' || reaction.kind !== 'stroke') && !movingHand) {
+              renderer.playAction?.(deeplyRelaxed ? 'belly-up' : reaction.clip);
+            }
+            if (!movingHand) renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
             if (reaction.kind === 'stroke') {
               const head = renderer.headScreenPoint?.();
               if (head) fx.hearts(head.x, head.y, 3);
               strokeDistance = 0; // start earning the next purr
               pointerReactionUntil = now + 4200;
             } else {
-              pointerReactionUntil = now + 2600;
+              pointerReactionUntil = now + (movingHand ? 350 : 2600);
             }
           }
         }

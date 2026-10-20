@@ -21,7 +21,7 @@ test('the cursor holds the handle and the string hangs from the opposite rod end
 test('the feather handle follows the hand exactly while its rope supplies the lag',()=>{
   const engine=createLifeEngine({bounds:{width:1280,height:800},position:{x:100,y:100}});
   engine.setToy('feather',{x:500,y:400});engine.tick(0,{x:500,y:400});
-  assert.deepEqual(engine.tick(16,{x:700,y:400}).toy.position,{x:700,y:400});
+  assert.deepEqual(engine.tick(16,{x:700,y:400}).toy.hand,{x:700,y:400});
 });
 
 test('a toy keeps moving during a jump, but the cat holds its launch position',()=>{
@@ -32,7 +32,7 @@ test('a toy keeps moving during a jump, but the cat holds its launch position',(
   const during=engine.tick(100,{x:800,y:400});
   assert.deepEqual(during.position,before,'chasing must not slide the cat during its jump');
   assert.equal(during.batted,false,'a floor swat must not interrupt the jump');
-  assert.deepEqual(during.toy.position,{x:800,y:400});
+  assert.deepEqual(during.toy.hand,{x:800,y:400});
 });
 
 test('yarn rolls by distance covered divided by its drawn radius',()=>{
