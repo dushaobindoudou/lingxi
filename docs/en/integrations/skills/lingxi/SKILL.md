@@ -22,6 +22,14 @@ Lingxi's skill comes in two layers, and every host has both installed:
 
 **Identity, entry point, automatic reporting, and install/start follow the host layer; everything else follows this file.** The host layer adds that host's facts; it does not change these rules. Without a host layer, use the generic steps here, and never let the CLI borrow the machine-wide identity in `~/.lingxi/agent.json` (see "How to call it").
 
+## The minimum contract (if you remember only three things)
+
+1. Every task: `running` at the start, `completed` / `failed` / `cancelled` at the end, one `taskId` throughout.
+2. `summary` says "what task + what result + next step" in at most 140 characters; never just "done".
+3. Report `mood` whenever you can judge it - that is what separates it from a status light.
+
+Everything else is detail. Read on. With these three, the cat already works.
+
 ## When to let the cat notify
 
 The cat is **a carrier of key messages**, not a log reader:
@@ -183,6 +191,27 @@ LINGXI_PRIORITY=alert lingxi express 惊吓
 Do not use `alert` for everything because "I am more important". What the user should see is **the thing that matters**, not the tool that matters.
 
 ---
+
+### The deterministic half: check, mention once, never install
+
+Some integrations report at session boundaries on their own - the host fires, not you. That is the
+deterministic half; what you report is the content and the mood. Together they are complete, but
+**not every integration has that half**.
+
+**Do not go looking by default.** Only in these two cases, use the check your host layer documents:
+
+- the user asks "why doesn't it react on its own" or "how do I get a reaction every turn";
+- the user says they will keep using it and asks whether there is a fuller setup.
+
+| What you find | What you do |
+|---|---|
+| Already installed | The problem is elsewhere; do not suggest reinstalling |
+| Missing, and this host supports it | One sentence on the difference, then the **single** upgrade path in the host layer |
+| This host has no such mechanism | **Say nothing.** A plan that cannot exist is worse than silence |
+
+Three limits: mention it **once per conversation**; never install for the user and never edit the
+host's config files (a broken hook can block the user's next message); it still works without it -
+what you report stays the main channel.
 
 ## 3. Reminders: the cat remembers, so you do not have to
 

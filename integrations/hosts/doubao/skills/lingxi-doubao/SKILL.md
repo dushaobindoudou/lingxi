@@ -42,3 +42,17 @@ LINGXI_TASK_ID=weekly-report lingxi task completed write proud "周报已整理�
 - `lingxi` 找不到或气泡署名不是「豆」：插件没装好，告诉用户跑插件目录里的 `install.sh`（或 README 里的接入向导），
   不要自己改 PATH 或 `~/.lingxi/agent.json`。
 - 拉不起来（没装应用、`LINGXI_AUTOSTART=0`）时它会说原因——照实告诉用户，不要假装做了。
+
+## 四、确定性的一半装没装
+
+豆包没有 hooks，这一半由回合监听补上，`install.sh` 把它装成一个常驻 LaunchAgent。用户只把 `lingxi`
+放进 PATH、没跑安装器时，监听是缺的——表现就是「只有你报了猫才知道」。只在用户问起时查：
+
+```bash
+launchctl print "gui/$(id -u)/com.dushaobin.lingxi.doubao-watch" >/dev/null 2>&1 && echo installed || echo absent
+```
+
+`absent` 时先看 `~/Library/LaunchAgents/com.dushaobin.lingxi.doubao-watch.plist` 在不在：
+在，说明写好了但没被 launchd 接管，让用户重跑安装器或注销重新登录；不在，就是根本没装，
+跑一次插件目录里的 `install.sh`（`LINGXI_DOUBAO_WATCH=0` 会跳过它）。
+**不要自己 `launchctl load`，也不要读豆包日志手工补报**——那是重复的一条路，还会和监听抢着说。

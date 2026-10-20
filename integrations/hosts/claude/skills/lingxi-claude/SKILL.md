@@ -50,7 +50,24 @@ hooks 看不到的等待才需要你报：在等一个外部流程、被挡住�
 - 不要自己下载、安装、`open` 应用，也不要改 `~/.claude/settings.json`。
 - `lingxi` 报连不上时照实说一句，然后继续干正事，不要重试到底。
 
-## 四、内容去哪儿
+## 四、确定性的一半装没装
+
+插件装好时 hooks 默认就在；主界面「一键接入」也是一样。**不用主动查**。只有用户问
+「为什么它不自动反应」、或者你怀疑他只装了 skill（`npx skills add`）而没装插件时才看：
+
+```bash
+grep -qs -e '47811' -e 'lingxi@' ~/.claude/settings.json 2>/dev/null && echo installed || echo absent
+```
+
+判断依据是 hook 命令里的桥端口（`47811`）或插件开关（`lingxi@`），不是 `lingxi`
+这个词——settings 里别的地方也可能出现灵犀的名字。两个模式用 `-e` 分开写：
+macOS 自带的是 BSD grep，`\|` 在那里不是"或"，会被当成字面量。**只读这一个文件**，
+不要递归扫插件目录。
+
+`absent` 时给一条路：`claude plugin install lingxi@lingxi`，或让用户走主界面
+「Agent 接入 → Claude Code → 一键接入」。不要自己写 `~/.claude/settings.json`。
+
+## 五、内容去哪儿
 
 - hooks 从你回复里截的那句只在本机用于气泡和主界面，不写进任务事件日志。
 - 你主动报的 `summary` 会进本地任务历史；用户配置了通知渠道（Slack、飞书等）时也会发到那里。

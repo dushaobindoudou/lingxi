@@ -102,3 +102,16 @@ LINGXI_QUOTA_DEBUG=1  # 额度守卫为什么没说话（它会读 ~/.workbuddy/
 ```
 
 拿到 **`stage busy` 就丢掉，不要重试**——等舞台空出来，你那句话已经在讲历史了。
+
+## 九、确定性的一半装没装
+
+`install.sh` 和插件都默认装 hooks，**不用主动查**。只在用户问「为什么它不自动反应」时：
+
+```bash
+{ grep -qs 'lingxi-emit' ~/.workbuddy/settings.json 2>/dev/null || grep -qs '"lingxi@' ~/.workbuddy/plugins/installed_plugins.json 2>/dev/null; } && echo installed || echo absent
+```
+
+两个来源都看：`install.sh` 写 settings.json，插件市场装的在 `installed_plugins.json`。
+**只读这两个文件**——`plugins/` 有几百 MB，递归 grep 会卡死。
+
+`absent` → 装插件或跑本目录 `install.sh`。不要自己写 hooks（见第四、五节）。

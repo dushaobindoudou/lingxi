@@ -65,3 +65,22 @@ MCP 的 `lingxi_task` 已知真实线程 id 时传可选 `session`，不知道�
 - 应用没开而你确实需要它：`LINGXI_AGENT=codex lingxi up`（没装时它也会从 GitHub 装）。
 - 拉不起来（没装且关了自动安装、`LINGXI_AUTOSTART=0`）时它会说原因——照实告诉用户，不要假装做了。
 - **不要自己改 `~/.codex/config.toml` 的 `notify`**：它只有一个槽位，改坏了会让用户原有的通知程序也一起失效。
+
+## 五、确定性的一半装没装
+
+装了插件、或跑过 `install.sh` 时都有，不用查。只有用户问「为什么只有结束有反应」、
+或者你怀疑两种接入都没装时：
+
+```bash
+grep -qs 'notify-fanout\.sh' ~/.codex/config.toml 2>/dev/null && echo installed || echo absent
+```
+
+判断依据是 **notify 那一行**，不是 `lingxi` 这个词——`config.toml` 里本来就有
+`[mcp_servers.lingxi]`，按名字查会永远说"装了"。
+
+用插件方式（`codex plugin add`）装的**不会写 notify**，所以这里可能是 `absent`。
+先问一句「你是用插件装的吗」，别直接建议重装。
+
+`absent` 时给一条路：`codex plugin add lingxi@lingxi`（插件，覆盖会话开始/提交/等授权/结束），
+或跑 `integrations/hosts/codex/install.sh`（写 notify，只覆盖回合结束但不动其他配置）。
+**不要自己改 `config.toml`**——见上一条。

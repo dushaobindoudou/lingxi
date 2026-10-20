@@ -46,3 +46,15 @@ LINGXI_AGENT=cursor LINGXI_TASK_ID=fix-login lingxi task completed test proud "�
 - 拉不起来（没装应用、`LINGXI_AUTOSTART=0`）时它会说原因——照实告诉用户，不要假装做了。
 - 接入由仓库里的 `integrations/hosts/cursor/install.sh` 完成。不要自己改 `~/.cursor/hooks.json`：
   `beforeSubmitPrompt` 的输出写错一个字，就会拦住用户发消息。
+
+## 四、确定性的一半装没装
+
+跑过 `install.sh` 时 hooks 默认就在，不用查。只有用户问「为什么不自动」、或者你怀疑他只软链了
+skill 没跑安装器时：
+
+```bash
+grep -qs 'lingxi' ~/.cursor/hooks.json 2>/dev/null && echo installed || echo absent
+```
+
+`absent` 时告诉用户跑一次 `integrations/hosts/cursor/install.sh`（幂等，重复跑不会重复装）。
+不要自己写 `~/.cursor/hooks.json`，也不要改成 `beforeSubmitPrompt` 的其他输出格式。
