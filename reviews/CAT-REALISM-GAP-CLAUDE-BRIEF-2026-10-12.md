@@ -16,7 +16,7 @@ Round Y 已跨过“缺少基本关节”的阶段：86 根骨、22 个具名片
 
 | 对象 | 可核事实 | 证据 |
 | --- | --- | --- |
-| 正式桌面猫 | 仍由体素骨架和当前动作导演渲染；用户运行皮肤为“深寻蓝鲸”，scale 0.25。49 项方块猫动作、30 个内置表情。 | [正式 renderer](../apps/lingxi/src/renderer.ts)、[动作库](../apps/lingxi/src/data/actions.json)、[表情层](../apps/lingxi/src/rig/art.ts)、[方块猫审计](/Users/liepin/workspace/lingxi/docs/evidence/model-audit-2026-10-10/AUDIT.md) |
+| 正式桌面猫 | 仍由体素骨架和当前动作导演渲染；用户运行皮肤为“深寻蓝鲸”，scale 0.25。49 项方块猫动作、30 个内置表情。 | [正式 renderer](../apps/lingxi/src/renderer.ts)、[动作库](../apps/lingxi/src/data/actions.json)、[表情层](../apps/lingxi/src/rig/art.ts)、[方块猫审计](../docs/evidence/model-audit-2026-10-10/AUDIT.md) |
 | 已完成 3D 基线 | Round Y：86 骨、22 片段、579303 根离线毛、1172 帧；GLB 24.8 MB。22 段含 Idle/Walk/Run 等基础片段，**不能**把 22/49 直接当作功能完成率。 | [构建报告](../assets/characters/lingxi/v6/round-y/build-report.json)、[片段清单](../assets/characters/lingxi/v6/round-y/animations.json)、[骨架与表情交接](HANDOFF.md#round-yclaude-主会话2026-10-12骨架-v1-定稿实施冻结) |
 | 3D 表情接口 | 眼 13、眉 5、嘴 6、耳 4 共 28 个单层状态，30 个组合名称；符号层须由屏幕效果实现。控制 JSON 包含 53 个控制名。 | [控制映射](rig-v1/face-controls.json)、[单层实渲](../assets/characters/lingxi/v6/round-y/face-layers/sheet.jpg)、[组合实渲](../assets/characters/lingxi/v6/round-y/face-expr/sheet.jpg) |
 | 外观目标 | Codex 生成参考用于比较同一角色的可见轮廓、眼神、表情、姿势；不同图之间并非严格正交或同一物理模型。 | [面部参考](../assets/characters/lingxi/reference/lingxi-ref-face-closeup.png)、[表情参考](../assets/characters/lingxi/reference/lingxi-ref-expressions.png)、[动作参考目录](../assets/characters/lingxi/reference/) |
@@ -152,7 +152,7 @@ Round Y 已跨过“缺少基本关节”的阶段：86 根骨、22 个具名片
 
 ## 附录 A：方块猫 49 项动作到 Round Y 的初判映射
 
-本表逐项核对 [正式动作库](/Users/liepin/workspace/lingxi/apps/lingxi/src/data/actions.json) 和 Round Y 的 22 个片段名。“片段候选”表示有同语义或近语义素材，**没有**证明入/出、接触和桌面播放通过；“组合待做”表示现有骨或脸控制可能实现，但缺可验收的编排；“独立缺口”表示还需要明确的新动作轨或分段接触设计。下列状态均**不是已完成**。
+本表逐项核对 [正式动作库](../apps/lingxi/src/data/actions.json) 和 Round Y 的 22 个片段名。“片段候选”表示有同语义或近语义素材，**没有**证明入/出、接触和桌面播放通过；“组合待做”表示现有骨或脸控制可能实现，但缺可验收的编排；“独立缺口”表示还需要明确的新动作轨或分段接触设计。下列状态均**不是已完成**。
 
 | # | 方块猫动作 ID | Round Y 对应或缺口 | 状态 |
 | ---: | --- | --- | --- |
