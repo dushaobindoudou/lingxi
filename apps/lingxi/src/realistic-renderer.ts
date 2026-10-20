@@ -244,15 +244,22 @@ const COAT_GRADE = `
   { float lumC = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     diffuseColor.rgb = max(mix(vec3(lumC), diffuseColor.rgb, 1.25) * vec3(1.06, 1.0, 0.90), 0.0); }`;
 
-// The closed mouth, drawn into the muzzle's coat: the upper lips' lower rim (the cat's ω, measured off LX_LipUpper -
-// down from the philtrum, out and up to the corners) and the philtrum up to the nose, in the model's rest coordinates
-// (x across, mirrored; y up), so the line rides the face as the lips and corners move. The head mesh is too sparse
-// there to carry it as vertex colour - painted, it broke up into ragged dark triangles, a crack from the nose down.
-const MOUTH_CURVE: [number, number][] = [[0, 0.4465], [0.0045, 0.444], [0.0080, 0.4431], [0.0113, 0.4430], [0.0147, 0.4440],
-  [0.0182, 0.4456], [0.0216, 0.4474], [0.0250, 0.4490]];
+// The closed mouth, drawn into the muzzle's coat: from the philtrum's foot out and down to either side, the cat's
+// upside-down Y (人), and the philtrum up to the nose, in the model's rest coordinates (x across, mirrored; y up), so the
+// line rides the face as the lips and corners move. The head mesh is too sparse there to carry it as vertex colour -
+// painted, it broke up into ragged dark triangles, a crack from the nose down. (Traced off LX_LipUpper's rim it was a
+// ω - out, then up to the corners - a cartoon smile; a cat's mouth runs down from the philtrum.)
+const MOUTH_CURVE: [number, number][] = [[0, 0.4465], [0.0030, 0.4449], [0.0060, 0.4432], [0.0090, 0.4417], [0.0120, 0.4405],
+  [0.0150, 0.4397]];
 const PHILTRUM: [[number, number], [number, number]] = [[0, 0.4465], [0, 0.4690]];
-// half-widths (model units; never under ~a pixel), the mouth only on the face's front (rest z), and its colour
-const MOUTH = { width: 0.0008, philtrumWidth: 0.0005, frontFrom: 0.425, frontFull: 0.44, colour: [0.21, 0.13, 0.12] } as const;
+// half-widths (model units; never under ~a pixel), the mouth only on the face's front (rest z), its colour, how dark
+// the line and the philtrum are drawn, and where the line fades out toward its ends (|x|): a cat's mouth has no
+// marked corners, it trails off under the whisker pads. The philtrum is a faint groove, its coat not parted (parted,
+// the bare undercoat down the middle read as a crack from the nose to the mouth).
+const MOUTH = {
+  width: 0.0007, philtrumWidth: 0.0004, frontFrom: 0.425, frontFull: 0.44, colour: [0.22, 0.14, 0.13],
+  line: 0.9, philtrum: 0.4, fadeFrom: 0.009, fadeTo: 0.016,
+} as const;
 const glslVec2 = ([x, y]: [number, number]) => `vec2(${x.toFixed(5)}, ${y.toFixed(5)})`;
 const MOUTH_GLSL = `
   float mouthSegment(vec2 p, vec2 a, vec2 b) { vec2 ab = b - a; float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0); return length(p - a - ab * t); }
@@ -263,15 +270,15 @@ const MOUTH_GLSL = `
     ${MOUTH_CURVE.slice(1).map((q, i) => `d = min(d, mouthSegment(p, ${glslVec2(MOUTH_CURVE[i])}, ${glslVec2(q)}));`).join('\n    ')}
     return vec2(d, mouthSegment(p, ${glslVec2(PHILTRUM[0])}, ${glslVec2(PHILTRUM[1])}));
   }`;
-/** The same distance on the CPU (for the strands rooted on the line). */
-function mouthDistance(x: number, y: number): number {
+/** The distance to the mouth's line (not the philtrum) on the CPU, for the strands rooted on it. */
+function mouthLineDistance(x: number, y: number): number {
   const seg = (px: number, py: number, [ax, ay]: [number, number], [bx, by]: [number, number]) => {
     const abx = bx - ax, aby = by - ay;
     const t = Math.min(1, Math.max(0, ((px - ax) * abx + (py - ay) * aby) / (abx * abx + aby * aby)));
     return Math.hypot(px - ax - abx * t, py - ay - aby * t);
   };
   const px = Math.abs(x);
-  let d = seg(px, y, PHILTRUM[0], PHILTRUM[1]);
+  let d = Infinity;
   for (let i = 1; i < MOUTH_CURVE.length; i++) d = Math.min(d, seg(px, y, MOUTH_CURVE[i - 1], MOUTH_CURVE[i]));
   return d;
 }
@@ -714,10 +721,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
               float front = smoothstep(${MOUTH.frontFrom}, ${MOUTH.frontFull}, vRest.z);
               vec2 md = mouthDistance(vRest);
               float lipW = max(${MOUTH.width}, fwidth(md.x) * 0.75), philW = max(${MOUTH.philtrumWidth}, fwidth(md.y) * 0.6);
-              float line = max(1.0 - smoothstep(lipW * 0.5, lipW * 1.5, md.x), 0.75 * (1.0 - smoothstep(philW * 0.5, philW * 1.5, md.y)));
+              float ends = 1.0 - smoothstep(${MOUTH.fadeFrom}, ${MOUTH.fadeTo}, abs(vRest.x));
+              float line = max((1.0 - smoothstep(lipW * 0.5, lipW * 1.5, md.x)) * ends, ${MOUTH.philtrum} * (1.0 - smoothstep(philW * 0.5, philW * 1.5, md.y)));
               float crease = 1.0 - smoothstep(0.0, 0.0035, min(md.x, md.y));
               diffuseColor.rgb *= 1.0 - 0.16 * crease * front;
-              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${MOUTH.colour.join(', ')}), 0.9 * line * front);
+              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${MOUTH.colour.join(', ')}), ${MOUTH.line} * line * front);
             }`)
           .replace('#include <opaque_fragment>', underCurves ? '#include <opaque_fragment>' : `
             // light through the coat's edge where the view grazes it
@@ -1064,11 +1072,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         for (let c = 0; c < 3; c++) sref[c] += colors[tip + c];
         sn++;
       }
-      // the strands rooted right on the mouth's line part from it, or the muzzle's white hairs lie across it
+      // the strands rooted right on the mouth's line part from it, or the muzzle's white hairs lie across it (not on
+      // the philtrum: parted there, the bare undercoat down the middle was a crack from the nose to the mouth)
       const radii = new Float32Array(asset.bytes, part.radii.offset, part.radii.count);
       for (let strand = 0; strand < part.strands; strand++) {
         const r = strand * part.points * 3;
-        if (data[r + 2] < MOUTH.frontFrom || mouthDistance(data[r], data[r + 1]) > 0.0018) continue;
+        if (data[r + 2] < MOUTH.frontFrom || mouthLineDistance(data[r], data[r + 1]) > 0.0018) continue;
         radii.fill(0, strand * part.points, (strand + 1) * part.points);
       }
       if (!sn) continue;
@@ -1304,7 +1313,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             float keep = vGroomLid > 0.5 ? lidShown(rest) : 1.0;
             if (rest.z < ${MOUTH.frontFrom}) return keep;
             vec2 md = mouthDistance(rest);
-            return keep * smoothstep(${MOUTH.width}, ${MOUTH.width * 3.5}, md.x) * smoothstep(${MOUTH.philtrumWidth}, ${MOUTH.philtrumWidth * 3.5}, md.y);
+            return keep * smoothstep(${MOUTH.width}, ${MOUTH.width * 3.5}, md.x);
           }`,
       });
       ownedMaterials.push(...groom.materials);
