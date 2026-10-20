@@ -39,7 +39,6 @@ const GROOM = {
   tt: { exp: '5.0', strength: '1.6' },
   // the room the cat stands in (the other materials' RoomEnvironment at 0.5): soft light from everywhere
   ambient: '0.32',
-  lidVeil: '0.4',
   lidShine: '0.15',
   // the lids' rows of strands lie about this far apart (model units)
   lidRowSpacing: '0.012',
@@ -78,8 +77,11 @@ export function coatLength(partName: string) {
   return KEEP_LENGTH.test(partName) ? 1 : TAIL.test(partName) ? TAIL_LENGTH : FACE.test(partName) ? FACE_LENGTH : COAT_LENGTH;
 }
 // The lids' strands lie flat in rows along the lid; at their own width the rows showed as lines of lit hair with the
-// undercoat dark between them, ring after ring round a closed eye. This much wider they overlap into one coat.
-const LID_STRAND_WIDTH = 8;
+// undercoat dark between them, ring after ring round a closed eye, so they were drawn 8x wide - and veiled, and shaded
+// even from root to tip (see the fragment shader) - into one coat: a pale felt pad. The rings came as much from the
+// lids' evened colours and their sunken shut pose, both gone (continueCoatOntoLids, LID_DOME); a little wider than a
+// hair, shaded as the face's coat is, a closed lid now reads as short fur with its lash line.
+const LID_STRAND_WIDTH = 2;
 // how much more of the lids' coat than of the rest is drawn (see setDensity)
 const LID_DENSITY_LEAD = 0.35;
 // A closed eye's lids were a pad with an edge round it: the face's coat stopped at the eye's rim, where its strands
@@ -323,15 +325,12 @@ void main() {
   // the coat grade the undercoat and skin get (COAT_GRADE), so strands do not veil them in another shade
   float lumC = dot(base, vec3(0.2126, 0.7152, 0.0722));
   base = max(mix(vec3(lumC), base, 1.25) * vec3(1.06, 1.0, 0.90), 0.0);
-  // The lids' short coat is drawn even from root to tip: 20k strands rooted in rows on a lid a centimetre across,
-  // anything that changes along a strand - the root fading in, the tip out, the shaded root - lined up row by row
-  // into rings of light and dark bands round a closed eye. So for it the shading's along-the-strand parameter is held
-  // at the tip, and it is a light veil over the lids' own undercoat.
-  float t = mix(sqrt(vGroomAlong), 1.0, vGroomLid);
+  // along the strand, root to tip - the lids' coat too (held even from root to tip, as it once was against rings round a
+  // closed eye, it was a flat felt pad: see LID_STRAND_WIDTH)
+  float t = sqrt(vGroomAlong);
   // the root rises out of the undercoat: drawn from inside it, a strand's dark root showed as a speck (most of all
   // at desktop size, where each drawn strand stands for several)
   alpha *= smoothstep(0.0, 0.3, t);
-  alpha *= 1.0 - vGroomLid * ${GROOM.lidVeil};
   // where the face wants its coat parted (createGroom's options.part): the closed mouth's line
   alpha *= groomPart(vGroomRest);
   float occlusion = mix(${GROOM.rootShade}, 1.0, t);
