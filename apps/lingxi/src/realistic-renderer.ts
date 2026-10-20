@@ -21,7 +21,8 @@ import { rebalanceLimbWeights } from './realistic-skin.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
-import { createLocomotion, KITTEN_WALK, steeringStrideScale } from './realistic-locomotion.ts';
+import { createLocomotion, KITTEN_WALK, placePaw, steeringStrideScale } from './realistic-locomotion.ts';
+import { digHead, digPaw, POTTY_SQUAT, smooth01 } from './realistic-potty.ts';
 import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 import { createNeckBlend, neckShellScale } from './realistic-neck.ts';
@@ -126,9 +127,9 @@ const ACTION_CLIPS: Record<string, string> = {
   'curled-sleep': 'Sleep', 'side-nap': 'SideLie', 'stretch-front': 'Stretch', 'stretch-back': 'Stretch',
   yawn: 'Yawn', 'sleepy-nod': 'Yawn', 'lick-paw': 'Lick', 'groom-chest': 'Lick', knead: 'Knead',
   'paw-wave': 'PawPlay', 'paw-reach': 'PawPlay', 'toy-swat': 'PawPlay', 'claw-screen': 'PawPlay',
-  // the potty set pieces (fx/performances): the sit with the tail raised and quivering (TAIL_ACTION_CARRIAGE) for the
-  // squat; kneading's alternating forepaws for scratching at the floor
-  'potty-squat': 'Sit', 'potty-dig': 'Knead', 'potty-poop': 'Sit', 'potty-pee': 'Idle',
+  // The potty overlay supplies the suspended rump and four deliberate scraping strokes. Idle keeps Knead's
+  // upward tread out of the scratch; Sit still supplies the natural descent and stand-up transitions.
+  'potty-squat': 'Sit', 'potty-dig': 'Idle', 'potty-poop': 'Sit', 'potty-pee': 'Idle',
   pounce: 'Jump', 'hop-catch': 'Jump', 'play-bow': 'LieDown', 'stalk-crouch': 'LieDown',
   'curious-tilt': 'Curious', 'ear-listen': 'Curious', 'sniff-air': 'Curious', 'look-at-you': 'Curious', 'notice-you': 'Curious',
   greeting: 'Happy', affection: 'Happy', 'head-bump': 'Happy', 'purr-settle': 'Happy',
@@ -434,7 +435,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const strides: Record<string, number> = {}; // metres of ground per clip cycle (travelling clips)
   let current: THREE.AnimationAction | null = null;
   let currentName = '';
-  let oneShot: { id: string; clip: string; endsAt: number; rising?: boolean } | null = null;
+  let oneShot: { id: string; clip: string; startedAt: number; endsAt: number; rising?: boolean } | null = null;
   let idleSince = 0;
   let nextIdlePick = 6 + Math.random() * 6;
   const bones: THREE.Bone[] = [];
@@ -1421,7 +1422,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (clip === 'Sleep' && currentName !== 'Sleep' && actions.LieDown) { lyingVia = 'down'; play('LieDown', true); }
     else play(clip, !LOOPING.has(clip));
     // a held pose is held 4 s once reached (getting down to it, and curling up by way of lying down, take their own time)
-    oneShot = { id, clip, endsAt: elapsed + seconds };
+    oneShot = { id, clip, startedAt: elapsed, endsAt: elapsed + seconds };
   }
   // a set piece's staging (ACTION_STAGING, FRONT_FACING_CLIPS): turning to its mark, then (started) playing
   let staged: { id: string; clip: string; yaw: number; started: boolean; seconds?: number } | null = null;
@@ -1681,6 +1682,91 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       ];
       whiskerSprings[side] = stepWhiskerSpring(whiskerSprings[side], target, seconds);
       whiskerBends[side].fromArray(whiskerSprings[side].position);
+    }
+  }
+  // Squat and dig are additive to the shipped clips. Save every edited transform because the mixer skips unchanged
+  // tracks while Sit is held; otherwise an overlay accumulates and eventually sends feet through the floor.
+  const pottyRotations = new Map<THREE.Object3D, THREE.Quaternion>();
+  const pottyPositions = new Map<THREE.Object3D, THREE.Vector3>();
+  let squatWeight = 0;
+  let digWeight = 0, digTime = 0;
+  const pottyAxis = new THREE.Vector3(), pottyQ = new THREE.Quaternion(), pottyParentQ = new THREE.Quaternion();
+  function unoverlayPotty() {
+    for (const [bone, q] of pottyRotations) bone.quaternion.copy(q);
+    for (const [bone, p] of pottyPositions) bone.position.copy(p);
+    pottyRotations.clear(); pottyPositions.clear();
+  }
+  function savePottyLeg(upper: THREE.Object3D, lower: THREE.Object3D, paw: THREE.Object3D) {
+    for (const bone of [upper, lower, paw]) if (!pottyRotations.has(bone)) pottyRotations.set(bone, bone.quaternion.clone());
+  }
+  function turnPottyBone(bone: THREE.Object3D | undefined, axis: THREE.Vector3, angle: number) {
+    if (!bone?.parent || Math.abs(angle) < 1e-5) return;
+    if (!pottyRotations.has(bone)) pottyRotations.set(bone, bone.quaternion.clone());
+    bone.parent.getWorldQuaternion(pottyParentQ).invert();
+    pottyAxis.copy(axis).applyQuaternion(pottyParentQ).normalize();
+    bone.quaternion.premultiply(pottyQ.setFromAxisAngle(pottyAxis, angle));
+    bone.updateWorldMatrix(false, true);
+  }
+  function pottyLeg(part: 'Front' | 'Rear', side: 'L' | 'R') {
+    const suffix = side;
+    const upper = model?.getObjectByName(`${part}Upper${suffix}`);
+    const lower = model?.getObjectByName(`${part}Lower${suffix}`);
+    const paw = model?.getObjectByName(`${part}Paw${suffix}`);
+    return upper && lower && paw ? { upper, lower, paw } : null;
+  }
+  function overlayPotty(dt: number) {
+    if (!model) return;
+    const squat = oneShot && (oneShot.id === 'potty-squat' || oneShot.id === 'potty-poop') && !oneShot.rising;
+    squatWeight += ((squat ? 1 : 0) - squatWeight) * (1 - Math.exp(-Math.max(0, dt) / 0.20));
+    const digging = oneShot?.id === 'potty-dig';
+    if (digging && oneShot) digTime = elapsed - oneShot.startedAt;
+    digWeight += ((digging ? 1 : 0) - digWeight) * (1 - Math.exp(-Math.max(0, dt) / 0.18));
+    if (squatWeight > 1e-3) {
+      const pelvis = model.getObjectByName('Pelvis'), chest = model.getObjectByName('Chest');
+      const rearL = pottyLeg('Rear', 'L'), rearR = pottyLeg('Rear', 'R');
+      if (pelvis && chest && rearL && rearR) {
+        model.updateWorldMatrix(true, true);
+        const chestPoint = chest.getWorldPosition(new THREE.Vector3());
+        const leftPaw = rearL.paw.getWorldPosition(new THREE.Vector3());
+        const rightPaw = rearR.paw.getWorldPosition(new THREE.Vector3());
+        const side = new THREE.Vector3(1, 0, 0).applyQuaternion(catRoot.getWorldQuaternion(new THREE.Quaternion()));
+        const spread = POTTY_SQUAT.hindSpread * catRoot.getWorldScale(new THREE.Vector3()).x * smooth01(squatWeight);
+        leftPaw.addScaledVector(side, -spread); rightPaw.addScaledVector(side, spread);
+        pottyPositions.set(pelvis, pelvis.position.clone());
+        pottyPositions.set(chest, chest.position.clone());
+        const w = smooth01(squatWeight);
+        pelvis.position.y += POTTY_SQUAT.rumpLift * w;
+        pelvis.position.z += POTTY_SQUAT.rumpForward * w;
+        pelvis.updateWorldMatrix(false, true);
+        // The forelegs are almost fully extended in Sit. Keep their shoulder and paw locations fixed as the rump
+        // rises; this also arches the back between loin and chest instead of stretching the forelegs off the floor.
+        chest.position.copy(chest.parent!.worldToLocal(chestPoint.clone()));
+        chest.updateWorldMatrix(false, true);
+        for (const [leg, target] of [[rearL, leftPaw], [rearR, rightPaw]] as const) {
+          savePottyLeg(leg.upper, leg.lower, leg.paw);
+          placePaw(leg.upper, leg.lower, leg.paw, target);
+        }
+      }
+    }
+    if (digWeight < 1e-3) return;
+    const time = digTime;
+    model.updateWorldMatrix(true, true);
+    const pitch = digHead(time);
+    const side = new THREE.Vector3(1, 0, 0).applyQuaternion(catRoot.getWorldQuaternion(new THREE.Quaternion()));
+    turnPottyBone(model.getObjectByName('Neck'), side, pitch.neck * smooth01(digWeight));
+    turnPottyBone(model.getObjectByName('Head'), side, pitch.head * smooth01(digWeight));
+    for (const flank of ['L', 'R'] as const) {
+      const leg = pottyLeg('Front', flank);
+      if (!leg) continue;
+      const offset = digPaw(time, flank);
+      if (offset.y === 0 && offset.z === 0) continue;
+      const target = leg.paw.getWorldPosition(new THREE.Vector3());
+      const local = model.worldToLocal(target);
+      local.y += offset.y * smooth01(digWeight);
+      local.z += offset.z * smooth01(digWeight);
+      model.localToWorld(local);
+      savePottyLeg(leg.upper, leg.lower, leg.paw);
+      placePaw(leg.upper, leg.lower, leg.paw, local);
     }
   }
   // A staged set piece's pose over its clip (ACTION_STAGING): the look back over the shoulder, the hind leg raised. Eased
@@ -2207,6 +2293,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         }
         unoverlayPet();
         unoverlayStage();
+        unoverlayPotty();
         unoverlayHead();
         locomotion?.beforeMixer();
         faceRig?.beforeMixer();
@@ -2279,6 +2366,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
 
       locomotion?.update(deltaSeconds, steeringTurnRate, moving, currentName, current ? current.time / current.getClip().duration : 0, walkStrideScale);
       overlayHead(deltaSeconds, moving);
+      overlayPotty(deltaSeconds);
       overlayStage(deltaSeconds);
       overlayPet(deltaSeconds, moving || pivoting || !!oneShot || !!staged || currentName === 'Walk' || currentName === 'Run');
 
