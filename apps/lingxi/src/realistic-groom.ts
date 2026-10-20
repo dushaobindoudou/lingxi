@@ -54,14 +54,21 @@ const GROOM = {
 // way an offline groom interpolates children between its guides - fine single hairs, a parent's copy moved a little
 // across the skin and ending at its own length. (A strand widened into a lock of three hairs had been tried: close up it
 // read as yarn, parallel threads in a ribbon.) Drawn only once the cat is big on screen (setDensity above 1), this many
-// more for each step of density past it. Two, coming in one per step, left a zoomed-in head a thin veil of hairs over its
-// smooth undercoat (the user: "头上的毛有点透明的感觉…放大非常难看").
+// more for each step of density past it - on the face's coat only (CHILD_PASSES): a close-up (kiss-rush, angry-claw: the
+// cat taller than the window) is the face, and passes over the whole coat cost it its frame rate - 17 fps with none, 6
+// with four everywhere, 12 with these, which look as dense.
 export const GROOM_CHILDREN = 4;
-const CHILDREN_PER_DENSITY = 3;
+const CHILDREN_PER_DENSITY = 1;
+const CHILD_PASSES = /_LX_(Head|NoseVelvet|EarOuter)/;
 // ...and close up each strand is drawn as though this many more overlapped it (up to `extra`, from density `from` to
-// `full`): at its own coverage a zoomed-in coat let the painted undercoat through. Small, the stack already makes up for
-// the strands left out (setDensity).
-const CLOSE_STACK = { extra: 0.5, from: 1, full: 2 };
+// `full`): at its own coverage a zoomed-in coat let the painted undercoat through - a thin veil of hairs over a smooth
+// head (the user: "头上的毛有点透明的感觉…放大非常难看"). Small, the stack already makes up for the strands left out
+// (setDensity).
+const CLOSE_STACK = { extra: 1, from: 1, full: 2 };
+// The first time a pass of child hairs was drawn - the cat coming close, mid-performance - the frame took seconds (2.7-21
+// s in WebKit; the same zoom again later, a few milliseconds): kiss-rush froze as the cat reached the viewer. So every
+// pass draws one strand for the first few frames after loading, and the cost is paid there (load time unchanged).
+const WARM_FRAMES = 3;
 // The coat's inertia (simulate): Hz, damping ratio, and a jump (model units) that is a teleport, not a motion
 const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
 // The coat a touch shorter than the Blender groom (the tail its own): longer (1.15-1.25, tried to make
@@ -608,7 +615,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       child.frustumCulled = false;
       child.receiveShadow = true;
       child.castShadow = false;
-      child.visible = false;
+      // drawn a strand each for the first frames (see WARM_FRAMES), then hidden until setDensity asks for them
+      child.geometry.setDrawRange(0, parent.userData.groomIndicesPerStrand as number);
       child.userData = { ...parent.userData };
       return child;
     });
@@ -629,6 +637,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   const target = new Float32Array(16);
   let lagPrimed = false;
   function simulate(seconds: number) {
+    if (warming > 0 && --warming === 0) applyDensity();
     if (eyes) {
       const shut = [0, 0];
       for (const s of shutters) {
@@ -669,6 +678,19 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     lagTexture.needsUpdate = true;
   }
   let density = 1;
+  function applyDensity() {
+    const drawn = (mesh: THREE.Mesh, share: number) => {
+      const total = mesh.userData.groomStrands as number, perStrand = mesh.userData.groomIndicesPerStrand as number;
+      // still warming up: a strand of each, so its first draw is behind us (WARM_FRAMES)
+      mesh.visible = share > 0 || warming > 0;
+      mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * Math.min(1, Math.max(0, share)))) * perStrand);
+    };
+    for (const mesh of meshes) drawn(mesh, density);
+    children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, CHILD_PASSES.test(mesh.name) ? (density - 1) * CHILDREN_PER_DENSITY - k : 0); });
+    uniforms.uGroomStack.value = density < 1 ? 1 / density
+      : 1 + CLOSE_STACK.extra * THREE.MathUtils.smoothstep(density, CLOSE_STACK.from, CLOSE_STACK.full);
+  }
+  let warming = WARM_FRAMES;
   return {
     /** Advance the coat's inertia; after the skeleton is posed for the frame (world matrices up to date). */
     simulate,
@@ -697,18 +719,10 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
      * Above 1, all of them and that many more of their child hairs (1.5: every strand, and half of them a first child).
      */
     setDensity(share: number) {
-      const next = THREE.MathUtils.clamp(share, 0.01, 1 + GROOM_CHILDREN);
+      const next = THREE.MathUtils.clamp(share, 0.01, 1 + GROOM_CHILDREN / CHILDREN_PER_DENSITY);
       if (Math.abs(next - density) < 0.01) return;
       density = next;
-      const drawn = (mesh: THREE.Mesh, share: number) => {
-        const total = mesh.userData.groomStrands as number;
-        mesh.visible = share > 0;
-        if (share > 0) mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * Math.min(1, share))) * (mesh.userData.groomIndicesPerStrand as number));
-      };
-      for (const mesh of meshes) drawn(mesh, density);
-      children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, (density - 1) * CHILDREN_PER_DENSITY - k); });
-      uniforms.uGroomStack.value = density < 1 ? 1 / density
-        : 1 + CLOSE_STACK.extra * THREE.MathUtils.smoothstep(density, CLOSE_STACK.from, CLOSE_STACK.full);
+      applyDensity();
     },
     get density() { return density; },
   };
