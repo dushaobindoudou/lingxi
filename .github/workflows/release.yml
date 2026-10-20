@@ -65,8 +65,11 @@ jobs:
           npm ci --ignore-scripts
           (cd apps/lingxi && npm ci --ignore-scripts)
 
-      # The fast gates run here; the Rust tests run in ci.yml on every push to main, and the
-      # release build below compiles every line of Rust anyway.
+      - name: Prepare verified production cat assets
+        if: steps.gate.outputs.skip != 'true'
+        run: node scripts/prepare-realcat-assets.mjs
+
+      # Validate the tagged commit itself; a green main build does not prove this tag passed.
       - name: Contracts and behaviour tests
         if: steps.gate.outputs.skip != 'true'
         run: npm run check && npm test
@@ -76,7 +79,7 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Cache cargo
         if: steps.gate.outputs.skip != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -84,6 +87,11 @@ jobs:
             apps/lingxi/src-tauri/target
           key: release-cargo-${{ runner.os }}-${{ hashFiles('apps/lingxi/src-tauri/Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: release-cargo-${{ runner.os }}-
+
+      - name: Rust tests for the release commit
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: apps/lingxi/src-tauri
+        run: cargo test --locked
 
       - name: Import the Developer ID certificate
         if: steps.gate.outputs.skip != 'true'
@@ -126,7 +134,7 @@ jobs:
 
       - name: Keep the build as a workflow artifact
         if: steps.gate.outputs.skip != 'true' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: lingxi-${{ env.TAG }}
           path: release/

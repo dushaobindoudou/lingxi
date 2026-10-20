@@ -1,13 +1,11 @@
 // Management window ("主界面"): the tray's primary entry point. Talks to the same
 // Rust-side state (TrayState in src-tauri/src/lib.rs) as the tray menu, via commands +
 // events, so changing something here updates the tray's checkmarks and vice versa.
-// docs/18-main-interface-design.md (v2) is the IA this file implements: 5 sidebar pages + a
-// global top bar. Every control is wired to something real EXCEPT where the markup itself
-// says otherwise (badges like "未实现"/"即将生效") - that ◐/⬜ honesty is deliberate, not
-// left over from a TODO.
+// Product controls stay available in release builds; diagnostic tools are development-only.
 import './management.css';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { getVersion } from '@tauri-apps/api/app';
+import { listen, emit } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { TaskStore } from '../../../packages/contracts/src/index.mjs';
 // The renderer owns the viewing-angle catalogue and skins.json owns the theme catalogue;
@@ -98,6 +96,8 @@ interface Status {
   avoidRadius: number;
   skin: string;
   camera: string;
+  renderStyle?: string;
+  autoEffects?: { enabled: boolean };
 }
 
 /** Mirrors src-tauri's `TaskEvent` struct / packages/contracts' `TaskEvent` interface. */
@@ -134,14 +134,17 @@ interface PerceptionSnapshot {
 
 const TOYS = [
   { kind: 'yarn', name: '毛线球', description: '会滚会反弹，猫拍一爪又飞出去，能自己玩下去' },
-  { kind: 'feather', name: '逗猫棒', description: '跟着鼠标走，但慢半拍——需要你来逗' },
+  { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，猫靠近会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '钉死在光标上，拍到也抓不住' },
+  { kind: 'pet', name: '撸猫', description: '按住左键轻抚头部和身体，翻肚后可摸腹部' },
 ] as const;
 
 const PERFORMANCES = [
   { id: 'angry-claw', name: '愤怒抓屏', description: '炸毛冲到屏幕中间，对着你连抓两爪，留下爪痕并震屏' },
   { id: 'kiss-rush', name: '飞奔亲亲', description: '从另一头跑过来，闭眼亲一下，爱心飘满屏' },
   { id: 'zoomies', name: '半夜暴走', description: '贴着四角疯跑一圈，跑完自己坐下喘气' },
+  { id: 'pee-at-you', name: '对着你尿尿', description: '认真刨沙、蹲下一会儿，留下一小滩亮晶晶的水渍' },
+  { id: 'poop-at-you', name: '对着你拉屎', description: '留下一小坨卡通便便，刨沙盖好后得意走开' },
 ] as const;
 
 const PET_STATE_LABELS: Record<string, string> = {
@@ -383,17 +386,47 @@ function renderCameraOptions(activeId: string) {
   );
 }
 
+/** 风格: the voxel cat or the realistic (Blender-built) cat - see src/renderer-switcher.ts. Same card shape as the
+ *  camera picker. The companion swaps once the realistic model has loaded, so the card reflects the request. */
+const RENDER_STYLES = [
+  { id: 'voxel', name: '方块猫', description: '原来的像素风格，主题和全部动作都在' },
+  { id: 'realistic', name: '写实猫', description: '长毛 3D 造型，写实毛发与柔和光照' },
+];
+function renderStyleOptions(activeId: string) {
+  const container = document.getElementById('style-options');
+  if (!container) return;
+  container.replaceChildren(
+    ...RENDER_STYLES.map((style) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.style = style.id;
+      button.classList.toggle('active', style.id === activeId);
+      const label = document.createElement('b');
+      label.textContent = style.name;
+      const note = document.createElement('span');
+      note.textContent = style.description;
+      button.append(label, note);
+      button.addEventListener('click', () => void invoke('set_render_style', { style: style.id }));
+      return button;
+    }),
+  );
+}
+
 /** 玩法 page. Same shape as the camera picker - a labelled card per option. The toy that is out
  *  shows as active, whether it was put out here or from the tray menu (both emit set-toy). */
 function renderPlayPage() {
   const toys = document.getElementById('toy-options');
   const markToy = (kind: string | null) => {
+    const controls = document.getElementById('petting-controls');
+    if (controls) controls.hidden = kind !== 'pet' && kind !== 'petting';
     toys?.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
       button.classList.toggle('active', button.dataset.kind === kind);
     });
   };
   void listen<{ kind: string }>('set-toy', (event) => markToy(event.payload.kind));
   void listen('clear-toy', () => markToy(null));
+  void listen<{ kind: string | null }>('play-mode', event => markToy(event.payload.kind))
+    .then(() => emit('request-play-mode'));
   if (toys) {
     toys.replaceChildren(
       ...TOYS.map((toy) => {
@@ -409,25 +442,32 @@ function renderPlayPage() {
       }),
     );
   }
-  const shows = document.getElementById('performance-options');
-  if (shows) {
-    shows.replaceChildren(
-      ...PERFORMANCES.map((entry) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.append(
-          Object.assign(document.createElement('b'), { textContent: entry.name }),
-          Object.assign(document.createElement('span'), { textContent: entry.description }),
-        );
-        button.addEventListener('click', () => {
-          void invoke('perform', { id: entry.id });
-          const note = document.getElementById('performance-result');
-          if (note) note.textContent = `正在表演：${entry.name}（几秒钟后自己结束，也可以点「停止当前特效」）`;
-        });
-        return button;
-      }),
-    );
+  const performanceSection = document.getElementById('performance-section');
+  // Manual performances remain on Play; the tray keeps only common entries.
+  if (performanceSection) {
+    performanceSection.hidden = false;
+    const shows = document.getElementById('performance-options');
+    if (shows) {
+      shows.replaceChildren(
+        ...PERFORMANCES.map((entry) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.append(
+            Object.assign(document.createElement('b'), { textContent: entry.name }),
+            Object.assign(document.createElement('span'), { textContent: entry.description }),
+          );
+          button.addEventListener('click', () => {
+            void invoke('perform', { id: entry.id });
+            const note = document.getElementById('performance-result');
+            if (note) note.textContent = `正在表演：${entry.name}（几秒钟后自己结束，也可以点「停止当前特效」）`;
+          });
+          return button;
+        }),
+      );
+    }
+    document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
   }
+  document.getElementById('petting-belly')?.addEventListener('click', () => void invoke('petting_belly'));
   document.getElementById('clear-toy')?.addEventListener('click', () => void invoke('clear_toy'));
   const sayInput = document.getElementById('say-input') as HTMLInputElement | null;
   const sayButton = document.getElementById('say-button') as HTMLButtonElement | null;
@@ -451,7 +491,6 @@ function renderPlayPage() {
   sayInput?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') say();
   });
-  document.getElementById('stop-performance')?.addEventListener('click', () => void invoke('stop_performance'));
 }
 
 function renderPerception(snapshot: PerceptionSnapshot) {
@@ -1347,6 +1386,8 @@ async function main() {
   setupHomeHero();
   setupAccordion();
 
+  const version = document.getElementById('app-version');
+  if (version) version.textContent = `灵犀 v${await getVersion()}`;
   const status = await invoke<Status>('get_status');
   setActiveSizeButton(status.scale);
   setVisibilityButtonLabel(status.visible);
@@ -1356,8 +1397,7 @@ async function main() {
   renderPlayPage();
   void refreshSkinCatalogue().then(() => renderSkinCards(status.skin));
   renderCameraOptions(status.camera);
-  const accEl = document.getElementById('status-accessibility');
-  if (accEl) accEl.textContent = status.accessibilityTrusted ? '已授权' : '未授权（不影响使用）';
+  renderStyleOptions(status.renderStyle ?? 'voxel');
 
   for (const selector of SIZE_BUTTON_GROUPS) {
     document.querySelectorAll<HTMLButtonElement>(selector).forEach((btn) => {
@@ -1368,13 +1408,66 @@ async function main() {
     });
   }
 
+  const autoEffectsToggle = document.getElementById('auto-effects-enabled') as HTMLInputElement;
+  const autoEffectsStatus = document.getElementById('auto-effects-status') as HTMLElement;
+  const syncAutoEffects = (enabled: boolean) => {
+    autoEffectsToggle.checked = enabled;
+    autoEffectsStatus.textContent = enabled
+      ? '已开启：由 Agent 根据任务内容选择合适时机，偶尔给你小惊喜。'
+      : '已关闭：不会自动播放特效；手动特效仍可使用。';
+  };
+  syncAutoEffects(status.autoEffects?.enabled === true);
+  autoEffectsToggle.addEventListener('change', async () => {
+    autoEffectsToggle.disabled = true;
+    try {
+      await invoke('set_auto_effects', { enabled: autoEffectsToggle.checked });
+      syncAutoEffects(autoEffectsToggle.checked);
+    } catch (error) {
+      const current = await invoke<Status>('get_status');
+      syncAutoEffects(current.autoEffects?.enabled === true);
+      autoEffectsStatus.textContent = `设置未保存：${String(error)}`;
+    } finally { autoEffectsToggle.disabled = false; }
+  });
+  void listen<boolean>('auto-effects-enabled', event => syncAutoEffects(event.payload));
+
+  const inputAvoidanceToggle = document.getElementById('input-avoidance-enabled') as HTMLInputElement;
+  const inputAvoidancePermission = document.getElementById('input-avoidance-permission') as HTMLButtonElement;
+  const inputAvoidanceStatus = document.getElementById('input-avoidance-status') as HTMLElement;
+  async function refreshInputAvoidance() {
+    try {
+      const state = await invoke<{ enabled: boolean; trusted: boolean }>('input_avoidance_status');
+      inputAvoidanceToggle.checked = state.enabled;
+      inputAvoidancePermission.hidden = !state.enabled || state.trusted;
+      inputAvoidanceStatus.textContent = !state.enabled ? '已关闭输入区域避让，鼠标避让仍然生效。'
+        : state.trusted ? '已开启，猫咪会自动让开正在输入的区域。'
+        : '需要给「灵犀」辅助功能权限才能检测输入位置；当前仅有鼠标避让。';
+    } catch { inputAvoidanceStatus.textContent = '暂时无法读取输入避让状态，请稍后重试。'; }
+  }
+  inputAvoidanceToggle.addEventListener('change', async () => {
+    inputAvoidanceToggle.disabled = true;
+    try { await invoke('set_input_avoidance', { enabled: inputAvoidanceToggle.checked }); }
+    finally { inputAvoidanceToggle.disabled = false; await refreshInputAvoidance(); }
+  });
+  inputAvoidancePermission.addEventListener('click', async () => {
+    await invoke('request_input_avoidance_permission');
+    await openUrl('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    await refreshInputAvoidance();
+  });
+  void refreshInputAvoidance();
+  window.setInterval(() => {
+    if (!document.hidden && document.getElementById('page-settings')?.classList.contains('active')) void refreshInputAvoidance();
+  }, 2000);
+
   document.getElementById('toggle-visibility')?.addEventListener('click', async () => {
     const current = await invoke<Status>('get_status');
     void invoke('set_companion_visible', { visible: !current.visible });
   });
 
 
-  document.getElementById('open-debug')?.addEventListener('click', () => void invoke('open_debug_window'));
+  if (import.meta.env.DEV) {
+    document.querySelectorAll<HTMLElement>('[data-dev-only]').forEach((element) => { element.hidden = false; });
+    document.getElementById('open-debug')?.addEventListener('click', () => void invoke('open_debug_window'));
+  }
 
   // --- 自定义资源 ---
   const assetStatus = document.getElementById('asset-status');
@@ -1481,6 +1574,7 @@ async function main() {
     void refreshSkinCatalogue().then(() => renderSkinCards(activeSkinId));
   });
   void listen<string>('set-camera', (event) => renderCameraOptions(event.payload));
+  void listen<string>('set-render-style', (event) => renderStyleOptions(event.payload));
   void listen<{ preset: BehaviorPreset; avoidRadius: number }>('set-behavior-preset', (event) =>
     setActiveBehaviorPreset(event.payload.preset),
   );

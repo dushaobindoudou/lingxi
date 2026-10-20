@@ -17,6 +17,8 @@ git tag v0.2.0 && git push origin main v0.2.0     # .github/workflows/release.ym
 
 ---
 
+正式版准备结果见 [v1.0.0 发布准备记录](RELEASE_READINESS.md)，产品限制见 [已知问题](KNOWN_ISSUES.md)。
+
 ## 1. 版本号
 
 版本号写在七个地方：`tauri.conf.json`（决定「关于」里显示的版本）、两个 `package.json`、
@@ -162,13 +164,11 @@ Apple 签发的证书就作废了**——备份它，或者在导入之后备份
 | `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | `apple-signing.sh github` 自动设置 |
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | 同上，运行时在环境变量里提供这三个即可 |
 
-**费用提醒**：仓库是私有的，GitHub 给私有仓库的 macOS runner 按 **10 倍**计分钟。一次通用二进制
-发布构建冷启动约 20–30 分钟，也就是 200–300 分钟额度；免费额度每月 2000 分钟。本地发布
-（`release.sh` + `publish-release.sh`）不花额度——这也是本地发布的 tag 会让 CI 跳过的原因之一。
+仓库当前公开。GitHub runner 的费用与可用额度以账户和仓库设置为准；本地发布不会运行云端构建，本地 tag 会让 Release workflow 跳过重复构建。
 
 ## 5½. 接入渠道：插件市场、npm、skill
 
-应用发到 GitHub Releases 之后，接入渠道不用另外"上架"——除了 npm，它们都直接读这个公开仓库的默认分支：
+以下表格描述本仓库的分发渠道。仓库插件市场读取公开仓库默认分支；官方插件目录需要另外提交审核，不能以仓库可安装代替官方上架。npm 需要单独发布：
 
 | 渠道 | 读的是 | 用户命令 | 发布动作 |
 |---|---|---|---|
@@ -197,6 +197,8 @@ npm login --registry https://registry.npmjs.org/   # 本机 registry 若是镜�
 npm publish                                       # publishConfig 已指向官方源、access public
 ```
 
+仓库根运行 `node scripts/prepare-realcat-assets.mjs && npm run build --prefix apps/lingxi && npm run check:release`：下载并校验固定版本的写实猫资源，确认两种形态均可打包，排除开发页面和其他实验模型，并从真实 tarball 解包执行 MCP 握手与工具列表。
+
 升 npm 版本时同步 `src/version.mjs`，再将修改的 MCP 模块复制到 Claude 和 Codex 插件的
 `mcp/` 目录。握手版本测试和插件副本测试必须通过。建议先 `npm pack`，在临时目录解包检查
 握手与工具列表，最后发布这个已验证的 `.tgz`；发布后核对 npm 的版本、latest 和 integrity。
@@ -218,6 +220,10 @@ npm publish                                       # publishConfig 已指向官�
 | `cargo: command not found` | rustup 的 `~/.cargo/bin` 不在 PATH；脚本会自动补上，手动跑时 `PATH="$HOME/.cargo/bin:$PATH"` |
 
 ## 7. 发版检查清单
+
+v1.0.0 正式发布前，先完成 [发布准备记录](RELEASE_READINESS.md) 中的剩余事项。
+本地 stdio MCP 的 OpenAI 官方目录提交还受[桌面插件资格要求](https://developers.openai.com/plugins/deploy/desktop-only)限制；仓库市场分发不代表官方目录审核通过。
+
 
 - [ ] `node scripts/version.mjs <新版本>`，提交
 - [ ] `./scripts/release.sh` 全绿，结尾的签名档位是你预期的那一档

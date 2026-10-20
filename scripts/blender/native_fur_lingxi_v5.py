@@ -1,7 +1,7 @@
 import bpy,numpy as np,json,os
 from pathlib import Path
 from mathutils import Vector
-ROOT=Path(__file__).resolve().parents[2];OUT=Path(os.environ.get('LINGXI_OUT',ROOT/'assets/characters/lingxi/v5'));s=bpy.context.scene
+ROOT=Path(__file__).resolve().parents[2];OUT=Path(os.environ.get('LINGXI_OUT') or Path(bpy.data.filepath).parent);s=bpy.context.scene   # 2026-10-13: default = the input .blend's own folder (the old default, the shared v5/ folder, let two test runs without LINGXI_OUT overwrite its build and each other)
 # Idempotent: a previous conversion must never survive into this one, or the render
 # doubles the hair count and every later run adds another ".00x" layer.
 for old in [o for o in s.objects if o.type=='CURVES' and o.name.startswith('LX_RenderFur_')]:
@@ -29,10 +29,12 @@ tl=mat.node_tree.nodes.new('ShaderNodeBsdfTranslucent');mx=mat.node_tree.nodes.n
 mat.node_tree.links.new(sock(a,'Color','outputs'),sock(tl,'Color'))
 mat.node_tree.links.new(bsdf.outputs[0],mx.inputs[1]);mat.node_tree.links.new(tl.outputs[0],mx.inputs[2])
 mat.node_tree.links.new(mx.outputs[0],sock(out_,'Surface'))
-sock(bsdf,'Roughness').default_value=.72
+import os
+def _k(n,d):return float(os.environ.get(n) or d)
+sock(bsdf,'Roughness').default_value=_k('V6_FUR_ROUGH',.72)
 # Sheen .25 laid a white velvet haze over the whole coat at grazing angles - the milky,
 # low-contrast look; a trace keeps the soft edge glow.
-for nm,val in [('Sheen Weight',.06),('Specular IOR Level',.2)]:
+for nm,val in [('Sheen Weight',_k('V6_FUR_SHEEN',.06)),('Specular IOR Level',_k('V6_FUR_SPEC',.2))]:
  try:sock(bsdf,nm).default_value=val
  except StopIteration:pass
 for src in [o for o in s.objects if o.name.startswith('LX_Fur_')]:
@@ -65,10 +67,13 @@ cam.rotation_euler=(target-cam.location).to_track_quat('-Z','Y').to_euler()
 # no longer clips, so only a nudge is needed. Measured over a plate-differenced mask
 # against the reference turnaround (median 193 / contrast 74 / warmth 23):
 # -0.05 lands median ~190, contrast ~72, warmth ~28 - the closest of the sweeps tried.
+# (2026-09-30: +0.30 doubled the face's measured white toward the photo reference, but the user
+# preferred the -0.05 look side by side - kept here for reference, not in use.)
 s.view_settings.exposure=-0.05
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'lingxi-short-fur-rig-v5.blend'),compress=True)
-clips=json.loads((OUT/'animations.json').read_text());lie=next(c for c in clips if c['name']=='LieDown')
-s.frame_set(int(lie['start']+.72*(lie['end']-lie['start'])))
-s.render.filepath=str(OUT/'portrait.png');bpy.ops.render.render(write_still=True)
+if not os.environ.get('V6_SKIP_PORTRAIT'):
+ clips=json.loads((OUT/'animations.json').read_text());lie=next(c for c in clips if c['name']=='LieDown')
+ s.frame_set(int(lie['start']+.72*(lie['end']-lie['start'])))
+ s.render.filepath=str(OUT/'portrait.png');bpy.ops.render.render(write_still=True)
 result={'native_curves':sum(o.type=='CURVES' for o in s.objects)}
 print('NATIVE_FUR',json.dumps(result))

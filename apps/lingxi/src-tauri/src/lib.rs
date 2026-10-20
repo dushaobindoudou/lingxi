@@ -30,34 +30,20 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
-/// Read-only Accessibility trust check. NEVER shows the system permission dialog.
-///
-/// This is the ONLY form of the check the app has, and that is deliberate: **nothing here
-/// actually uses the Accessibility permission**. Cursor tracking reads `NSEvent.mouseLocation`,
-/// a plain AppKit property that needs no entitlement (see poll_global_cursor), and dragging
-/// uses ordinary window events. The permission was only ever wanted for a global click and
-/// keystroke listener that has never been built.
-///
-/// Startup used to call a prompting variant, so the app raised a system permission dialog for
-/// a capability it does not use. Worse, the grant does not survive a rebuild: macOS keys TCC
-/// grants on the code signature, and every locally-built bundle is signed afresh, so the user
-/// grants it, rebuilds, and is asked again - "我已经开启授权了依然会弹". Reported twice, and
-/// each previous fix only narrowed WHERE it was asked from rather than asking whether it
-/// should be asked at all.
-///
-/// If a feature that genuinely needs it ever lands, prompt from THAT feature, when the user
-/// turns it on, with `application_is_trusted_with_prompt()` - not at startup for everyone.
-///
-/// Cached for a minute: get_status reports it, and the companion reconciles against get_status
-/// every couple of seconds - each uncached check is a round trip to tccd, for a value that only
-/// changes when the user flips a switch in System Settings.
+mod tray_badge;
+mod focused_input;
+mod auto_effects;
+
+/// Read-only trust check, never prompting. Mouse tracking needs no permission;
+/// the optional focused-input avoidance does. Its dedicated UI button is the only
+/// prompting path. Short cache lets a newly granted permission take effect promptly.
 #[cfg(target_os = "macos")]
 fn accessibility_trusted_readonly() -> bool {
     static CHECKED_AT: AtomicU64 = AtomicU64::new(0);
     static TRUSTED: AtomicBool = AtomicBool::new(false);
     let now = now_millis();
     let checked_at = CHECKED_AT.load(Ordering::Relaxed);
-    if checked_at != 0 && now.saturating_sub(checked_at) < 60_000 {
+    if checked_at != 0 && now.saturating_sub(checked_at) < 2_000 {
         return TRUSTED.load(Ordering::Relaxed);
     }
     let trusted = macos_accessibility_client::accessibility::application_is_trusted();
@@ -69,6 +55,71 @@ fn accessibility_trusted_readonly() -> bool {
 #[cfg(not(target_os = "macos"))]
 fn accessibility_trusted_readonly() -> bool {
     true
+}
+
+#[derive(Default)]
+struct FocusedInputState {
+    latest: Mutex<Option<focused_input::FocusedInput>>,
+    observed_at: AtomicU64,
+}
+
+#[tauri::command]
+fn focused_input_region(state: State<FocusedInputState>) -> Option<focused_input::FocusedInput> {
+    if now_millis().saturating_sub(state.observed_at.load(Ordering::Relaxed)) > 2_000 { return None; }
+    state.latest.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn input_avoidance_status(state: State<TrayState>) -> serde_json::Value {
+    serde_json::json!({
+        "enabled": state.input_avoidance.load(Ordering::Relaxed),
+        "trusted": accessibility_trusted_readonly(),
+    })
+}
+
+#[tauri::command]
+fn set_input_avoidance(app: tauri::AppHandle, state: State<TrayState>, enabled: bool) {
+    state.input_avoidance.store(enabled, Ordering::Relaxed);
+    let _ = app.emit("input-avoidance-enabled", enabled);
+    state.persist();
+    if !enabled {
+        *app.state::<FocusedInputState>().latest.lock().unwrap() = None;
+        let _ = app.emit_to("companion", "focused-input", Option::<focused_input::FocusedInput>::None);
+    }
+}
+
+/// Called only by the feature's permission button, never by startup or the poller.
+#[tauri::command]
+fn request_input_avoidance_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    { macos_accessibility_client::accessibility::application_is_trusted_with_prompt() }
+    #[cfg(not(target_os = "macos"))]
+    { false }
+}
+
+fn spawn_focused_input_poller(app: tauri::AppHandle, scale_factor: f64) {
+    thread::spawn(move || {
+        let power = app.state::<PowerState>();
+        let state = app.state::<FocusedInputState>();
+        let mut had_input = false;
+        let mut sampler = focused_input::Sampler::default();
+        loop {
+            power.park_while(|p| p.away != 0 || p.tier == TIER_DORMANT);
+            let enabled = app.state::<TrayState>().input_avoidance.load(Ordering::Relaxed);
+            let trusted = enabled && accessibility_trusted_readonly();
+            let input = if trusted { sampler.sample(scale_factor) } else { None };
+            // A setting change while AX was querying must not re-enable a stale rectangle.
+            let input = if app.state::<TrayState>().input_avoidance.load(Ordering::Relaxed) { input } else { None };
+            let present = input.is_some();
+            *state.latest.lock().unwrap() = input.clone();
+            state.observed_at.store(now_millis(), Ordering::Relaxed);
+            if present || had_input {
+                let _ = app.emit_to("companion", "focused-input", input);
+            }
+            had_input = present;
+            thread::sleep(Duration::from_millis(if trusted { 250 } else { 1000 }));
+        }
+    });
 }
 
 #[derive(Clone, Serialize)]
@@ -124,20 +175,35 @@ const DEFAULT_SKIN: &str = "honey-mittens";
 const KNOWN_CAMERAS: [&str; 6] = ["look-up", "eye-level", "game", "shoulder", "overhead", "auto"];
 const DEFAULT_CAMERA: &str = "game";
 
-/// Toys ("玩具"). Ids must match packages/life-engine's TOY_KINDS - that module owns the
+/// "外观 / 风格": which character renderer draws the cat - the voxel cat (renderer.ts) or the realistic, Blender-built
+/// one (realistic-renderer.ts). Separate from the theme on purpose: the voxel themes do not apply to the realistic cat,
+/// and switching back must find the user's theme where they left it.
+const KNOWN_RENDER_STYLES: [&str; 2] = ["voxel", "realistic"];
+const DEFAULT_RENDER_STYLE: &str = "voxel";
+
+/// Toys and affection ("玩具"). Physical ids match life-engine's TOY_KINDS; petting
+/// is handled by the host interaction director. The engine owns the
 /// simulation (rolling, bouncing, batting); Rust only routes the request. Unlike the theme and
 /// camera settings these are deliberately NOT persisted: a toy left on the desktop across a
 /// restart would be clutter the user never asked for twice.
-const KNOWN_TOYS: [&str; 3] = ["yarn", "feather", "laser"];
+const KNOWN_TOYS: [&str; 4] = ["yarn", "feather", "laser", "pet"];
+fn canonical_toy(kind: &str) -> &str {
+    if kind == "petting" { "pet" } else { kind }
+}
+
 
 /// Scripted set-pieces ("特效"). Ids must match src/fx/performances.ts's PERFORMANCES, which
 /// owns the actual choreography.
-const KNOWN_PERFORMANCES: [&str; 3] = ["angry-claw", "kiss-rush", "zoomies"];
+const KNOWN_PERFORMANCES: [&str; 5] = ["angry-claw", "kiss-rush", "zoomies", "pee-at-you", "poop-at-you"];
 
 /// The tray's 玩具 and 特效 submenus: every known id with the name 主界面 gives it. A test keeps
 /// these in step with KNOWN_TOYS / KNOWN_PERFORMANCES, so a new toy cannot be missing here.
-const TRAY_TOYS: [(&str, &str); 3] = [("yarn", "毛线球"), ("feather", "逗猫棒"), ("laser", "激光笔")];
-const TRAY_EFFECTS: [(&str, &str); 3] = [("angry-claw", "愤怒抓屏"), ("kiss-rush", "飞奔亲亲"), ("zoomies", "半夜暴走")];
+const TRAY_TOYS: [(&str, &str); 4] = [
+    ("yarn", "毛线球"),
+    ("feather", "逗猫棒"),
+    ("laser", "激光笔"),
+    ("pet", "撸猫"),
+];
 
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
 /// stand-in for avoidRadius (and, later, wander speed/rate) until per-trait tuning exists.
@@ -155,13 +221,8 @@ fn avoid_radius_for_preset(preset: &str) -> f64 {
     }
 }
 
-/// docs/18 §5.4's five personality sliders - same field names as
-/// `packages/contracts/src/index.d.ts`'s `PersonalityManifest.traits`, so a future JS-side
-/// consumer (the behavior engine, an AI driver reading GET /perception) can deserialize this
-/// straight into that shape without a translation layer. Every trait is 0..1; unlike
-/// avoidRadius above, nothing in the behavior engine reads these yet (see the "即将生效"
-/// hint doc/18 requires next to any trait not yet consumed) - they persist and broadcast
-/// today, honestly inert otherwise.
+/// The five 0..1 personality traits persisted here are applied by the frontend's
+/// life engine on startup and on set-personality-traits events.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct PersonalityTraits {
     independence: f64,
@@ -221,6 +282,12 @@ struct PersistedSettings {
     skin: String,
     #[serde(default = "default_camera")]
     camera: String,
+    #[serde(default = "default_render_style")]
+    render_style: String,
+    #[serde(default = "default_input_avoidance")]
+    input_avoidance: bool,
+    #[serde(default)]
+    auto_effects: bool,
 }
 
 fn default_cat_name() -> String {
@@ -243,6 +310,12 @@ fn default_camera() -> String {
     DEFAULT_CAMERA.to_string()
 }
 
+fn default_input_avoidance() -> bool { true }
+
+fn default_render_style() -> String {
+    DEFAULT_RENDER_STYLE.to_string()
+}
+
 impl PersistedSettings {
     fn defaults() -> Self {
         Self {
@@ -257,6 +330,9 @@ impl PersistedSettings {
             behavior_preset: default_behavior_preset(),
             skin: default_skin(),
             camera: default_camera(),
+            render_style: default_render_style(),
+            input_avoidance: true,
+            auto_effects: false,
         }
     }
 }
@@ -290,6 +366,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
     // ignored by setSkin, which leaves the built-in default showing anyway.
     let skin = if settings.skin.trim().is_empty() { default_skin() } else { settings.skin };
     let camera = if KNOWN_CAMERAS.contains(&settings.camera.as_str()) { settings.camera } else { default_camera() };
+    let render_style = if KNOWN_RENDER_STYLES.contains(&settings.render_style.as_str()) { settings.render_style } else { default_render_style() };
     PersistedSettings {
         version: 1,
         scale: if known_scale { settings.scale } else { SCALE_LARGE },
@@ -302,6 +379,9 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
         behavior_preset,
         skin,
         camera,
+        render_style,
+        input_avoidance: settings.input_avoidance,
+        auto_effects: settings.auto_effects,
     }
 }
 
@@ -337,6 +417,9 @@ struct TrayState {
     behavior_preset: Mutex<String>,
     skin: Mutex<String>,
     camera: Mutex<String>,
+    render_style: Mutex<String>,
+    input_avoidance: AtomicBool,
+    auto_effects: auto_effects::AutoEffects,
     /// Where PersistedSettings is written; None only if the OS config dir is
     /// unavailable, in which case settings simply don't persist (app still works).
     settings_path: Option<PathBuf>,
@@ -373,10 +456,16 @@ impl TrayState {
     fn refresh_status(&self, app: &tauri::AppHandle) {
         let name = self.cat_name.lock().unwrap().clone();
         let text = tray_status_text(&name, self.visible.load(Ordering::SeqCst), &working_agent_names(app));
-        let mut last = self.status_text.lock().unwrap();
-        if *last != text {
+        // The lock is released BEFORE the menu is touched. A menu setter called off the main thread waits for the main
+        // thread to run it, and report_perception (a sync command, so ON the main thread) comes through here too: an HTTP
+        // thread holding this lock across set_text and the main thread waiting for the lock froze the whole app - no
+        // bridge, no events, no bubbles - until it was killed.
+        let changed = {
+            let mut last = self.status_text.lock().unwrap();
+            if *last == text { false } else { *last = text.clone(); true }
+        };
+        if changed {
             let _ = self.status_summary.set_text(&text);
-            *last = text;
         }
     }
 
@@ -470,6 +559,15 @@ impl TrayState {
         self.persist();
     }
 
+    /// "外观 / 风格": voxel or realistic. Live - the companion prepares the other renderer while the current one keeps
+    /// drawing and swaps once it is ready (renderer-switcher.ts).
+    fn apply_render_style(&self, app: &tauri::AppHandle, style: &str) {
+        let style = if KNOWN_RENDER_STYLES.contains(&style) { style } else { DEFAULT_RENDER_STYLE };
+        *self.render_style.lock().unwrap() = style.to_string();
+        let _ = app.emit("set-render-style", style);
+        self.persist();
+    }
+
     /// Snapshot the current state to disk. tmp-file + rename so a crash mid-write
     /// can never leave a half-written settings.json behind.
     fn persist(&self) {
@@ -486,6 +584,9 @@ impl TrayState {
             behavior_preset: self.behavior_preset.lock().unwrap().clone(),
             skin: self.skin.lock().unwrap().clone(),
             camera: self.camera.lock().unwrap().clone(),
+            render_style: self.render_style.lock().unwrap().clone(),
+            input_avoidance: self.input_avoidance.load(Ordering::Relaxed),
+            auto_effects: self.auto_effects.enabled(),
         };
         let Ok(body) = serde_json::to_string_pretty(&settings) else { return };
         if let Some(parent) = path.parent() {
@@ -572,6 +673,11 @@ fn set_camera(app: tauri::AppHandle, state: State<TrayState>, camera: String) {
     state.apply_camera(&app, &camera);
 }
 
+#[tauri::command]
+fn set_render_style(app: tauri::AppHandle, state: State<TrayState>, style: String) {
+    state.apply_render_style(&app, &style);
+}
+
 /// "重置位置": recenter the cat and drop whatever it was doing. A recovery action, not
 /// persisted state - just forwarded to the frontend's LifeEngine.resetPosition().
 #[tauri::command]
@@ -603,6 +709,10 @@ fn get_status(state: State<TrayState>, power: State<PowerState>) -> serde_json::
         "knownSkins": KNOWN_SKINS,
         "camera": *state.camera.lock().unwrap(),
         "knownCameras": KNOWN_CAMERAS,
+        "renderStyle": *state.render_style.lock().unwrap(),
+        "inputAvoidance": state.input_avoidance.load(Ordering::Relaxed),
+        "autoEffects": state.auto_effects.status(std::time::Instant::now()),
+        "knownRenderStyles": KNOWN_RENDER_STYLES,
     })
 }
 
@@ -702,8 +812,22 @@ fn report_capabilities(state: State<CapabilitiesState>, capabilities: serde_json
 }
 
 #[tauri::command]
-fn get_capabilities(state: State<CapabilitiesState>) -> serde_json::Value {
-    state.latest.lock().unwrap().clone()
+fn get_capabilities(state: State<CapabilitiesState>, tray: State<TrayState>) -> serde_json::Value {
+    capabilities_snapshot(&state, &tray)
+}
+
+fn capabilities_snapshot(state: &CapabilitiesState, tray: &TrayState) -> serde_json::Value {
+    let mut value = state.latest.lock().unwrap().clone();
+    if !value.is_object() { value = serde_json::json!({}); }
+    value["autoEffects"] = serde_json::to_value(tray.auto_effects.status(std::time::Instant::now())).unwrap();
+    value
+}
+
+#[tauri::command]
+fn set_auto_effects(app: tauri::AppHandle, state: State<TrayState>, enabled: bool) {
+    state.auto_effects.set_enabled(enabled);
+    state.persist();
+    let _ = app.emit("auto-effects-enabled", enabled);
 }
 
 /// 调试台: play one action clip right now. Same path an agent's `POST /action` takes.
@@ -1143,11 +1267,36 @@ const TRANSCRIPT_TAIL_BYTES: u64 = 512 * 1024;
 /// first sentence is usually the result. Code blocks, tables, headings and horizontal rules are
 /// skipped: none of them reads as a line a cat could say.
 fn turn_line(text: &str) -> Option<String> {
-    prose_lines(text)
-        .iter()
-        .map(|line| first_sentence(line))
-        .find(|sentence| sentence.chars().count() >= 4)
-        .map(|sentence| fit_bubble(&sentence))
+    let lines = prose_lines(text);
+    let line = lines.iter().find(|line| first_sentence(line).chars().count() >= 4)?;
+    // Whole sentences of the reply's first paragraph, as many as fit: the conclusion and what
+    // comes next, the way an agent's own report reads. A first sentence too long on its own is
+    // cut at a clause.
+    let mut sentences: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        current.push(c);
+        let end = "。！？!?".contains(c) || (c == '.' && chars.peek().is_none_or(|n| n.is_whitespace()));
+        if end {
+            sentences.push(std::mem::take(&mut current).trim().to_string());
+        }
+    }
+    if !current.trim().is_empty() {
+        sentences.push(current.trim().to_string());
+    }
+    let mut out = String::new();
+    for sentence in sentences.iter().filter(|s| !s.is_empty()) {
+        let joined = if out.is_empty() { sentence.clone() } else { format!("{out} {sentence}").replace("。 ", "。").replace("！ ", "！").replace("？ ", "？") };
+        if joined.chars().count() > BUBBLE_SAY_CHARS {
+            break;
+        }
+        out = joined;
+    }
+    if out.is_empty() {
+        return Some(fit_bubble(&first_sentence(line)));
+    }
+    Some(out.trim_end_matches(['：', ':', '，', ',', '；', ';']).trim().to_string())
 }
 
 /// The question a reply ENDS on, if it ends on one - "要按折中方案做吗？". A turn that closes by
@@ -1358,6 +1507,42 @@ fn claude_session_label(raw: &serde_json::Value) -> (Option<String>, bool) {
 /// a grey two-letter badge cut from a UUID and the 主界面 could not match it to the Claude mark.
 /// Nobody could tell who was talking. Now the mark comes from the identity and the name from the
 /// session (see claude_session_label), and concurrent sessions still get a row each.
+/// How a hook's text reads, as a task-event mood. Claude's hooks carry no mood - and without one every turn got the same
+/// plain reaction, whether it had just got the tests green, failed again, or the person had typed 烦死了. The words are
+/// read for a few unmistakable signs only (the reaction map's moods), anything else stays `focused`; failure words are
+/// read before success words, so "没通过" is not taken for "通过". The text itself is not kept.
+fn hook_mood(text: &str) -> &'static str {
+    let lower = text.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| lower.contains(w));
+    if has(&["还是失败", "又失败", "仍然失败", "没通过", "未通过", "没修好", "还是不行", "还是不对", "又不对", "又错", "没成功",
+        "失败了", "报错", "崩溃", "搞不定", "烦死", "烦", "气死", "怎么还", "still fail", "still broken", "failed again"]) {
+        return "frustrated";
+    }
+    if has(&["抱歉", "对不起", "遗憾", "可惜", "sorry", "unfortunately"]) {
+        return "sad";
+    }
+    if has(&["妈妈", "爸爸", "家人", "老婆", "老公", "女朋友", "男朋友", "孩子", "宝宝", "生日", "纪念日", "想你", "情书"]) {
+        return "tender";
+    }
+    if has(&["好累", "太累", "累了", "困了", "熬夜", "通宵", "好晚", "睡不着", "exhausted"]) {
+        return "weary";
+    }
+    if has(&["紧急", "赶紧", "来不及", "deadline", "上生产", "线上故障", "不可逆", "风险", "回滚", "数据丢", "小心"]) {
+        return "anxious";
+    }
+    if has(&["通过", "全绿", "成功", "修好", "已修复", "修复了", "搞定", "跑通", "太好了", "好多了", "好了不少", "完美", "厉害",
+        "passed", "all green", "fixed", "works now", "great", "perfect", "✅"]) {
+        return "proud";
+    }
+    if has(&["哈哈", "好玩", "有趣", "试试看", "随便玩", "取个名", "lol"]) {
+        return "playful";
+    }
+    if has(&["为什么", "为啥", "怎么回事", "是不是", "调研", "研究一下", "原理", "why ", "how does"]) {
+        return "curious";
+    }
+    "focused"
+}
+
 fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEvent {
     let session = raw.get("session_id").and_then(|v| v.as_str()).map(|s| s.chars().take(128).collect::<String>());
     let session_id = session.clone().unwrap_or_else(|| "unknown-session".to_string());
@@ -1370,9 +1555,14 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
     // silently dropped on the path most users take.
     let mut result: Option<String> = None;
     let mut echo = false;
+    // read from the turn's own words (hook_mood); a prompt's text is read here and not kept
+    let mut mood = "focused";
     let (state, summary) = match hook_event_name {
         "SessionStart" => ("queued".to_string(), "会话开始".to_string()),
-        "UserPromptSubmit" => ("running".to_string(), "新一轮对话开始".to_string()),
+        "UserPromptSubmit" => {
+            mood = hook_mood(raw.get("prompt").and_then(|v| v.as_str()).unwrap_or(""));
+            ("running".to_string(), "新一轮对话开始".to_string())
+        }
         "Notification" => {
             // Claude raises this for permission prompts, plain questions, and a run of things that
             // are not waiting on the user at all (auth_success, computer_use_enter, ...). Current
@@ -1420,6 +1610,9 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
                 ("needs_input".to_string(), "回复末尾有问题等你回答".to_string())
             } else {
                 result = turn_line(reply);
+                // the reply's opening is what the turn came to (the skill asks for the conclusion first)
+                let opening: String = reply.chars().take(400).collect();
+                mood = hook_mood(&opening);
                 let reason = raw.get("stop_reason").and_then(|v| v.as_str()).unwrap_or("end_turn");
                 ("completed".to_string(), format!("本轮回复完成（{reason}）"))
             }
@@ -1479,6 +1672,7 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         // its row leaves 主界面 instead of sitting there as "running" forever.
         "SessionEnd" => ("ended".to_string(), "会话结束".to_string()),
         "StopFailure" => {
+            mood = "frustrated";
             let error_type = raw.get("error_type").and_then(|v| v.as_str()).unwrap_or("unknown");
             ("failed".to_string(), format!("本轮因错误终止（{error_type}）"))
         }
@@ -1500,12 +1694,12 @@ fn normalize_claude_hook_event(raw: &serde_json::Value, sequence: u64) -> TaskEv
         sequence,
         observed_at,
         summary: summary.chars().take(240).collect(), // docs/09's 240-char cap
-        // Claude's hooks say nothing about what KIND of work it was - they are conversation
-        // lifecycle events, not task events. "chat" is the honest answer, not a guess.
+        // Claude's hooks say nothing about what KIND of work it was - they are conversation lifecycle events. "chat" is
+        // the honest answer: guessed from a mention of 测试, a turn that only wrote a test got 测试全绿～. How it FELT is
+        // read off the turn's own words where they say so plainly (hook_mood); an agent that knows better posts a task
+        // event itself.
         kind: "chat".to_string(),
-        // Nor anything about how it FELT. An agent that wants the cat to respond to the content
-        // of the work posts a task event itself rather than relying on the hook.
-        mood: "focused".to_string(),
+        mood: mood.to_string(),
         progress: None,
         session,
         label,
@@ -2552,9 +2746,11 @@ fn json_response(status: u16, body: String) -> tiny_http::Response<std::io::Curs
 /// Longest line the speech bubble can show. Enforced here rather than trusted from the caller,
 /// because this is reachable from any process on the loopback interface.
 const SAY_MAX_CHARS: usize = 140;
-/// A bubble stays about 1.8s + 0.13s per character, and the forced hold below is only a few
-/// seconds. Past ~24 characters the line disappears before it can be read.
-const BUBBLE_SAY_CHARS: usize = 24;
+/// Longest line a HOST HOOK's reply is turned into. It used to be 24 characters ("past ~24 the line disappears before
+/// it can be read"), which cut a Cursor / Codex / Claude turn to its first clause - "新版已经装好了" out of two sentences.
+/// The user's reference is DSH, where the agent writes its own up-to-140-character report and it is shown whole
+/// (bubble_hold_ms holds a long line up to 20 s), so hook lines now get the same room.
+const BUBBLE_SAY_CHARS: usize = SAY_MAX_CHARS;
 /// Longest a single remembered fact may be.
 const MEMORY_MAX_CHARS: usize = 280;
 /// Longest a reminder's text may be.
@@ -2569,8 +2765,8 @@ const MAX_HOLD_MS: u64 = 10 * 60 * 1000;
 /// the whole point: the old code silently skipped unrecognised keys and then reported
 /// "empty command", so a caller who wrote `expresssion` was told they had sent nothing at all
 /// and would retry the same misspelling forever.
-const CONTROL_FIELDS: [&str; 20] = [
-    "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform",
+const CONTROL_FIELDS: [&str; 21] = [
+    "mode", "camera", "skin", "scale", "visible", "action", "expression", "holdMs", "perform", "performAutomatic",
     "toy", "say", "sayMs", "resetPosition", "reloadAssets",
     // Bring the main window forward at a page - see MANAGEMENT_PAGES.
     "openManagement",
@@ -3313,6 +3509,15 @@ fn validate_intent(intent: &serde_json::Value) -> Result<(), String> {
     }
 }
 
+/// The control fields that take over the cat's performance, and so contend for the stage.
+const STAGE_FIELDS: [&str; 5] = ["expression", "action", "say", "perform", "toy"];
+
+/// Whether a command still has something to play after its stage fields drew `rejected` preflight messages. Each field
+/// contributes at most one, so fewer messages than fields present means at least one field plays.
+fn stage_still_plays(command: &serde_json::Value, rejected: usize) -> bool {
+    rejected < STAGE_FIELDS.iter().filter(|field| command.get(**field).is_some()).count()
+}
+
 fn apply_control_command(
     app: &tauri::AppHandle,
     command: &serde_json::Value,
@@ -3343,6 +3548,9 @@ fn apply_control_command(
     // everything else it asked for.
     let permission = identity.permission;
     let mut command_owned = command.clone();
+    if let Some(kind) = command_owned.get("toy").and_then(|v| v.as_str()).map(|kind| canonical_toy(kind).to_string()) {
+        command_owned["toy"] = serde_json::json!(kind);
+    }
     let asked: String = command
         .as_object()
         .map(|o| {
@@ -3408,6 +3616,15 @@ fn apply_control_command(
             }
         }
     }
+    if command_owned.get("perform").and_then(|v| v.as_str()).is_some_and(|id| KNOWN_PERFORMANCES.contains(&id))
+        && command_owned.get("performAutomatic").and_then(|v| v.as_bool()) != Some(false)
+    {
+        if let Err(reason) = state.auto_effects.may_start(std::time::Instant::now()) {
+            if let Some(object) = command_owned.as_object_mut() { object.remove("perform"); }
+            rejected.push(format!("perform: {reason}"));
+            detail.insert("dropRatherThanRetry".into(), serde_json::json!(true));
+        }
+    }
     let command = &command_owned;
 
     let priority = command
@@ -3424,10 +3641,7 @@ fn apply_control_command(
         .get("__stageAlreadyHeld")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let wants_stage = !already_held
-        && ["expression", "action", "say", "perform", "toy"]
-            .iter()
-            .any(|field| command.get(*field).is_some());
+    let wants_stage = !already_held && STAGE_FIELDS.iter().any(|field| command.get(*field).is_some());
     // Pre-flight the stage-worthy fields BEFORE claiming the stage. The order used to be claim
     // first, validate later, so a command like `{"agent":"a","action":"not-a-clip"}` held the
     // stage for its whole hold window with the agent's badge on screen, then came back 400 -
@@ -3471,7 +3685,11 @@ fn apply_control_command(
     } else {
         Vec::new()
     };
-    let wants_stage = wants_stage && stage_preflight_rejected.is_empty();
+    // The stage is refused only when NOTHING stage-worthy would play. Refusing it for any one bad field cost every
+    // bubble its attribution on the realistic cat: a reaction from the user's library names a clip or face only the
+    // voxel cat has, that field was rejected, and the line was still said - but with no agent-stage, so no icon and no
+    // session name.
+    let wants_stage = wants_stage && stage_still_plays(command, stage_preflight_rejected.len());
     let mut stage_denied: Option<String> = None;
     let hold = command.get("holdMs").and_then(|v| v.as_u64()).unwrap_or(4000);
     if wants_stage {
@@ -3561,7 +3779,7 @@ fn apply_control_command(
                 "camera" | "skin" | "action" | "expression" | "perform" | "toy" | "say" | "mode"
                 | "agent" | "priority" | "openManagement" => value.is_string(),
                 "scale" => value.is_number(),
-                "visible" | "resetPosition" | "reloadAssets" => value.is_boolean(),
+                "visible" | "resetPosition" | "reloadAssets" | "performAutomatic" => value.is_boolean(),
                 "holdMs" | "sayMs" | "expiresInMs" => value.is_number(),
                 _ => true,
             };
@@ -3678,8 +3896,17 @@ fn apply_control_command(
     }
     if let Some(id) = command.get("perform").and_then(|v| v.as_str()) {
         if KNOWN_PERFORMANCES.contains(&id) {
-            let _ = app.emit("perform", serde_json::json!({ "id": id }));
-            applied.push(format!("perform={id}"));
+            let automatic = command.get("performAutomatic").and_then(|v| v.as_bool()).unwrap_or(true);
+            match state.auto_effects.try_start(automatic, std::time::Instant::now()) {
+                Ok(()) => {
+                    let _ = app.emit("perform", serde_json::json!({ "id": id, "automatic": automatic }));
+                    applied.push(format!("perform={id}"));
+                }
+                Err(reason) => {
+                    rejected.push(format!("perform: {reason}"));
+                    detail.insert("dropRatherThanRetry".into(), serde_json::json!(true));
+                }
+            }
         } else {
             rejected.push(format!("perform: unknown performance \"{id}\" (see GET /capabilities)"));
         }
@@ -3701,7 +3928,20 @@ fn apply_control_command(
             rejected.push("say: empty text".to_string());
         } else {
             let duration = command.get("sayMs").and_then(|v| v.as_u64());
-            let _ = app.emit("say", serde_json::json!({ "text": trimmed.clone(), "durationMs": duration }));
+            // Identity and text must cross the webview boundary together. A separate
+            // agent-stage event can be consumed/overwritten by intervening speech.
+            let _ = app.emit("say", serde_json::json!({
+                "text": trimmed.clone(),
+                "durationMs": duration,
+                "source": {
+                    "agent": identity.id,
+                    "name": identity.name,
+                    "label": command.get("__label").and_then(|v| v.as_str()),
+                    "badge": identity.badge,
+                    "logo": identity.logo,
+                    "color": identity.color,
+                },
+            }));
             // Truncation is reported rather than silent. A caller that is told `ok` and gets its
             // own 150-character string echoed back will tell the user the cat said all of it.
             applied.push(if truncated {
@@ -3814,7 +4054,7 @@ fn looks_like_typo(field: &str, key: &str) -> bool {
 fn expected_type_name(field: &str) -> &'static str {
     match field {
         "scale" | "holdMs" | "sayMs" | "expiresInMs" => "a number",
-        "visible" | "resetPosition" | "reloadAssets" => "a boolean",
+        "visible" | "resetPosition" | "reloadAssets" | "performAutomatic" => "a boolean",
         _ => "a string",
     }
 }
@@ -4098,7 +4338,13 @@ fn spawn_reminder_ticker(app: tauri::AppHandle) {
             }
             let _ = app.emit(
                 "say",
-                serde_json::json!({ "text": reminder.text.clone(), "durationMs": 6000 }),
+                serde_json::json!({
+                    "text": reminder.text.clone(), "durationMs": 6000,
+                    "source": {
+                        "agent": if reminder.from.is_empty() { "lingxi" } else { reminder.from.as_str() },
+                        "name": "提醒", "badge": "⏰", "logo": null, "color": "#F4E6C8",
+                    },
+                }),
             );
         }
         // Mark done only AFTER speaking, then persist. The old order (mark, persist, speak)
@@ -4233,7 +4479,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                 // the build it was written against.
                 (tiny_http::Method::Get, "/capabilities") => {
                     let state = app.state::<CapabilitiesState>();
-                    let body = state.latest.lock().unwrap().to_string();
+                    let body = capabilities_snapshot(&state, &app.state::<TrayState>()).to_string();
                     json_response(200, body)
                 }
                 // The whole integration contract, machine-readable, from the running build.
@@ -4500,6 +4746,7 @@ fn spawn_perception_server(app: tauri::AppHandle) {
                         "catName": *state.cat_name.lock().unwrap(),
                         "activeAgent": *state.active_agent.lock().unwrap(),
                         "behaviorPreset": preset,
+                        "autoEffects": state.auto_effects.status(std::time::Instant::now()),
                     });
                     json_response(200, body.to_string())
                 }
@@ -5071,6 +5318,19 @@ fn builtin_reaction(
     kind: &str,
     mood: &str,
 ) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
+    if let Some(found) = builtin_mood_reaction(state, kind, mood) {
+        return Some(found);
+    }
+    builtin_lifecycle_reaction(state, kind)
+}
+
+/// The built-in table's rows that answer HOW IT FELT (a known mood, with or without the kind) - None for a mood it has
+/// nothing particular for. Split out so a mood can outrank a user's mood-agnostic override (see react_to_task_event).
+fn builtin_mood_reaction(
+    state: &str,
+    kind: &str,
+    mood: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     // --- all three known: this exact thing, feeling this exact way ---------------------------
     //
     // Only fully-specified entries belong here. A wildcard mood in this block would shadow the
@@ -5095,6 +5355,9 @@ fn builtin_reaction(
         ("completed", "sad") => return Some(("安心", Some("tail-wrap"), Some("做完了。我在这儿。"))),
         ("completed", "playful") => return Some(("玩心", Some("hop-catch"), Some("嘿嘿，成了！"))),
         ("completed", "anxious") => return Some(("放松", Some("purr-settle"), Some("过啦，可以松口气了"))),
+        // the turn is over but the thing is not fixed yet (read off the reply by hook_mood): met, not cheered
+        ("completed", "frustrated") => return Some(("安心", Some("paw-reach"), Some("这轮先到这儿，还没全好…我陪你"))),
+        ("completed", "curious") => return Some(("好奇", Some("curious-tilt"), Some("原来是这样～"))),
 
         // Failed. Deliberately NOT angry - see the design rule above.
         ("failed", "frustrated") => return Some(("委屈", Some("paw-reach"), Some("唔…这个真的难。歇一下再来？"))),
@@ -5123,7 +5386,14 @@ fn builtin_reaction(
         ("running", "frustrated") => return Some(("认真", Some("ear-listen"), None)),
         _ => {}
     }
+    None
+}
 
+/// The built-in table's rows for what sort of work it was, and the plain lifecycle - when the mood adds nothing.
+fn builtin_lifecycle_reaction(
+    state: &str,
+    kind: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     // --- what sort of work it was, when the mood adds nothing beyond the default ---------------
     match (state, kind) {
         ("completed", "deploy") => return Some(("得意", Some("stretch-front"), Some("上线啦！"))),
@@ -5445,12 +5715,20 @@ fn keep_turn_summary(previous: &str, previous_state: &str, incoming: &str, age_m
 /// in `<app config>/logs/task-events.log`. Rotated to `.1` past this size, so it never grows
 /// without bound on a machine that runs the cat all day.
 const TASK_EVENT_LOG_CAP_BYTES: u64 = 1024 * 1024;
+// Bridge and native hook callbacks can log simultaneously. Rotation and the entire
+// JSON line must share one lock; formatted writes otherwise interleave their fragments.
+static TASK_EVENT_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 /// Without it, "the cat said nothing useful" could only be debugged by guessing what the host
 /// sent: the in-memory ring holds 50 normalized events and none of the raw payload's shape.
 fn log_task_event(app: &tauri::AppHandle, mut entry: serde_json::Value) {
-    use std::io::Write;
     let Some(dir) = app.path().app_config_dir().ok().map(|d| d.join("logs")) else { return };
+    append_task_event(&dir, &mut entry);
+}
+
+fn append_task_event(dir: &std::path::Path, entry: &mut serde_json::Value) {
+    use std::io::Write;
+    let _guard = TASK_EVENT_LOG_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
@@ -5461,11 +5739,12 @@ fn log_task_event(app: &tauri::AppHandle, mut entry: serde_json::Value) {
     if let Some(object) = entry.as_object_mut() {
         object.insert("at".into(), serde_json::json!(now_millis()));
     }
+    let line = format!("{entry}\n");
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .and_then(|mut file| writeln!(file, "{entry}"));
+        .and_then(|mut file| file.write_all(line.as_bytes()));
 }
 
 /// What a raw payload carried, without what it said: every key with its type, and for text its
@@ -5676,11 +5955,14 @@ fn update_tray_attention(app: &tauri::AppHandle) {
         .count();
     let tray = app.state::<TrayState>();
     tray.refresh_status(app);
-    let mut previous_count = tray.attention_count.lock().unwrap();
-    if *previous_count == attention_count {
-        return;
+    // Same rule as refresh_status: decide under the lock, touch the tray after it is released.
+    {
+        let mut previous_count = tray.attention_count.lock().unwrap();
+        if *previous_count == attention_count {
+            return;
+        }
+        *previous_count = attention_count;
     }
-    *previous_count = attention_count;
     let text = if attention_count == 0 {
         "目前没有未读提醒".to_string()
     } else {
@@ -5690,7 +5972,7 @@ fn update_tray_attention(app: &tauri::AppHandle) {
     // The count next to the menu-bar icon: visible without opening anything, and it stays until
     // read. The task's actual waiting/failed state stays visible in the home surface.
     if let Some(icon) = app.tray_by_id("main-tray") {
-        let _ = icon.set_title(if attention_count == 0 { None } else { Some(attention_count.to_string()) });
+        let _ = icon.set_title(tray_badge::attention_title(attention_count));
     }
 }
 
@@ -5718,10 +6000,20 @@ fn should_react(app: &tauri::AppHandle, event: &TaskEvent) -> bool {
         }
     }
     let previous = seen.insert(event.task_id.clone(), event.progress.unwrap_or(0.0));
+    // A change of heart mid-task is worth a look (silent: running reactions carry no line) - the person typing 还是不对
+    // after an hour on it, or 太好了 - but not the same mood again, and not the plain default.
+    let mut moods = state.moods.lock().unwrap();
+    if !moods.contains_key(&event.task_id) && moods.len() >= SEEN_CAP {
+        if let Some(victim) = moods.keys().next().cloned() {
+            moods.remove(&victim);
+        }
+    }
+    let before_mood = moods.insert(event.task_id.clone(), event.mood.clone());
+    let mood_turned = event.mood != "focused" && before_mood.as_deref() != Some(event.mood.as_str());
     match (previous, event.progress) {
         (None, _) => true,                                   // first sighting of this task
-        (Some(before), Some(now)) => before < 0.5 && now >= 0.5, // crossed halfway
-        _ => false,
+        (Some(before), Some(now)) => (before < 0.5 && now >= 0.5) || mood_turned, // crossed halfway
+        _ => mood_turned,
     }
 }
 
@@ -5729,6 +6021,8 @@ fn should_react(app: &tauri::AppHandle, event: &TaskEvent) -> bool {
 #[derive(Default)]
 struct TaskProgressState {
     seen: Mutex<HashMap<String, f64>>,
+    /// the last mood each task reacted with (should_react)
+    moods: Mutex<HashMap<String, String>>,
 }
 
 /// What each agent is doing RIGHT NOW, as opposed to what has happened.
@@ -5876,9 +6170,18 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
             entry.get("say").and_then(|v| v.as_str()).map(str::to_string),
         ))
     };
-    // Most specific override wins, and a user override at any level beats the built-in table.
+    // Most specific override wins, and a user override beats the built-in table at its own level. One exception, the
+    // table's own rule: how it FELT outranks what sort of work it was. A definite mood (not the default) gets its
+    // built-in row before an override that does not mention mood ("completed:chat" in an action pack made every
+    // finished turn 收工, whether it had just got everything green or was still broken). Override "state:mood" or
+    // "state:kind:mood" to change those rows too.
+    let felt = || {
+        if event.mood == "focused" { return None; }
+        builtin_mood_reaction(&event.state, &event.kind, &event.mood).map(|(e, a, l)| (e.to_string(), a.map(str::to_string), l.map(str::to_string)))
+    };
     let resolved = lookup(&format!("{}:{}:{}", event.state, event.kind, event.mood))
         .or_else(|| lookup(&format!("{}:{}", event.state, event.mood)))
+        .or_else(felt)
         .or_else(|| lookup(&format!("{}:{}", event.state, event.kind)))
         .or_else(|| lookup(&event.state))
         .or_else(|| lookup(&event.mood))
@@ -6278,8 +6581,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     let status_summary = MenuItem::with_id(app, "status-summary", &initial_status, false, None::<&str>)?;
     // Clickable: "有 2 个任务需要留意" is only useful if it takes you to them.
     let attention_summary = MenuItem::with_id(app, "attention-summary", "目前没有未读提醒", true, None::<&str>)?;
-    // Every toy and every effect, by name - the tray used to offer one fixed toy ("逗一逗") and
-    // no effect at all, so switching either meant opening the main window.
+    // Toys remain in the tray; performances live on the Play page.
     let toy_items = TRAY_TOYS
         .iter()
         .map(|(kind, name)| MenuItem::with_id(app, format!("toy:{kind}"), *name, true, None::<&str>))
@@ -6291,13 +6593,6 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
     toy_entries.push(&toy_separator);
     toy_entries.push(&clear_toy);
     let toy_submenu = Submenu::with_items(app, "玩具", true, &toy_entries)?;
-    let effect_items = TRAY_EFFECTS
-        .iter()
-        .map(|(id, name)| MenuItem::with_id(app, format!("perform:{id}"), *name, true, None::<&str>))
-        .collect::<tauri::Result<Vec<_>>>()?;
-    let effect_entries: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-        effect_items.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
-    let effect_submenu = Submenu::with_items(app, "特效", true, &effect_entries)?;
     let main_window = MenuItem::with_id(app, "main-window", "打开主界面…", true, None::<&str>)?;
     let toggle_visibility = MenuItem::with_id(app, "toggle-visibility", "隐藏猫咪", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出灵犀", true, None::<&str>)?;
@@ -6312,7 +6607,6 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
             &toggle_visibility,
             &size_submenu,
             &toy_submenu,
-            &effect_submenu,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
@@ -6347,12 +6641,6 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
                         let _ = app.emit("set-toy", serde_json::json!({ "kind": kind }));
                     }
                 }
-                id if id.starts_with("perform:") => {
-                    let effect = &id["perform:".len()..];
-                    if KNOWN_PERFORMANCES.contains(&effect) {
-                        let _ = app.emit("perform", serde_json::json!({ "id": effect }));
-                    }
-                }
                 "toggle-visibility" => {
                     let next = !state.visible.load(Ordering::SeqCst);
                     state.set_visible(app, next);
@@ -6376,6 +6664,9 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
         current_scale: Mutex::new(SCALE_LARGE),
         skin: Mutex::new(DEFAULT_SKIN.to_string()),
         camera: Mutex::new(DEFAULT_CAMERA.to_string()),
+        render_style: Mutex::new(DEFAULT_RENDER_STYLE.to_string()),
+        input_avoidance: AtomicBool::new(true),
+        auto_effects: auto_effects::AutoEffects::default(),
         cat_name: Mutex::new(DEFAULT_CAT_NAME.to_string()),
         cat_personality: Mutex::new(String::new()),
         active_agent: Mutex::new(default_active_agent()),
@@ -6390,7 +6681,7 @@ fn build_tray(app: &tauri::AppHandle, settings_path: Option<PathBuf>) -> tauri::
 /// track here; `stop_performance` exists only for cancelling one early.
 #[tauri::command]
 fn perform(app: tauri::AppHandle, id: String) {
-    let _ = app.emit("perform", serde_json::json!({ "id": id }));
+    let _ = app.emit("perform", serde_json::json!({ "id": id, "automatic": false }));
 }
 
 #[tauri::command]
@@ -6562,7 +6853,13 @@ fn say(app: tauri::AppHandle, text: String, duration_ms: Option<u64>) {
 /// 玩具: put a toy on the desktop, or take it away.
 #[tauri::command]
 fn set_toy(app: tauri::AppHandle, kind: String) {
+    let kind = canonical_toy(&kind).to_string();
     let _ = app.emit("set-toy", serde_json::json!({ "kind": kind }));
+}
+
+#[tauri::command]
+fn petting_belly(app: tauri::AppHandle) {
+    let _ = app.emit("petting-belly", ());
 }
 
 #[tauri::command]
@@ -6575,10 +6872,20 @@ fn clear_toy(app: tauri::AppHandle) {
 /// a developer/agent surface, not a settings surface, and you usually want it open *beside*
 /// the management window while comparing what a control did.
 #[tauri::command]
-fn open_debug_window(app: tauri::AppHandle) {
-    open_or_focus_debug_window(&app);
+fn open_debug_window(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        open_or_focus_debug_window(&app);
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err("调试台仅在开发版本中可用".to_string())
+    }
 }
 
+#[cfg(debug_assertions)]
 fn open_or_focus_debug_window(app: &tauri::AppHandle) {
     if let Some(existing) = app.get_webview_window("debug") {
         let _ = existing.show();
@@ -6697,6 +7004,12 @@ pub fn run() {
             set_behavior_preset,
             set_skin,
             set_camera,
+            set_render_style,
+            set_input_avoidance,
+            set_auto_effects,
+            input_avoidance_status,
+            request_input_avoidance_permission,
+            focused_input_region,
             report_capabilities,
             get_capabilities,
             play_action,
@@ -6705,6 +7018,7 @@ pub fn run() {
             stop_performance,
             set_toy,
             clear_toy,
+            petting_belly,
             say,
             get_custom_assets,
             install_asset_templates,
@@ -6798,8 +7112,8 @@ pub fn run() {
             // setup() runs on the main thread, which is where these observers have to live.
             watch_system_presence(app.handle());
 
-            // Read-only: reports the state, never raises a dialog. The app does not use this
-            // permission at all (see accessibility_trusted_readonly), so asking for it at
+            // Read-only: never raises a dialog. Focused-input avoidance has a dedicated
+            // opt-in permission button; asking for it at
             // startup was pure friction - and a grant that cannot survive a rebuild made it
             // look broken on top of that.
             let trusted = accessibility_trusted_readonly();
@@ -6825,6 +7139,9 @@ pub fn run() {
             {
                 let state = app.state::<TrayState>();
                 let handle = app.handle();
+                // Set this before apply_* writes any restored snapshot back to disk.
+                state.input_avoidance.store(saved.input_avoidance, Ordering::Relaxed);
+                state.auto_effects.set_enabled(saved.auto_effects);
                 state.apply_scale(handle, saved.scale);
                 state.apply_identity(handle, &saved.cat_name, &saved.cat_personality);
                 state.apply_active_agent(handle, &saved.active_agent);
@@ -6832,6 +7149,7 @@ pub fn run() {
                 state.apply_behavior_preset(handle, &saved.behavior_preset);
                 state.apply_skin(handle, &saved.skin);
                 state.apply_camera(handle, &saved.camera);
+                state.apply_render_style(handle, &saved.render_style);
                 if !saved.visible {
                     // Same code path as the runtime tray toggle. The companion window
                     // must still be created visible (see the compositing note above);
@@ -6839,6 +7157,9 @@ pub fn run() {
                     state.set_visible(handle, false);
                 }
             }
+
+            app.manage(FocusedInputState::default());
+            spawn_focused_input_poller(app.handle().clone(), scale_factor);
 
             app.manage(PerceptionState { latest_snapshot: Mutex::new(serde_json::json!({})) });
             app.manage(CapabilitiesState { latest: Mutex::new(serde_json::json!({})) });
@@ -6900,6 +7221,79 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    /// A tray/menu setter called off the main thread blocks until the main thread runs it, and sync commands such as
+    /// report_perception run ON the main thread. So a setter reached while a Mutex guard is still alive is a deadlock
+    /// waiting for the right interleaving (it froze 0.4.0: bridge, events and bubbles all stopped). Source scan: within
+    /// a block, a `let x = ….lock()` guard must be out of scope (or dropped) before any setter at the same or deeper level.
+    #[test]
+    fn no_tray_or_menu_setter_runs_while_a_lock_is_held() {
+        let source = include_str!("lib.rs");
+        let lines: Vec<&str> = source.lines().take_while(|line| !line.starts_with("mod tests")).collect();
+        let indent = |line: &str| line.len() - line.trim_start().len();
+        let setters = [".set_text(", ".set_title(", ".set_checked(", ".set_enabled(", ".set_icon(", ".set_tooltip("];
+        let mut problems = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            if !setters.iter().any(|setter| line.contains(setter)) { continue; }
+            let depth = indent(line);
+            for j in (0..i).rev() {
+                let earlier = lines[j];
+                if earlier.trim().is_empty() { continue; }
+                // Left the enclosing block or the function: nothing above can still be alive here.
+                if indent(earlier) < depth && (earlier.trim_end().ends_with('{') && earlier.contains("fn ")) { break; }
+                if indent(earlier) < depth.saturating_sub(4) && earlier.contains("fn ") { break; }
+                let trimmed = earlier.trim_start();
+                if indent(earlier) <= depth && trimmed.starts_with("let ") && trimmed.contains(".lock()") && trimmed.ends_with(';')
+                    && !trimmed.contains(").clone()") && !trimmed.contains(".clone();") && !trimmed.contains(".count();") {
+                    let name = trimmed.trim_start_matches("let ").trim_start_matches("mut ").split([' ', ':']).next().unwrap_or("");
+                    let dropped = lines[j..i].iter().any(|l| l.contains(&format!("drop({name})")));
+                    // A guard inside a block that closed before the setter is out of scope.
+                    let closed = lines[j + 1..i].iter().any(|l| indent(l) < indent(earlier) && l.trim_start().starts_with('}'));
+                    if !dropped && !closed { problems.push(format!("lib.rs:{}: `{}` while `{name}` (line {}) is held", i + 1, line.trim(), j + 1)); }
+                }
+            }
+        }
+        assert!(problems.is_empty(), "tray/menu setter under a lock:\n{}", problems.join("\n"));
+    }
+
+    #[test]
+    fn concurrent_task_logs_remain_complete_json_lines() {
+        let dir = std::env::temp_dir().join(format!("lingxi-task-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::append_task_event(&dir, &mut serde_json::json!({
+            "dir": "before-rotation", "payload": "x".repeat(super::TASK_EVENT_LOG_CAP_BYTES as usize),
+        }));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
+        std::thread::scope(|scope| {
+            for worker in 0..12 {
+                let dir = &dir;
+                let barrier = barrier.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    for sequence in 0..10 {
+                        super::append_task_event(dir, &mut serde_json::json!({
+                            "dir": "in", "worker": worker, "sequence": sequence,
+                            "payload": "x".repeat(4096),
+                        }));
+                    }
+                });
+            }
+        });
+        let text = std::fs::read_to_string(dir.join("task-events.log")).unwrap();
+        let rotated = std::fs::read_to_string(dir.join("task-events.log.1")).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let rows: Vec<serde_json::Value> = text.lines().map(|line| {
+            serde_json::from_str(line).expect("concurrent writers must not interleave JSON records")
+        }).collect();
+        assert_eq!(rows.len(), 120);
+        let ids: std::collections::HashSet<_> = rows.iter().map(|row| {
+            (row["worker"].as_u64().unwrap(), row["sequence"].as_u64().unwrap())
+        }).collect();
+        assert_eq!(ids.len(), 120, "every event is written exactly once");
+        assert_eq!(rotated.lines().count(), 1, "rotation keeps the entire previous record");
+        let previous: serde_json::Value = serde_json::from_str(rotated.trim()).unwrap();
+        assert_eq!(previous["dir"], "before-rotation");
+    }
+
     use super::*;
 
     /// A throwaway unique path under the system temp dir; no external temp-dir crate
@@ -6915,18 +7309,32 @@ mod tests {
     }
 
     #[test]
+    fn a_line_that_still_plays_keeps_the_stage_and_its_icon() {
+        // Codex's turn-end reaction on the realistic cat: the library's clip and face are voxel-only and rejected, the
+        // line is said - and must still claim the stage, or the bubble shows no icon.
+        let reaction = serde_json::json!({ "agent": "codex", "action": "wb-wave-flag", "expression": "收工", "say": "好了" });
+        assert!(stage_still_plays(&reaction, 2));
+        // nothing left to play: no stage
+        assert!(!stage_still_plays(&reaction, 3));
+        assert!(!stage_still_plays(&serde_json::json!({ "agent": "codex", "action": "nope" }), 1));
+        assert!(stage_still_plays(&serde_json::json!({ "say": "hi" }), 0));
+    }
+
+    #[test]
     fn a_turn_end_does_not_replace_what_the_turn_just_did() {
         assert!(keep_turn_summary("登录失败提示改完了", "completed", "本轮回复结束", 1_000));
         assert!(!keep_turn_summary("登录失败提示改完了", "completed", "本轮回复结束", 121_000));
         assert!(!keep_turn_summary("本轮回复结束", "completed", "登录失败提示改完了", 1_000));
         assert!(is_lifecycle_summary("本轮回复完成（end_turn）"));
         assert!(!is_lifecycle_summary("登录失败提示改完了，相关测试过了"));
-        let line = bubble_line("登录提示改好啦，测试也乖乖过了，顺便把文案也收短了");
+        let line = bubble_line(&"登录提示改好啦，测试也乖乖过了".repeat(10));
         assert!(line.chars().count() <= BUBBLE_SAY_CHARS);
         assert!(line.ends_with('…'));
+        assert_eq!(bubble_line("登录提示改好啦，测试也乖乖过了，顺便把文案也收短了"), "登录提示改好啦，测试也乖乖过了，顺便把文案也收短了");
         assert_eq!(bubble_line("哼，好了"), "哼，好了");
         assert!(bubble_hold_ms("哼，好了") >= 3200);
         assert!(bubble_hold_ms(&"啊".repeat(24)) <= 6400);
+        assert!(bubble_hold_ms(&"啊".repeat(140)) >= 18_000, "a full report stays up long enough to read");
         assert!(bubble_hold_ms(&"啊".repeat(100)) > 10_000, "long task summaries need time to read");
     }
 
@@ -7055,7 +7463,7 @@ mod tests {
                 "taskId": "s", "session": "s", "origin": "hook", "summary": "本轮回复结束", "result": result,
             }), 1).unwrap();
             assert_eq!(task_report_line(&event("completed", None), Some("搞定啦～")), None, "{host}");
-            assert_eq!(task_report_line(&event("completed", Some("登录测试已修复。")), None).as_deref(), Some("登录测试已修复"));
+            assert_eq!(task_report_line(&event("completed", Some("登录测试已修复。")), None).as_deref(), Some("登录测试已修复。"));
             assert_eq!(task_report_line(&event("completed", Some("你希望使用方案 A 还是 B？")), None).as_deref(), Some("你希望使用方案 A 还是 B？"));
             for state in ["failed", "needs_input", "needs_approval", "blocked"] {
                 let line = task_report_line(&event(state, None), Some("在等你哦")).unwrap();
@@ -7306,6 +7714,33 @@ mod tests {
     }
 
     #[test]
+    fn hook_events_read_the_turns_mood_off_its_own_words() {
+        let claude = |name: &str, extra: serde_json::Value| {
+            let mut raw = serde_json::json!({ "session_id": "s1", "hook_event_name": name });
+            for (k, v) in extra.as_object().unwrap() { raw[k] = v.clone(); }
+            normalize_claude_hook_event(&raw, 1)
+        };
+        // the end of a turn: what it came to
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "登录测试已修复，18 项全部通过。" })).mood, "proud");
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "测试还是没通过，卡在超时上。" })).mood, "frustrated");
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "改好了按钮的颜色。" })).mood, "focused");
+        // a failure word before a success word: 没通过 is not 通过
+        assert_eq!(hook_mood("这次没通过"), "frustrated");
+        assert_eq!(claude("StopFailure", serde_json::json!({ "error_type": "rate_limit" })).mood, "frustrated");
+        // the person's own words, read and not kept
+        let prompt = claude("UserPromptSubmit", serde_json::json!({ "prompt": "还是不对，烦死了，密码 hunter2" }));
+        assert_eq!(prompt.mood, "frustrated");
+        assert!(!prompt.summary.contains("hunter2"));
+        assert_eq!(claude("UserPromptSubmit", serde_json::json!({ "prompt": "帮我给妈妈写封信" })).mood, "tender");
+        assert_eq!(claude("UserPromptSubmit", serde_json::json!({ "prompt": "看了效果好了不少" })).mood, "proud");
+        // a conversation turn is still 'chat' whatever it mentions - a guessed 'test' made 测试全绿～ out of "加了测试"
+        assert_eq!(claude("Stop", serde_json::json!({ "last_assistant_message": "加了一个测试，还没跑。" })).kind, "chat");
+        // the reaction for a turn that ended unfixed meets it, and does not cheer
+        let (_, _, line) = builtin_reaction("completed", "chat", "frustrated").unwrap();
+        assert!(!line.unwrap_or("").contains("搞定"));
+    }
+
+    #[test]
     fn normalize_claude_hook_event_maps_each_known_event_to_the_right_task_state() {
         let user_prompt = serde_json::json!({ "session_id": "s1", "hook_event_name": "UserPromptSubmit" });
         assert_eq!(normalize_claude_hook_event(&user_prompt, 1).state, "running");
@@ -7477,11 +7912,17 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_offers_every_toy_and_every_effect() {
+    fn legacy_petting_clients_keep_the_current_pet_capability() {
+        assert_eq!(canonical_toy("petting"), "pet");
+        assert_eq!(canonical_toy("pet"), "pet");
+        assert!(KNOWN_TOYS.contains(&canonical_toy("petting")));
+        assert_eq!(canonical_toy("feather"), "feather");
+    }
+
+    #[test]
+    fn the_tray_offers_every_toy() {
         let toys: Vec<&str> = TRAY_TOYS.iter().map(|(id, _)| *id).collect();
-        let effects: Vec<&str> = TRAY_EFFECTS.iter().map(|(id, _)| *id).collect();
         assert_eq!(toys, KNOWN_TOYS.to_vec());
-        assert_eq!(effects, KNOWN_PERFORMANCES.to_vec());
     }
 
     #[test]
@@ -7500,7 +7941,7 @@ mod tests {
             "session_id": "s", "hook_event_name": "Stop", "last_assistant_message": reply,
         });
         let event = normalize_claude_hook_event(&raw, 1);
-        assert_eq!(event.result.as_deref(), Some("新版已经装好"));
+        assert_eq!(event.result.as_deref(), Some("新版已经装好，重启后气泡会带上 Claude 图标和会话名。"));
         // Perceived, not collected: the reply never reaches the serialized event (event log,
         // notification sinks) - only the display-only field holds the line made from it.
         let serialized = serde_json::to_string(&event).unwrap();
@@ -7513,24 +7954,29 @@ mod tests {
 
     #[test]
     fn turn_line_takes_the_first_sentence_of_prose_and_keeps_it_bubble_sized() {
-        assert_eq!(turn_line("测试全部通过。接下来安装。").as_deref(), Some("测试全部通过"));
+        // DSH-style: whole sentences of the first paragraph, up to the report limit.
+        assert_eq!(turn_line("测试全部通过。接下来安装。").as_deref(), Some("测试全部通过。接下来安装。"));
         assert_eq!(
             turn_line("```bash\nnpm test\n```\n| a | b |\n## 结论\n**构建完成**，已安装到 `/Applications`。").as_deref(),
-            Some("构建完成，已安装到 /Applications"),
+            Some("构建完成，已安装到 /Applications。"),
         );
-        // Too long: cut at the last comma inside the bubble, not mid-word.
+        // Cursor, 2026-10-16: two sentences used to come out as their first clause, "新版已经装好了".
+        let reply = "新版已经装好了，真实猫的毛发换成了三层：里面是实心厚绒，中间是带毛丝纹理的壳毛，外面保留 Blender 的原版毛丝，所以轮廓更圆、质感更像毛。下一步我会给毛发加上沿毛方向的高光，再重新编译。";
+        assert_eq!(turn_line(reply).as_deref(), Some(reply));
         assert_eq!(
             turn_line("明白了：「不采集」指的是内容在本机处理完就丢弃，不上传、不外发，而不是让猫对内容一无所知。").as_deref(),
-            Some("明白了：「不采集」指的是内容在本机处理完就丢弃"),
+            Some("明白了：「不采集」指的是内容在本机处理完就丢弃，不上传、不外发，而不是让猫对内容一无所知。"),
         );
-        // No comma to cut at: truncated with an ellipsis.
-        let long = turn_line("关键发现：本机这版 Claude Code 的 hook 数据比我们以为的丰富。").unwrap();
+        // A first sentence past the limit with no comma to cut at: truncated with an ellipsis.
+        let long = turn_line(&format!("关键发现：{}。", "数据比我们以为的丰富".repeat(20))).unwrap();
         assert!(long.ends_with('…') && long.chars().count() == BUBBLE_SAY_CHARS, "{long}");
-        assert_eq!(turn_line("- see [the docs](https://x.y) for details.").as_deref(), Some("see the docs for details"));
-        // An aside in parentheses is dropped before cutting, rather than cut in half.
+        // Sentences that do not all fit: the ones that do, not a sentence cut in half.
+        let many = turn_line(&"这一句正好二十个字左右用来测试拼接上限。".repeat(10)).unwrap();
+        assert!(many.chars().count() <= BUBBLE_SAY_CHARS && many.ends_with('。'), "{many}");
+        assert_eq!(turn_line("- see [the docs](https://x.y) for details.").as_deref(), Some("see the docs for details."));
         assert_eq!(
             turn_line("Bash 这边一直拿不到自动模式的安全判定（服务端的问题，不是命令本身被拒），所以我没法替你启动 app。").as_deref(),
-            Some("Bash 这边一直拿不到自动模式的安全判定"),
+            Some("Bash 这边一直拿不到自动模式的安全判定（服务端的问题，不是命令本身被拒），所以我没法替你启动 app。"),
         );
         assert_eq!(turn_line("```\ncode only\n```"), None);
         // A reply that is data has no sentence to say - not even its opening brace.
@@ -7643,7 +8089,7 @@ mod tests {
         let named = serde_json::json!({ "type": "agent-turn-complete", "thread-id": "abc123456", "cwd": "/work/lingxi", "last-assistant-message": "登录测试修好了。接下来可以继续。" });
         let event = normalize_codex_notify_event(&named, 3).unwrap();
         assert_eq!(event.label, None);
-        assert_eq!(event.result.as_deref(), Some("登录测试修好了"));
+        assert_eq!(event.result.as_deref(), Some("登录测试修好了。接下来可以继续。"));
         assert!(!event.summary.contains("登录测试"), "reply must stay out of the event log");
 
         let question = serde_json::json!({ "type": "agent-turn-complete", "thread-id": "abc123456", "last-assistant-message": "需要你确认部署窗口吗？" });
@@ -7676,7 +8122,7 @@ mod tests {
         });
         let event = normalize_codex_notify_event(&users, 9).unwrap();
         assert_eq!(event.state, "completed");
-        assert_eq!(event.result.as_deref(), Some("可以叫「猫的一天」"));
+        assert_eq!(event.result.as_deref(), Some("可以叫「猫的一天」。"));
 
         // And the whole point of returning Option: anything else must fall through to the next
         // mapper rather than being invented into a state.
@@ -7694,7 +8140,7 @@ mod tests {
         assert_eq!(hooked("{\"title\":\"修复气泡\",\"description\":\"x\"}").state, "unknown");
         let real = hooked("气泡修好了。");
         assert_eq!(real.state, "completed");
-        assert_eq!(real.result.as_deref(), Some("气泡修好了"));
+        assert_eq!(real.result.as_deref(), Some("气泡修好了。"));
     }
 
     #[test]
@@ -8204,6 +8650,7 @@ command = "node"
         let body = serde_json::json!({ "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE });
         std::fs::write(&path, body.to_string()).unwrap();
         let settings = load_persisted_settings(Some(&path));
+        assert!(!settings.auto_effects, "older installs must not silently opt in to automatic effects");
         assert_eq!(settings.cat_name, DEFAULT_CAT_NAME);
         assert_eq!(settings.cat_personality, "");
         assert_eq!(settings.active_agent, "none");
@@ -8323,6 +8770,7 @@ command = "node"
         let settings = load_persisted_settings(Some(&path));
         assert_eq!(settings.skin, "rainbow-dragon", "a user-authored theme must survive a restart");
         assert_eq!(settings.camera, DEFAULT_CAMERA);
+        assert_eq!(settings.render_style, DEFAULT_RENDER_STYLE, "a settings file from before 风格 existed opens on the voxel cat");
 
         // ...but a blank one is still a blank one.
         let body = serde_json::json!({
@@ -8364,6 +8812,9 @@ command = "node"
             behavior_preset: "quiet".to_string(),
             skin: "silver-brook".to_string(),
             camera: "eye-level".to_string(),
+            render_style: "realistic".to_string(),
+            input_avoidance: false,
+            auto_effects: true,
         };
         // Serialize the same way TrayState::persist does (tmp file + rename) and load
         // it back through the same loader the app startup uses.

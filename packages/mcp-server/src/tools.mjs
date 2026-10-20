@@ -148,18 +148,29 @@ export const tools = [
     description:
       'Run one of the scripted full-screen set pieces (it charges the screen, speed lines, ' +
       'impact flash, the lot). These take over the screen for several seconds, so save them for ' +
-      'moments that earn it - a long build finally going green, not every file write.',
+      'moments that earn it. Automatic use obeys the user setting and cooldown; set automatic=false only for an explicit user request.',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Performance id from lingxi_capabilities.' },
+        automatic: { type: 'boolean', default: true, description: 'True for an agent-chosen surprise. False only when the user explicitly requested this performance.' },
         priority: PRIORITY,
       },
       required: ['id'],
     },
-    async run({ id, priority }) {
-      await bridge.control({ perform: id, priority: priority ?? 'report' });
-      return ok(attributed(`Performing ${id}.`));
+    async run({ id, automatic = true, priority }) {
+      const caps = await bridge.capabilities();
+      const policy = caps.autoEffects;
+      if (automatic && policy?.enabled !== true) {
+        return ok('Automatic effects are disabled or unsupported; skipped. Do not enable them for the user.', { skipped: true });
+      }
+      if (automatic && policy.remainingCooldownMs > 0) {
+        return ok('Automatic effects are cooling down; skip this moment without retrying.', { skipped: true });
+      }
+      const result = await bridge.control({ perform: id,
+        ...(policy ? { performAutomatic: automatic } : {}),
+        priority: priority ?? (automatic ? 'flavour' : 'report') });
+      return ok(attributed(result.queued ? `Queued ${id}.` : `Requested ${id}.`), result);
     },
   },
   {
@@ -167,11 +178,11 @@ export const tools = [
     description:
       'Put a toy on the desktop or take it away. The cat drops what it is doing and plays with ' +
       'it: the yarn ball arrives on the pointer to be thrown, the wand is chased and jumped at, ' +
-      'the laser is chased and never caught. Good for "you have been at this for two hours".',
+      'the laser is chased and never caught; petting lets the user stroke its head, body or offered belly. Good for "you have been at this for two hours".',
     inputSchema: {
       type: 'object',
       properties: {
-        toy: { type: 'string', enum: ['yarn', 'feather', 'laser', 'none'] },
+        toy: { type: 'string', enum: ['yarn', 'feather', 'laser', 'petting', 'none'] },
         priority: PRIORITY,
       },
       required: ['toy'],

@@ -113,6 +113,7 @@ else
 fi
 
 # --- 1. the checks that should stop a release ---------------------------------------------------
+( cd "$REPO" && node scripts/prepare-realcat-assets.mjs ) || die "production cat assets unavailable"
 if [ "$SKIP_TESTS" = 0 ]; then
   say "Tests"
   ( cd "$REPO" && npm test >/dev/null ) || die "unit tests failed - run npm test"
@@ -193,6 +194,8 @@ $(codesign --verify --deep --strict --verbose=4 "$app" 2>&1)"
   fi
   awk -F= '/^CDHash=/{print $2}' <<<"$details"
 }
+
+( cd "$REPO" && npm run check:release ) || die "release artifact checks failed"
 
 say "Verify the signature"
 OUTER_CDHASH="$(verify_app "$APP" "the .app")"

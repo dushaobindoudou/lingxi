@@ -130,17 +130,13 @@ EOF
   cat "$OUT/SHA256SUMS.txt"
   echo '```'
   echo
-  if [ -n "$PREVIOUS" ]; then
-    echo "### 自 $PREVIOUS 以来的改动"
-    echo
-    git log --no-merges --format='- %s (%h)' "$PREVIOUS..$TAG"
-  else
-    echo "### 首个发布"
-    echo
-    echo "最近的改动："
-    echo
-    git log --no-merges --format='- %s (%h)' -n 15 "$TAG"
-  fi
+  echo "### 本版改动"
+  echo
+  # Product notes stay readable even when a release integrates long authoring branches.
+  awk -v version="$VERSION" '
+    /^## \[/{ if (found) exit; if (index($0, "[" version "]")) { found=1; next } }
+    found { print }
+  ' CHANGELOG.md
   echo
   echo "<sub>构建：commit \`$(git rev-parse --short "$BUILD_COMMIT")\` · $(info rustc) · Tauri $(info tauri) · 签名：$SIGNING$([ "$NOTARIZED" = true ] && echo '，已公证')</sub>"
 } > "$NOTES"

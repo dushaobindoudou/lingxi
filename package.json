@@ -1,6 +1,6 @@
 {
   "name": "lingxi",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "灵犀 — a lifelike, quiet desktop cat companion with extensible agent task observation",
@@ -10,6 +10,7 @@
   "scripts": {
     "test": "node --experimental-strip-types --test packages/*/test/*.test.mjs apps/lingxi/test/*.test.mjs integrations/test/*.test.mjs",
     "check": "node scripts/check-project.mjs",
-    "validate": "npm run check && npm test"
+    "validate": "npm run check && npm test",
+    "check:release": "node scripts/check-release-artifacts.mjs"
   }
 }

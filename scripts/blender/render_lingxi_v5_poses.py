@@ -42,7 +42,8 @@ def departure_from_rest():
     total = 0.0
     for bone in rig.pose.bones:
         total += sum(abs(math.degrees(a)) for a in bone.rotation_euler)
-        total += bone.location.length * 400  # metres are small; weight them into the same units
+        loc = bone.location if bone.name != 'Root' else bone.location.xy.to_3d()   # Walk/Run travel forward on Root's z: ground covered is not a pose
+        total += loc.length * 400  # metres are small; weight them into the same units
     for obj in scene.objects:
         keys = getattr(obj.data, 'shape_keys', None)
         if not keys:
@@ -62,8 +63,30 @@ def departure_from_rest():
     return total
 
 
+def blink_amount():
+    """How shut the eyes are on this frame, 0..1.
+
+    Blink is deliberately left out of departure_from_rest() so a blink cannot win the
+    comparison - but leaving it out entirely meant the chosen frame could still BE a blink:
+    five of the fifteen clips (Idle .85, Happy 1.0, Yawn .84, Stretch .91) rendered with the
+    eyes shut, and a contact sheet of a half-asleep cat is not what the clip looks like.
+    So the blink is not counted as expressiveness, it is penalised: a frame with the eyes
+    shut has to beat an open-eyed one by a wide margin to be picked. Sleep still renders
+    shut, because it holds Blink at 1 for its whole length and there is nothing to trade.
+    """
+    shut = 0.0
+    for obj in scene.objects:
+        keys = getattr(obj.data, 'shape_keys', None)
+        if not keys:
+            continue
+        for b in keys.key_blocks[1:]:
+            if b.name == 'Blink':
+                shut = max(shut, b.value)
+    return shut
+
+
 def most_expressive_frame(clip):
-    """The frame in this clip that is furthest from rest.
+    """The frame in this clip that is furthest from rest, with the eyes open.
 
     A fixed fraction cannot find it. Every clip here drives its feature with sin(phase), where
     phase runs a full turn across the clip - so the old fixed 0.55 landed on sin(198°) = -0.31,
@@ -75,17 +98,22 @@ def most_expressive_frame(clip):
     Sampling every frame instead. A contact sheet exists to answer "what does this clip look
     like", and the honest answer is its extreme, not its average.
     """
-    best, best_score = clip['start'], -1.0
+    best, best_score, best_raw = clip['start'], -1e9, 0.0
     for frame in range(clip['start'], clip['end'] + 1):
         scene.frame_set(frame)
         bpy.context.view_layer.update()
-        score = departure_from_rest()
+        raw = departure_from_rest()
+        score = raw - 300.0 * max(0.0, blink_amount() - 0.35)
         if score > best_score:
-            best, best_score = frame, score
-    return best, best_score
+            best, best_score, best_raw = frame, score, raw
+    return best, best_raw      # the score is the penalised one; report what the pose is worth
 
 
 manifest = json.loads((OUT / 'animations.json').read_text())
+# LINGXI_POSES=Bite,Knead renders just those - iterating on one clip should not cost fifteen renders.
+ONLY = {n.strip() for n in os.environ.get('LINGXI_POSES', '').split(',') if n.strip()}
+if ONLY:
+    manifest = [clip for clip in manifest if clip['name'] in ONLY]
 picked = []
 for clip in manifest:
     frame, score = most_expressive_frame(clip)

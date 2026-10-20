@@ -16,13 +16,14 @@
 // without any of them.
 
 export interface ToySituation {
-  kind: 'yarn' | 'feather' | 'laser';
+  kind: 'yarn' | 'feather' | 'laser' | 'pet';
   /** Distance from the cat to the toy, in logical pixels. */
   distance: number;
   /** How fast the toy itself is travelling, px/s. */
   toySpeed: number;
   /** True while the yarn ball is in the user's hand. */
   held: boolean;
+  playingClip?: string | null;
 }
 
 export interface Reaction {
@@ -44,7 +45,10 @@ const FAST_TOY = 220;
  * performing never reads as actually pursuing anything.
  */
 export function pickToyReaction(situation: ToySituation, random = Math.random): Reaction | null {
-  const { kind, distance, toySpeed, held } = situation;
+  const { kind, distance, toySpeed, held, playingClip } = situation;
+  if (kind === 'pet') return null;
+  // A contact swat must not starve the wand jump on every approach.
+  if (playingClip && !(kind === 'feather' && playingClip === 'toy-swat')) return null;
 
   // A wand held still just out of reach is the classic set-up: the cat drops, waits, and
   // springs. This is the single most recognisable thing a cat does at a toy.
@@ -57,7 +61,7 @@ export function pickToyReaction(situation: ToySituation, random = Math.random): 
   // floor, so the cat swats rather than rears.
   if (distance <= STRIKE_RANGE && toySpeed < FAST_TOY) {
     if (kind === 'feather') {
-      return random() < 0.5 ? { clip: 'hop-catch', cooldownMs: 2200 } : { clip: 'rear-up', cooldownMs: 2600 };
+      return { clip: 'hop-catch', cooldownMs: 2800 };
     }
     if (kind === 'yarn' && held) {
       // Held out of reach on the pointer - it stretches up for it rather than batting your hand.

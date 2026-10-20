@@ -25,6 +25,8 @@ import { createIdleAnimator } from './anim/idle.ts';
 import { createBodyFlex } from './anim/body-flex.ts';
 import { CAMERA_PRESETS, DEFAULT_CAMERA_ID, AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, cameraPreset } from './rig/cameras.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
+import { createVoxelPettingProbe } from './rig/petting.ts';
+import { createToyInteractionProbe } from './rig/toy-contact.ts';
 import { mergeBody, type MergedBody } from './rig/merged-body.ts';
 
 export { CAMERA_PRESETS, DEFAULT_CAMERA_ID, type CameraPreset } from './rig/cameras.ts';
@@ -202,6 +204,7 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
   let skin: CustomSkin = SKINS.find((s) => s.id === DEFAULT_SKIN_ID) ?? SKINS[0];
   let lastFrame: ReturnType<ReturnType<typeof createDirector>['update']> | null = null;
   let rig!: Rig;
+  let pettingProbe: ReturnType<typeof createVoxelPettingProbe> | null = null;
   let bodyTexture!: THREE.CanvasTexture;
   let bodyMaterial!: THREE.MeshStandardMaterial;
   let faceMaterial!: THREE.MeshBasicMaterial;
@@ -234,6 +237,7 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
    * during construction, before the rest of the renderer's state exists.
    */
   const restBox = new THREE.Box3();
+  let toyInteractionProbe: ReturnType<typeof createToyInteractionProbe> | null = null;
 
   // Bumped on every mountSkin. The texture loads below resolve ASYNCHRONOUSLY, and a quick
   // theme switch meant the first mount's onload could fire after the second mount had
@@ -314,7 +318,17 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
     rig.node('head').add(faceMesh);
     faceDecal = faceMesh;
 
+    pettingProbe = createVoxelPettingProbe(rig.root);
     bodyController = createBodyController(rig, SKELETON);
+    toyInteractionProbe = createToyInteractionProbe(rig, {
+      scale: () => VOXEL_TO_WORLD * modelScale,
+      prop: () => ({ kind: toyKind, prop: toyProp }),
+      place: (point, height) => screenToWorld(point.x, point.y, height),
+      project: point => {
+        const p = point.clone().project(camera);
+        return { x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2 };
+      },
+    });
     idleAnimator = createIdleAnimator(rig);
     // The rest-pose extent for screenExtent(). Captured here because it depends on the skin's
     // proportions, which a custom theme can change.
@@ -784,6 +798,9 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
 
   return {
     capabilities,
+    toyInteraction(request) {
+      return toyInteractionProbe?.(request) ?? null;
+    },
 
     mount(target: HTMLElement) {
       container = target;
@@ -1112,6 +1129,10 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
       bodyController.reset();
       idleAnimator.update(rig, elapsed, deltaSeconds, gaitPhase, walkAmount);
 
+      // Start the contact reaction before sampling this frame's animation. Its
+      // physical impulse was gated by the actual posed geometry in the engine.
+      if ((state as { batted?: boolean }).batted) director.play('toy-swat');
+
       // 3. the current expression's implied ear/head pose, eased rather than snapped
       // 0.5, not >0: walkAmount now fades in and out, and the director treats "moving" as a
       // hard gate that cancels whatever clip is playing. Reading the fade itself would cancel
@@ -1134,19 +1155,11 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
         repaintFace();
       }
 
-      // The swat fires on the one frame the engine reports contact - an explicit trigger, not
-      // something the idle scheduler could ever have rolled at the right moment.
-      if ((state as { batted?: boolean }).batted) {
-        director.play('toy-swat');
-        // Let the toy itself react to being hit, not just the cat.
-        toyProp?.struck?.();
-      }
-
       // 5b. the toy, if there is one. Mounted/unmounted here rather than through a setter so
       // the renderer simply follows whatever the life engine says exists - there is no second
       // copy of "is there a toy right now" to fall out of sync.
       const toyState = (state as {
-        toy?: { kind: string; position: { x: number; y: number }; velocity: { x: number; y: number }; charge?: number } | null;
+        toy?: { kind: string; position: { x: number; y: number }; hand?: { x: number; y: number }; velocity: { x: number; y: number }; charge?: number } | null;
       }).toy ?? null;
       if (toyState?.kind !== toyKind) {
         if (toyProp) {
@@ -1166,17 +1179,20 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
         }
       }
       if (toyProp && toyState) {
-        // Placed so the toy's own anchor height lands exactly on its logical screen point -
-        // which for the cursor-driven toys means exactly on the pointer.
-        const at = screenToWorld(toyState.position.x, toyState.position.y, toyProp.anchorHeight * effectiveScale());
+        // The wand is anchored to the hand; its logical position is the feather the cat chases.
+        const anchor = toyState.kind === 'feather' ? toyState.hand ?? toyState.position : toyState.position;
+        const toyScale = VOXEL_TO_WORLD * modelScale;
+        const at = screenToWorld(anchor.x, anchor.y, toyProp.anchorHeight * toyScale);
         toyProp.object.position.copy(at);
+        toyProp.aimWand?.((state.position.x - anchor.x) * worldPerPixelX, (state.position.y - anchor.y) * worldPerPixelZ);
         const toySpeed = Math.hypot(toyState.velocity.x, toyState.velocity.y);
         toyProp.update(deltaSeconds, toySpeed, toyState.charge ?? 0, {
           // Logical velocity mapped onto the ground plane, so a ball rolls the way it travels.
           x: toyState.velocity.x * worldPerPixelX,
           z: toyState.velocity.y * worldPerPixelZ,
-          scale: 1 / Math.max(1e-6, effectiveScale()),
+          scale: 1 / Math.max(1e-6, toyScale),
         });
+        if ((state as { batted?: boolean }).batted) toyProp.struck?.();
       }
 
       // 5c. contact shadow, sized to the cat and faded by how far off the ground it is.
@@ -1331,6 +1347,12 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
       } else {
         renderer.render(scene, camera);
       }
+    },
+
+    pettingHitTest(point, exposed) {
+      ndc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      return pettingProbe?.(raycaster, exposed) ?? null;
     },
 
     hitTest(point: { x: number; y: number }, precise = false) {

@@ -39,7 +39,42 @@ AI_MAPS = {
     'tongue': (1024, 1024),
     'tongue_bump': (1024, 1024),
     'mouth_dark': (1024, 1024),
+    # round L (2026-10-08, codex image_gen - see TONGUE-PAW-PROMPTS.md): a kitten's smooth bubblegum tongue
+    # and soft baby-pink pads in place of the adult tongue's red barbs and the pebbled brown pad leather,
+    # and a seamless short-fur height tile for the toes and the bald sole
+    'tongue_v2': (1024, 1024),
+    'pad_skin_v2': (1024, 1024),
+    'paw_fur_tile': (1024, 1024),
+    'pad_main_mask': (1024, 1024),   # the main pad's three-lobed shape, alpha on its oval
+    # round P (2026-10-09, codex image_gen - REF-BATCH3-PROMPTS.md; user: 「舌头……颜色也不对」): v2 was pale and grey,
+    # read as plastic; v3 is the reference kittens' warm saturated coral-rose, deeper at the root and the sides
+    'tongue_v3': (1024, 1024),
+    # round P (REF-BATCH4-PROMPTS.md): the closed mouth's omega crease, philtrum, lower lip and whisker dots as a multiply
+    # map over the muzzle's front (templates/muzzle_template.png: x -60..60 mm, z 415..505 mm, authored head space)
+    'muzzle_detail': (1024, 768),
 }
+
+
+def derived_bumps(out):
+    """Height maps for the round-L albedos, made here rather than painted: a second generation would not
+    register with the first. Tongue: the centre groove (the albedo's own darker line, x=512) as a soft valley
+    plus the albedo's fine papilla speckle; pad: the fine skin speckle only. Mid-grey = flat."""
+    from PIL import ImageFilter
+    made = []
+    for name, groove in (('tongue_v2', True), ('tongue_v3', True), ('pad_skin_v2', False)):
+        f = out / f'{name}.png'
+        if not f.exists():
+            continue
+        lum = np.asarray(Image.open(f).convert('L'), dtype='f')
+        fine = lum - np.asarray(Image.fromarray(lum.astype('uint8')).filter(ImageFilter.GaussianBlur(6)), dtype='f')
+        fine = fine / max(1e-6, float(np.abs(fine).std())) * 10.0          # unit speckle, ~10 grey levels
+        h = 128.0 + fine
+        if groove:
+            x = np.arange(lum.shape[1], dtype='f') - lum.shape[1] / 2
+            h -= 55.0 * np.exp(-(x / 26.0) ** 2)[None, :]                   # the groove, ~5% of the width
+        Image.fromarray(np.clip(h, 0, 255).astype('uint8'), mode='L').save(out / f'{name}_bump.png', optimize=True)
+        made.append(f'{name}_bump.png')
+    return made
 
 
 def flatten_alpha(im):
@@ -59,6 +94,7 @@ def main():
     ap.add_argument('--out', default=str(DEFAULT_OUT))
     ap.add_argument('--sources', default=str(DEFAULT_SRC))
     ap.add_argument('--skip-procedural', action='store_true')
+    ap.add_argument('--only', nargs='*', help='stage just these map names (e.g. tongue_v2 pad_skin_v2 paw_fur_tile)')
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -72,6 +108,8 @@ def main():
 
     staged, missing = [], []
     for name, size in AI_MAPS.items():
+        if args.only and name not in args.only:
+            continue
         f = src / f'{name}.png'
         if not f.exists():
             missing.append(name)
@@ -86,7 +124,8 @@ def main():
                        'mean': round(float(arr.mean()), 3),
                        'std': round(float(arr.std()), 3)})
 
-    print(json.dumps({'out': str(out), 'staged': len(staged),
+    bumps = derived_bumps(out)
+    print(json.dumps({'out': str(out), 'staged': len(staged), 'derived': bumps,
                       'missing': missing, 'maps': staged}, ensure_ascii=False))
 
 

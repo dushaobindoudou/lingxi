@@ -1,0 +1,50 @@
+{
+  "reference/turnaround-v1.png side panel": {
+    "landmarks_px": {
+      "nose_x": 595,
+      "head_rear_x": 815,
+      "rump_x": 1130,
+      "tail_tip_x": 1288,
+      "shoulder_top_y": 202,
+      "chest_bottom_y": 425,
+      "paw_floor_y": 518
+    },
+    "head_body": 0.411,
+    "shoulder_body": 0.591,
+    "foreleg_body": 0.174,
+    "chest_shoulder": 0.706,
+    "tail_body": 0.295
+  },
+  "round-h/views/side.png": {
+    "landmarks_px": {
+      "nose_x": 865,
+      "head_rear_x": 600,
+      "rump_x": 250,
+      "tail_tip_x": 60,
+      "shoulder_top_y": 342,
+      "chest_bottom_y": 580,
+      "paw_floor_y": 740
+    },
+    "head_body": 0.431,
+    "shoulder_body": 0.647,
+    "foreleg_body": 0.26,
+    "chest_shoulder": 0.598,
+    "tail_body": 0.309
+  },
+  "round-n/views/side.png": {
+    "landmarks_px": {
+      "nose_x": 866,
+      "head_rear_x": 625,
+      "rump_x": 255,
+      "tail_tip_x": 60,
+      "shoulder_top_y": 349,
+      "chest_bottom_y": 645,
+      "paw_floor_y": 735
+    },
+    "head_body": 0.394,
+    "shoulder_body": 0.632,
+    "foreleg_body": 0.147,
+    "chest_shoulder": 0.767,
+    "tail_body": 0.319
+  }
+}

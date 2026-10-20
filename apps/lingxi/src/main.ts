@@ -9,14 +9,20 @@
 import './styles.css';
 import { createTauriDesktopHost } from './desktop-host.ts';
 import { createThreeRenderer } from './renderer.ts';
-import { createStageFx } from './fx/stage-fx.ts';
+import { createRealisticRenderer } from './realistic-renderer.ts';
+import { frameDelta } from './animation-clock.ts';
+import { inputProtectedRegions } from './input-avoidance.ts';
+import { createRendererSwitcher, type RenderStyle } from './renderer-switcher.ts';
+import { createStageFx, type BubbleAttribution } from './fx/stage-fx.ts';
 import { agentLook } from './ui/icons.ts';
+import { createPerformanceGate } from './fx/performance-gate.ts';
 import { createPerformanceRunner } from './fx/performances.ts';
 import { pickToyReaction, pickPointerReaction, pickAffectionLine } from './anim/interactions.ts';
-import { createLifeEngine, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
+import { createPettingSession, bellyIsExposed } from './anim/petting.ts';
+import { createLifeEngine, DEFAULT_WANDER_SPEED, TOY_KINDS } from '../../../packages/life-engine/src/index.mjs';
 import type { Personality } from '../../../packages/life-engine/src/index.d.mts';
 import { createActivityRecorder } from '../../../packages/perception/src/index.mjs';
-import type { WorkArea } from '../../../packages/desktop-host-contract/index.d.ts';
+import type { WorkArea, FocusedInput } from '../../../packages/desktop-host-contract/index.d.ts';
 import type { AIIntent } from '../../../packages/perception-contract/index.d.ts';
 import { listen, emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -42,8 +48,9 @@ const EDGE_MARGIN = 24;
 /** Shared by the startup report and every post-reload republish, so the two cannot drift. */
 const TOY_CATALOGUE = [
   { kind: 'yarn', name: '毛线球', description: '会滚、会撞墙反弹；猫追上去拍一爪又飞出去，能自己玩下去' },
-  { kind: 'feather', name: '逗猫棒', description: '跟着你的鼠标走，但慢半拍——需要你来逗' },
+  { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，靠近时猫会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '死死钉在光标上，拍到也抓不住（这就是笑点）' },
+  { kind: 'pet', name: '撸猫', description: '按住左键轻抚头部和身体，翻肚后可摸腹部' },
 ];
 
 async function main() {
@@ -63,7 +70,29 @@ async function main() {
   dlog('main() start');
   const host = createTauriDesktopHost();
   // Fitted: the canvas follows the cat instead of covering the screen - see the renderer.
-  const renderer = createThreeRenderer({ fitCanvasToCat: true });
+  // 风格: one facade for the life of the window; the voxel or the realistic cat behind it (renderer-switcher.ts).
+  const renderer = createRendererSwitcher({
+    voxel: () => createThreeRenderer({ fitCanvasToCat: true }),
+    realistic: () => {
+      const trace = (message: string) => void invoke('debug_log', { message: `[realcat] ${message}` }).catch(() => {});
+      const url = `${import.meta.env.BASE_URL}characters/lingxi-realistic/current/cat.glb`;
+      trace(`creating, asset ${url}`);
+      const next = createRealisticRenderer({ assetUrl: url, fitCanvasToCat: true, shells: 32 });
+      next.ready.then(() => trace('model ready'), (error) => trace(`model failed: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`));
+      return next;
+    },
+  });
+  function applyRenderStyle(style: string | undefined): void {
+    const wanted: RenderStyle = style === 'realistic' ? 'realistic' : 'voxel';
+    void invoke('debug_log', { message: `[realcat] style requested ${style} -> ${wanted}, active ${renderer.activeStyle}` }).catch(() => {});
+    if (wanted === renderer.requestedStyle) return;
+    void renderer.switchStyle(wanted).then((result) => {
+      // Not dlog (dev only): a style that fails to load in the shipped app must leave a trace.
+      void invoke('debug_log', { message: `render style ${wanted}: ${JSON.stringify(result)}` }).catch(() => {});
+      // the two cats draw different heights, and the margins follow what is drawn
+      if (result.applied) { syncMargins(); publishCapabilities(); }
+    });
+  }
   const engineRecorder = createActivityRecorder();
   const stage = document.getElementById('stage');
   if (!stage) throw new Error('index.html must contain #stage');
@@ -79,6 +108,7 @@ async function main() {
   const engine = createLifeEngine({
     bounds: logicalSize(workArea),
     position: { x: logicalSize(workArea).width / 2, y: logicalSize(workArea).height / 2 },
+    toyInteraction: renderer.toyInteraction,
   });
   renderer.resize(logicalSize(workArea).width, logicalSize(workArea).height);
   dlog(`resized to ${JSON.stringify(logicalSize(workArea))}`);
@@ -170,6 +200,9 @@ async function main() {
   // so the value they restore to has to be tracked here rather than read back off the renderer.
   let userCamera = 'game';
   let currentSkinId = 'honey-mittens';
+  let inputAvoidanceEnabled = true;
+  let autoEffectsEnabled = false;
+  let syncAutoEffects: ((enabled: boolean) => void) | null = null;
 
   interface HostStatus {
     scale: number;
@@ -180,6 +213,9 @@ async function main() {
     avoidRadius: number;
     skin: string;
     camera: string;
+    renderStyle?: string;
+    inputAvoidance?: boolean;
+    autoEffects?: { enabled: boolean };
     /** The five sliders from 主界面. The engine reads these - see applyStatus. */
     personalityTraits?: Partial<Personality>;
   }
@@ -201,6 +237,10 @@ async function main() {
     renderer.setSkin?.(status.skin);
     userCamera = status.camera;
     renderer.setCameraPreset?.(status.camera);
+    applyRenderStyle(status.renderStyle);
+    inputAvoidanceEnabled = status.inputAvoidance !== false;
+    autoEffectsEnabled = status.autoEffects?.enabled === true;
+    syncAutoEffects?.(autoEffectsEnabled);
     // Both the skin (proportions) and the camera (foreshortening) change how tall the cat draws.
     syncMargins();
     engine.setAvoidRadius(status.avoidRadius);
@@ -264,6 +304,12 @@ async function main() {
   });
 
   let cursor: { x: number; y: number } | null = null;
+  let focusedInput: FocusedInput | null = null;
+  let focusedInputSeenAt = -Infinity;
+  host.onFocusedInputChange?.(input => {
+    focusedInput = input;
+    focusedInputSeenAt = performance.now();
+  });
   let isCaptured = false; // mirrors the host's click-through state, to avoid redundant IPC calls
   let isMouseDown = false;
   let dragStartedAt = 0;
@@ -286,6 +332,9 @@ async function main() {
   let pointerReactionUntil = 0;
   let lastAffectionLine: string | null = null;
   let toyReactionUntil = 0;
+  const petting = createPettingSession();
+  let bellyDurationMs = 0;
+  let lastPettingRegion: string | null = null;
 
   // Generous slack around the work area, not a hard clip - covers edge rounding/DPI jitter
   // without accepting a genuinely bogus reading (a second monitor's coordinates, computed
@@ -370,31 +419,26 @@ async function main() {
   // merge is done - a no-op when the id is unchanged, a mount when it is not.
   renderer.setSkin?.(currentSkinId);
   syncMargins();
-  // Who the cat is currently speaking for. Applied to the NEXT bubble rather than drawn beside
-  // the cat: a mark pinned to the body is a HUD with no natural moment to leave, while a bubble
-  // already has one. Arrives before the `say` that follows it, because the Rust side claims the
-  // stage before it applies the rest of the command.
-  //
-  // A known host (Claude Code, Codex, ...) always shows the mark this app ships for it - the
-  // same one 主界面 shows - and a session name, when the event carries one, is what the bubble
-  // says: "which Claude" is the question when several sessions are open.
-  void listen<{ agent: string; name: string; label?: string | null; badge: string; logo: string | null; color: string }>(
-    'agent-stage',
-    (event) => {
-      const { agent, name, label, badge, logo, color } = event.payload;
-      // The same rule 主界面 uses (ui/icons.ts agentLook), so an agent's icon on the cat and in
-      // the main window can never differ.
-      const look = agentLook({ id: agent, name, badge, logo, color });
-      fx.setBubbleAttribution({
-        name: label || look.name,
-        title: label ? `${look.name} · ${label}` : look.name,
-        badge: look.badge,
-        logo: null,
-        markUrl: look.src ?? undefined,
-        color: look.chip,
-      });
-    },
-  );
+  // Performances may speak later; direct speech carries the source in its own event.
+  type SpeechSource = {
+    agent: string; name: string; label?: string | null;
+    badge: string; logo: string | null; color: string;
+  };
+  function bubbleSource(source: SpeechSource): BubbleAttribution {
+    const { agent, name, label, badge, logo, color } = source;
+    const look = agentLook({ id: agent, name, badge, logo, color });
+    return {
+      name: label || look.name,
+      title: label ? `${look.name} · ${label}` : look.name,
+      badge: look.badge,
+      logo: null,
+      markUrl: look.src ?? undefined,
+      color: look.chip,
+    };
+  }
+  void listen<SpeechSource>('agent-stage', (event) => {
+    fx.setBubbleAttribution(bubbleSource(event.payload));
+  });
 
   void listen('reload-custom-assets', () => {
     void loadCustomAssets().then(() => {
@@ -413,6 +457,8 @@ async function main() {
     renderer.setSkin?.(event.payload);
     syncMargins();
   });
+  void listen<boolean>('input-avoidance-enabled', event => { inputAvoidanceEnabled = event.payload; });
+  void listen<string>('set-render-style', (event) => applyRenderStyle(event.payload));
   void listen<string>('set-camera', (event) => {
     userCamera = event.payload;
     renderer.setCameraPreset?.(event.payload);
@@ -463,14 +509,34 @@ async function main() {
     now: () => performance.now(),
   });
 
-  void listen<{ id: string }>('perform', (event) => {
+  const performanceGate = createPerformanceGate(performances, () => {
+    petting.setEnabled(false);
+    engine.setPetting(false);
     markInteresting();
-    if (!performances.play(event.payload.id)) dlog(`perform: unknown performance ${event.payload.id}`);
+  }, () => !petting.enabled && !engine.toy && engine.state !== 'dragged');
+  syncAutoEffects = enabled => performanceGate.setEnabled(enabled);
+  syncAutoEffects(autoEffectsEnabled);
+  void listen<boolean>('auto-effects-enabled', event => {
+    autoEffectsEnabled = event.payload;
+    performanceGate.setEnabled(event.payload);
+  });
+  void listen<{ id: string; automatic?: boolean }>('perform', event => {
+    performanceGate.play(event.payload.id, event.payload.automatic !== false);
   });
   void listen('perform-stop', () => performances.stop());
 
   void listen<{ kind: string }>('set-toy', (event) => {
     markInteresting();
+    if (event.payload.kind === 'pet' || event.payload.kind === 'petting') {
+      performances.stop();
+      engine.clearIntent();
+      engine.setToy('pet');
+      engine.setPetting(true);
+      petting.setEnabled(true);
+      lastPettingRegion = null;
+      fx.say('按住左键，轻轻摸摸我～', 2600);
+      return;
+    }
     // Validated here rather than trusted: this event can originate from an agent's HTTP POST,
     // and the engine treats an unknown kind as a no-op, which would look like a silent failure.
     const kind = event.payload.kind as (typeof TOY_KINDS)[number];
@@ -478,17 +544,35 @@ async function main() {
       dlog(`set-toy: unknown toy ${event.payload.kind}`);
       return;
     }
+    petting.setEnabled(false);
+    engine.setPetting(false);
     engine.setToy(kind);
   });
-  void listen('clear-toy', () => engine.clearToy());
+  void listen('clear-toy', () => {
+    petting.setEnabled(false);
+    engine.setPetting(false);
+    engine.clearToy();
+  });
+  void listen('request-play-mode', () => {
+    void emit('play-mode', { kind: petting.enabled ? 'pet' : engine.toy?.kind ?? null });
+  });
+  void listen('petting-belly', () => {
+    if (!petting.enabled) return;
+    petting.release();
+    if (renderer.playAction?.('belly-up')) bellyDurationMs = renderer.playingAction?.remainingMs ?? 0;
+  });
 
   // 说话气泡: one line at a time, above the head, anchored every frame in frame() below.
-  void listen<{ text: string; durationMs?: number }>('say', (event) => {
+  void listen<{ text: string; durationMs?: number; source?: SpeechSource }>('say', (event) => {
     markInteresting();
     // An empty text is the hush signal (the debug console's 收起 button, and anything else
     // that wants to withdraw a line); fx.say no-ops on empty, so it is routed explicitly.
     if (!event.payload.text.trim()) fx.hush();
-    else fx.say(event.payload.text, event.payload.durationMs);
+    else fx.say(
+      event.payload.text,
+      event.payload.durationMs,
+      event.payload.source ? bubbleSource(event.payload.source) : null,
+    );
   });
 
   // Publish what this renderer can do, once, so GET /capabilities can answer an agent
@@ -523,8 +607,16 @@ async function main() {
     if (targetPoint) engine.suggestMoveTo(targetPoint, performance.now(), holdMs);
   });
 
-  window.addEventListener('mousedown', () => {
+  window.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
     if (!isCaptured || !cursor) return;
+    if (petting.enabled) {
+      if (renderer.hitTest(cursor, true)) {
+        petting.press();
+        engineRecorder.record({ type: 'click_on_pet', at: performance.now(), position: cursor });
+      }
+      return;
+    }
     // Clicking the yarn ball picks it UP and starts winding a throw, rather than grabbing the
     // cat. Whichever of the two the pointer is actually over wins - see the hit test in frame().
     if (overToy && engine.toy?.kind === 'yarn') {
@@ -569,6 +661,7 @@ async function main() {
   // short line. Distinct from a click-drag (pick the cat up) and from hovering (it notices
   // you), so all three gestures mean different things instead of competing.
   window.addEventListener('dblclick', () => {
+    if (petting.enabled) return;
     if (!isCaptured || !wasHit) return;
     renderer.playAction?.('head-bump');
     renderer.playExpression?.('撒娇', 2600);
@@ -580,6 +673,7 @@ async function main() {
   });
 
   window.addEventListener('mouseup', () => {
+    petting.release();
     if (isChargingToy) {
       engine.releaseCharge(performance.now(), aim);
       isChargingToy = false;
@@ -595,6 +689,10 @@ async function main() {
       engineRecorder.record({ type: 'drag_start', at: dragStartedAt, position: cursor });
       engineRecorder.record({ type: 'drag_end', at: now, position: cursor, durationMs: now - dragStartedAt });
     }
+  });
+  window.addEventListener('blur', () => petting.release());
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && petting.enabled) void emit('clear-toy');
   });
 
   const canvas = stage.querySelector('canvas');
@@ -614,11 +712,13 @@ async function main() {
   let perceptionTimer: ReturnType<typeof setInterval> | null = null;
   function pushPerception() {
     const now = performance.now();
+    const renderState = renderer.describeCapabilities?.() as { style?: string; gait?: unknown; textures?: unknown } | undefined;
     const snapshot = {
       observedAt: Date.now(),
       cursor,
       petPosition: engine.position,
       petState: engine.state,
+      renderDiagnostics: renderState?.style === 'realistic' ? { gait: renderState.gait, textures: renderState.textures } : null,
       mode: engine.mode,
       // What the cat is doing right now, beyond where it is: which clip is playing and what it
       // is playing with. Both are things an agent (or the debug console, or a person watching
@@ -718,7 +818,7 @@ async function main() {
 
   function step(now: number) {
     try {
-      const deltaSeconds = lastFrameAt == null ? 0 : Math.min(0.1, (now - lastFrameAt) / 1000);
+      const deltaSeconds = frameDelta(lastFrameAt, now, renderer.activeStyle);
       lastFrameAt = now;
 
       // Drag position updates now come from the native mousemove listener above (faster,
@@ -726,7 +826,21 @@ async function main() {
       // The engine's radial fallback is useful in headless tests, but the live cat has an
       // actual silhouette. Use that for touch so approaching from below cannot trigger early.
       const pointerOnPet = cursor ? renderer.hitTest(cursor, true) : false;
+      // the realistic cat's legs set its pace (a small one strolls, it does not skate); the voxel cat's legs follow any
+      const pace = renderer.locomotionPace?.();
+      engine.setPace(pace ? Math.min(1, pace / DEFAULT_WANDER_SPEED) : 1);
+      const input = inputAvoidanceEnabled && now - focusedInputSeenAt < 2000 ? focusedInput : null;
+      engine.setProtectedRegions(inputProtectedRegions(input, workArea,
+        renderer.screenExtent?.() ?? { above: 120, below: 20, halfWidth: 80 }));
+      engine.setNaturalWander(renderer.activeStyle === 'realistic');
+      engine.setSprintPace(renderer.sprintPace?.() ?? null);
       const snapshot = engine.tick(now, cursor, pointerOnPet);
+      const yieldingToInput = snapshot.inputAvoidance.overlapping;
+      if (yieldingToInput) performances.stop();
+      // Clear the text immediately while the cat quietly walks out. With no free spot
+      // (a full-window editor without caret bounds), wait invisibly until focus changes.
+      document.documentElement.style.opacity = yieldingToInput ? '0' : '1';
+      if (yieldingToInput || !pointerOnPet) petting.release();
       // Kept for the reporting interval below. It must NOT call tick() itself: that would
       // advance the simulation a second time, off the animation clock, and every distance the
       // gait integrates would be wrong.
@@ -734,7 +848,25 @@ async function main() {
       // Back to full rate the frame something starts moving, not at the watchdog's next look:
       // a walk that starts at 30fps reads as a stutter.
       if (tier === 'idle' && !catIsStill()) setTier('active');
-      renderer.render(snapshot, deltaSeconds, cursor);
+      const exposedBelly = bellyIsExposed(renderer.playingAction, bellyDurationMs);
+      const touched = petting.enabled && petting.pressed && cursor && !yieldingToInput
+        ? renderer.pettingHitTest?.(cursor, exposedBelly) ?? null : null;
+      renderer.render({ ...snapshot, pettingContact: touched != null && touched !== 'belly' }, deltaSeconds, cursor);
+      const affection = petting.tick(cursor, touched, now);
+      if (affection) {
+        // Keep the belly pose while stroking it; do not interrupt the roll with a standing clip.
+        if (affection.clip && renderer.playingAction?.id !== 'belly-up') renderer.playAction?.(affection.clip);
+        renderer.playExpression?.(affection.expression, 2000);
+        if (affection.region !== lastPettingRegion) {
+          fx.say({ head: '呼噜…再摸摸头～', body: '顺毛好舒服…', belly: '轻一点点，喵～' }[affection.region], 2000);
+          lastPettingRegion = affection.region;
+        }
+        const head = renderer.headScreenPoint?.();
+        if (head) fx.hearts(head.x, head.y, 3);
+      }
+      document.documentElement.style.cursor = petting.enabled && pointerOnPet
+        ? petting.pressed ? 'grabbing' : 'grab' : '';
+      fx.petHand(!yieldingToInput && snapshot.toy?.kind === 'pet' ? cursor : null);
 
       // --- sleep, made visible ----------------------------------------------------------
       //
@@ -749,7 +881,7 @@ async function main() {
       // of being interrupted by a yawn or a grooming clip every few seconds.
       if (snapshot.state === 'sleep') {
         if (!renderer.playingAction) renderer.playAction?.('curled-sleep');
-      } else if (wasAsleep) {
+      } else if (wasAsleep && !petting.enabled) {
         // Waking up is a beat of its own. A cat that snaps from curled to walking looks
         // teleported; one that stretches first reads as having just got up.
         renderer.playAction?.('stretch-front');
@@ -769,7 +901,7 @@ async function main() {
       // because it happened to wander onto a cursor you had parked and forgotten about
       // ("鼠标主动放到他身上的时候应该是亲近"). The same flag stops it fleeing, so the two
       // halves of the reaction finally agree with each other.
-      if (cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
+      if (!yieldingToInput && !petting.enabled && !snapshot.toy && cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
         if (hoverSince === 0) {
           hoverSince = now;
           strokeDistance = 0;
@@ -785,17 +917,15 @@ async function main() {
             hoverMs: now - hoverSince,
             strokeDistance,
           });
-          if (reaction) {
-            renderer.playAction?.(reaction.clip);
-            renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
-            if (reaction.kind === 'stroke') {
-              const head = renderer.headScreenPoint?.();
-              if (head) fx.hearts(head.x, head.y, 3);
-              strokeDistance = 0; // start earning the next purr
-              pointerReactionUntil = now + 4200;
-            } else {
-              pointerReactionUntil = now + 2600;
+          if (reaction?.kind === 'notice') {
+            // Ordinary attention can acknowledge an approaching pointer. Stroking is handled only by the explicit
+            // pressed, anatomically checked petting session above.
+            const movingHand = renderer.activeStyle === 'realistic' && strokeDistance > 24;
+            if (!movingHand) {
+              renderer.playAction?.(reaction.clip);
+              renderer.playExpression?.(reaction.expression, 1800);
             }
+            pointerReactionUntil = now + (movingHand ? 350 : 2600);
           }
         }
       } else {
@@ -806,12 +936,14 @@ async function main() {
 
       // --- toy play: stalk, spring, rear up ---------------------------------------------
       const toyNow = snapshot.toy;
-      if (toyNow && snapshot.state === 'play_toy' && now >= toyReactionUntil && !renderer.playingAction) {
+      if (toyNow && snapshot.state === 'play_toy' && now >= toyReactionUntil && !performances.active) {
         const reaction = pickToyReaction({
           kind: toyNow.kind,
-          distance: Math.hypot(toyNow.position.x - snapshot.position.x, toyNow.position.y - snapshot.position.y),
+          distance: Math.hypot((snapshot.target ?? toyNow.position).x - snapshot.position.x,
+            (snapshot.target ?? toyNow.position).y - snapshot.position.y),
           toySpeed: Math.hypot(toyNow.velocity.x, toyNow.velocity.y),
           held: toyNow.held,
+          playingClip: renderer.playingAction?.id,
         });
         if (reaction) {
           renderer.playAction?.(reaction.clip);
@@ -832,7 +964,7 @@ async function main() {
         heldForAction = playing.id;
         // Only clips that need the legs pin the cat. A tail flick or a glance can happily play
         // while it keeps walking, and holding for those would make it stop for no visible reason.
-        if (!playing.legFree) engine.hold(playing.remainingMs, now);
+        if (!playing.legFree) engine.hold(playing.remainingMs, now, true);
       } else if (!playing) {
         heldForAction = null;
       }
@@ -852,7 +984,7 @@ async function main() {
         // reaches this webview at all.
         const toy = snapshot.toy;
         overToy = toy?.kind === 'yarn' && Math.hypot(toy.position.x - cursor.x, toy.position.y - cursor.y) < TOY_GRAB_RADIUS_PX;
-        const shouldCapture = hit || overToy || isMouseDown || isChargingToy;
+        const shouldCapture = !yieldingToInput && (hit || overToy || isMouseDown || isChargingToy || petting.pressed);
         if (shouldCapture !== isCaptured) {
           isCaptured = shouldCapture;
           void host.setClickThrough(!isCaptured);
@@ -909,7 +1041,7 @@ async function main() {
         updateSuspension();
         // Compare before applying: setSkin rebuilds the rig and repaints both atlases, so
         // calling it every 1.5s because nothing changed would be genuinely expensive.
-        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius]);
+        const json = JSON.stringify([status.scale, status.skin, status.camera, status.avoidRadius, status.renderStyle, status.inputAvoidance]);
         if (json === lastStatusJson) return;
         const missed = lastStatusJson !== '';
         lastStatusJson = json;

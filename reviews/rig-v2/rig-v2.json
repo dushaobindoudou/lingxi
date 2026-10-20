@@ -1,0 +1,2172 @@
+{
+ "version": 2,
+ "bones": [
+  {
+   "name": "Root",
+   "parent": null,
+   "group": "trunk",
+   "head": [
+    0.0,
+    0.006,
+    0.0
+   ],
+   "tail": [
+    0.0,
+    0.006,
+    0.1
+   ],
+   "length": 0.1,
+   "deform": true
+  },
+  {
+   "name": "Pelvis",
+   "parent": "Root",
+   "group": "trunk",
+   "head": [
+    0.0,
+    0.222,
+    0.3
+   ],
+   "tail": [
+    0.0,
+    0.078,
+    0.33
+   ],
+   "length": 0.14709,
+   "deform": true
+  },
+  {
+   "name": "Loin",
+   "parent": "Pelvis",
+   "group": "trunk",
+   "head": [
+    0.0,
+    0.078,
+    0.33
+   ],
+   "tail": [
+    0.0,
+    0.024,
+    0.3375
+   ],
+   "length": 0.05452,
+   "deform": true
+  },
+  {
+   "name": "LoinB",
+   "parent": "Loin",
+   "group": "trunk",
+   "head": [
+    0.0,
+    0.024,
+    0.3375
+   ],
+   "tail": [
+    0.0,
+    -0.03,
+    0.345
+   ],
+   "length": 0.05452,
+   "deform": true
+  },
+  {
+   "name": "Spine",
+   "parent": "LoinB",
+   "group": "trunk",
+   "head": [
+    0.0,
+    -0.03,
+    0.345
+   ],
+   "tail": [
+    0.0,
+    -0.084,
+    0.3525
+   ],
+   "length": 0.05452,
+   "deform": true
+  },
+  {
+   "name": "Chest",
+   "parent": "Spine",
+   "group": "trunk",
+   "head": [
+    0.0,
+    -0.084,
+    0.3525
+   ],
+   "tail": [
+    0.0,
+    -0.138,
+    0.36
+   ],
+   "length": 0.05452,
+   "deform": true
+  },
+  {
+   "name": "Neck",
+   "parent": "Chest",
+   "group": "neck-head",
+   "head": [
+    0.0,
+    -0.138,
+    0.36
+   ],
+   "tail": [
+    0.0,
+    -0.1875,
+    0.42
+   ],
+   "length": 0.07778,
+   "deform": true
+  },
+  {
+   "name": "NeckB",
+   "parent": "Neck",
+   "group": "neck-head",
+   "head": [
+    0.0,
+    -0.1875,
+    0.42
+   ],
+   "tail": [
+    0.0,
+    -0.237,
+    0.48
+   ],
+   "length": 0.07778,
+   "deform": true
+  },
+  {
+   "name": "Head",
+   "parent": "NeckB",
+   "group": "neck-head",
+   "head": [
+    0.0,
+    -0.237,
+    0.48
+   ],
+   "tail": [
+    0.0,
+    -0.336,
+    0.525
+   ],
+   "length": 0.10875,
+   "deform": true
+  },
+  {
+   "name": "Jaw",
+   "parent": "Head",
+   "group": "neck-head",
+   "head": [
+    0.0,
+    -0.2748,
+    0.471
+   ],
+   "tail": [
+    0.0,
+    -0.372,
+    0.4404
+   ],
+   "length": 0.1019,
+   "deform": true
+  },
+  {
+   "name": "Tongue",
+   "parent": "Jaw",
+   "group": "tongue",
+   "head": [
+    0.0,
+    -0.345,
+    0.4422
+   ],
+   "tail": [
+    0.0,
+    -0.35581,
+    0.4422
+   ],
+   "length": 0.01081,
+   "deform": true
+  },
+  {
+   "name": "TongueMid",
+   "parent": "Tongue",
+   "group": "tongue",
+   "head": [
+    0.0,
+    -0.35581,
+    0.4422
+   ],
+   "tail": [
+    0.0,
+    -0.36572,
+    0.4422
+   ],
+   "length": 0.00992,
+   "deform": true
+  },
+  {
+   "name": "TongueTip",
+   "parent": "TongueMid",
+   "group": "tongue",
+   "head": [
+    0.0,
+    -0.36572,
+    0.4422
+   ],
+   "tail": [
+    0.0,
+    -0.3972,
+    0.4422
+   ],
+   "length": 0.03148,
+   "deform": true
+  },
+  {
+   "name": "LipLow",
+   "parent": "Jaw",
+   "group": "face-control",
+   "head": [
+    0.0,
+    -0.39,
+    0.45049
+   ],
+   "tail": [
+    0.0,
+    -0.39,
+    0.45949
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "Nose",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.0,
+    -0.381,
+    0.48
+   ],
+   "tail": [
+    0.0,
+    -0.399,
+    0.489
+   ],
+   "length": 0.02012,
+   "deform": true
+  },
+  {
+   "name": "LipUpper",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.0,
+    -0.39,
+    0.46669
+   ],
+   "tail": [
+    0.0,
+    -0.4098,
+    0.46669
+   ],
+   "length": 0.0198,
+   "deform": true
+  },
+  {
+   "name": "Ear.L",
+   "parent": "Head",
+   "group": "ear",
+   "head": [
+    -0.09,
+    -0.219,
+    0.5916
+   ],
+   "tail": [
+    -0.1197,
+    -0.2145,
+    0.6618
+   ],
+   "length": 0.07636,
+   "deform": true
+  },
+  {
+   "name": "EarTip.L",
+   "parent": "Ear.L",
+   "group": "ear",
+   "head": [
+    -0.1197,
+    -0.2145,
+    0.6618
+   ],
+   "tail": [
+    -0.1494,
+    -0.21,
+    0.732
+   ],
+   "length": 0.07636,
+   "deform": true
+  },
+  {
+   "name": "Eye.L",
+   "parent": "Head",
+   "group": "eye",
+   "head": [
+    -0.06912,
+    -0.3567,
+    0.5187
+   ],
+   "tail": [
+    -0.06912,
+    -0.3855,
+    0.5187
+   ],
+   "length": 0.0288,
+   "deform": true
+  },
+  {
+   "name": "LidUpper.L",
+   "parent": "Head",
+   "group": "eye",
+   "head": [
+    -0.03794,
+    -0.22083,
+    0.5187
+   ],
+   "tail": [
+    -0.04356,
+    -0.24724,
+    0.5187
+   ],
+   "length": 0.027,
+   "deform": true
+  },
+  {
+   "name": "LidLower.L",
+   "parent": "Head",
+   "group": "eye",
+   "head": [
+    -0.03794,
+    -0.22083,
+    0.5187
+   ],
+   "tail": [
+    -0.04356,
+    -0.24724,
+    0.5187
+   ],
+   "length": 0.027,
+   "deform": true
+  },
+  {
+   "name": "Whisker.L",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    -0.0432,
+    -0.381,
+    0.4773
+   ],
+   "tail": [
+    -0.189,
+    -0.381,
+    0.48
+   ],
+   "length": 0.14582,
+   "deform": true
+  },
+  {
+   "name": "Ear.R",
+   "parent": "Head",
+   "group": "ear",
+   "head": [
+    0.09,
+    -0.219,
+    0.5916
+   ],
+   "tail": [
+    0.1197,
+    -0.2145,
+    0.6618
+   ],
+   "length": 0.07636,
+   "deform": true
+  },
+  {
+   "name": "EarTip.R",
+   "parent": "Ear.R",
+   "group": "ear",
+   "head": [
+    0.1197,
+    -0.2145,
+    0.6618
+   ],
+   "tail": [
+    0.1494,
+    -0.21,
+    0.732
+   ],
+   "length": 0.07636,
+   "deform": true
+  },
+  {
+   "name": "Eye.R",
+   "parent": "Head",
+   "group": "eye",
+   "head": [
+    0.06912,
+    -0.3567,
+    0.5187
+   ],
+   "tail": [
+    0.06912,
+    -0.3855,
+    0.5187
+   ],
+   "length": 0.0288,
+   "deform": true
+  },
+  {
+   "name": "LidUpper.R",
+   "parent": "Head",
+   "group": "eye",
+   "head": [
+    0.03794,
+    -0.22083,
+    0.5187
+   ],
+   "tail": [
+    0.04356,
+    -0.24724,
+    0.5187
+   ],
+   "length": 0.027,
+   "deform": true
+  },
+  {
+   "name": "LidLower.R",
+   "parent": "Head",
+   "group": "eye",
+   "head": [
+    0.03794,
+    -0.22083,
+    0.5187
+   ],
+   "tail": [
+    0.04356,
+    -0.24724,
+    0.5187
+   ],
+   "length": 0.027,
+   "deform": true
+  },
+  {
+   "name": "Whisker.R",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.0432,
+    -0.381,
+    0.4773
+   ],
+   "tail": [
+    0.189,
+    -0.381,
+    0.48
+   ],
+   "length": 0.14582,
+   "deform": true
+  },
+  {
+   "name": "BrowIn.L",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    -0.05472,
+    -0.39,
+    0.5493
+   ],
+   "tail": [
+    -0.05472,
+    -0.39,
+    0.5583
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "BrowOut.L",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    -0.08532,
+    -0.39,
+    0.5457
+   ],
+   "tail": [
+    -0.08532,
+    -0.39,
+    0.5547
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "MouthCorner.L",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    -0.0216,
+    -0.39,
+    0.45904
+   ],
+   "tail": [
+    -0.0216,
+    -0.39,
+    0.46804
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "LipUp.L",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    -0.0117,
+    -0.39,
+    0.46309
+   ],
+   "tail": [
+    -0.0117,
+    -0.39,
+    0.47209
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "NoseSide.L",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    -0.0144,
+    -0.39,
+    0.489
+   ],
+   "tail": [
+    -0.0144,
+    -0.39,
+    0.498
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "Nostril.L",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    -0.0108,
+    -0.39,
+    0.48
+   ],
+   "tail": [
+    -0.0108,
+    -0.39,
+    0.489
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "BrowIn.R",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.05472,
+    -0.39,
+    0.5493
+   ],
+   "tail": [
+    0.05472,
+    -0.39,
+    0.5583
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "BrowOut.R",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.08532,
+    -0.39,
+    0.5457
+   ],
+   "tail": [
+    0.08532,
+    -0.39,
+    0.5547
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "MouthCorner.R",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.0216,
+    -0.39,
+    0.45904
+   ],
+   "tail": [
+    0.0216,
+    -0.39,
+    0.46804
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "LipUp.R",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.0117,
+    -0.39,
+    0.46309
+   ],
+   "tail": [
+    0.0117,
+    -0.39,
+    0.47209
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "NoseSide.R",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.0144,
+    -0.39,
+    0.489
+   ],
+   "tail": [
+    0.0144,
+    -0.39,
+    0.498
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "Nostril.R",
+   "parent": "Head",
+   "group": "face-control",
+   "head": [
+    0.0108,
+    -0.39,
+    0.48
+   ],
+   "tail": [
+    0.0108,
+    -0.39,
+    0.489
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "MuzzlePad.L",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    -0.0306,
+    -0.39,
+    0.4638
+   ],
+   "tail": [
+    -0.0306,
+    -0.39,
+    0.4728
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "UpperLipSheet.L",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    -0.0162,
+    -0.39,
+    0.46489
+   ],
+   "tail": [
+    -0.0162,
+    -0.39,
+    0.47389
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "CheekLift.L",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    -0.072,
+    -0.39,
+    0.4782
+   ],
+   "tail": [
+    -0.072,
+    -0.39,
+    0.4872
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "OrbitLower.L",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    -0.07272,
+    -0.39,
+    0.47525
+   ],
+   "tail": [
+    -0.07272,
+    -0.39,
+    0.48425
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "MuzzlePad.R",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    0.0306,
+    -0.39,
+    0.4638
+   ],
+   "tail": [
+    0.0306,
+    -0.39,
+    0.4728
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "UpperLipSheet.R",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    0.0162,
+    -0.39,
+    0.46489
+   ],
+   "tail": [
+    0.0162,
+    -0.39,
+    0.47389
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "CheekLift.R",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    0.072,
+    -0.39,
+    0.4782
+   ],
+   "tail": [
+    0.072,
+    -0.39,
+    0.4872
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "OrbitLower.R",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    0.07272,
+    -0.39,
+    0.47525
+   ],
+   "tail": [
+    0.07272,
+    -0.39,
+    0.48425
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "NoseBridge",
+   "parent": "Head",
+   "group": "face-sheet",
+   "head": [
+    0.0,
+    -0.39,
+    0.50108
+   ],
+   "tail": [
+    0.0,
+    -0.39,
+    0.51008
+   ],
+   "length": 0.009,
+   "deform": true
+  },
+  {
+   "name": "Scap.L",
+   "parent": "Chest",
+   "group": "foreleg",
+   "head": [
+    -0.088,
+    -0.12,
+    0.38
+   ],
+   "tail": [
+    -0.108,
+    -0.1605,
+    0.3
+   ],
+   "length": 0.09187,
+   "deform": true
+  },
+  {
+   "name": "FrontUpper.L",
+   "parent": "Scap.L",
+   "group": "foreleg",
+   "head": [
+    -0.108,
+    -0.1605,
+    0.3
+   ],
+   "tail": [
+    -0.108,
+    -0.1245,
+    0.175
+   ],
+   "length": 0.13008,
+   "deform": true
+  },
+  {
+   "name": "FrontLower.L",
+   "parent": "FrontUpper.L",
+   "group": "foreleg",
+   "head": [
+    -0.108,
+    -0.1245,
+    0.175
+   ],
+   "tail": [
+    -0.108,
+    -0.165,
+    0.065
+   ],
+   "length": 0.11722,
+   "deform": true
+  },
+  {
+   "name": "FrontPaw.L",
+   "parent": "FrontLower.L",
+   "group": "foreleg",
+   "head": [
+    -0.108,
+    -0.165,
+    0.065
+   ],
+   "tail": [
+    -0.108,
+    -0.1947,
+    0.0485
+   ],
+   "length": 0.03398,
+   "deform": true
+  },
+  {
+   "name": "FrontFoot.L",
+   "parent": "FrontPaw.L",
+   "group": "foreleg",
+   "head": [
+    -0.108,
+    -0.1947,
+    0.0485
+   ],
+   "tail": [
+    -0.108,
+    -0.2352,
+    0.03
+   ],
+   "length": 0.04453,
+   "deform": true
+  },
+  {
+   "name": "FrontToe0.L",
+   "parent": "FrontFoot.L",
+   "group": "foreleg",
+   "head": [
+    -0.1605,
+    -0.2001,
+    0.026
+   ],
+   "tail": [
+    -0.1605,
+    -0.2343,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "FrontToe1.L",
+   "parent": "FrontFoot.L",
+   "group": "foreleg",
+   "head": [
+    -0.1255,
+    -0.2091,
+    0.026
+   ],
+   "tail": [
+    -0.1255,
+    -0.2433,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "FrontToe2.L",
+   "parent": "FrontFoot.L",
+   "group": "foreleg",
+   "head": [
+    -0.0905,
+    -0.2091,
+    0.026
+   ],
+   "tail": [
+    -0.0905,
+    -0.2433,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "FrontToe3.L",
+   "parent": "FrontFoot.L",
+   "group": "foreleg",
+   "head": [
+    -0.0555,
+    -0.2001,
+    0.026
+   ],
+   "tail": [
+    -0.0555,
+    -0.2343,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "ForearmTwist.L",
+   "parent": "FrontLower.L",
+   "group": "foreleg",
+   "head": [
+    -0.108,
+    -0.14475,
+    0.12
+   ],
+   "tail": [
+    -0.108,
+    -0.165,
+    0.065
+   ],
+   "length": 0.05861,
+   "deform": true
+  },
+  {
+   "name": "Scap.R",
+   "parent": "Chest",
+   "group": "foreleg",
+   "head": [
+    0.088,
+    -0.12,
+    0.38
+   ],
+   "tail": [
+    0.108,
+    -0.1605,
+    0.3
+   ],
+   "length": 0.09187,
+   "deform": true
+  },
+  {
+   "name": "FrontUpper.R",
+   "parent": "Scap.R",
+   "group": "foreleg",
+   "head": [
+    0.108,
+    -0.1605,
+    0.3
+   ],
+   "tail": [
+    0.108,
+    -0.1245,
+    0.175
+   ],
+   "length": 0.13008,
+   "deform": true
+  },
+  {
+   "name": "FrontLower.R",
+   "parent": "FrontUpper.R",
+   "group": "foreleg",
+   "head": [
+    0.108,
+    -0.1245,
+    0.175
+   ],
+   "tail": [
+    0.108,
+    -0.165,
+    0.065
+   ],
+   "length": 0.11722,
+   "deform": true
+  },
+  {
+   "name": "FrontPaw.R",
+   "parent": "FrontLower.R",
+   "group": "foreleg",
+   "head": [
+    0.108,
+    -0.165,
+    0.065
+   ],
+   "tail": [
+    0.108,
+    -0.1947,
+    0.0485
+   ],
+   "length": 0.03398,
+   "deform": true
+  },
+  {
+   "name": "FrontFoot.R",
+   "parent": "FrontPaw.R",
+   "group": "foreleg",
+   "head": [
+    0.108,
+    -0.1947,
+    0.0485
+   ],
+   "tail": [
+    0.108,
+    -0.2352,
+    0.03
+   ],
+   "length": 0.04453,
+   "deform": true
+  },
+  {
+   "name": "FrontToe0.R",
+   "parent": "FrontFoot.R",
+   "group": "foreleg",
+   "head": [
+    0.0555,
+    -0.2001,
+    0.026
+   ],
+   "tail": [
+    0.0555,
+    -0.2343,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "FrontToe1.R",
+   "parent": "FrontFoot.R",
+   "group": "foreleg",
+   "head": [
+    0.0905,
+    -0.2091,
+    0.026
+   ],
+   "tail": [
+    0.0905,
+    -0.2433,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "FrontToe2.R",
+   "parent": "FrontFoot.R",
+   "group": "foreleg",
+   "head": [
+    0.1255,
+    -0.2091,
+    0.026
+   ],
+   "tail": [
+    0.1255,
+    -0.2433,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "FrontToe3.R",
+   "parent": "FrontFoot.R",
+   "group": "foreleg",
+   "head": [
+    0.1605,
+    -0.2001,
+    0.026
+   ],
+   "tail": [
+    0.1605,
+    -0.2343,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "ForearmTwist.R",
+   "parent": "FrontLower.R",
+   "group": "foreleg",
+   "head": [
+    0.108,
+    -0.14475,
+    0.12
+   ],
+   "tail": [
+    0.108,
+    -0.165,
+    0.065
+   ],
+   "length": 0.05861,
+   "deform": true
+  },
+  {
+   "name": "RearUpper.L",
+   "parent": "Pelvis",
+   "group": "hindleg",
+   "head": [
+    -0.12,
+    0.2085,
+    0.305
+   ],
+   "tail": [
+    -0.12,
+    0.14686,
+    0.18866
+   ],
+   "length": 0.13166,
+   "deform": true
+  },
+  {
+   "name": "RearLower.L",
+   "parent": "RearUpper.L",
+   "group": "hindleg",
+   "head": [
+    -0.12,
+    0.14686,
+    0.18866
+   ],
+   "tail": [
+    -0.12,
+    0.2409,
+    0.108
+   ],
+   "length": 0.12389,
+   "deform": true
+  },
+  {
+   "name": "RearPaw.L",
+   "parent": "RearLower.L",
+   "group": "hindleg",
+   "head": [
+    -0.12,
+    0.2409,
+    0.108
+   ],
+   "tail": [
+    -0.12,
+    0.2139,
+    0.036
+   ],
+   "length": 0.0769,
+   "deform": true
+  },
+  {
+   "name": "RearFoot.L",
+   "parent": "RearPaw.L",
+   "group": "hindleg",
+   "head": [
+    -0.12,
+    0.2139,
+    0.036
+   ],
+   "tail": [
+    -0.12,
+    0.1797,
+    0.028
+   ],
+   "length": 0.03512,
+   "deform": true
+  },
+  {
+   "name": "RearToe0.L",
+   "parent": "RearFoot.L",
+   "group": "hindleg",
+   "head": [
+    -0.1725,
+    0.2184,
+    0.026
+   ],
+   "tail": [
+    -0.1725,
+    0.1842,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "RearToe1.L",
+   "parent": "RearFoot.L",
+   "group": "hindleg",
+   "head": [
+    -0.1375,
+    0.2094,
+    0.026
+   ],
+   "tail": [
+    -0.1375,
+    0.1752,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "RearToe2.L",
+   "parent": "RearFoot.L",
+   "group": "hindleg",
+   "head": [
+    -0.1025,
+    0.2094,
+    0.026
+   ],
+   "tail": [
+    -0.1025,
+    0.1752,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "RearToe3.L",
+   "parent": "RearFoot.L",
+   "group": "hindleg",
+   "head": [
+    -0.0675,
+    0.2184,
+    0.026
+   ],
+   "tail": [
+    -0.0675,
+    0.1842,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "RearUpper.R",
+   "parent": "Pelvis",
+   "group": "hindleg",
+   "head": [
+    0.12,
+    0.2085,
+    0.305
+   ],
+   "tail": [
+    0.12,
+    0.14686,
+    0.18866
+   ],
+   "length": 0.13166,
+   "deform": true
+  },
+  {
+   "name": "RearLower.R",
+   "parent": "RearUpper.R",
+   "group": "hindleg",
+   "head": [
+    0.12,
+    0.14686,
+    0.18866
+   ],
+   "tail": [
+    0.12,
+    0.2409,
+    0.108
+   ],
+   "length": 0.12389,
+   "deform": true
+  },
+  {
+   "name": "RearPaw.R",
+   "parent": "RearLower.R",
+   "group": "hindleg",
+   "head": [
+    0.12,
+    0.2409,
+    0.108
+   ],
+   "tail": [
+    0.12,
+    0.2139,
+    0.036
+   ],
+   "length": 0.0769,
+   "deform": true
+  },
+  {
+   "name": "RearFoot.R",
+   "parent": "RearPaw.R",
+   "group": "hindleg",
+   "head": [
+    0.12,
+    0.2139,
+    0.036
+   ],
+   "tail": [
+    0.12,
+    0.1797,
+    0.028
+   ],
+   "length": 0.03512,
+   "deform": true
+  },
+  {
+   "name": "RearToe0.R",
+   "parent": "RearFoot.R",
+   "group": "hindleg",
+   "head": [
+    0.0675,
+    0.2184,
+    0.026
+   ],
+   "tail": [
+    0.0675,
+    0.1842,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "RearToe1.R",
+   "parent": "RearFoot.R",
+   "group": "hindleg",
+   "head": [
+    0.1025,
+    0.2094,
+    0.026
+   ],
+   "tail": [
+    0.1025,
+    0.1752,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "RearToe2.R",
+   "parent": "RearFoot.R",
+   "group": "hindleg",
+   "head": [
+    0.1375,
+    0.2094,
+    0.026
+   ],
+   "tail": [
+    0.1375,
+    0.1752,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "RearToe3.R",
+   "parent": "RearFoot.R",
+   "group": "hindleg",
+   "head": [
+    0.1725,
+    0.2184,
+    0.026
+   ],
+   "tail": [
+    0.1725,
+    0.1842,
+    0.021
+   ],
+   "length": 0.03456,
+   "deform": true
+  },
+  {
+   "name": "Tail0",
+   "parent": "Pelvis",
+   "group": "tail",
+   "head": [
+    0.0,
+    0.33,
+    0.33
+   ],
+   "tail": [
+    0.01125,
+    0.384,
+    0.29625
+   ],
+   "length": 0.06467,
+   "deform": true
+  },
+  {
+   "name": "Tail0B",
+   "parent": "Tail0",
+   "group": "tail",
+   "head": [
+    0.01125,
+    0.384,
+    0.29625
+   ],
+   "tail": [
+    0.0225,
+    0.438,
+    0.2625
+   ],
+   "length": 0.06467,
+   "deform": true
+  },
+  {
+   "name": "Tail1",
+   "parent": "Tail0B",
+   "group": "tail",
+   "head": [
+    0.0225,
+    0.438,
+    0.2625
+   ],
+   "tail": [
+    0.03,
+    0.48525,
+    0.23625
+   ],
+   "length": 0.05457,
+   "deform": true
+  },
+  {
+   "name": "Tail1B",
+   "parent": "Tail1",
+   "group": "tail",
+   "head": [
+    0.03,
+    0.48525,
+    0.23625
+   ],
+   "tail": [
+    0.0375,
+    0.5325,
+    0.21
+   ],
+   "length": 0.05457,
+   "deform": true
+  },
+  {
+   "name": "Tail2",
+   "parent": "Tail1B",
+   "group": "tail",
+   "head": [
+    0.0375,
+    0.5325,
+    0.21
+   ],
+   "tail": [
+    0.04125,
+    0.573,
+    0.19875
+   ],
+   "length": 0.0422,
+   "deform": true
+  },
+  {
+   "name": "Tail2B",
+   "parent": "Tail2",
+   "group": "tail",
+   "head": [
+    0.04125,
+    0.573,
+    0.19875
+   ],
+   "tail": [
+    0.045,
+    0.6135,
+    0.1875
+   ],
+   "length": 0.0422,
+   "deform": true
+  },
+  {
+   "name": "Tail3",
+   "parent": "Tail2B",
+   "group": "tail",
+   "head": [
+    0.045,
+    0.6135,
+    0.1875
+   ],
+   "tail": [
+    0.045,
+    0.65062,
+    0.195
+   ],
+   "length": 0.03787,
+   "deform": true
+  },
+  {
+   "name": "Tail3B",
+   "parent": "Tail3",
+   "group": "tail",
+   "head": [
+    0.045,
+    0.65062,
+    0.195
+   ],
+   "tail": [
+    0.045,
+    0.68775,
+    0.2025
+   ],
+   "length": 0.03787,
+   "deform": true
+  },
+  {
+   "name": "Tail4",
+   "parent": "Tail3B",
+   "group": "tail",
+   "head": [
+    0.045,
+    0.68775,
+    0.2025
+   ],
+   "tail": [
+    0.045,
+    0.71812,
+    0.225
+   ],
+   "length": 0.0378,
+   "deform": true
+  },
+  {
+   "name": "Tail4B",
+   "parent": "Tail4",
+   "group": "tail",
+   "head": [
+    0.045,
+    0.71812,
+    0.225
+   ],
+   "tail": [
+    0.045,
+    0.7485,
+    0.2475
+   ],
+   "length": 0.0378,
+   "deform": true
+  }
+ ],
+ "bone_count": 95,
+ "by_group": {
+  "trunk": 6,
+  "neck-head": 4,
+  "tongue": 3,
+  "face-control": 17,
+  "ear": 4,
+  "eye": 6,
+  "face-sheet": 9,
+  "foreleg": 20,
+  "hindleg": 16,
+  "tail": 10
+ },
+ "meshes": {
+  "LX_Body": {
+   "vertices": 80032,
+   "groups": 44,
+   "shape_keys": [
+    "Breath",
+    "LieSpread",
+    "FlankThigh",
+    "SitHaunch"
+   ]
+  },
+  "LX_Brow": {
+   "vertices": 56,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_Brow.001": {
+   "vertices": 56,
+   "groups": 3,
+   "shape_keys": []
+  },
+  "LX_Brow.002": {
+   "vertices": 56,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Brow.003": {
+   "vertices": 56,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_Brow.004": {
+   "vertices": 56,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_Brow.005": {
+   "vertices": 56,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Brow.006": {
+   "vertices": 56,
+   "groups": 3,
+   "shape_keys": []
+  },
+  "LX_Brow.007": {
+   "vertices": 56,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_Cornea.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Blink",
+    "Squint"
+   ]
+  },
+  "LX_Cornea.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Blink",
+    "Squint"
+   ]
+  },
+  "LX_Ear.L": {
+   "vertices": 169,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_Ear.R": {
+   "vertices": 169,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_EarFurnish.L": {
+   "vertices": 13440,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_EarFurnish.R": {
+   "vertices": 13440,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_Eye.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Blink",
+    "Squint"
+   ]
+  },
+  "LX_Eye.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Blink",
+    "Squint"
+   ]
+  },
+  "LX_FrontBean0.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontBean0.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontBean1.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontBean1.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontBean2.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontBean2.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontBean3.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontBean3.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontClaw0.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontClaw0.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontClaw1.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontClaw1.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontClaw2.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontClaw2.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontClaw3.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontClaw3.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_FrontPad.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_FrontPad.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Head": {
+   "vertices": 17803,
+   "groups": 25,
+   "shape_keys": []
+  },
+  "LX_LidLower.L": {
+   "vertices": 369,
+   "groups": 2,
+   "shape_keys": [
+    "Blink",
+    "Squint",
+    "Lift",
+    "Smile"
+   ]
+  },
+  "LX_LidLower.R": {
+   "vertices": 369,
+   "groups": 2,
+   "shape_keys": [
+    "Blink",
+    "Squint",
+    "Lift",
+    "Smile"
+   ]
+  },
+  "LX_LidUpper.L": {
+   "vertices": 369,
+   "groups": 4,
+   "shape_keys": [
+    "Blink",
+    "Squint",
+    "Wide",
+    "Smile",
+    "SlantIn",
+    "SlantOut"
+   ]
+  },
+  "LX_LidUpper.R": {
+   "vertices": 369,
+   "groups": 4,
+   "shape_keys": [
+    "Blink",
+    "Squint",
+    "Wide",
+    "Smile",
+    "SlantIn",
+    "SlantOut"
+   ]
+  },
+  "LX_LipLower": {
+   "vertices": 88,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_LipPhiltrum": {
+   "vertices": 40,
+   "groups": 10,
+   "shape_keys": []
+  },
+  "LX_LipUpper.L": {
+   "vertices": 128,
+   "groups": 8,
+   "shape_keys": []
+  },
+  "LX_LipUpper.R": {
+   "vertices": 128,
+   "groups": 8,
+   "shape_keys": []
+  },
+  "LX_MouthCavity": {
+   "vertices": 485,
+   "groups": 2,
+   "shape_keys": []
+  },
+  "LX_MouthFloor": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Nose": {
+   "vertices": 922,
+   "groups": 14,
+   "shape_keys": []
+  },
+  "LX_RearBean0.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearBean0.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearBean1.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearBean1.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearBean2.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearBean2.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearBean3.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearBean3.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearClaw0.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearClaw0.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearClaw1.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearClaw1.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearClaw2.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearClaw2.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearClaw3.L": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearClaw3.R": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": [
+    "Extend"
+   ]
+  },
+  "LX_RearPad.L": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_RearPad.R": {
+   "vertices": 481,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Tail": {
+   "vertices": 921,
+   "groups": 10,
+   "shape_keys": []
+  },
+  "LX_Tongue": {
+   "vertices": 922,
+   "groups": 3,
+   "shape_keys": [
+    "Up",
+    "Out",
+    "Curl",
+    "Blep"
+   ]
+  },
+  "LX_Tooth": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Tooth.001": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Tooth.002": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Tooth.003": {
+   "vertices": 922,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.001": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.002": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.003": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.004": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.005": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.006": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.007": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.008": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.009": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.010": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.011": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.012": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.013": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.014": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  },
+  "LX_Whisker.015": {
+   "vertices": 80,
+   "groups": 1,
+   "shape_keys": []
+  }
+ },
+ "clips": [
+  "Idle",
+  "Walk",
+  "Run",
+  "Jump",
+  "LieDown",
+  "SideLie",
+  "Sleep",
+  "Curious",
+  "Happy",
+  "Yawn",
+  "Lick",
+  "Bite",
+  "Knead",
+  "Stretch",
+  "PawPlay",
+  "Sit",
+  "Loaf",
+  "BellyUp",
+  "ScratchEar",
+  "WashFace",
+  "GroomSide",
+  "Turn"
+ ]
+}

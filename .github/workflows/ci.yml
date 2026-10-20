@@ -40,6 +40,9 @@ jobs:
         working-directory: apps/lingxi
         run: npm ci --ignore-scripts
 
+      - name: Prepare verified production cat assets
+        run: node scripts/prepare-realcat-assets.mjs
+
       # Run as separate steps rather than through `npm run validate`, so a red run names
       # which gate failed in the job summary instead of "validate".
       - name: Check JSON, preset contracts and Markdown links
@@ -49,6 +52,8 @@ jobs:
       - name: Type-check and build the frontend
         working-directory: apps/lingxi
         run: npm run build
+      - name: Verify frontend and npm release artifacts
+        run: npm run check:release
       - name: Compile Blender automation syntax
         run: python3 -m compileall -q scripts/blender
 
@@ -65,7 +70,7 @@ jobs:
       # No toolchain action needed: the runner ships rustup, and rust-toolchain.toml pins
       # the channel, so the first cargo call installs and selects it.
       - name: Cache cargo registry and build output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -75,8 +80,14 @@ jobs:
           restore-keys: cargo-${{ runner.os }}-
       - name: Show the toolchain actually in use
         run: rustc --version && cargo --version
-      # Deliberately no frontend build first: tauri-build does not need frontendDist to
-      # exist for a test build, so this job stays node-free and independent of the one above.
+      # tauri-build does not need frontendDist for tests. Hook integration tests below need Node.
       - name: Rust tests
         working-directory: apps/lingxi/src-tauri
         run: cargo test
+      # Deduplication uses Apple's plutil. Linux exercises the portable hooks; these two
+      # integration tests must run on macOS, where that system API actually exists.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: macOS hook deduplication
+        run: node --test --test-name-pattern='one-click|一键接入|partial Claude settings' integrations/test/claude-plugin.test.mjs

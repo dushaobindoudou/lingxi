@@ -23,6 +23,8 @@ export interface PerformanceContext {
     /** Turn on the spot, radians in screen space. Used to end a set piece facing the viewer. */
     turnTo(angle: number): boolean;
     clearIntent(): void;
+    /** Keep the cat's own wandering off for `ms` (turning on the spot still works). */
+    hold?(ms: number, now: number): void;
     readonly position: { x: number; y: number };
   };
   renderer: Renderer;
@@ -130,6 +132,22 @@ const CLOSE_HEIGHT = 0.55;
  * close-up, and is also why 0.75 was wrong the moment the climax started actually filling the
  * frame.
  */
+// The potty scenes: the cat this tall (share of the screen), close enough to read, the floor round it still in frame
+const POTTY_HEIGHT = 0.34;
+/** Where the cat's rump is on screen (the renderer's, else a guess from where it stands). */
+function rumpOf(context: PerformanceContext) {
+  const at = context.petPosition();
+  return context.renderer.rumpScreenPoint?.() ?? { x: at.x, y: at.y - 0.12 * POTTY_HEIGHT * context.viewport().height };
+}
+/** The first of these actions the renderer has (the realistic cat's staged ones, else the voxel cat's squat). */
+function playFirst(context: PerformanceContext, ...ids: string[]) {
+  for (const id of ids) if (context.renderer.playAction?.(id)) return;
+}
+/** The potty marks' size for the cat at POTTY_HEIGHT: 1 is a cat ~250 px tall. */
+function pottySize(context: PerformanceContext) {
+  return (POTTY_HEIGHT * context.viewport().height) / 250;
+}
+
 function stageMark(context: PerformanceContext) {
   const { width, height } = context.viewport();
   return { x: width * 0.5, y: height * 0.9 };
@@ -404,6 +422,152 @@ export const PERFORMANCES: PerformanceDef[] = [
         atMs: 9600,
         run(context) {
           context.restoreCamera();
+        },
+      },
+    ],
+  },
+  {
+    id: 'pee-at-you',
+    name: '对着你尿尿',
+    description: '走到你面前，转身把屁股对着你、抬起一条后腿，一道尿朝屏幕射过来，溅在玻璃上往下流；抖抖毛，得意地走开',
+    durationMs: 11000,
+    beats: [
+      {
+        atMs: 0,
+        run(context) {
+          // the 3/4 camera, not eye level: the joke is on the floor, and from eye level there is no floor
+          context.renderer.setCameraPreset?.('game');
+          context.renderer.playExpression?.('好奇', 1800);
+          context.renderer.setPerformanceScale?.(POTTY_HEIGHT, 0.9);
+          context.engine.suggestMoveTo(stageMark(context), context.now(), 1500, 6);
+        },
+      },
+      {
+        // planted and kept there (left to itself it wanders off, and walking cancels the clip); the action turns the
+        // cat's rump to the viewer itself before it lifts the leg (the realistic renderer's staging)
+        atMs: 1500,
+        run(context) {
+          context.engine.clearIntent();
+          context.engine.hold?.(7800, context.now());
+          playFirst(context, 'potty-pee', 'potty-squat');
+          context.renderer.playExpression?.('认真', 4500);
+        },
+      },
+      {
+        // the leg is up (~1.2 s to turn round, a beat to lift it): out of its rump at the viewer, splashing on the glass
+        // below it and running down like rain
+        atMs: 3200,
+        run(context) {
+          const rump = () => rumpOf(context), start = rump();
+          const cat = POTTY_HEIGHT * context.viewport().height;
+          // onto the floor just out from under the rump, toward the viewer
+          const ground = context.renderer.rumpScreenPoint?.(true) ?? { x: start.x, y: start.y + 0.35 * cat };
+          context.fx.peeStream(rump, { x: ground.x + 0.06 * cat * Math.sign(ground.x - context.petPosition().x || 1), y: ground.y + 0.04 * cat }, 3500, pottySize(context));
+        },
+      },
+      {
+        // Let the stream end at 6700 and leave time for the last drops before lowering the leg.
+        atMs: 7500,
+        run(context) {
+          context.renderer.playExpression?.('得意', 1600);
+          context.renderer.playAction?.('shake-fur');
+        },
+      },
+      {
+        atMs: 9300,
+        run(context) {
+          const { width, height } = context.viewport();
+          context.renderer.setPerformanceScale?.(null, 1.2);
+          context.engine.suggestMoveTo({ x: width * 0.62, y: height * 0.55 }, context.now(), 1300, 2);
+        },
+      },
+      {
+        atMs: 11000,
+        run(context) {
+          context.renderer.setPerformanceScale?.(null, 0.3);
+          context.restoreCamera();
+          context.engine.turnTo(FACING_VIEWER);
+        },
+      },
+    ],
+  },
+  {
+    id: 'poop-at-you',
+    name: '对着你拉屎',
+    description: '走到你面前，转身把屁股对着你蹲下，回过头来盯着你；噗地放个屁，一坨便便像冰淇淋一样一圈圈落在地上；起来刨沙埋好，得意地走开',
+    durationMs: 10800,
+    beats: [
+      {
+        atMs: 0,
+        run(context) {
+          context.renderer.setCameraPreset?.('game');
+          context.renderer.playExpression?.('好奇', 1800);
+          context.renderer.setPerformanceScale?.(POTTY_HEIGHT, 0.9);
+          context.engine.suggestMoveTo(stageMark(context), context.now(), 1500, 6);
+        },
+      },
+      {
+        // round with its rump to the viewer, down into the squat, and a look back over its shoulder at them
+        atMs: 1500,
+        run(context) {
+          context.engine.clearIntent();
+          context.engine.hold?.(7800, context.now());
+          playFirst(context, 'potty-poop', 'potty-squat');
+          context.renderer.playExpression?.('认真', 4500);
+        },
+      },
+      {
+        // settled in the squat: a little puff of air first
+        atMs: 3900,
+        run(context) {
+          const from = rumpOf(context), size = pottySize(context);
+          context.fx.fart?.(from, size, { x: from.x < context.viewport().width / 2 ? -0.6 : 0.6, y: -0.8 });
+          context.renderer.playExpression?.('惊吓', 600);
+        },
+      },
+      {
+        // and down it comes onto the floor under the rump, round and round like soft serve; buried when the cat digs
+        atMs: 4700,
+        run(context) {
+          const size = pottySize(context);
+          const ground = context.renderer.rumpScreenPoint?.(true) ?? context.petPosition();
+          context.fx.softServe?.(() => rumpOf(context), ground, size, 1500, 8100 - 4700, 10600 - 4700);
+          context.renderer.playExpression?.('认真', 1800);
+        },
+      },
+      {
+        atMs: 6400,
+        run(context) {
+          context.renderer.playExpression?.('满足', 1500);
+          const at = context.petPosition(), size = pottySize(context);
+          context.fx.pottyAccent('scent', at.x - 60 * size, at.y - 20 * size);
+        },
+      },
+      {
+        // up from the squat (~7.8 s), and covering it up where it stands
+        atMs: 7900,
+        run(context) {
+          context.renderer.playAction?.('potty-dig');
+          const at = context.petPosition();
+          context.fx.pottyAccent('sand', at.x - 20, at.y + 10);
+          context.fx.pottyAccent('sand', at.x + 20, at.y + 10);
+        },
+      },
+      {
+        atMs: 9300,
+        run(context) {
+          context.renderer.playExpression?.('得意', 1500);
+          const { width, height } = context.viewport();
+          context.renderer.setPerformanceScale?.(null, 1.2);
+          context.engine.suggestMoveTo({ x: width * 0.62, y: height * 0.55 }, context.now(), 1300, 2);
+        },
+      },
+      {
+        atMs: 10800,
+        run(context) {
+          context.renderer.setPerformanceScale?.(null, 0.3);
+          context.restoreCamera();
+          context.engine.turnTo(FACING_VIEWER);
         },
       },
     ],

@@ -1,0 +1,36 @@
+{
+  "reference_yawn": {
+    "roi": [
+      250,
+      900,
+      410,
+      1080
+    ],
+    "red_bbox_px": [
+      278,
+      909,
+      387,
+      1041
+    ],
+    "aperture_height_px": 133,
+    "head_width_px_approx": 520,
+    "aperture_head": 0.256
+  },
+  "round_h_yawn_f495": {
+    "roi": [
+      380,
+      560,
+      520,
+      640
+    ],
+    "red_bbox_px": [
+      406,
+      582,
+      492,
+      607
+    ],
+    "aperture_height_px": 26,
+    "head_width_px_approx": 700,
+    "aperture_head": 0.037
+  }
+}

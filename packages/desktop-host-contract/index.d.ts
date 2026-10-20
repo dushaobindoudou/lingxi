@@ -20,6 +20,12 @@ export interface CursorPoint {
   y: number;
 }
 
+/** Geometry only: no text, selected text or key events leave the OS sampler. */
+export interface FocusedInput {
+  field: { x: number; y: number; width: number; height: number };
+  caret: { x: number; y: number; width: number; height: number } | null;
+}
+
 /**
  * The desktop shell's job, and only its job: own the OS window and report a
  * normalized view of the environment. It does not know about behavior states,
@@ -38,6 +44,9 @@ export interface DesktopHost {
    * see the Rust-side comment in apps/lingxi/src-tauri/src/lib.rs.
    */
   onGlobalCursorMove(handler: (point: CursorPoint) => void): () => void;
+
+  /** Optional on hosts without a native text-focus API. Coordinates match WorkArea. */
+  onFocusedInputChange?(handler: (input: FocusedInput | null) => void): () => void;
 
   /**
    * Toggle whether the window accepts input. `false` while the pointer is over the
@@ -74,8 +83,31 @@ export interface RendererCapabilities {
   preciseHitTest: boolean;
 }
 
+/** Logical-pixel inputs; the renderer alone knows the posed model and projection. */
+export interface ToyInteractionRequest {
+  kind: 'yarn' | 'feather' | 'laser' | 'pet';
+  position: { x: number; y: number };
+  previousPosition: { x: number; y: number };
+  petPosition: { x: number; y: number };
+  previousPetPosition: { x: number; y: number };
+}
+export interface ToyInteraction {
+  /** Root destination that brings a front paw to the actual interactive part. */
+  target: { x: number; y: number };
+  touching: boolean;
+  /** First swept contact, preventing a fast ball/cat from tunnelling through. */
+  contactPosition?: { x: number; y: number };
+  petContactPosition?: { x: number; y: number };
+}
+
+export type PettingRegion = 'head' | 'body' | 'belly';
+
 export interface Renderer {
+  /** Surface hit on the posed cat; no screen-box approximation. */
+  pettingHitTest?(point: { x: number; y: number }, bellyExposed: boolean): PettingRegion | null;
   readonly capabilities: RendererCapabilities;
+  /** Actual body/toy contact; optional for renderers with no physical geometry. */
+  toyInteraction?(request: ToyInteractionRequest): ToyInteraction | null;
   /** Mount onto a canvas/container the host owns. */
   mount(container: HTMLElement): void;
   /** Resize the render surface to match the current work area (in CSS pixels). */
@@ -142,6 +174,9 @@ export interface Renderer {
   /** Where the character's head currently is on screen, for anchoring overlays like a speech
    *  bubble. Same logical pixel space as resize/render. */
   headScreenPoint?(): { x: number; y: number };
+  /** Where the cat's rump is on screen (logical px) - under the root of its tail - for what a set piece has come out of it. */
+  /** Just under the root of the tail (CSS px); `onGround`: the floor straight below it. */
+  rumpScreenPoint?(onGround?: boolean): { x: number; y: number };
   /**
    * How far the drawn character reaches from its anchor point, in logical screen pixels at the
    * current scale and camera. A host uses this to decide how close to each screen edge the
@@ -162,6 +197,24 @@ export interface Renderer {
    * so reading one tells you nothing about the other.
    */
   readonly headYaw?: number;
+  /**
+   * The fastest pace (logical px/s) this renderer can walk at, at its current size and camera, with
+   * paws that still plant: a host scales its wandering down to it. Null or absent when any pace
+   * works (procedural legs). Exists because a clip-driven character drawn small covers few pixels
+   * per stride - at the voxel cat's pace the realistic cat's paws skated across the desktop.
+   */
+  locomotionPace?(): number | null;
+  /**
+   * The pace (logical px/s) this renderer's run reads right at - a sprint at a believable gallop cadence - for a host's
+   * chases. Null or absent leaves the host's own chase pace (a multiple of the walk).
+   */
+  sprintPace?(): number | null;
+  /**
+   * True once the renderer cannot draw what it holds any more - its WebGL context came back after a loss, but textures
+   * decoded to GPU-backed image bitmaps did not (a restarted GPU process: the cat's textured parts drew black). A host
+   * builds it afresh.
+   */
+  readonly needsRebuild?: boolean;
   /** Dev probe only (see apps/lingxi/src/probe-unproject.ts); never called in production. */
   probeUnproject?(screenX: number, screenY: number): boolean;
   /**
@@ -178,7 +231,7 @@ export interface Renderer {
    * hit when the host supports precise hit testing.
    */
   render(
-    state: { state: string; position: { x: number; y: number }; facing: 1 | -1; pointer?: { engaged: boolean; byUser: boolean } },
+    state: { state: string; position: { x: number; y: number }; facing: 1 | -1; pointer?: { engaged: boolean; byUser: boolean }; pettingContact?: boolean },
     deltaSeconds: number,
     cursor: { x: number; y: number } | null,
   ): void;

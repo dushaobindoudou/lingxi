@@ -11,7 +11,7 @@
     <div class="shell">
       <nav class="sidebar">
         <div class="brand">
-          <img src="/icon.png" alt="灵犀" class="avatar" />
+          <img src="./src/assets/app-icon.png" alt="灵犀" class="avatar" />
           <div>
             <h1 id="sidebar-cat-name">灵犀</h1>
             <p class="subtitle" id="sidebar-status">桌面小猫</p>
@@ -24,7 +24,7 @@
         <button class="nav-item" data-page="appearance" data-icon="palette">外观</button>
         <button class="nav-item" data-page="settings" data-icon="settings">设置</button>
         <div class="sidebar-footer">
-          <span>灵犀 v0.1</span>
+          <span id="app-version">灵犀</span>
         </div>
       </nav>
 
@@ -287,19 +287,17 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             <span>名字</span>
             <input id="cat-name-input" type="text" maxlength="24" placeholder="灵犀" />
           </label>
-          <label class="field">
-            <span>性格（随便写，比如：温柔、独立、爱睡觉）</span>
-            <textarea id="cat-personality-input" maxlength="120" rows="2" placeholder="还没设定"></textarea>
+          <label class="field" hidden>
+            <span>性格备注</span>
+            <textarea id="cat-personality-input" maxlength="120" rows="2"></textarea>
           </label>
           <button id="save-identity" class="wide-button">保存</button>
           <p class="hint" id="identity-saved-hint" hidden>已保存</p>
 
           <h2 class="section-gap">人格倾向</h2>
           <p class="hint">
-            这五项滑杆现在直接进入行为引擎：<strong>独立</strong>和<strong>好奇</strong>一起决定它歇多久才起身，
-            <strong>温柔</strong>影响走路的快慢，<strong>玩心</strong>决定追玩具有多拼，
-            <strong>贪睡</strong>决定它要困到什么程度才躺下。
-            调完是渐变生效的——这些量按小时变化，不是按帧。五项都在中间时，行为就是调校好的默认值。
+            独立和好奇影响休息与探索的节奏，温柔影响步速，玩心影响追逐玩具的积极程度，
+            困意影响它什么时候想睡觉。调整后会逐渐表现出来。
           </p>
           <div class="trait-sliders" id="trait-sliders">
             <label class="trait-slider" data-trait="independence">
@@ -325,7 +323,7 @@ LINGXI_AGENT_NAME = "Codex"</pre>
           </div>
 
           <h2 class="section-gap">行为预设</h2>
-          <p class="hint">这个是真的：切换预设会立刻改变猫在"工作模式"下离光标多近才会避让（<code>avoidRadius</code>）。</p>
+          <p class="hint">调整猫咪与鼠标之间的避让距离，切换后立即生效。</p>
           <div class="preset-options" id="behavior-preset-options">
             <button data-preset="quiet">安静<span>70px</span></button>
             <button data-preset="balanced">均衡<span>100px</span></button>
@@ -337,14 +335,18 @@ LINGXI_AGENT_NAME = "Codex"</pre>
         <section class="page" id="page-play">
           <h2>玩具</h2>
           <p class="hint">
-            放下玩具后，猫会把它当成当前唯一想做的事——优先级高于游走和避让，只输给你亲手拖它。
+            放下玩具后，猫会专心陪你玩；输入区域避让仍然优先。选择「撸猫」后，按住左键轻轻来回摸，松手就停。
             毛线球有真实物理（会滚、减速、撞边反弹），猫够到就拍一爪把它打飞，所以不用你管它也能自己玩下去。
           </p>
           <div class="camera-options play-options" id="toy-options"></div>
-          <button id="clear-toy" class="wide-button secondary">收起玩具</button>
+          <div id="petting-controls" hidden>
+            <p class="hint">摸头会蹭手，摸身体会放松拱背。先翻身露出肚皮，再轻轻摸；肚皮只在翻身停稳时响应。此时拖动鼠标是抚摸，不会拎起猫咪。</p>
+            <button id="petting-belly" class="wide-button secondary">翻个肚皮</button>
+          </div>
+          <button id="clear-toy" class="wide-button secondary">收起玩具 / 结束撸猫</button>
 
           <h2 class="section-gap">说话</h2>
-          <p class="hint">漫画气泡，钉在头顶。也可以让 Agent 通过本地接口说话（见调试台的 Agent 接口页）。</p>
+          <p class="hint">在猫咪头顶显示一句话。接入 Agent 后，也会在这里显示任务提醒。</p>
           <label class="field">
             <span>让它说一句</span>
             <input id="say-input" type="text" maxlength="140" placeholder="比如：该休息一下啦" />
@@ -352,14 +354,16 @@ LINGXI_AGENT_NAME = "Codex"</pre>
           <button id="say-button" class="wide-button">说出来</button>
           <p class="hint" id="say-result" aria-live="polite"></p>
 
-          <h2 class="section-gap">特效</h2>
-          <p class="hint">
-            几秒钟的整屏演出：走位、身体动作、表情、镜头和屏幕特效一起编排。特效层不接收任何鼠标事件，
-            演出期间你照常点按钮、切窗口都不受影响。
-          </p>
-          <div class="camera-options play-options" id="performance-options"></div>
-          <p class="hint" id="performance-result" aria-live="polite"></p>
-          <button id="stop-performance" class="wide-button secondary">停止当前特效</button>
+          <section id="performance-section" hidden>
+            <h2 class="section-gap">特效</h2>
+            <p class="hint">
+              几秒钟的整屏演出：走位、身体动作、表情、镜头和屏幕特效一起编排。特效层不接收任何鼠标事件，
+              演出期间你照常点按钮、切窗口都不受影响。
+            </p>
+            <div class="camera-options play-options" id="performance-options"></div>
+            <p class="hint" id="performance-result" aria-live="polite"></p>
+            <button id="stop-performance" class="wide-button secondary">停止当前特效</button>
+          </section>
         </section>
 
         <!-- 6.4 外观 -->
@@ -370,6 +374,12 @@ LINGXI_AGENT_NAME = "Codex"</pre>
             <button data-scale="0.5">中<span>0.5x</span></button>
             <button data-scale="1">大<span>1x</span></button>
           </div>
+
+          <h2 class="section-gap">风格</h2>
+          <div class="camera-options" id="style-options"></div>
+          <p class="hint">
+            可在方块猫和写实猫之间切换，应用会记住你的选择。写实猫首次加载需要片刻；下方主题配色适用于方块猫。
+          </p>
 
           <h2 class="section-gap">视角</h2>
           <div class="camera-options" id="camera-options"></div>
@@ -400,15 +410,25 @@ LINGXI_AGENT_NAME = "Codex"</pre>
           <h2>通用</h2>
           <button id="toggle-visibility" class="wide-button">隐藏猫咪</button>
           <button id="reset-position" class="wide-button secondary">重置位置</button>
-          <button id="open-debug" class="wide-button secondary">打开调试台</button>
-          <p class="hint">
-            调试台里能逐个播放全部动作和表情、切换视角/主题，并且列出了 Agent 可以直接调用的本地 HTTP 接口
-            （<code>127.0.0.1:47811</code>）。
-          </p>
-          <ul class="status-list" id="status-list">
-            <li>辅助功能权限：<span id="status-accessibility">检查中…</span></li>
-          </ul>
-          <p class="hint">不授权也能正常使用：鼠标跟随、拖拽和所有提醒都不依赖这项权限。</p>
+          <div data-dev-only hidden>
+            <button id="open-debug" class="wide-button secondary">打开调试台</button>
+            <p class="hint">开发工具：逐个检查动作、表情和本地接口。</p>
+          </div>
+
+          <h2 class="section-gap">自动特效</h2>
+          <div class="card">
+            <label><input id="auto-effects-enabled" type="checkbox" /> 允许猫咪偶尔给我小惊喜</label>
+            <p class="hint" id="auto-effects-status" role="status">自动特效默认关闭。</p>
+            <p class="hint">开启后，Agent 会结合任务特点，在值得庆祝、回应亲近等合适的时刻克制地播放特效；自动特效至少间隔 10 分钟。关闭后不会自动播放，手动特效仍可在「玩法」使用。</p>
+          </div>
+
+          <h2 class="section-gap">输入时不打扰</h2>
+          <div class="card">
+            <label><input id="input-avoidance-enabled" type="checkbox" /> 避开正在输入的区域</label>
+            <p class="hint" id="input-avoidance-status" role="status">检查中…</p>
+            <button id="input-avoidance-permission" class="wide-button secondary" hidden>授权检测输入区域</button>
+            <p class="hint">只检测输入框与文本光标的位置，不读取输入内容、不记录按键。猫咪会让开输入框；大型编辑器优先避开正在输入的那一行。部分应用不提供文本光标位置时，会保护整个输入区域。</p>
+          </div>
 
           <h2 class="section-gap">能力开放（MCP）</h2>
           <div class="card">
@@ -427,15 +447,15 @@ LINGXI_AGENT_NAME = "Codex"</pre>
           <h2 class="section-gap">它怎么做反应</h2>
           <div class="card">
             <p class="cat-card-line">反应引擎（本地规则，始终开启）：</p>
-            <p class="cat-card-line">· 鼠标是你正在工作的地方，猫会避开它——连落脚点都不选在光标附近。</p>
+            <p class="cat-card-line">· 猫会避开鼠标；开启输入区域检测并授权后，也会避开输入框和正在输入的那一行。</p>
             <p class="cat-card-line">· 放出玩具它就去玩，收走就散了，不需要切换什么模式。</p>
             <p class="cat-card-line">· Agent 报上来的任务状态会变成表情 + 动作 + 一句话（见「Agent 接入」）。</p>
           </div>
 
           <h2 class="section-gap">数据隐私</h2>
           <div class="card">
-            <p class="cat-card-line">记录猫上交互：始终开启（点击/拖拽次数，用于「成长」计算）</p>
-            <p class="cat-card-line">记录光标统计：始终开启（只统计"靠近多久"，不留轨迹）</p>
+            <p class="cat-card-line">交互统计：点击与拖拽次数</p>
+            <p class="cat-card-line">光标统计：只统计靠近猫咪的时长，不记录轨迹</p>
           </div>
           <p class="hint">
             这些记录只在内存里，应用重启就清空，不写盘、不上传。Agent 的回复内容只用来生成猫的那句话，用完即丢。

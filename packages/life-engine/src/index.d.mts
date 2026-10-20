@@ -21,9 +21,12 @@ export interface Vitals {
   sleptAt: number | null;
   wokeAt: number | null;
 }
-export type ToyKind = 'yarn' | 'feather' | 'laser';
+export type ToyKind = 'yarn' | 'feather' | 'laser' | 'pet';
 export interface ToyState {
   kind: ToyKind;
+  /** The feather wand's rigid handle position; present only for feather. */
+  hand?: Vec2;
+  /** Interactive point: the feather for a wand, the body for other toys. */
   position: Vec2;
   velocity: Vec2;
   /** 0 normally; 0..1 while the user is holding the yarn ball and winding up a throw. */
@@ -34,8 +37,14 @@ export interface ToyState {
 export type InteractionMode = 'auto' | 'play';
 export interface Vec2 { x: number; y: number; }
 export interface LifeEngineConfig {
+  /** Optional host geometry; without a 3D renderer toyReach remains the fallback. */
+  toyInteraction?: (request: {
+    kind: ToyKind; position: Vec2; previousPosition: Vec2;
+    petPosition: Vec2; previousPetPosition: Vec2;
+  }) => { target: Vec2; touching: boolean; contactPosition?: Vec2; petContactPosition?: Vec2 } | null;
   bounds?: { width: number; height: number };
   position?: Vec2;
+  protectedRegions?: { x: number; y: number; width: number; height: number }[];
   speed?: number;
   idleDurationMsRange?: [number, number];
   wanderRadius?: number;
@@ -61,7 +70,10 @@ export interface LifeEngineConfig {
   toyFriction?: number;
   toyRestSpeed?: number;
   toyBounceLoss?: number;
+  /** @deprecated Ignored: the rendered rope now supplies the feather lag. */
   toyFeatherLag?: number;
+  toyFeatherReach?: number;
+  toyFeatherDrop?: number;
   dragStaleMs?: number;
   busyWindowMs?: number;
   cursorMoveEpsilon?: number;
@@ -69,6 +81,7 @@ export interface LifeEngineConfig {
   margin?: number;
 }
 export interface LifeEngineSnapshot {
+  inputAvoidance: { overlapping: boolean };
   state: BehaviorState;
   position: Vec2;
   facing: 1 | -1;
@@ -114,6 +127,12 @@ export interface LifeEngine {
   readonly position: Vec2;
   readonly mode: InteractionMode;
   setBounds(bounds: { width: number; height: number }): void;
+  /** Scale movement to the renderer's stride at the current size. */
+  setPace(multiplier: number): void;
+  /** Finish autonomous trips at walking pace, then rest; used by the realistic renderer. */
+  setNaturalWander(enabled: boolean): void;
+  /** The pace (px/s) a chase runs at, from the renderer's gallop; null returns to a multiple of the walk. */
+  setSprintPace(pxPerSecond: number | null): void;
   beginDrag(cursor: Vec2): void;
   updateDrag(cursor: Vec2): void;
   endDrag(now: number): void;
@@ -142,7 +161,9 @@ export interface LifeEngine {
   turnTo(angle: number): boolean;
   /** Stand still for `ms` without otherwise changing behaviour - used to stop the cat walking
    *  out from under an action clip that is mid-play. Weaker than a drag, a toy or an intent. */
-  hold(ms: number, now: number): void;
+  hold(ms: number, now: number, includeToy?: boolean): void;
+  /** Explicit affection mode. Keeps still while input avoidance retains priority. */
+  setPetting(enabled: boolean): void;
   /** 'auto' (default, stays out of the way) or 'play' ("逗猫模式", follows the cursor). */
   setInteractionMode(mode: InteractionMode): void;
   /** Live-update the 'auto' mode avoidance radius (see LifeEngineConfig.avoidRadius) - the
@@ -173,6 +194,8 @@ export interface LifeEngine {
     top?: number; bottom?: number; left?: number; right?: number;
     worstCorner?: { x: number; y: number };
   }): void;
+  /** Host-expanded text input regions, in engine coordinates. */
+  setProtectedRegions(regions: { x: number; y: number; width: number; height: number }[]): void;
   setMargins(margins: {
     top?: number; bottom?: number; left?: number; right?: number;
     /**
@@ -203,6 +226,7 @@ export interface LifeEngine {
   tick(now: number, cursor: Vec2 | null, pointerOnPet?: boolean): LifeEngineSnapshot;
 }
 export function createLifeEngine(config?: LifeEngineConfig): LifeEngine;
+export const DEFAULT_WANDER_SPEED: number;
 export const BEHAVIOR_STATES: readonly BehaviorState[];
 export const PERSONALITY_TRAITS: readonly PersonalityTrait[];
 export const INTERACTION_MODES: readonly InteractionMode[];

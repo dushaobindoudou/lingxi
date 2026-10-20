@@ -19,6 +19,17 @@ model Tools，DSH 会话里的模型从此可以直呼其名地驱动桌上的�
 这个摘要和 DSH 标识一起展示。当前 DSH 接入通过工具描述直接提供这些行为规则；只有 DSH
 宿主会加载独立 agent skill 时，额外安装 skill 才会增加触发准确度。
 
+## 安装与升级引导（skill）
+
+DSH 动态插件只会尝试启动已有的「灵犀.app」，不会自动下载 DMG。加载插件时，同时让模型读取
+[共享系统层 skill](../../skills/lingxi/SKILL.md) 和 [DSH 宿主层 skill](skills/lingxi-dsh/SKILL.md)。
+使用 profile/preset 的宿主应把两份 skill 一起加入其实际支持的技能配置；只复制插件 JavaScript
+不会自动加载 skill，不能保证安装引导被触发。
+
+DSH skill 会区分应用缺失、未启动和桥接故障。未安装时，引导用户从官方 Releases 下载、校验并安装
+v1.0.0 或更新稳定版；已安装旧版时，在用户要求升级后使用 `lingxi update` 或共享安装器。
+目标版本尚未发布时照实说明，不把旧版下载当成 v1.0.0 安装成功。配置和数据沿用原目录。
+
 ## 稳定事件契约
 
 每个实际任务至少报开始和终态，所有事件沿用同一个 `taskId`。插件会把 `provider` 与
@@ -52,6 +63,7 @@ model Tools，DSH 会话里的模型从此可以直呼其名地驱动桌上的�
 
 ## 加载（在 DSH 会话里让 agent 执行）
 
+0. 在宿主支持的 skill/profile 中加载上述系统层和 `lingxi-dsh`；一次性接入也可以直接读取两份 SKILL.md。
 1. `cordis_define`：`code.host` = 本文件内容（去掉首尾注释也可，整段贴进去即可）；
 2. `cordis_run`：激活返回的 packageId（Host-only 包，无需浏览器批准）；
 3. 下一步起 `lingxi_*` 五个工具即可被模型调用。
