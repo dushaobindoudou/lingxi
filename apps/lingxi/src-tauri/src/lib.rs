@@ -196,13 +196,11 @@ fn canonical_toy(kind: &str) -> &str {
 /// owns the actual choreography.
 const KNOWN_PERFORMANCES: [&str; 5] = ["angry-claw", "kiss-rush", "zoomies", "pee-at-you", "poop-at-you"];
 
-/// The tray's 玩具 and 特效 submenus: every known id with the name 主界面 gives it. A test keeps
-/// these in step with KNOWN_TOYS / KNOWN_PERFORMANCES, so a new toy cannot be missing here.
-const TRAY_TOYS: [(&str, &str); 4] = [
+/// Quick-access physical toys. Petting stays in the main window and agent skills.
+const TRAY_TOYS: [(&str, &str); 3] = [
     ("yarn", "毛线球"),
     ("feather", "逗猫棒"),
     ("laser", "激光笔"),
-    ("pet", "撸猫"),
 ];
 
 /// "性格行为" behavior presets, per docs/18-main-interface-design.md §5.4: a packaged
@@ -7920,9 +7918,12 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_offers_every_toy() {
+    fn the_tray_offers_physical_toys_and_keeps_petting_in_the_main_window() {
         let toys: Vec<&str> = TRAY_TOYS.iter().map(|(id, _)| *id).collect();
-        assert_eq!(toys, KNOWN_TOYS.to_vec());
+        assert_eq!(toys, vec!["yarn", "feather", "laser"]);
+        assert!(toys.iter().all(|id| KNOWN_TOYS.contains(id)));
+        assert!(KNOWN_TOYS.contains(&"pet"));
+        assert!(!toys.contains(&"pet"));
     }
 
     #[test]

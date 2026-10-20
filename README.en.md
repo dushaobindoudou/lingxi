@@ -13,7 +13,7 @@ Connect a coding agent and it reacts to completed tasks, failures and requests f
 
 Switch between block-style and realistic cats in the main window under Appearance → Style. The image above is the brand illustration.
 
-**v1.0.0 is being prepared for release.** Supports **macOS 12+, Apple Silicon and Intel**.
+**v1.0.1 is the latest release.** Supports **macOS 12+, Apple Silicon and Intel**.
 
 ## Download and install
 
@@ -21,7 +21,7 @@ Switch between block-style and realistic cats in the main window under Appearanc
 2. Open the image, drag Lingxi into Applications and launch it.
 3. Use the menu bar cat → Open Lingxi to adjust size, personality, appearance, toys and agent connections.
 
-The desktop app needs neither Node.js nor Rust. Until v1.0.0 ships, Latest points to the previous release; check its version.
+The desktop app needs neither Node.js nor Rust. Until a release ships, Latest points to the previous release; check the version on the release page.
 See each release's notes for signing and first-launch instructions. Builds without Apple notarization require approval in System Settings → Privacy & Security.
 Each app release includes `SHA256SUMS.txt`; use `shasum -a 256` to verify downloads.
 
