@@ -50,7 +50,7 @@ const TOY_CATALOGUE = [
   { kind: 'yarn', name: '毛线球', description: '会滚、会撞墙反弹；猫追上去拍一爪又飞出去，能自己玩下去' },
   { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，靠近时猫会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '死死钉在光标上，拍到也抓不住（这就是笑点）' },
-  { kind: 'pet', name: '撸猫', description: '用小手在猫身上来回顺毛，越摸越放松' },
+  { kind: 'pet', name: '撸猫', description: '按住左键轻抚头部和身体，翻肚后可摸腹部' },
 ];
 
 async function main() {
@@ -534,7 +534,6 @@ async function main() {
       engine.setPetting(true);
       petting.setEnabled(true);
       lastPettingRegion = null;
-      renderer.playAction?.('pet-head');
       fx.say('按住左键，轻轻摸摸我～', 2600);
       return;
     }
@@ -849,10 +848,10 @@ async function main() {
       // Back to full rate the frame something starts moving, not at the watchdog's next look:
       // a walk that starts at 30fps reads as a stutter.
       if (tier === 'idle' && !catIsStill()) setTier('active');
-      renderer.render(snapshot, deltaSeconds, cursor);
       const exposedBelly = bellyIsExposed(renderer.playingAction, bellyDurationMs);
       const touched = petting.enabled && petting.pressed && cursor && !yieldingToInput
         ? renderer.pettingHitTest?.(cursor, exposedBelly) ?? null : null;
+      renderer.render({ ...snapshot, pettingContact: touched != null && touched !== 'belly' }, deltaSeconds, cursor);
       const affection = petting.tick(cursor, touched, now);
       if (affection) {
         // Keep the belly pose while stroking it; do not interrupt the roll with a standing clip.
@@ -902,8 +901,7 @@ async function main() {
       // because it happened to wander onto a cursor you had parked and forgotten about
       // ("鼠标主动放到他身上的时候应该是亲近"). The same flag stops it fleeing, so the two
       // halves of the reaction finally agree with each other.
-      const petToy = snapshot.toy?.kind === 'pet';
-      if (!yieldingToInput && !petting.pressed && cursor && wasHit && (petToy || (!petting.enabled && !snapshot.toy && snapshot.pointer?.byUser)) && !isMouseDown && !isChargingToy) {
+      if (!yieldingToInput && !petting.enabled && !snapshot.toy && cursor && wasHit && snapshot.pointer?.byUser && !isMouseDown && !isChargingToy) {
         if (hoverSince === 0) {
           hoverSince = now;
           strokeDistance = 0;
@@ -917,27 +915,17 @@ async function main() {
           const reaction = pickPointerReaction({
             hovering: true,
             hoverMs: now - hoverSince,
-            strokeDistance: petToy ? strokeDistance * 1.5 : strokeDistance,
+            strokeDistance,
           });
-          if (reaction) {
-            const deeplyRelaxed = petToy && reaction.kind === 'stroke' && now - hoverSince > 9000;
-            const movingHand = renderer.activeStyle === 'realistic' && reaction.kind === 'notice' && (petToy || strokeDistance > 24);
-            // The realistic rig follows each stroke continuously. Replaying a full clip here used to interrupt the
-            // nuzzle every four seconds; a moving hand must also not start the one-off notice clip first.
-            // The voxel cat still uses its authored affection reaction. The face's contentment stays on both: without
-            // it the realistic cat took its strokes wide-eyed.
-            if ((renderer.activeStyle !== 'realistic' || reaction.kind !== 'stroke') && !movingHand) {
-              renderer.playAction?.(deeplyRelaxed ? 'belly-up' : reaction.clip);
+          if (reaction?.kind === 'notice') {
+            // Ordinary attention can acknowledge an approaching pointer. Stroking is handled only by the explicit
+            // pressed, anatomically checked petting session above.
+            const movingHand = renderer.activeStyle === 'realistic' && strokeDistance > 24;
+            if (!movingHand) {
+              renderer.playAction?.(reaction.clip);
+              renderer.playExpression?.(reaction.expression, 1800);
             }
-            if (!movingHand) renderer.playExpression?.(reaction.expression, reaction.kind === 'stroke' ? 4200 : 1800);
-            if (reaction.kind === 'stroke') {
-              const head = renderer.headScreenPoint?.();
-              if (head) fx.hearts(head.x, head.y, 3);
-              strokeDistance = 0; // start earning the next purr
-              pointerReactionUntil = now + 4200;
-            } else {
-              pointerReactionUntil = now + (movingHand ? 350 : 2600);
-            }
+            pointerReactionUntil = now + (movingHand ? 350 : 2600);
           }
         }
       } else {

@@ -1,0 +1,60 @@
+[
+ {
+  "path": "reviews/b4-round/lingxi-ref-face-closeup.png",
+  "ok": true,
+  "E_px": 389.0,
+  "E_detected": 389.0,
+  "pupil_d": 0.194,
+  "nose": {
+   "w": 0.311,
+   "h": 0.16,
+   "dy": 0.32,
+   "dy_top": 0.24,
+   "dy_bot": 0.4
+  },
+  "mouth": {
+   "w": 0.288,
+   "dy": 0.63,
+   "fill": 0.72,
+   "n": 81
+  },
+  "nose_pink": 115.0
+ },
+ {
+  "path": "assets/characters/lingxi/v6/round-b4/views/face.png",
+  "ok": true,
+  "E_px": 224.6,
+  "E_detected": 224.6,
+  "pupil_d": 0.322,
+  "nose": {
+   "w": 0.392,
+   "h": 0.03,
+   "dy": 0.495,
+   "dy_top": 0.48,
+   "dy_bot": 0.51
+  },
+  "mouth": null,
+  "nose_pink": 86.0
+ },
+ {
+  "path": "assets/characters/lingxi/v6/round-g/face.png",
+  "ok": true,
+  "E_px": 224.5,
+  "E_detected": 224.5,
+  "pupil_d": 0.323,
+  "nose": {
+   "w": 0.294,
+   "h": 0.17,
+   "dy": 0.305,
+   "dy_top": 0.22,
+   "dy_bot": 0.39
+  },
+  "mouth": {
+   "w": 0.178,
+   "dy": 0.57,
+   "fill": 0.55,
+   "n": 22
+  },
+  "nose_pink": 84.0
+ }
+]

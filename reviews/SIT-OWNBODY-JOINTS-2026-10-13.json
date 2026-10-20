@@ -1,0 +1,136 @@
+{
+  "source_image": "assets/characters/lingxi/reference/lingxi-ref-sit-ownbody-side.png",
+  "overlay_image": "assets/characters/lingxi/reference/lingxi-ref-sit-ownbody-skeleton-side.png",
+  "image_size_px": [
+    1254,
+    1254
+  ],
+  "coordinate_system": "Top-left origin; x right, y down; cat faces left.",
+  "ground_line_y_px": 1054,
+  "front_paw_toe_tip_x_px": 272,
+  "hind_paw_toe_tip_x_px": 589,
+  "head_top_y_px": 119,
+  "joint_centers_px": {
+    "head_center": {
+      "x": 351,
+      "y": 345,
+      "visibility": "inferred_under_fur"
+    },
+    "neck_base": {
+      "x": 495,
+      "y": 486,
+      "visibility": "inferred_under_fur"
+    },
+    "thoracic_spine": {
+      "x": 519,
+      "y": 568,
+      "visibility": "inferred_under_fur"
+    },
+    "lumbar_spine": {
+      "x": 685,
+      "y": 640,
+      "visibility": "inferred_under_fur"
+    },
+    "pelvis": {
+      "x": 812,
+      "y": 736,
+      "visibility": "inferred_under_fur"
+    },
+    "scapula": {
+      "x": 460,
+      "y": 547,
+      "visibility": "inferred_under_fur"
+    },
+    "shoulder": {
+      "x": 374,
+      "y": 613,
+      "visibility": "inferred_under_fur"
+    },
+    "elbow": {
+      "x": 356,
+      "y": 767,
+      "visibility": "inferred_under_fur"
+    },
+    "wrist": {
+      "x": 365,
+      "y": 962,
+      "visibility": "inferred_under_fur"
+    },
+    "metacarpophalangeal": {
+      "x": 323,
+      "y": 1011,
+      "visibility": "inferred_under_fur"
+    },
+    "front_toe_tip": {
+      "x": 272,
+      "y": 1047,
+      "visibility": "visible_outline"
+    },
+    "hip": {
+      "x": 824,
+      "y": 775,
+      "visibility": "inferred_under_fur"
+    },
+    "knee": {
+      "x": 705,
+      "y": 896,
+      "visibility": "inferred_under_fur"
+    },
+    "tarsus": {
+      "x": 829,
+      "y": 999,
+      "visibility": "inferred_under_fur"
+    },
+    "metatarsophalangeal": {
+      "x": 729,
+      "y": 1008,
+      "visibility": "inferred_under_fur"
+    },
+    "hind_toe_tip": {
+      "x": 589,
+      "y": 1048,
+      "visibility": "visible_outline"
+    }
+  },
+  "segments": {
+    "rear": [
+      "hip",
+      "knee",
+      "tarsus",
+      "metatarsophalangeal",
+      "hind_toe_tip"
+    ],
+    "front": [
+      "scapula",
+      "shoulder",
+      "elbow",
+      "wrist",
+      "metacarpophalangeal",
+      "front_toe_tip"
+    ],
+    "axial": [
+      "head_center",
+      "neck_base",
+      "thoracic_spine",
+      "lumbar_spine",
+      "pelvis"
+    ]
+  },
+  "calibration": {
+    "assumed_hip_shoulder_mm": 368,
+    "derived_px_per_mm": 1.3,
+    "projected_segment_lengths_mm": {
+      "hip_shoulder": 368.0,
+      "femur": 130.6,
+      "tibia": 124.0,
+      "metatarsus": 77.3
+    },
+    "target_lengths_mm": {
+      "femur": 131,
+      "tibia": 124,
+      "metatarsus": 77
+    },
+    "estimated_proportion_deviation": "Constrained 2D joint estimates yield femur, tibia and metatarsus within about 1 percent of fixed lengths. The C-shaped spinal path is longer than the shoulder-to-hip chord; a single photograph cannot recover true 3D bone lengths. Visible white foreleg from fur edge y~855 to ground y=1054 spans 199 px = about 153 mm, 2 percent longer than the stated 150 mm; this is visible coat length, not shoulder-to-wrist bone length."
+  },
+  "uncertainty": "Head top, toe tips and ground line are observed silhouette estimates. All other joint centers are partly or fully hidden by fur and are inferred from the supplied lengths and sitting direction. Hip, knee, tarsus and scapula may each be off by 20-40 px; overlay dots are not measured rig joint positions."
+}

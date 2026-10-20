@@ -1,0 +1,1535 @@
+{
+  "date": "2026-10-13",
+  "round_z_commit": "7f54104",
+  "method": "reviews/FACE-STRICT-COMPARE-FOR-CLAUDE.md",
+  "image_note": "Visual estimates from original 300px PNGs and 418px reference cells; target images are art references, not anatomical truth. Ratio error normally about 0.05, angles about 5 degrees; individual larger errors listed.",
+  "face_layers": [
+    {
+      "index": 0,
+      "name": "eye:slit",
+      "measurements": [
+        {
+          "metric": "pupil_w",
+          "unit": "ratio",
+          "y": 0.06,
+          "z": 0.09,
+          "target": 0.11,
+          "z_minus_target": -0.02,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-b:1",
+          "null_reason": null
+        },
+        {
+          "metric": "pupil_h",
+          "unit": "ratio",
+          "y": 0.77,
+          "z": 0.79,
+          "target": 0.82,
+          "z_minus_target": -0.03,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-b:1",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "eye:round",
+      "measurements": [
+        {
+          "metric": "pupil_w",
+          "unit": "ratio",
+          "y": 0.72,
+          "z": 0.5,
+          "target": 0.62,
+          "z_minus_target": -0.12,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-a:0",
+          "null_reason": null
+        },
+        {
+          "metric": "wide_minus_round_pupil_w",
+          "unit": "ratio",
+          "y": 0.04,
+          "z": 0.18,
+          "target": 0.1,
+          "z_minus_target": 0.08,
+          "uncertainty_z_plus_minus": 0.07,
+          "reference_cell": "eyes-a:0 / eyes-b:3",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "eye:wide",
+      "measurements": [
+        {
+          "metric": "pupil_w",
+          "unit": "ratio",
+          "y": 0.76,
+          "z": 0.68,
+          "target": 0.72,
+          "z_minus_target": -0.04,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-b:3",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "eye:side",
+      "measurements": [
+        {
+          "metric": "pupil_side_offset",
+          "unit": "ratio",
+          "y": 0.1,
+          "z": 0.17,
+          "target": 0.2,
+          "z_minus_target": -0.03,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-a:8",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "eye:half",
+      "measurements": [
+        {
+          "metric": "upper_lid",
+          "unit": "ratio",
+          "y": 0.48,
+          "z": 0.53,
+          "target": 0.55,
+          "z_minus_target": -0.02,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-a:3",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "eye:happy",
+      "measurements": [
+        {
+          "metric": "closed_arc",
+          "unit": "ratio",
+          "y": 0.03,
+          "z": 0.04,
+          "target": 0.12,
+          "z_minus_target": -0.08,
+          "uncertainty_z_plus_minus": 0.03,
+          "reference_cell": "eyes-a:5",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "eye:closed",
+      "measurements": [
+        {
+          "metric": "closed_arc",
+          "unit": "ratio",
+          "y": 0.03,
+          "z": 0.03,
+          "target": 0.03,
+          "z_minus_target": 0.0,
+          "uncertainty_z_plus_minus": 0.03,
+          "reference_cell": "eyes-a:6",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "name": "eye:heart",
+      "measurements": [
+        {
+          "metric": "pupil_w",
+          "unit": "ratio",
+          "y": 0.76,
+          "z": 0.5,
+          "target": null,
+          "z_minus_target": null,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": null,
+          "null_reason": "no direct reference state"
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "eye:soft",
+      "measurements": [
+        {
+          "metric": "upper_lid",
+          "unit": "ratio",
+          "y": 0.1,
+          "z": 0.2,
+          "target": 0.23,
+          "z_minus_target": -0.03,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-a:4",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "name": "eye:wink-left",
+      "measurements": [
+        {
+          "metric": "closed_arc",
+          "unit": "ratio",
+          "y": 0.02,
+          "z": 0.03,
+          "target": 0.04,
+          "z_minus_target": -0.01,
+          "uncertainty_z_plus_minus": 0.03,
+          "reference_cell": "eyes-a:7",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "name": "eye:wink-right",
+      "measurements": [
+        {
+          "metric": "closed_arc",
+          "unit": "ratio",
+          "y": 0.02,
+          "z": 0.03,
+          "target": 0.04,
+          "z_minus_target": -0.01,
+          "uncertainty_z_plus_minus": 0.03,
+          "reference_cell": "eyes-b:0",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "name": "eye:sparkle",
+      "measurements": [
+        {
+          "metric": "pupil_w",
+          "unit": "ratio",
+          "y": 0.76,
+          "z": 0.5,
+          "target": 0.6,
+          "z_minus_target": -0.1,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-b:5",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "name": "eye:tearful",
+      "measurements": [
+        {
+          "metric": "lower_lid",
+          "unit": "ratio",
+          "y": 0.02,
+          "z": 0.04,
+          "target": 0.08,
+          "z_minus_target": -0.04,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "eyes-b:4",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "name": "brow:flat",
+      "measurements": [
+        {
+          "metric": "brow_peak",
+          "unit": "ratio",
+          "y": null,
+          "z": null,
+          "target": null,
+          "z_minus_target": null,
+          "uncertainty_z_plus_minus": null,
+          "reference_cell": "ears-brows:0",
+          "null_reason": "occluded by fur; brow peak cannot be picked"
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "name": "brow:none",
+      "measurements": [
+        {
+          "metric": "brow_peak",
+          "unit": "ratio",
+          "y": null,
+          "z": null,
+          "target": null,
+          "z_minus_target": null,
+          "uncertainty_z_plus_minus": null,
+          "reference_cell": null,
+          "null_reason": "occluded by fur; brow peak cannot be picked"
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "name": "brow:furrow",
+      "measurements": [
+        {
+          "metric": "lid_slant",
+          "unit": "ratio",
+          "y": 0.03,
+          "z": 0.12,
+          "target": 0.18,
+          "z_minus_target": -0.06,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "ears-brows:6",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "name": "brow:raise",
+      "measurements": [
+        {
+          "metric": "upper_lid",
+          "unit": "ratio",
+          "y": 0.03,
+          "z": 0.02,
+          "target": 0,
+          "z_minus_target": 0.02,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "ears-brows:5",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 17,
+      "name": "brow:sad",
+      "measurements": [
+        {
+          "metric": "lid_slant",
+          "unit": "ratio",
+          "y": 0,
+          "z": -0.07,
+          "target": -0.1,
+          "z_minus_target": 0.03,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "ears-brows:7",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 18,
+      "name": "mouth:flat",
+      "measurements": [
+        {
+          "metric": "mouth_gap_h",
+          "unit": "ratio",
+          "y": 0,
+          "z": 0,
+          "target": 0,
+          "z_minus_target": 0,
+          "uncertainty_z_plus_minus": 0.05,
+          "reference_cell": "mouth:0",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 19,
+      "name": "mouth:cat",
+      "measurements": [
+        {
+          "metric": "mouth_corner_rise",
+          "unit": "ratio",
+          "y": 0.03,
+          "z": 0.1,
+          "target": 0.13,
+          "z_minus_target": -0.03,
+          "uncertainty_z_plus_minus": 0.07,
+          "reference_cell": "mouth:1",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 20,
+      "name": "mouth:open",
+      "measurements": [
+        {
+          "metric": "mouth_open_h",
+          "unit": "ratio",
+          "y": 0.55,
+          "z": 0.8,
+          "target": 0.7,
+          "z_minus_target": 0.1,
+          "uncertainty_z_plus_minus": 0.08,
+          "reference_cell": "mouth:4",
+          "null_reason": null
+        },
+        {
+          "metric": "mouth_open_w",
+          "unit": "ratio",
+          "y": null,
+          "z": 1.75,
+          "target": 0.63,
+          "z_minus_target": 1.12,
+          "uncertainty_z_plus_minus": 0.15,
+          "reference_cell": "mouth:4",
+          "null_reason": "Y baseline did not measure this metric"
+        }
+      ]
+    },
+    {
+      "index": 21,
+      "name": "mouth:frown",
+      "measurements": [
+        {
+          "metric": "mouth_corner_rise",
+          "unit": "ratio",
+          "y": -0.02,
+          "z": -0.07,
+          "target": -0.12,
+          "z_minus_target": 0.05,
+          "uncertainty_z_plus_minus": 0.07,
+          "reference_cell": "mouth:2",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 22,
+      "name": "mouth:hiss",
+      "measurements": [
+        {
+          "metric": "mouth_open_w",
+          "unit": "ratio",
+          "y": 0.65,
+          "z": 2.2,
+          "target": 1.8,
+          "z_minus_target": 0.4,
+          "uncertainty_z_plus_minus": 0.15,
+          "reference_cell": "mouth:6",
+          "null_reason": null
+        },
+        {
+          "metric": "mouth_open_h",
+          "unit": "ratio",
+          "y": null,
+          "z": 1.85,
+          "target": 1.22,
+          "z_minus_target": 0.63,
+          "uncertainty_z_plus_minus": 0.1,
+          "reference_cell": "mouth:6",
+          "null_reason": "Y baseline did not measure this metric"
+        }
+      ]
+    },
+    {
+      "index": 23,
+      "name": "mouth:tongue",
+      "measurements": [
+        {
+          "metric": "tongue_extension",
+          "unit": "ratio",
+          "y": 0.08,
+          "z": 0.03,
+          "target": 0.25,
+          "z_minus_target": -0.22,
+          "uncertainty_z_plus_minus": 0.07,
+          "reference_cell": "mouth:7",
+          "null_reason": null
+        },
+        {
+          "metric": "mouth_open_h",
+          "unit": "ratio",
+          "y": null,
+          "z": 0.45,
+          "target": 0.12,
+          "z_minus_target": 0.33,
+          "uncertainty_z_plus_minus": 0.1,
+          "reference_cell": "mouth:7",
+          "null_reason": "Y baseline did not measure this metric"
+        }
+      ]
+    },
+    {
+      "index": 24,
+      "name": "ear:neutral",
+      "measurements": [
+        {
+          "metric": "ear_axis_deg",
+          "unit": "degree",
+          "y": 25,
+          "z": 25,
+          "target": 25,
+          "z_minus_target": 0,
+          "uncertainty_z_plus_minus": 5,
+          "reference_cell": "ears-brows:0",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 25,
+      "name": "ear:forward",
+      "measurements": [
+        {
+          "metric": "ear_axis_deg",
+          "unit": "degree",
+          "y": 24.5,
+          "z": 24.5,
+          "target": 22.5,
+          "z_minus_target": 2.0,
+          "uncertainty_z_plus_minus": 5,
+          "reference_cell": "ears-brows:1",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 26,
+      "name": "ear:airplane",
+      "measurements": [
+        {
+          "metric": "ear_axis_deg",
+          "unit": "degree",
+          "y": 76,
+          "z": 77,
+          "target": 77,
+          "z_minus_target": 0,
+          "uncertainty_z_plus_minus": 5,
+          "reference_cell": "ears-brows:2",
+          "null_reason": null
+        }
+      ]
+    },
+    {
+      "index": 27,
+      "name": "ear:back",
+      "measurements": [
+        {
+          "metric": "ear_axis_deg",
+          "unit": "degree",
+          "y": 62.5,
+          "z": 69,
+          "target": 71,
+          "z_minus_target": -2,
+          "uncertainty_z_plus_minus": 8,
+          "reference_cell": "ears-brows:3",
+          "null_reason": null
+        }
+      ]
+    }
+  ],
+  "face_checks": {
+    "second_slit_line_visible_y": true,
+    "second_slit_line_visible_z": false,
+    "second_line_scope": "Not seen in Z frontal 300px still; side views and runtime unverified",
+    "flat_none_full_image_mae_y": 0,
+    "flat_none_full_image_mae_z": 0
+  },
+  "face_expressions": {
+    "method": "RGB pixel MAE, crop x=50..249 and y=70..209, 30 original 300px renders, no symbol layer",
+    "summary": {
+      "y": {
+        "pairs": 435,
+        "minimum": 0.0,
+        "median": 7.941,
+        "under_1_3": 23,
+        "at_or_below_1_25": 20
+      },
+      "z": {
+        "pairs": 435,
+        "minimum": 1.502,
+        "median": 9.985,
+        "under_1_3": 0,
+        "at_or_below_1_25": 0
+      }
+    },
+    "nearest_per_expression": [
+      {
+        "index": 0,
+        "name": "安然",
+        "y": {
+          "other_index": 13,
+          "other_name": "认真",
+          "mae": 0.733
+        },
+        "z": {
+          "other_index": 13,
+          "other_name": "认真",
+          "mae": 3.904
+        }
+      },
+      {
+        "index": 1,
+        "name": "好奇",
+        "y": {
+          "other_index": 7,
+          "other_name": "玩心",
+          "mae": 0.566
+        },
+        "z": {
+          "other_index": 17,
+          "other_name": "清醒",
+          "mae": 1.502
+        }
+      },
+      {
+        "index": 2,
+        "name": "满足",
+        "y": {
+          "other_index": 11,
+          "other_name": "开心",
+          "mae": 1.115
+        },
+        "z": {
+          "other_index": 11,
+          "other_name": "开心",
+          "mae": 2.849
+        }
+      },
+      {
+        "index": 3,
+        "name": "警觉",
+        "y": {
+          "other_index": 5,
+          "other_name": "惊吓",
+          "mae": 1.21
+        },
+        "z": {
+          "other_index": 5,
+          "other_name": "惊吓",
+          "mae": 3.612
+        }
+      },
+      {
+        "index": 4,
+        "name": "不爽",
+        "y": {
+          "other_index": 24,
+          "other_name": "警惕",
+          "mae": 1.635
+        },
+        "z": {
+          "other_index": 24,
+          "other_name": "警惕",
+          "mae": 4.796
+        }
+      },
+      {
+        "index": 5,
+        "name": "惊吓",
+        "y": {
+          "other_index": 3,
+          "other_name": "警觉",
+          "mae": 1.21
+        },
+        "z": {
+          "other_index": 3,
+          "other_name": "警觉",
+          "mae": 3.612
+        }
+      },
+      {
+        "index": 6,
+        "name": "困困",
+        "y": {
+          "other_index": 21,
+          "other_name": "害羞",
+          "mae": 0.483
+        },
+        "z": {
+          "other_index": 21,
+          "other_name": "害羞",
+          "mae": 4.072
+        }
+      },
+      {
+        "index": 7,
+        "name": "玩心",
+        "y": {
+          "other_index": 1,
+          "other_name": "好奇",
+          "mae": 0.566
+        },
+        "z": {
+          "other_index": 1,
+          "other_name": "好奇",
+          "mae": 1.875
+        }
+      },
+      {
+        "index": 8,
+        "name": "生气",
+        "y": {
+          "other_index": 0,
+          "other_name": "安然",
+          "mae": 1.791
+        },
+        "z": {
+          "other_index": 13,
+          "other_name": "认真",
+          "mae": 7.471
+        }
+      },
+      {
+        "index": 9,
+        "name": "撒娇",
+        "y": {
+          "other_index": 15,
+          "other_name": "期待",
+          "mae": 0.528
+        },
+        "z": {
+          "other_index": 29,
+          "other_name": "闪亮",
+          "mae": 5.317
+        }
+      },
+      {
+        "index": 10,
+        "name": "闭眼休息",
+        "y": {
+          "other_index": 14,
+          "other_name": "陶醉",
+          "mae": 0.0
+        },
+        "z": {
+          "other_index": 2,
+          "other_name": "满足",
+          "mae": 4.365
+        }
+      },
+      {
+        "index": 11,
+        "name": "开心",
+        "y": {
+          "other_index": 2,
+          "other_name": "满足",
+          "mae": 1.115
+        },
+        "z": {
+          "other_index": 2,
+          "other_name": "满足",
+          "mae": 2.849
+        }
+      },
+      {
+        "index": 12,
+        "name": "放松",
+        "y": {
+          "other_index": 18,
+          "other_name": "安心",
+          "mae": 0.0
+        },
+        "z": {
+          "other_index": 18,
+          "other_name": "安心",
+          "mae": 2.283
+        }
+      },
+      {
+        "index": 13,
+        "name": "认真",
+        "y": {
+          "other_index": 0,
+          "other_name": "安然",
+          "mae": 0.733
+        },
+        "z": {
+          "other_index": 0,
+          "other_name": "安然",
+          "mae": 3.904
+        }
+      },
+      {
+        "index": 14,
+        "name": "陶醉",
+        "y": {
+          "other_index": 10,
+          "other_name": "闭眼休息",
+          "mae": 0.0
+        },
+        "z": {
+          "other_index": 2,
+          "other_name": "满足",
+          "mae": 5.556
+        }
+      },
+      {
+        "index": 15,
+        "name": "期待",
+        "y": {
+          "other_index": 9,
+          "other_name": "撒娇",
+          "mae": 0.528
+        },
+        "z": {
+          "other_index": 29,
+          "other_name": "闪亮",
+          "mae": 3.185
+        }
+      },
+      {
+        "index": 16,
+        "name": "喵喵",
+        "y": {
+          "other_index": 17,
+          "other_name": "清醒",
+          "mae": 0.733
+        },
+        "z": {
+          "other_index": 7,
+          "other_name": "玩心",
+          "mae": 5.137
+        }
+      },
+      {
+        "index": 17,
+        "name": "清醒",
+        "y": {
+          "other_index": 16,
+          "other_name": "喵喵",
+          "mae": 0.733
+        },
+        "z": {
+          "other_index": 1,
+          "other_name": "好奇",
+          "mae": 1.502
+        }
+      },
+      {
+        "index": 18,
+        "name": "安心",
+        "y": {
+          "other_index": 12,
+          "other_name": "放松",
+          "mae": 0.0
+        },
+        "z": {
+          "other_index": 12,
+          "other_name": "放松",
+          "mae": 2.283
+        }
+      },
+      {
+        "index": 19,
+        "name": "温柔",
+        "y": {
+          "other_index": 12,
+          "other_name": "放松",
+          "mae": 1.049
+        },
+        "z": {
+          "other_index": 12,
+          "other_name": "放松",
+          "mae": 3.178
+        }
+      },
+      {
+        "index": 20,
+        "name": "委屈",
+        "y": {
+          "other_index": 9,
+          "other_name": "撒娇",
+          "mae": 3.504
+        },
+        "z": {
+          "other_index": 22,
+          "other_name": "求抱抱",
+          "mae": 5.416
+        }
+      },
+      {
+        "index": 21,
+        "name": "害羞",
+        "y": {
+          "other_index": 6,
+          "other_name": "困困",
+          "mae": 0.483
+        },
+        "z": {
+          "other_index": 6,
+          "other_name": "困困",
+          "mae": 4.072
+        }
+      },
+      {
+        "index": 22,
+        "name": "求抱抱",
+        "y": {
+          "other_index": 16,
+          "other_name": "喵喵",
+          "mae": 0.997
+        },
+        "z": {
+          "other_index": 17,
+          "other_name": "清醒",
+          "mae": 5.369
+        }
+      },
+      {
+        "index": 23,
+        "name": "困惑",
+        "y": {
+          "other_index": 1,
+          "other_name": "好奇",
+          "mae": 0.734
+        },
+        "z": {
+          "other_index": 1,
+          "other_name": "好奇",
+          "mae": 2.483
+        }
+      },
+      {
+        "index": 24,
+        "name": "警惕",
+        "y": {
+          "other_index": 4,
+          "other_name": "不爽",
+          "mae": 1.635
+        },
+        "z": {
+          "other_index": 4,
+          "other_name": "不爽",
+          "mae": 4.796
+        }
+      },
+      {
+        "index": 25,
+        "name": "嫌弃",
+        "y": {
+          "other_index": 6,
+          "other_name": "困困",
+          "mae": 1.571
+        },
+        "z": {
+          "other_index": 6,
+          "other_name": "困困",
+          "mae": 5.354
+        }
+      },
+      {
+        "index": 26,
+        "name": "得意",
+        "y": {
+          "other_index": 21,
+          "other_name": "害羞",
+          "mae": 1.078
+        },
+        "z": {
+          "other_index": 28,
+          "other_name": "右眼眨",
+          "mae": 5.535
+        }
+      },
+      {
+        "index": 27,
+        "name": "左眼眨",
+        "y": {
+          "other_index": 10,
+          "other_name": "闭眼休息",
+          "mae": 6.928
+        },
+        "z": {
+          "other_index": 12,
+          "other_name": "放松",
+          "mae": 6.899
+        }
+      },
+      {
+        "index": 28,
+        "name": "右眼眨",
+        "y": {
+          "other_index": 10,
+          "other_name": "闭眼休息",
+          "mae": 6.838
+        },
+        "z": {
+          "other_index": 26,
+          "other_name": "得意",
+          "mae": 5.535
+        }
+      },
+      {
+        "index": 29,
+        "name": "闪亮",
+        "y": {
+          "other_index": 15,
+          "other_name": "期待",
+          "mae": 0.812
+        },
+        "z": {
+          "other_index": 17,
+          "other_name": "清醒",
+          "mae": 2.573
+        }
+      }
+    ],
+    "historical_21_pairs": [
+      {
+        "a": "放松",
+        "b": "安心",
+        "y": 0.0,
+        "z": 2.283,
+        "delta": 2.283
+      },
+      {
+        "a": "闭眼休息",
+        "b": "陶醉",
+        "y": 0.0,
+        "z": 6.15,
+        "delta": 6.15
+      },
+      {
+        "a": "困困",
+        "b": "害羞",
+        "y": 0.483,
+        "z": 4.072,
+        "delta": 3.589
+      },
+      {
+        "a": "害羞",
+        "b": "得意",
+        "y": 1.078,
+        "z": 8.641,
+        "delta": 7.563
+      },
+      {
+        "a": "撒娇",
+        "b": "期待",
+        "y": 0.528,
+        "z": 6.919,
+        "delta": 6.391
+      },
+      {
+        "a": "期待",
+        "b": "闪亮",
+        "y": 0.812,
+        "z": 3.185,
+        "delta": 2.373
+      },
+      {
+        "a": "撒娇",
+        "b": "闪亮",
+        "y": 1.281,
+        "z": 5.317,
+        "delta": 4.036
+      },
+      {
+        "a": "好奇",
+        "b": "玩心",
+        "y": 0.566,
+        "z": 1.875,
+        "delta": 1.309
+      },
+      {
+        "a": "好奇",
+        "b": "困惑",
+        "y": 0.734,
+        "z": 2.483,
+        "delta": 1.749
+      },
+      {
+        "a": "玩心",
+        "b": "困惑",
+        "y": 0.909,
+        "z": 3.834,
+        "delta": 2.925
+      },
+      {
+        "a": "安然",
+        "b": "认真",
+        "y": 0.733,
+        "z": 3.904,
+        "delta": 3.171
+      },
+      {
+        "a": "喵喵",
+        "b": "清醒",
+        "y": 0.733,
+        "z": 5.434,
+        "delta": 4.701
+      },
+      {
+        "a": "好奇",
+        "b": "清醒",
+        "y": 0.811,
+        "z": 1.502,
+        "delta": 0.691
+      },
+      {
+        "a": "喵喵",
+        "b": "求抱抱",
+        "y": 0.997,
+        "z": 8.261,
+        "delta": 7.264
+      },
+      {
+        "a": "清醒",
+        "b": "求抱抱",
+        "y": 1.104,
+        "z": 5.369,
+        "delta": 4.265
+      },
+      {
+        "a": "放松",
+        "b": "温柔",
+        "y": 1.049,
+        "z": 3.178,
+        "delta": 2.129
+      },
+      {
+        "a": "安心",
+        "b": "温柔",
+        "y": 1.049,
+        "z": 4.643,
+        "delta": 3.594
+      },
+      {
+        "a": "满足",
+        "b": "开心",
+        "y": 1.115,
+        "z": 2.849,
+        "delta": 1.734
+      },
+      {
+        "a": "警觉",
+        "b": "惊吓",
+        "y": 1.21,
+        "z": 3.612,
+        "delta": 2.402
+      },
+      {
+        "a": "玩心",
+        "b": "求抱抱",
+        "y": 1.244,
+        "z": 6.968,
+        "delta": 5.724
+      },
+      {
+        "a": "不爽",
+        "b": "警惕",
+        "y": 1.635,
+        "z": 4.796,
+        "delta": 3.161
+      }
+    ],
+    "target_mae": null,
+    "target_mae_null_reason": "No matched target set for pixel MAE; 1.25 is a screening threshold, not a recognition acceptance threshold"
+  },
+  "chest": [
+    {
+      "pose": "stand",
+      "metric": "width",
+      "unit": "visible_head_width",
+      "y": 0.88,
+      "z": 0.82,
+      "target": 0.73,
+      "z_minus_target": 0.09,
+      "uncertainty_z_plus_minus": 0.07
+    },
+    {
+      "pose": "stand",
+      "metric": "chin_to_bib_end_length",
+      "unit": "visible_head_width",
+      "y": 0.51,
+      "z": 0.5,
+      "target": 0.56,
+      "z_minus_target": -0.06,
+      "uncertainty_z_plus_minus": 0.07
+    },
+    {
+      "pose": "sit",
+      "metric": "width",
+      "unit": "visible_head_width",
+      "y": 1.24,
+      "z": 1.05,
+      "target": 0.64,
+      "z_minus_target": 0.41,
+      "uncertainty_z_plus_minus": 0.08
+    },
+    {
+      "pose": "sit",
+      "metric": "chin_to_bib_end_length",
+      "unit": "visible_head_width",
+      "y": 0.92,
+      "z": 0.76,
+      "target": 0.79,
+      "z_minus_target": -0.03,
+      "uncertainty_z_plus_minus": 0.09
+    }
+  ],
+  "tail": {
+    "visible_pale_patch_area_px2": {
+      "y": 1500,
+      "z": 0,
+      "target": 0,
+      "z_note": "0 means no visibly pale exposed spot in this 480px closeup, not proven absence of bare mesh at all frames/views",
+      "y_boundary_uncertainty_px": 8
+    },
+    "blunt_tip_area_px2": {
+      "y": null,
+      "z": null,
+      "target": 0,
+      "null_reason": "No reliable boundary between dark rounded tuft and fine fur strands"
+    },
+    "z_closeup": "Dense dark brush; former pale pink or beige spot not visible; terminal silhouette is still slightly rounded",
+    "z_stand_side": "Dark rounded end remains in side-view still; no pale exposed spot seen"
+  },
+  "gait": [
+    {
+      "clip": "Walk",
+      "sole_max_contact_step_mm": {
+        "y": {
+          "FrontPaw.L": 4.92,
+          "FrontPaw.R": 5.36,
+          "RearPaw.L": 3.95,
+          "RearPaw.R": 3.69
+        },
+        "z": {
+          "FrontPaw.L": 4.92,
+          "FrontPaw.R": 5.36,
+          "RearPaw.L": 3.95,
+          "RearPaw.R": 3.69
+        },
+        "target_max": 3,
+        "y_worst": 5.36,
+        "z_worst": 5.36,
+        "z_worst_over_target": 2.36,
+        "z_minus_y_per_paw": {
+          "FrontPaw.L": 0.0,
+          "FrontPaw.R": 0.0,
+          "RearPaw.L": 0.0,
+          "RearPaw.R": 0.0
+        }
+      },
+      "sole_low_mm": {
+        "y": -1.8,
+        "z": -1.8,
+        "target_min": 0,
+        "z_below_target": 1.8
+      }
+    },
+    {
+      "clip": "Run",
+      "sole_max_contact_step_mm": {
+        "y": {
+          "FrontPaw.L": 0.74,
+          "FrontPaw.R": 1.11,
+          "RearPaw.L": 0.05,
+          "RearPaw.R": 0.05
+        },
+        "z": {
+          "FrontPaw.L": 0.74,
+          "FrontPaw.R": 1.11,
+          "RearPaw.L": 0.05,
+          "RearPaw.R": 0.05
+        },
+        "target_max": 3,
+        "y_worst": 1.11,
+        "z_worst": 1.11,
+        "z_worst_over_target": -1.89,
+        "z_minus_y_per_paw": {
+          "FrontPaw.L": 0.0,
+          "FrontPaw.R": 0.0,
+          "RearPaw.L": 0.0,
+          "RearPaw.R": 0.0
+        }
+      },
+      "sole_low_mm": {
+        "y": -0.37,
+        "z": -0.37,
+        "target_min": 0,
+        "z_below_target": 0.37
+      }
+    },
+    {
+      "clip": "Jump",
+      "sole_max_contact_step_mm": {
+        "y": {
+          "FrontPaw.L": 7.24,
+          "FrontPaw.R": 7.08,
+          "RearPaw.L": 5.45,
+          "RearPaw.R": 5.31
+        },
+        "z": {
+          "FrontPaw.L": 7.24,
+          "FrontPaw.R": 7.08,
+          "RearPaw.L": 5.45,
+          "RearPaw.R": 5.31
+        },
+        "target_max": 3,
+        "y_worst": 7.24,
+        "z_worst": 7.24,
+        "z_worst_over_target": 4.24,
+        "z_minus_y_per_paw": {
+          "FrontPaw.L": 0.0,
+          "FrontPaw.R": 0.0,
+          "RearPaw.L": 0.0,
+          "RearPaw.R": 0.0
+        }
+      },
+      "sole_low_mm": {
+        "y": -15.12,
+        "z": -15.12,
+        "target_min": 0,
+        "z_below_target": 15.12
+      }
+    }
+  ],
+  "mouth_open_parts": {
+    "clips": [
+      {
+        "clip": "Yawn",
+        "frame_y": 495,
+        "frame_z": 495,
+        "jaw_deg_y": 34.35,
+        "jaw_deg_z": 34.35,
+        "open_mm_mesh_y": 34.5,
+        "open_mm_mesh_z": 82.0,
+        "open_mm_fur_y": 34.5,
+        "open_mm_fur_z": 82.0,
+        "open_width_mm_fur_y": 56.0,
+        "open_width_mm_fur_z": 58.0,
+        "fur_in_mouth_fraction_y": 0.151,
+        "fur_in_mouth_fraction_z": 0.057,
+        "fur_in_mouth_null_reason": null,
+        "true_unoccluded_open_mm": null,
+        "true_unoccluded_open_null_reason": "Not needed for visible Yawn/Bite result",
+        "delta_open_mm_mesh_z_minus_y": 47.5,
+        "delta_open_mm_fur_z_minus_y": 47.5,
+        "delta_open_width_mm_fur_z_minus_y": 2.0,
+        "restoration_reference_open_mm_mesh": 84.5,
+        "z_minus_restoration_reference_mm": -2.5
+      },
+      {
+        "clip": "Bite",
+        "frame_y": 585,
+        "frame_z": 585,
+        "jaw_deg_y": 28.62,
+        "jaw_deg_z": 28.62,
+        "open_mm_mesh_y": 11.0,
+        "open_mm_mesh_z": 56.5,
+        "open_mm_fur_y": 10.0,
+        "open_mm_fur_z": 54.5,
+        "open_width_mm_fur_y": 55.5,
+        "open_width_mm_fur_z": 55.5,
+        "fur_in_mouth_fraction_y": 0.383,
+        "fur_in_mouth_fraction_z": 0.126,
+        "fur_in_mouth_null_reason": null,
+        "true_unoccluded_open_mm": null,
+        "true_unoccluded_open_null_reason": "Not needed for visible Yawn/Bite result",
+        "delta_open_mm_mesh_z_minus_y": 45.5,
+        "delta_open_mm_fur_z_minus_y": 44.5,
+        "delta_open_width_mm_fur_z_minus_y": 0.0,
+        "restoration_reference_open_mm_mesh": 57.0,
+        "z_minus_restoration_reference_mm": -0.5
+      },
+      {
+        "clip": "Lick",
+        "frame_y": 537,
+        "frame_z": 537,
+        "jaw_deg_y": 12.59,
+        "jaw_deg_z": 12.59,
+        "open_mm_mesh_y": 0.0,
+        "open_mm_mesh_z": 0.0,
+        "open_mm_fur_y": 0.0,
+        "open_mm_fur_z": 0.0,
+        "open_width_mm_fur_y": 0.0,
+        "open_width_mm_fur_z": 0.0,
+        "fur_in_mouth_fraction_y": null,
+        "fur_in_mouth_fraction_z": null,
+        "fur_in_mouth_null_reason": "Paw occludes frontal mouth; no valid cavity rays",
+        "true_unoccluded_open_mm": null,
+        "true_unoccluded_open_null_reason": "No unoccluded same-frame view in this audit",
+        "delta_open_mm_mesh_z_minus_y": 0.0,
+        "delta_open_mm_fur_z_minus_y": 0.0,
+        "delta_open_width_mm_fur_z_minus_y": 0.0,
+        "restoration_reference_open_mm_mesh": null,
+        "restoration_reference_null_reason": "Lick visible mouth occluded by paw; no comparable reference opening in this audit",
+        "z_minus_restoration_reference_mm": null
+      }
+    ],
+    "lick_contact": {
+      "gap_mm_y": -0.03,
+      "gap_mm_z": -0.03,
+      "tongue_out_of_lip_mm_y": 20.3,
+      "tongue_out_of_lip_mm_z": 20.3,
+      "head_intersections_y": 57,
+      "head_intersections_z": 38,
+      "upper_lip_intersections_each_y": 30,
+      "upper_lip_intersections_each_z": 0,
+      "visible_intersections_y": 176,
+      "visible_intersections_z": 97
+    }
+  },
+  "section2_unretested": {
+    "named_clips": {
+      "y": 22,
+      "z": 22,
+      "target_legacy_actions": 49,
+      "semantic_coverage_z": null,
+      "null_reason": "Clip count does not establish mapping or runtime acceptance of 49 legacy actions"
+    },
+    "desktop_glb_runtime_loaded_z": null,
+    "desktop_glb_runtime_loaded_null_reason": "Official desktop runtime not exercised in this image and audit JSON review",
+    "representative_mesh_floor_low_mm": {
+      "Lick": {
+        "y": -7.9,
+        "z": null
+      },
+      "Loaf": {
+        "y": -2.7,
+        "z": null
+      },
+      "LieDown": {
+        "y": -2.7,
+        "z": null
+      },
+      "PawPlay": {
+        "y": -4.4,
+        "z": null
+      }
+    },
+    "representative_mesh_floor_low_null_reason": "Round Z lacks review-clips.json; no same-method actual deformed-mesh representative-frame minima"
+  },
+  "priorities": [
+    {
+      "rank": 1,
+      "location": "Jump support sole",
+      "z": {
+        "sole_low_mm": -15.12,
+        "worst_contact_step_mm": 7.24
+      },
+      "target": {
+        "contact_step_mm_max": 3,
+        "sole_low_mm_min": 0
+      },
+      "gap": {
+        "penetration_mm": 15.12,
+        "slip_mm": 4.24
+      },
+      "fix": "Re-solve root height, paw surface normal and deformed sole contact together; bake and audit all frames on existing rig."
+    },
+    {
+      "rank": 2,
+      "location": "Walk support sole",
+      "z": {
+        "worst_contact_step_mm": 5.36
+      },
+      "target": {
+        "contact_step_mm_max": 3
+      },
+      "gap": {
+        "slip_mm": 2.36
+      },
+      "fix": "Constrain deformed sole marker and paw rotation during stance, including root travel; rerun gait audit."
+    },
+    {
+      "rank": 3,
+      "location": "Sit chest side outline",
+      "z": {
+        "width_over_head": 1.05
+      },
+      "target": {
+        "width_over_head": 0.64
+      },
+      "gap": {
+        "head_width": 0.41
+      },
+      "fix": "Trim lateral and forward white bib fur and color weights; preserve central bib length and reveal brown upper forelegs."
+    },
+    {
+      "rank": 4,
+      "location": "mouth:open meow width",
+      "z": {
+        "width_over_nose": 1.75
+      },
+      "target": {
+        "width_over_nose": 0.63
+      },
+      "gap": {
+        "nose_width": 1.12
+      },
+      "fix": "Reduce MouthWide weight in the meow preset while retaining vertical jaw opening; tune hiss as a separate wide preset."
+    },
+    {
+      "rank": 5,
+      "location": "eye:happy closed arc",
+      "z": {
+        "arc_rise_over_eye_width": 0.04
+      },
+      "target": {
+        "arc_rise_over_eye_width": 0.12
+      },
+      "gap": {
+        "eye_width": 0.08
+      },
+      "fix": "Raise the centre of closed-lid arc and reduce fur occlusion; inspect against ordinary closed at desktop display size."
+    }
+  ],
+  "face_observations": {
+    "slit": "Tapered single pupil; old central disk or second dark line not visible in frontal still.",
+    "round_wide": "Z round pupil is undersized; wide is near target but the state separation is too large.",
+    "soft_half": "Both upper lids move closer to reference; half is near target, soft remains slightly open.",
+    "happy": "Closed smile arc is still too flat and partially obscured by lid fur.",
+    "furrow_sad": "Opposite slants are visible but still short of reference.",
+    "cat_frown": "Corners separate more than Y, but fur makes the endpoints uncertain.",
+    "open_hiss": "Jaw curtain regression is fixed; frontal open and hiss silhouettes appear overwide versus the mouth-grid art target.",
+    "tongue": "External tongue tip is barely visible in layer state; do not confuse red mouth interior with extension.",
+    "back_ear": "Projected axis is near target; true rear rotation cannot be inferred from a frontal still.",
+    "heart": "No one-to-one target and no heart-shaped pupil visible; extra highlights only.",
+    "tearful": "Wet dots visible but no continuous lower-rim tear edge.",
+    "flat_none": "Full-image mean absolute difference remains exactly 0."
+  },
+  "chest_pixel_guides": {
+    "stand_z": {
+      "head_width_px_approx": 239,
+      "bib_width_px_approx": 196,
+      "chin_y_px_approx": 217,
+      "bib_end_y_px_approx": 337
+    },
+    "sit_z": {
+      "head_width_px_approx": 189,
+      "bib_width_px_approx": 198,
+      "chin_y_px_approx": 211,
+      "bib_end_y_px_approx": 355
+    }
+  },
+  "artifact_identity": {
+    "round_z_blend_sha256": "558b966c58d5df85f31fa60b3d91f080157a769e6ce7ec04bf227ab7929212a1",
+    "round_z_face_layers_sheet_sha256": "e51ad34597d7bb812e91a2251e838768d0446ca9b3a479204f37f73da453c7ec",
+    "round_z_face_expr_sheet_sha256": "9980555443715419a10d0c0bf685b9c38c7b85acc5576f28165b609db890ccbe",
+    "build_quality": "standard",
+    "bones": 86,
+    "clips": 22,
+    "frames": 1172,
+    "hairs": 583755,
+    "glb_sha256": null,
+    "glb_sha256_null_reason": "No GLB artifact in round-z directory",
+    "render_camera_exact": null,
+    "render_camera_exact_null_reason": "Not recorded in supplied render artifacts; face-part audit states V6_FACE_FOLLOW camera equivalence only",
+    "world_ground_z_mm": null,
+    "world_ground_z_null_reason": "Absolute Blender ground height not recorded here; gait sole_low_mm is already ground-relative",
+    "measurement_script_version": null,
+    "measurement_script_version_null_reason": "Visual image estimates made in this audit; no persisted measurement script was added because task restricts outputs to two files"
+  }
+}

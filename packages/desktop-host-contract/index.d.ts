@@ -231,7 +231,7 @@ export interface Renderer {
    * hit when the host supports precise hit testing.
    */
   render(
-    state: { state: string; position: { x: number; y: number }; facing: 1 | -1; pointer?: { engaged: boolean; byUser: boolean } },
+    state: { state: string; position: { x: number; y: number }; facing: 1 | -1; pointer?: { engaged: boolean; byUser: boolean }; pettingContact?: boolean },
     deltaSeconds: number,
     cursor: { x: number; y: number } | null,
   ): void;

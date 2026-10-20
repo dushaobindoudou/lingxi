@@ -1,0 +1,692 @@
+[
+ {
+  "root_z_mm": 0.0,
+  "head_pitch_deg": 0.0,
+  "head_yaw_deg": -1.7,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 4.9,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 5.9,
+  "lid_deg": 50.0,
+  "body_length_mm": 998.9,
+  "shape_Breath": 0.95,
+  "shape_Out": 0,
+  "shape_Blink": 0.85,
+  "shape_Extend": 0,
+  "lowest_mm": 1.5,
+  "lowest_parts": {
+   "LX_FrontBean0.L": 1.5,
+   "LX_FrontBean1.L": 1.5,
+   "LX_FrontBean2.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 0.0,
+   "FrontPaw.R": 0.0,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 0.8,
+  "root_travel_mm": 0.0,
+  "name": "Idle",
+  "frame": 48,
+  "length_frames": 72,
+  "departure": 70.0,
+  "distance_to_idle": 0.0
+ },
+ {
+  "root_z_mm": 10.8,
+  "head_pitch_deg": 0.0,
+  "head_yaw_deg": 1.4,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 4.1,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 35.9,
+   "FrontPaw.R": 64.7,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 38.8
+  },
+  "tail_deg": 4.9,
+  "lid_deg": 4.5,
+  "body_length_mm": 999.0,
+  "shape_Breath": 1.0,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": 1.5,
+  "lowest_parts": {
+   "LX_RearBean0.L": 1.5,
+   "LX_RearBean1.L": 1.5,
+   "LX_RearBean2.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 36.3,
+   "FrontPaw.R": 35.8,
+   "RearPaw.L": 44.9,
+   "RearPaw.R": 45.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 34.4,
+   "FrontPaw.R": 34.7,
+   "RearPaw.L": 34.8,
+   "RearPaw.R": 34.8
+  },
+  "length_range_mm": 0.8,
+  "root_travel_mm": 15.0,
+  "name": "Walk",
+  "frame": 79,
+  "length_frames": 48,
+  "departure": 267.9,
+  "distance_to_idle": 77.9
+ },
+ {
+  "root_z_mm": 17.1,
+  "head_pitch_deg": 0.0,
+  "head_yaw_deg": -1.1,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 3.3,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 64.1,
+   "FrontPaw.R": 58.7,
+   "RearPaw.L": 44.1,
+   "RearPaw.R": 65.1
+  },
+  "tail_deg": 3.9,
+  "lid_deg": 4.5,
+  "body_length_mm": 999.2,
+  "shape_Breath": 0.03,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": 9.6,
+  "lowest_parts": {
+   "LX_RearBean0.L": 9.6,
+   "LX_RearBean1.L": 9.6,
+   "LX_RearBean2.L": 9.6
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 49.6,
+   "FrontPaw.R": 51.0,
+   "RearPaw.L": 62.9,
+   "RearPaw.R": 60.8
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 45.3,
+   "FrontPaw.R": 44.3,
+   "RearPaw.L": 33.1,
+   "RearPaw.R": 35.1
+  },
+  "length_range_mm": 0.8,
+  "root_travel_mm": 30.0,
+  "name": "Run",
+  "frame": 149,
+  "length_frames": 32,
+  "departure": 390.4,
+  "distance_to_idle": 112.4
+ },
+ {
+  "root_z_mm": 319.6,
+  "head_pitch_deg": 0.0,
+  "head_yaw_deg": -0.1,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 20.0,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 310.7,
+   "FrontPaw.R": 310.7,
+   "RearPaw.L": 312.5,
+   "RearPaw.R": 312.5
+  },
+  "tail_deg": 60.1,
+  "lid_deg": 4.5,
+  "body_length_mm": 969.0,
+  "shape_Breath": 0.57,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": 277.4,
+  "lowest_parts": {
+   "LX_FrontToe1.L": 277.4,
+   "LX_FrontToe2.L": 277.4,
+   "LX_FrontToe1.R": 277.4
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 278.2,
+   "FrontPaw.R": 278.2,
+   "RearPaw.L": 276.5,
+   "RearPaw.R": 276.5
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 31.3,
+  "root_travel_mm": 319.6,
+  "name": "Jump",
+  "frame": 177,
+  "length_frames": 48,
+  "departure": 940.0,
+  "distance_to_idle": 205.1
+ },
+ {
+  "root_z_mm": -110.0,
+  "head_pitch_deg": 0.0,
+  "head_yaw_deg": -1.8,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 5.2,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 97.6,
+   "FrontPaw.R": 97.6,
+   "RearPaw.L": 104.0,
+   "RearPaw.R": 104.0
+  },
+  "tail_deg": 6.2,
+  "lid_deg": 32.6,
+  "body_length_mm": 1000.5,
+  "shape_Breath": 0.88,
+  "shape_Out": 0,
+  "shape_Blink": 0.53,
+  "shape_Extend": 0,
+  "lowest_mm": -8.0,
+  "lowest_parts": {
+   "LX_Body": -8.0,
+   "LX_Tail": 21.2,
+   "LX_FrontPad.L": 48.0
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 62.6,
+   "FrontPaw.R": 62.6,
+   "RearPaw.L": 68.0,
+   "RearPaw.R": 68.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 2.2,
+  "root_travel_mm": 110.0,
+  "name": "LieDown",
+  "frame": 233,
+  "length_frames": 48,
+  "departure": 839.2,
+  "distance_to_idle": 233.0
+ },
+ {
+  "root_z_mm": 139.0,
+  "head_pitch_deg": 0.0,
+  "head_yaw_deg": -1.8,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 5.2,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 59.2,
+   "FrontPaw.R": 264.2,
+   "RearPaw.L": 49.2,
+   "RearPaw.R": 277.0
+  },
+  "tail_deg": 6.2,
+  "lid_deg": 32.6,
+  "body_length_mm": 1000.5,
+  "shape_Breath": 0.88,
+  "shape_Out": 0,
+  "shape_Blink": 0.53,
+  "shape_Extend": 0,
+  "lowest_mm": -2.4,
+  "lowest_parts": {
+   "LX_RearToe0.L": -2.4,
+   "LX_RearBean0.L": 1.1,
+   "LX_Body": 5.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 24.2,
+   "FrontPaw.R": 229.2,
+   "RearPaw.L": 13.2,
+   "RearPaw.R": 241.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 2.2,
+  "root_travel_mm": 139.0,
+  "name": "SideLie",
+  "frame": 281,
+  "length_frames": 48,
+  "departure": 733.8,
+  "distance_to_idle": 190.2
+ },
+ {
+  "root_z_mm": 127.0,
+  "head_pitch_deg": 11.5,
+  "head_yaw_deg": 2.0,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 5.7,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 57.9,
+   "FrontPaw.R": 255.1,
+   "RearPaw.L": 48.7,
+   "RearPaw.R": 267.8
+  },
+  "tail_deg": 6.9,
+  "lid_deg": 58.1,
+  "body_length_mm": 999.6,
+  "shape_Breath": 0.48,
+  "shape_Out": 0,
+  "shape_Blink": 1.0,
+  "shape_Extend": 0,
+  "lowest_mm": -2.4,
+  "lowest_parts": {
+   "LX_RearToe0.L": -2.4,
+   "LX_RearBean0.L": 0.3,
+   "LX_FrontToe0.L": 6.1
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 0.0,
+   "FrontPaw.R": 0.0,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 57.9,
+   "FrontPaw.R": 255.1,
+   "RearPaw.L": 48.7,
+   "RearPaw.R": 267.8
+  },
+  "length_range_mm": 1.7,
+  "root_travel_mm": 0.0,
+  "name": "Sleep",
+  "frame": 315,
+  "length_frames": 72,
+  "departure": 736.5,
+  "distance_to_idle": 188.6
+ },
+ {
+  "root_z_mm": -29.2,
+  "head_pitch_deg": -15.6,
+  "head_yaw_deg": 9.8,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 18.9,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 17.4,
+  "lid_deg": 4.5,
+  "body_length_mm": 953.9,
+  "shape_Breath": 0.19,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": 1.5,
+  "lowest_parts": {
+   "LX_FrontBean0.L": 1.5,
+   "LX_FrontBean1.L": 1.5,
+   "LX_FrontBean2.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 0.0,
+   "FrontPaw.R": 0.0,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 49.8,
+  "root_travel_mm": 30.0,
+  "name": "Curious",
+  "frame": 390,
+  "length_frames": 48,
+  "departure": 291.4,
+  "distance_to_idle": 60.1
+ },
+ {
+  "root_z_mm": 21.0,
+  "head_pitch_deg": -12.0,
+  "head_yaw_deg": -2.0,
+  "head_roll_deg": 0.0,
+  "jaw_deg": -2.3,
+  "ear_deg": 14.9,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 76.3,
+   "FrontPaw.R": 76.3,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 96.3,
+  "lid_deg": 58.1,
+  "body_length_mm": 802.5,
+  "shape_Breath": 0.28,
+  "shape_Out": 0,
+  "shape_Blink": 1.0,
+  "shape_Extend": 0,
+  "lowest_mm": 1.5,
+  "lowest_parts": {
+   "LX_RearBean0.L": 1.5,
+   "LX_RearBean1.L": 1.5,
+   "LX_RearBean2.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 45.6,
+   "FrontPaw.R": 45.6,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 33.1,
+   "FrontPaw.R": 33.1,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 150.1,
+  "root_travel_mm": 22.0,
+  "name": "Happy",
+  "frame": 454,
+  "length_frames": 48,
+  "departure": 370.7,
+  "distance_to_idle": 81.0
+ },
+ {
+  "root_z_mm": -30.0,
+  "head_pitch_deg": -27.5,
+  "head_yaw_deg": -0.1,
+  "head_roll_deg": 0.0,
+  "jaw_deg": -77.3,
+  "ear_deg": 0.3,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 37.1,
+   "FrontPaw.R": 37.1,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 30.1,
+  "lid_deg": 50.0,
+  "body_length_mm": 979.6,
+  "shape_Breath": 0.55,
+  "shape_Out": 0.3,
+  "shape_Blink": 0.85,
+  "shape_Extend": 0,
+  "lowest_mm": 1.5,
+  "lowest_parts": {
+   "LX_RearBean0.L": 1.5,
+   "LX_RearBean1.L": 1.5,
+   "LX_RearBean2.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 2.1,
+   "FrontPaw.R": 2.1,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 19.8,
+  "root_travel_mm": 30.0,
+  "name": "Yawn",
+  "frame": 495,
+  "length_frames": 60,
+  "departure": 573.0,
+  "distance_to_idle": 156.6
+ },
+ {
+  "root_z_mm": -107.3,
+  "head_pitch_deg": -0.1,
+  "head_yaw_deg": 14.3,
+  "head_roll_deg": -4.2,
+  "jaw_deg": -18.3,
+  "ear_deg": 5.7,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 36.0,
+   "FrontPaw.R": 564.2,
+   "RearPaw.L": 51.1,
+   "RearPaw.R": 51.1
+  },
+  "tail_deg": 212.0,
+  "lid_deg": 4.5,
+  "body_length_mm": 786.2,
+  "shape_Breath": 0.47,
+  "shape_Out": 1.0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": -15.0,
+  "lowest_parts": {
+   "LX_Body": -15.0,
+   "LX_RearPad.L": -0.2,
+   "LX_RearPad.R": -0.2
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 1.6,
+   "FrontPaw.R": 529.2,
+   "RearPaw.L": 15.1,
+   "RearPaw.R": 15.1
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 213.2,
+  "root_travel_mm": 107.3,
+  "name": "Lick",
+  "frame": 537,
+  "length_frames": 48,
+  "departure": 1047.3,
+  "distance_to_idle": 204.0
+ },
+ {
+  "root_z_mm": -28.0,
+  "head_pitch_deg": 6.9,
+  "head_yaw_deg": 2.0,
+  "head_roll_deg": 8.0,
+  "jaw_deg": -18.3,
+  "ear_deg": 51.5,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 67.2,
+   "FrontPaw.R": 118.7,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 6.9,
+  "lid_deg": 8.0,
+  "body_length_mm": 1009.9,
+  "shape_Breath": 0.47,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": 1.5,
+  "lowest_parts": {
+   "LX_RearBean0.L": 1.5,
+   "LX_RearBean1.L": 1.5,
+   "LX_RearBean2.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 32.2,
+   "FrontPaw.R": 83.7,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 10.7,
+  "root_travel_mm": 28.0,
+  "name": "Bite",
+  "frame": 585,
+  "length_frames": 48,
+  "departure": 800.1,
+  "distance_to_idle": 220.2
+ },
+ {
+  "root_z_mm": 0.0,
+  "head_pitch_deg": 8.0,
+  "head_yaw_deg": 4.3,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 12.6,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 61.1,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 45.0,
+  "lid_deg": 34.2,
+  "body_length_mm": 931.2,
+  "shape_Breath": 1.0,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0.7,
+  "lowest_mm": 1.1,
+  "lowest_parts": {
+   "LX_FrontBean0.R": 1.1,
+   "LX_FrontBean1.R": 1.4,
+   "LX_RearBean0.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 26.0,
+   "FrontPaw.R": 26.0,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 35.0,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 15.1,
+  "root_travel_mm": 23.9,
+  "name": "Knead",
+  "frame": 627,
+  "length_frames": 48,
+  "departure": 1210.4,
+  "distance_to_idle": 105.1
+ },
+ {
+  "root_z_mm": -55.0,
+  "head_pitch_deg": -12.5,
+  "head_yaw_deg": 0.5,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 1.5,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 37.1,
+   "FrontPaw.R": 37.1,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 21.7,
+  "lid_deg": 4.5,
+  "body_length_mm": 971.5,
+  "shape_Breath": 0.25,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": -7.3,
+  "lowest_parts": {
+   "LX_Body": -7.3,
+   "LX_RearBean0.L": 1.5,
+   "LX_RearBean1.L": 1.5
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 2.3,
+   "FrontPaw.R": 2.3,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 34.8,
+   "FrontPaw.R": 34.8,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 30.0,
+  "root_travel_mm": 55.0,
+  "name": "Stretch",
+  "frame": 696,
+  "length_frames": 60,
+  "departure": 596.7,
+  "distance_to_idle": 169.6
+ },
+ {
+  "root_z_mm": -8.7,
+  "head_pitch_deg": -4.0,
+  "head_yaw_deg": 12.0,
+  "head_roll_deg": 0.0,
+  "jaw_deg": 0.0,
+  "ear_deg": 6.0,
+  "paw_tip_z_mm": {
+   "FrontPaw.L": 145.9,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "tail_deg": 57.7,
+  "lid_deg": 4.5,
+  "body_length_mm": 951.1,
+  "shape_Breath": 0.34,
+  "shape_Out": 0,
+  "shape_Blink": 0,
+  "shape_Extend": 0,
+  "lowest_mm": -2.8,
+  "lowest_parts": {
+   "LX_FrontBean0.R": -2.8,
+   "LX_FrontBean1.R": -2.8,
+   "LX_FrontBean2.R": -2.8
+  },
+  "paw_travel_mm": {
+   "FrontPaw.L": 131.7,
+   "FrontPaw.R": 0.1,
+   "RearPaw.L": 0.0,
+   "RearPaw.R": 0.0
+  },
+  "paw_min_mm": {
+   "FrontPaw.L": 33.6,
+   "FrontPaw.R": 35.0,
+   "RearPaw.L": 36.0,
+   "RearPaw.R": 36.0
+  },
+  "length_range_mm": 32.3,
+  "root_travel_mm": 26.6,
+  "name": "PawPlay",
+  "frame": 742,
+  "length_frames": 48,
+  "departure": 608.4,
+  "distance_to_idle": 193.7
+ }
+]

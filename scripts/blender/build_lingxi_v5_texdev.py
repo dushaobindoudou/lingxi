@@ -1,3 +1,7 @@
+# DEPRECATED (2026-09-29): experiment copy of build_lingxi_v5.py from the 09-24 texture-dev
+# track. It builds the PRE-r5 47-bone skeleton; the main line has since redone the skeleton
+# (53 bones), the head sculpt and the texture pipeline. Kept for reference only - do not
+# build from it. Its outputs (assets/**/v5-texdev/) are git-ignored.
 """Rebuild an editable short-fur character with shared skin weights and named actions.
 Materials are self-contained so the rig can be rebuilt from a clean checkout.
 """

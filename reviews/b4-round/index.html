@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="pju8lTKXb5xxra4HtEguHG">
+<head data-page-node-id="oUmUBc8TvTG9opP3mJZ4k7">
+<meta charset="UTF-8" data-page-node-id="riP3961mYNP6fhzDBz2USv">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="6JGlCrH5gHYx1HPkxqRC7C">
+<title>Round B4 审阅 · 三处硬伤 + 15 个动作全跑 + 修复前后对照</title>
+<style>
+:root{--bg:#101014;--panel:#18181d;--panel2:#1e1e25;--line:#2c2c34;--text:#e8e6e3;--dim:#9a97a0;
+--accent:#e0a458;--good:#7fb069;--bad:#c1464f;--warn:#d8842f}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,"PingFang SC","Helvetica Neue",sans-serif;padding-bottom:80px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+header{padding:44px 0 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+h1{font-size:26px;font-weight:700}
+.sub{color:var(--dim);margin-top:6px;font-size:14px}
+.sub b{color:var(--accent)}
+nav{display:flex;gap:16px;margin:18px 0 28px;flex-wrap:wrap}
+nav a{color:var(--dim);text-decoration:none;font-size:14px;padding:4px 12px;border-radius:14px;border:1px solid var(--line)}
+nav a:hover{color:var(--text);border-color:var(--accent)}
+h2{font-size:20px;margin:44px 0 8px}
+h2 .tag{font-size:12px;color:var(--dim);font-weight:400;margin-left:10px}
+p.note{color:var(--dim);font-size:14px;margin-bottom:16px;max-width:900px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.card img{width:100%;display:block}
+.card .cap{padding:10px 14px;font-size:13px;color:var(--dim);border-top:1px solid var(--line)}
+.card .cap b{color:var(--text)}
+.badge{position:absolute;top:10px;left:10px;background:rgba(16,16,20,.82);padding:2px 10px;border-radius:10px;font-size:12px;color:var(--text)}
+.imgbox{position:relative}
+/* 三处硬伤 */
+.hurt{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0}
+.h{border-radius:12px;border:1px solid var(--line);background:var(--panel);padding:16px 18px}
+.h.bad{border-color:#5a2a2e}
+.h h3{font-size:16px;margin-bottom:4px}
+.h .why{font-size:13px;color:var(--dim);margin-bottom:10px}
+.h table{width:100%;border-collapse:collapse;font-size:13px;margin:0}
+.h th,.h td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
+.h th{color:var(--dim);font-weight:600;font-size:12px}
+.h td.v{text-align:right;font-variant-numeric:tabular-nums}
+.h td.bad-v{color:var(--bad);font-weight:600}
+.h td.ok-v{color:var(--good)}
+.h .fix{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:13px}
+.h .fix b{color:var(--accent)}
+/* 动作卡 */
+.clips{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
+.c{border-radius:10px;border:1px solid var(--line);background:var(--panel);overflow:hidden;cursor:default}
+.c img{width:100%;display:block;background:#7d7d7d}
+.c .nm{font-size:13px;font-weight:600;padding:6px 10px 2px}
+.c .st{font-size:11px;padding:0 10px 6px}
+.c .st.ok{color:var(--good)}.c .st.warn{color:var(--warn)}.c .st.bad{color:var(--bad)}
+.c .nm span{float:right;font-weight:400;color:var(--dim);font-size:11px}
+/* 修复前后对照 */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:var(--line)}
+.pair img{width:100%;display:block;background:#7d7d7d}
+.pair .ph{position:relative}
+.pair .ph b{position:absolute;bottom:4px;left:5px;font-size:10px;font-weight:600;background:rgba(16,16,20,.8);
+padding:1px 6px;border-radius:8px;color:var(--dim)}
+.pair .ph.after b{color:var(--good)}
+td.b-a{font-variant-numeric:tabular-nums;white-space:nowrap}
+.done{color:var(--good);font-weight:600}
+.strike{color:var(--dim);text-decoration:line-through}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:13px}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tag-bad{color:var(--bad);font-weight:600}
+.tag-warn{color:var(--warn)}
+.tag-ok{color:var(--good)}
+code{background:var(--panel2);padding:1px 7px;border-radius:5px;font-size:12.5px;color:#c9b98f;font-family:"SF Mono",Menlo,monospace}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+@media(max-width:1000px){.hurt,.clips{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.grid2,.hurt,.clips{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-page-node-id="g8jkU4HPM5sfJhKTHcVCtH">
+<div class="wrap" data-page-node-id="VZDIJoSniGwlXYMMfCvpFC">
+<header data-page-node-id="p2ahRbDIxVAniCBfvgcnXB">
+  <h1 data-page-node-id="6Lyqa1MqFTw4EGqn07V1db">Round B4 审阅（第七批 · round-l 躺姿重写已上线）</h1>
+  <div class="sub" data-page-node-id="ighumlQkl7ZgBLbJnYFcwv">分支 <b data-page-node-id="pH5CT2awsnJ8HFAaHh52My">lookdev/b4-review</b> · <b data-page-node-id="X0IEP5VVn4TBBKmgaylGe3">round-l（第七批：躺姿三兄弟重写）已上线</b>：LieDown 从压扁的毯子改成狮身趴、SideLie 从悬空的翻滚球改成<b>真侧躺贴地</b>（躯干离地 27 → +0.6 mm）、Sleep 从「侧躺+闭眼」改成<b>蜷成一团</b>（身长 999.6 → 457 mm）、Lick 后半身与尾巴可见且陷地 −14.9 → <b>−6.4 mm</b> · 15 动作 + 7 视图 standard 重渲</div>
+  <div class="sub" style="margin-top:4px" data-page-node-id="aWJAvfxkc9E0OEQq1Y3eGb">round-m 嘴部定案（<code>V6_CAV_Y</code> −.392 → −.458，只改一行）：<b>张口漏光 1622 → 0</b>、Yawn 开口 0.179 → <b>0.218</b>（参考 0.256）、Bite 开口 0.132 → <b>0.180</b>（目标 0.15）、闭嘴零回归；舔爪 +1.34 mm 接触。步态保持：Walk 同侧重叠 0、滑移 0.03 mm/帧、Run 接地。仍欠：下牙列在口缘露出一排小白三角（观感锯齿）、上犬齿仍被唇挡（埋 13 mm）、骨架级遗留<b>肩高/身 0.67 vs 参考 0.59</b>。</div>
+  <nav data-page-node-id="6yOdvUJf7XMuiBYyAdVMfn">
+    <a href="#hurt">三处硬伤</a><a href="#clips">15 个动作</a><a href="#fixed">修复后（前后对照）</a><a href="#lie">躺姿重写</a><a href="#lids">闭眼修复</a><a href="#table">动作数据表</a><a href="#views">四视图与面部</a><a href="#actions">下一步</a><a href="compare/">嘴部与步态审计</a>
+  </nav>
+</header>
+
+<h2 id="hurt" data-page-node-id="fSTI0rSjn5gKmxo8RwbBnb">三处点名问题：实测定位</h2>
+<p class="note" data-page-node-id="dKKJyAym6zoEfMlGTAkNCr">下面每个数字都来自 <code data-page-node-id="EU5hqVzUIfr8n6XXouHEg8">scripts/lookdev-v6/v6_part_audit.py</code> 对已构建 blend 的直接量测（不是参数推算）。测量方式是：把每个部件的网格顶点投到身体网格表面求带符号距离，正值＝探出皮肤，负值＝埋在皮肤里面。</p>
+<div class="hurt" data-page-node-id="HOBFn2kcZEkC5eSjME2F5t">
+  <div class="h bad" data-page-node-id="yAD3gcNCYCi1vVPxHygEss">
+    <h3 style="color:var(--bad)" data-page-node-id="VrgdHKzkFx9XjhZfnl8Vnb">爪子：脚趾在几何上不存在</h3>
+    <div class="why" data-page-node-id="OVQguP3O07eix50DUVgxqE">4 个脚趾、4 个趾垫、4 个爪、主肉垫，全部埋在身体网格内部。这不是毛的问题——毛已经在 round C 缩到 1 cm，但趾最深埋了 21.6 mm。</div>
+    <table data-page-node-id="RTxqd9glN7u1h9ynnhooVy">
+      <tr data-page-node-id="spSMxbAtPYwcAhW36Xvyin"><th data-page-node-id="68erGiid3thsgZtwIh3QFu">部件</th><th data-page-node-id="6KDPKBjljNgqsskT3PyAJV">最深</th><th class="v" data-page-node-id="rHiECBYuHHvDNmSnP7nNwb">外露顶点</th></tr>
+      <tr data-page-node-id="l3QbC4MG1YE4UsrSgd9Ht8"><td data-page-node-id="p3b944AiZMjbGtLoqoZcZn">脚趾 Toe0/3</td><td class="v bad-v" data-page-node-id="tVdqXpdDQbYf3tvpA0JgN0">−10.2 mm</td><td class="v bad-v" data-page-node-id="vSetvHytdOAqpYa0Ok6zkG">0%</td></tr>
+      <tr data-page-node-id="VifHOFB70M87iHMKUeBmlq"><td data-page-node-id="NFL9noOkrXCELCybjEPWDc">脚趾 Toe1/2</td><td class="v bad-v" data-page-node-id="6NsptmQoM7NJ3D9dve4OT6">−20.0 mm</td><td class="v bad-v" data-page-node-id="Tyih9iTZsWhHJjCXVXvnX3">0%</td></tr>
+      <tr data-page-node-id="4gV6SJI7ntwQKr07eEnvbi"><td data-page-node-id="GKcnGTS5OjIf2Eg55Cdrw0">趾垫 Bean</td><td class="v bad-v" data-page-node-id="HmKBtTF17H2VoRIBvTETZA">−9.5 … −18.3</td><td class="v bad-v" data-page-node-id="ANtxSPXj2VqBYTvdO7kIFr">0%</td></tr>
+      <tr data-page-node-id="v5riCLF5c5x7tYmmx1FKDG"><td data-page-node-id="YPOCE9DOVfd5WwI5JlseNo">爪 Claw</td><td class="v bad-v" data-page-node-id="tqenME2zVyGFQapLXHgOWn">−11.5 … −21.7</td><td class="v bad-v" data-page-node-id="xUA8B7R0Yge0Wujem7VG0I">0%</td></tr>
+      <tr data-page-node-id="hRhaBXReBAGM1FlxItYHDY"><td data-page-node-id="XwBYWw7eOmOfjkKzCOWj66">主肉垫 Pad</td><td class="v" data-page-node-id="MQbVBWsUJbiUE5HJYkjXX6">+0.3 mm</td><td class="v" data-page-node-id="BRlTJZ9yQC5S9ktNlqnH6T">3.3%</td></tr>
+    </table>
+    <div class="fix" data-page-node-id="h0UVCyT3BhLj0U7dL0gZFh"><b data-page-node-id="JrKjVGIldEyGQkYsYy4aQd">改法</b>：<code data-page-node-id="a3iJtw5Svbs9mkRwIEzRCp">build_lingxi_v5.py</code> 里把整组 toe/bean/claw/pad 沿 −y 前移约 35–40 mm、z 下移约 10 mm；或把 paw 椭球（<code data-page-node-id="WF57J8I1tZildh8feD0M8f">FrontPaw</code> y 半径 .088 / <code data-page-node-id="RQy4pfzgA2UGBBZIcqRRmA">RearPaw</code> .085）收短 ~15 mm。目标：趾前缘<b data-page-node-id="sTM8EI3HTgGBQC5xEKxWmh">探出皮肤 8–12 mm</b>，趾间留出可见缝。只缩毛永远救不了这一条。</div>
+  </div>
+  <div class="h bad" data-page-node-id="Q1RTajj1IXgCnf5GHp3EV3">
+    <h3 style="color:var(--bad)" data-page-node-id="Vw51Ta1LfHLEL0HADMosoK">耳朵：宽高比 1.00，顶端还是尖</h3>
+    <div class="why" data-page-node-id="2UvFWmO05uC6WXXA7PLuuC">代码注释自己写的目标是「135 mm 高、112 mm 宽、w/h .83」，实际几何没做到；顶端在 t=0.9 只剩 18 mm、t=1.0 收到 0，是个尖。</div>
+    <table data-page-node-id="fbBQUGBpkwMpDZe57nA3EF">
+      <tr data-page-node-id="jeJLRP5z3F3faPXuIGRvfX"><th data-page-node-id="WU1mxHGt4YkWOUjFGHmsuI">量</th><th data-page-node-id="THDKHNx8MrG7e1CKNFrQUD">目标</th><th class="v" data-page-node-id="ty8Y2emlATosagKv6cnqQO">实测</th></tr>
+      <tr data-page-node-id="enUU4idiWzH5YTdshx4dNq"><td data-page-node-id="eGG7BWamfhjpbTjTRnPZBp">耳高</td><td data-page-node-id="n8KGnmJApXDjn3cp8HTkaU">135 mm</td><td class="v" data-page-node-id="1Dd3vMDXpbKCG1Hn3DQ2r9">146.8 (+8.7%)</td></tr>
+      <tr data-page-node-id="F7E58gmgwwEfHJnBYXMg5a"><td data-page-node-id="1VnXSLEdOi9whurAgUD9eI">基部宽</td><td data-page-node-id="yIxsy7pyRUJptCk4XohrPA">112 mm</td><td class="v bad-v" data-page-node-id="RNEN8NwyBJNsQt2cvxoUBW">147.0 (+31%)</td></tr>
+      <tr data-page-node-id="K4IZGkj0VDrjAQIgrjzxdH"><td data-page-node-id="tylfiI3e0OjVrEfavKx3Va">宽高比</td><td data-page-node-id="HIjyZdObbWtIsCKrrvQN5t">0.83</td><td class="v bad-v" data-page-node-id="fADkPVddXCeoVwfVcR2X4D">1.00</td></tr>
+      <tr data-page-node-id="8FtHmm1v4FpWHGBUX0Mila"><td data-page-node-id="IzID54k4NzAid66qnsw2An">t=0.9 处宽</td><td data-page-node-id="vWWA7dYPgWENipQMzs3dAk">—</td><td class="v" data-page-node-id="NUywJdb7m6SPycXMj35ODd">18.1 mm</td></tr>
+      <tr data-page-node-id="8WH87FRw3Wqe9uspb9AG6w"><td data-page-node-id="FAZj8MMuXmjeEXXhOazJJs">t=1.0 处宽</td><td data-page-node-id="xiAFdMXB6sfqLvLVSO1JJs">—</td><td class="v bad-v" data-page-node-id="9mp9s07cHrxMpTimG3bSvF">0（尖）</td></tr>
+    </table>
+    <div class="fix" data-page-node-id="nD3hDLEv8vOBfOAvSL2qg7"><b data-page-node-id="b8QfIDSAXpHLjR87xoIKYZ">改法</b>：<code data-page-node-id="a4C3O8lE2PERS9DM9C3qUO">ear_wid()</code> 的 .058 → 约 .044（宽回到 112 mm），<code data-page-node-id="Z7vSR6lPGcrenyRe3DqhXJ">flare</code> 1.30 → 1.20；顶端 t&gt;0.88 用半圆弧封顶（保持 ~30 mm 宽而不是收到 0）。<b data-page-node-id="AjJ6Iq6ZNG3RC0hQgpNYZL">不动 <code data-page-node-id="MlJs9JfneqgDMToW38erij">V6_EAR</code></b>——整体缩到 0.82 你上一轮已经否掉了，问题在比例和顶端形状，不在大小。</div>
+  </div>
+  <div class="h bad" data-page-node-id="2hkByOUOQWAoJ0eD3K1U4v">
+    <h3 style="color:var(--bad)" data-page-node-id="sm9T9nBANXxekHrFY4oDCz">嘴巴：偏宽 36%，且高了 7 mm</h3>
+    <div class="why" data-page-node-id="Ju6cdm5vRTfHFQ9LvHmNrM">以瞳距 E=115.2 mm 为尺（和 <code data-page-node-id="PXqV8MFa3lI9Yd3nhWMGpw">v6_face_shape.py</code> 同一把尺子，且这次量的是几何不是像素，不受毛干扰）。</div>
+    <table data-page-node-id="eJxOnyeWGuvLfBUmK1jTgD">
+      <tr data-page-node-id="JmCEs5q1RPHlxUhIMTI6DB"><th data-page-node-id="zh5z1Z9v6nYnMPc9BnHM3Y">量</th><th data-page-node-id="7vh9qShlYgXtaPVw894C1t">参考</th><th class="v" data-page-node-id="luvCaPraq9x6UL7EQKcu6U">实测</th></tr>
+      <tr data-page-node-id="1YGYVbyWygMhh78xM1Fa4H"><td data-page-node-id="yxWs91ryBrPUmzHaJh6uut">鼻宽 / E</td><td data-page-node-id="slWp9wgsz8xpomeO7bSkVD">0.311</td><td class="v" data-page-node-id="phFMkV8HdqgPai2Vl8rxt6">0.261 (−16%)</td></tr>
+      <tr data-page-node-id="95VFldEgodDAgvK0apgn9V"><td data-page-node-id="M3hEzL2bTimPukG4pAmXHQ">嘴宽 / E</td><td data-page-node-id="yna0pjzYgtdsDKcF0TVDF2">0.288</td><td class="v bad-v" data-page-node-id="U4dJrF4uJV1u2D0bQj0UrH">0.392 (+36%)</td></tr>
+      <tr data-page-node-id="6REx49f9CHNDSuaXRobuhf"><td data-page-node-id="98AZDpEbmJ3cPdrOIahZFj">嘴宽 ÷ 鼻宽</td><td data-page-node-id="4lkaATqaMDBqexcbl41hp2">0.93</td><td class="v bad-v" data-page-node-id="xrCz1pXaDNQiCh8uFWXrFO">1.50</td></tr>
+      <tr data-page-node-id="TalnEQ4taDgVx7Aop8hPD2"><td data-page-node-id="DIapbd5eqzK8QubPHdrXpE">唇线在鼻下</td><td data-page-node-id="F6Hfm7HWRJdDcSDuQSNUAi">0.310 E</td><td class="v bad-v" data-page-node-id="QSfE9dOEI5CCC4K3lkQ0Sa">0.250 E（高 ~7 mm）</td></tr>
+    </table>
+    <div class="fix" data-page-node-id="vy1yF1RIoAIPwRMCarvhzH"><b data-page-node-id="obqzqnWm6GWxJRiO2KUMKk">改法</b>：<code data-page-node-id="F2j8xJh47LyBoh7icPB91t">MOUTH_W</code> .024 → .0165（<code data-page-node-id="iTi40EgM9hWnO4V2olwC7h">V6_MOUTH_W</code> 0.69），<code data-page-node-id="uCCKRHRvv65tmULGBX1FaN">GAPE_W</code> 同步 .036 → .025；<code data-page-node-id="aUghiAmCBdQNFSTFePCl3M">LIP0</code> 下移 7 mm（<code data-page-node-id="Cf0r8DzDn9EBQrTY7rQ0KO">V6_LIP</code> 1.0 → 0.985，<code data-page-node-id="TmhlQ5yfvej5eYCXqYSnBd">LIP_DZ</code> 会自动带口腔袋/舌/牙/下颌一起走）；<code data-page-node-id="n7BPCN9L3zQHrC0sdkUisA">V6_NOSE_W</code> 1.0 → 1.19 把鼻镜补到 0.311E。</div>
+  </div>
+</div>
+
+<h2 id="clips" data-page-node-id="jyfEr5rumRLDD9Rm1AlDy8">15 个动作：全部重渲</h2>
+<p class="note" data-page-node-id="rIGkdFJ3uY6d6iH8nbtHXf">用 B4 的 blend 重跑了全部 15 个动作（<code data-page-node-id="8wvjqwqUbRcxYlmtcqtaak">render_lingxi_v5_poses.py</code>，480px / 12spp，逐帧扫描挑"离静止最远"的那一帧）。这一轮顺手修了选帧逻辑：<b data-page-node-id="dUQIBvqNgu3PWfwWlDNGh4">之前 5 个动作渲在了眨眼/闭眼帧上</b>（Idle .85、Happy 1.0、Yawn .84、Stretch .91），因为 Blink 被排除在评分外、却没被排除在选中的帧之外；现在闭眼帧要高出一大截才会被选中，Sleep 仍然渲成闭眼。</p>
+<div class="clips" id="clipGrid" data-page-node-id="uq6kyILXVB5BJd1rcv3BP1"></div>
+
+<h2 id="fixed">修复后：15 个动作重跑（前后对照）</h2>
+<p class="note">改的是 <code>scripts/blender/build_lingxi_v5.py</code> 里 <code>pose()</code> / <code>place_legs()</code> / <code>solve_sit()</code> 的具体数值，每一处都由 <code>v6_clip_review.py</code> 先量后改、改完再量。每张卡左＝修复前（round-b4），右＝修复后（<b>round-k</b>：G3 爪/嘴 + 闭眼重写 + round-j 嘴部重写 + round-k 步态重写，standard 质量重渲）。最低点是真实网格顶点离地面的高度，站立时是 +1.5 mm，负值＝陷进地面。</p>
+<div class="clips" id="fixGrid"></div>
+
+<h3 style="font-size:16px;margin:26px 0 4px">陷地与行程：修前 / 修后</h3>
+<table>
+<tr><th>动作</th><th class="num">修前最低点</th><th class="num">修后最低点</th><th>改了什么</th><th>判定</th></tr>
+<tr><td>Idle</td><td class="num">+0.9</td><td class="num">+1.5</td><td>基准，未动</td><td class="tag-ok">基准</td></tr>
+<tr><td>Walk</td><td class="num">+0.5</td><td class="num">+1.5</td><td>后腿步幅 <code>dy*=1.30; dz*=1.25</code>：后爪行程 6.7 → 45.0 mm，后/前比 0.42 → 1.24</td><td class="tag-ok">已修</td></tr>
+<tr><td>Run</td><td class="num">+1.9</td><td class="num">+9.6</td><td>未动（选中的是腾空帧）</td><td class="tag-ok">好</td></tr>
+<tr><td>Jump</td><td class="num">+284.9</td><td class="num">+277.4</td><td>补平衡信号：尾 −.45/.30/.30、耳后压 .35、脊柱 .10 —— 尾 1.4° → 60.1°，耳 1.1° → 20.0°</td><td class="tag-ok">已修</td></tr>
+<tr><td>LieDown</td><td class="num tag-bad">−62.6</td><td class="num">+0.4</td><td>卧倒脚靶 <code>z .045+.11 → .108+.11</code>：脚掌收到体侧，不再拖到地下</td><td class="tag-ok">已修</td></tr>
+<tr><td>SideLie</td><td class="num tag-bad">−165.5</td><td class="num">+0.6</td><td>侧躺时身体宽度变成高度，按 <code>v6_ground_calib.py</code> 的线性扫描把 root 抬 .139 m</td><td class="tag-ok">已修</td></tr>
+<tr><td>Sleep</td><td class="num tag-bad">−151.4</td><td class="num">+0.2</td><td>同上，root 抬 .127 m</td><td class="tag-ok">已修</td></tr>
+<tr><td>Curious</td><td class="num">+0.8</td><td class="num">+1.5</td><td>未动（第一轮已经加了前倾 + 头侧转）</td><td class="tag-warn">偏弱，未改</td></tr>
+<tr><td>Happy</td><td class="num">+1.9</td><td class="num">+1.5</td><td>未动</td><td class="tag-ok">好</td></tr>
+<tr><td>Yawn</td><td class="num">+0.9</td><td class="num">+1.5</td><td>补身体：前爪前伸 .075、弓背 .14、沉胸 −.030、尾 −.30/.22 —— 离 Idle 81° → 157°</td><td class="tag-ok">已修</td></tr>
+<tr><td>Lick</td><td class="num tag-bad">−85.7</td><td class="num">−6.4</td><td>坐姿求解器 hip 105 → 170 mm、脊柱 62° → 44°（只改 hip 不动，因为前腿已打直）；尾改卷 T1 −.40 / T2-4 1.15·1.10·1.05，尾尖 −77 → +0.2 mm</td><td class="tag-ok">已修到几何极限</td></tr>
+<tr><td>Bite</td><td class="num">−6.1</td><td class="num">+1.5</td><td>前爪抬 .11·fac（行程 0.1 → 83.7 mm）+ 头前冲 + 飞机耳 —— 离 Idle 123° → 220°</td><td class="tag-ok">已修</td></tr>
+<tr><td>Knead</td><td class="num">+0.8</td><td class="num">+1.1</td><td>未动</td><td class="tag-ok">好</td></tr>
+<tr><td>Stretch</td><td class="num tag-bad">−72.2</td><td class="num">−7.3</td><td>从 LieDown 组里拆出来独立成姿（root −.055、脊柱 .16、头 −.22、前爪前伸 −.11s、尾巴 −.35）—— 离 Idle 149° → 170°，不再是 LieDown 的第二张卡</td><td class="tag-ok">已修</td></tr>
+<tr><td>PawPlay</td><td class="num">+1.3</td><td class="num">−2.8</td><td>未动（2.8 mm 是接触压实，不是陷地）</td><td class="tag-ok">好</td></tr>
+</table>
+<p class="note">补一条渲染器缺陷：<code>render_lingxi_v5_poses.py</code> 把 Blink 排除在评分外、却没排除在选中的帧之外，<b>5 个动作渲在了眨眼/闭眼帧上</b>（Idle .85、Happy 1.0、Yawn .84、Stretch .91）。现在闭眼帧要高出一大截才会被选中，Sleep 仍然渲成闭眼。</p>
+<p class="note"><b>Lick 的 15 mm 曾是硬约束</b>（round-l 已收到 6.4 mm，见上节），不是没调够：坐姿里两条前腿已经打直到 <code>L1+L2</code> 极限（<code>leg_ik</code> 的 <code>over</code> 一抬根就 &gt; 0），所以身体抬不起来，15 mm 只能靠髋部高度换——而髋部再抬 15 mm 就要把脊柱压平到 34°，求解器算下来不划算。现在的形态是：臀部 15 mm 压实、尾尖正好落地、前爪稳稳踩地。</p>
+
+<h2 id="table" data-page-node-id="sAQDmubCBGTxDPy1vB30RI">动作数据表（修复前）</h2>
+<p class="note" data-page-node-id="Y49lbKMl950lOYyQBQ5q7H">全部由 <code data-page-node-id="ksmu46gZAEAv4ZcOS6Q4WX">scripts/lookdev-v6/v6_clip_review.py</code> 量出。行程＝该动作整段里每只爪走过的高度范围（单帧看不出步态，只有行程能）；最低点＝真实网格顶点最低处，站立时是 +0.9 mm，所以负值就是<b data-page-node-id="SCVqwlZWnTwa5YIoJWKeGG">陷进地面</b>的深度。</p>
+<table data-page-node-id="6ID8tz9iwxAiM3U2yojIZk">
+<tr data-page-node-id="2FR3fw6BJ0Bsn2anbuhhwT"><th data-page-node-id="StS1TiHGnDi9iu1HyHAjvd">动作</th><th class="num" data-page-node-id="KQBrqWbbeEOMBUNGJ5KaF7">身体高度</th><th class="num" data-page-node-id="RveaXNn7JpjQlnuoVGbIGd">最低点</th><th class="num" data-page-node-id="aMjr5KwEAofkpjavIRpqr4">身长变化</th><th class="num" data-page-node-id="YBWdvAu3vLIrLfii7IdmIg">前爪行程</th><th class="num" data-page-node-id="1Ey5beWbuMKTSBQyfvj0II">后爪行程</th><th class="num" data-page-node-id="2TzmgnVEvI5ADK0Bbeqlr3">耳</th><th class="num" data-page-node-id="wT3FCLcdhPm0QMba8XLJjf">下颌</th><th class="num" data-page-node-id="OBoSbhBiLE0X60oNCGHwdP">尾</th><th data-page-node-id="oxCCd0AFO15J5qsBeSuS1G">判定</th></tr>
+<tr data-page-node-id="bsCEBzim0uqRYf2Ycn1Bsr"><td data-page-node-id="rv8ERf9mO5ZZ2EzTZChyy6">Idle</td><td class="num" data-page-node-id="GeHJB2BfcfDbhy5uDFuRVo">0</td><td class="num" data-page-node-id="upFIXYEeYJjG4WlEDyDiDX">+0.9</td><td class="num" data-page-node-id="g6RmsltePI4CMRcwrxEQhL">0.8</td><td class="num" data-page-node-id="DVsvDddUATM6HiqT1PHsgd">0</td><td class="num" data-page-node-id="wYm2RC1qFQAS7aDC3uPRgP">0</td><td class="num" data-page-node-id="xvuaT7gLGZgrIchXTjoZMS">4.9°</td><td class="num" data-page-node-id="eR3ORFlJZCSzFNw4CNaYWH">0</td><td class="num" data-page-node-id="InP8LCAIgtTXsr0ZnSGxci">5.9°</td><td class="tag-ok" data-page-node-id="kVODABCsZeRZ1KKz2YwQVo">基准</td></tr>
+<tr data-page-node-id="4TucdPpnvMAZii8aZJUZKG"><td data-page-node-id="3jdN2qxxwhWKkcWUqbUFy2">Walk</td><td class="num" data-page-node-id="hp7EWyIMBlcVHRUYs9ARQA">+9.3</td><td class="num" data-page-node-id="NXkPiIiRAc2DqbHYqmCxOI">+0.5</td><td class="num" data-page-node-id="rmUH9BnzaPBoFiHX0Vbj2f">0.8</td><td class="num" data-page-node-id="MF8u4PicW0DeB5eI8YFhod">15.0 / 17.0</td><td class="num tag-bad" data-page-node-id="WHqY6hoA0OQ2oFkTFleCsD">6.7 / 6.6</td><td class="num" data-page-node-id="rKtkfVTjp12wzS9T567LNC">3.5°</td><td class="num" data-page-node-id="jkk7WoQsNW58MnhJkj3Am9">0</td><td class="num" data-page-node-id="tOC2Z34E9uD8ZEsy4ykxd0">4.2°</td><td class="tag-bad" data-page-node-id="dtE6ovqiy3VPEmz5iojfvp">后腿摆幅只有前腿 42%</td></tr>
+<tr data-page-node-id="Fesr3eLgxiALv8LTckfFW1"><td data-page-node-id="gPGSDn50dXVJp6vWIJze59">Run</td><td class="num" data-page-node-id="CN93Jl9g0xaWak64viYbGl">+25.5</td><td class="num" data-page-node-id="l1OWXSArYjDrGOwNhxAFLX">+1.9</td><td class="num" data-page-node-id="ettvNnB81RtrEBcGgt3f5v">0.8</td><td class="num" data-page-node-id="EYqLIsDcRDuRONK7GvvvLO">27.8 / 24.7</td><td class="num" data-page-node-id="0KLdhwols0K49ysY8ZwlAa">26.9 / 26.7</td><td class="num" data-page-node-id="6wXUnAKdIcmiOiuDa2G4xd">4.9°</td><td class="num" data-page-node-id="eXGJg4YBjqccV6L8e52heh">0</td><td class="num" data-page-node-id="4bDNLJdF53fUaHqaR4WqoF">5.8°</td><td class="tag-ok" data-page-node-id="Sv7ealg7E8BjtNlKnrWRF2">好，四爪均衡</td></tr>
+<tr data-page-node-id="rs2A2hLFVa0ZUDCRjWtE9p"><td data-page-node-id="rPRkPkd8ShuTC9VOYvuYWQ">Jump</td><td class="num" data-page-node-id="uBiVyDbEMBHJobLc4Gs3op">+317.2</td><td class="num" data-page-node-id="b9DESu0RyD7IdYChwm6L59">+284.9</td><td class="num" data-page-node-id="sh6546rk2qGGZXl4UZlX44">8.6</td><td class="num" data-page-node-id="QrKYBzk7kFCmtKKkUBddih">296.4</td><td class="num" data-page-node-id="woX8gKbU9PziisUESB7N81">276.5</td><td class="num tag-bad" data-page-node-id="08Zsl7E1y5IUTbIJH5yHZG">1.1°</td><td class="num" data-page-node-id="9jq015HcKoWXoanCiBpcXL">0</td><td class="num tag-bad" data-page-node-id="jLULKV4rbDJQDJXqfDHH3i">1.4°</td><td class="tag-bad" data-page-node-id="KDH87mlghaayje83FBlbV5">跳起来了，但耳和尾几乎不动</td></tr>
+<tr data-page-node-id="LmHxi3JuoDo1qCKJEWb5Xi"><td data-page-node-id="XkPX8tcINObUyXjLi8ZNAD">LieDown</td><td class="num" data-page-node-id="F3954R7MZS2bFDPRWlbu5E">−110.0</td><td class="num tag-bad" data-page-node-id="0mqMjhWGiICIdQsNytZKUl">−62.6</td><td class="num" data-page-node-id="CKnuDCoc5hGUF0jM2bumbj">2.2</td><td class="num" data-page-node-id="jpb3llHx19BpkoZoQQNCKc">0.8</td><td class="num" data-page-node-id="KFlZ1H2GKmchhKQ3ssxy1P">7.1</td><td class="num" data-page-node-id="5zojIcL3r3bcID3JEOlhAG">5.2°</td><td class="num" data-page-node-id="7zJk8CVP8QF6if2peUlcyl">0</td><td class="num" data-page-node-id="Iu6ZpQAuIN4TWiDGFHWcmc">6.2°</td><td class="tag-bad" data-page-node-id="yIRAQLpBw3VlRyKsF1NI3t">陷地 63 mm</td></tr>
+<tr data-page-node-id="XljB9Bzyk6utlmejYDQVZk"><td data-page-node-id="Nh82Dp1E6NkX0DkvoxNdXk">SideLie</td><td class="num" data-page-node-id="w9EHizarNTHjcGlAmzjSUF">−25.0</td><td class="num tag-bad" data-page-node-id="zad8ulRNGieakgD1Bxixcr">−165.5</td><td class="num" data-page-node-id="cNNrQFgMViTfX1YinUs2KU">2.2</td><td class="num" data-page-node-id="QwMdjcK7afEQPfnOgG92lA">139.8 / 70.4</td><td class="num" data-page-node-id="PqZ2XZMiNI7LmiSBqhHqjR">150.8 / 81.1</td><td class="num" data-page-node-id="LbJEZpK88OBEfPORKGaol8">5.2°</td><td class="num" data-page-node-id="8eBieBC9UlOxDwPOwfoAyY">0</td><td class="num" data-page-node-id="JUaH2TgE5pTn0ej0cCHenF">6.2°</td><td class="tag-bad" data-page-node-id="ZMc6PZnIrJJZHNyixCGuSm">陷地 166 mm（最严重）</td></tr>
+<tr data-page-node-id="fLGFi6iXZPEltFdgyL3DNE"><td data-page-node-id="VJG6H7KHNHWswXRCzVAgdo">Sleep</td><td class="num" data-page-node-id="8RcMSxOFpCraM9cDT84sNc">−25.0</td><td class="num tag-bad" data-page-node-id="GPNlCEEiyT1SXIxtcdofrH">−151.4</td><td class="num" data-page-node-id="EbAJhCFpL3kAgSGRBQzbHj">1.7</td><td class="num" data-page-node-id="S1XbvemiRAwHr7Pn5kNXIR">0</td><td class="num" data-page-node-id="qliUCM0kgDRkeNi24NK44n">0</td><td class="num" data-page-node-id="M6TaM6gGWRi0yP0brZNWeP">5.7°</td><td class="num" data-page-node-id="F8tFH2GknSmHkJEpmr6Qvh">0</td><td class="num" data-page-node-id="sjYKM86IO5rkzN3QJ23V3D">6.9°</td><td class="tag-bad" data-page-node-id="rJWBgBGt6Zb0xGUs6tEgd0">陷地 151 mm</td></tr>
+<tr data-page-node-id="Qb1gCF18AZ3p1oQRw0aSu4"><td data-page-node-id="q5k3b2MUWbRIxKy6VToekt">Curious</td><td class="num" data-page-node-id="8C9WYqM6xbkdAc8vxATHkG">−29.2</td><td class="num" data-page-node-id="eX3hG7xGNuuIY1TQvLaLHo">+0.8</td><td class="num" data-page-node-id="B6iu8HWZURUqxlSN1qIyUm">49.8</td><td class="num" data-page-node-id="Pt9vHCzdZ5DZOVDirHMy2p">0</td><td class="num" data-page-node-id="inij8SeCvcASCtF21DhUrp">0</td><td class="num" data-page-node-id="BWJev8N2ABICpJQr852HPz">18.9°</td><td class="num" data-page-node-id="ANoc7I1bRKEhzaqCzdMePF">0</td><td class="num" data-page-node-id="QrsIU1dXxOvThk2kZHFcQG">17.4°</td><td class="tag-warn" data-page-node-id="i4VmadTFfpFvJihVrR6IEv">只有头+耳在动，识别度最低</td></tr>
+<tr data-page-node-id="XHj73VSvSBPTLKg961iw8E"><td data-page-node-id="Gr6BFS6aH4K8kFMNBG2LG9">Happy</td><td class="num" data-page-node-id="FLpBf9kambrh7jJ2Fz4ocD">+21.0</td><td class="num" data-page-node-id="WXt1gzqElpJk8HIfLzZjSV">+1.9</td><td class="num tag-ok" data-page-node-id="FSUZnlfHjiDA0qY3NiZBpM">150.1</td><td class="num" data-page-node-id="rY2Au2PdtaQ9tqslhaw1CB">45.6</td><td class="num" data-page-node-id="mHXoUiD6zuz9E2gwcExMZi">0</td><td class="num" data-page-node-id="xMmbX7ToMmC5F5l8fFFlR2">14.9°</td><td class="num" data-page-node-id="UCKEaHtj1CxzouQRN1MOMR">−2.3°</td><td class="num tag-ok" data-page-node-id="fOU8B44FBChMcL1k5y7S55">96.3°</td><td class="tag-ok" data-page-node-id="3KqhoX34isjF4O5z6bvR9v">尾大摆 + 弓背蹭，信号最强</td></tr>
+<tr data-page-node-id="HKo9QQBxZlTXUsGnU4GMvQ"><td data-page-node-id="aqyWEcr3ACX7foppgNwRBS">Yawn</td><td class="num" data-page-node-id="JIoH9Z1CiP2T8aAHroGYGK">0</td><td class="num" data-page-node-id="stwoQ07xE6PiO2XESIFR3H">+0.9</td><td class="num" data-page-node-id="ChS76XL5HDObTMEb9hFXfe">13.6</td><td class="num" data-page-node-id="zDnNU9Mk3Hd8eTXYSrRB8Q">0</td><td class="num" data-page-node-id="5RGb1wklNBCSQ4nl5ZVRrH">0</td><td class="num tag-bad" data-page-node-id="QP9okWqXQCqQd6b2QWGnfL">1.5°</td><td class="num tag-ok" data-page-node-id="a5iUFCO1rYrALb7XMNWmvI">−76.0°</td><td class="num" data-page-node-id="m7zmczdMG4TtyDI5FSA5iC">1.8°</td><td class="tag-warn" data-page-node-id="hfNsAPEKnCbSZFLg7U1yC5">嘴张得够大，身体完全不动</td></tr>
+<tr data-page-node-id="DA4atVryCyP0VQhBRhCSVG"><td data-page-node-id="L1xFPwLT1Mbx0lzykKczKe">Lick</td><td class="num" data-page-node-id="ahecMB35dPAnjbkD3ZnCBI">−178.8</td><td class="num tag-bad" data-page-node-id="3UT02Pf76sI7UhlWaMDWDe">−85.7</td><td class="num" data-page-node-id="sRjQUDlCli5Hc3Fo9cDAxh">47.2</td><td class="num tag-ok" data-page-node-id="1o0VA5PCg82yGpfhwSvdBL">右 438.5</td><td class="num" data-page-node-id="A9T3tVU7eFFXCTOS7RwhcO">4.1</td><td class="num" data-page-node-id="ZtN1RAF3LAEH5ZXMAALDzg">5.7°</td><td class="num" data-page-node-id="Ao65KaMl0qFge36AH1cApx">−18.3°</td><td class="num" data-page-node-id="cgGpqFERfiTv2KI2AoOgze">6.9°</td><td class="tag-warn" data-page-node-id="BNiE0HOlSMNM3fqsT62SO3">形体最完整，但陷地 86 mm</td></tr>
+<tr data-page-node-id="dP8fpdTmiBqrWHoPCCqMhY"><td data-page-node-id="DeAVyGROlpRIMrpCGCeQBC">Bite</td><td class="num" data-page-node-id="ZS3eH6WlqdjBDcAungxiPf">−28.0</td><td class="num" data-page-node-id="CV5KiiUdZrEhyufVDYlECx">−6.1</td><td class="num" data-page-node-id="4MsRPyQI2T75N8mymuzBog">10.7</td><td class="num tag-bad" data-page-node-id="IfHiFmA9TKLT1PwzQsTUhr">0.1</td><td class="num" data-page-node-id="bR7A0rjea7DSjTSASFZpku">0</td><td class="num tag-ok" data-page-node-id="K5GcKNf796UAoArnTMFq1B">51.5°</td><td class="num" data-page-node-id="9yqcq6cvLjMYofOesuuqQY">−18.3°</td><td class="num" data-page-node-id="ZCg5kRU4YCSrkaGXdUH2gt">6.9°</td><td class="tag-bad" data-page-node-id="FnwATA4t1nz8pglbCWa5N1">耳朵后压很好，四爪完全不动</td></tr>
+<tr data-page-node-id="zf1gl48wVmtkyVj9a8s51j"><td data-page-node-id="esyH3V402cEq9EIjiLo03j">Knead</td><td class="num" data-page-node-id="zpSu1EWYSubESENbBrHLKh">0</td><td class="num" data-page-node-id="yH1IEaag7MNwtwVUYUm0oz">+0.8</td><td class="num" data-page-node-id="IlYZrucnR0OPbw7aPsCDHT">15.1</td><td class="num" data-page-node-id="xBPm46ecAdTdaieaM6qbLv">26.0</td><td class="num" data-page-node-id="igzCCUs6jbIZhRuJvJtfiT">0</td><td class="num" data-page-node-id="W2OygHB8JXXEuePF4UyfnA">12.6°</td><td class="num" data-page-node-id="AMnkUHj0HUqMtq9Cf4Ij6Y">0</td><td class="num tag-ok" data-page-node-id="xzjazvaqKb1sr2UmK2U2LY">45.0°</td><td class="tag-ok" data-page-node-id="QILOVLGx0BFhtmKdICoFFq">好：交替踩 + 眯眼 34° + 伸爪 0.7</td></tr>
+<tr data-page-node-id="DWW0V0sPuBRtgwSsiUf0ZD"><td data-page-node-id="7ckzx0sRE3fw1F1xSLVLDg">Stretch</td><td class="num" data-page-node-id="3KGev0BPJeiCg76dpQ2P89">−110.0</td><td class="num tag-bad" data-page-node-id="oFv9xynluOgPEbK3OZSox8">−72.2</td><td class="num tag-bad" data-page-node-id="xm2bZ0dHCHa0Eku14xrfQu">3.9</td><td class="num tag-bad" data-page-node-id="hc0x1mihtTOJRmpQzqTrRQ">1.6</td><td class="num" data-page-node-id="A1xxGAFUovxW99wjSOFXbX">7.1</td><td class="num" data-page-node-id="IyHZN922gYaFyIsgKdS0wL">4.5°</td><td class="num" data-page-node-id="ycFCSXuKnEz5DTHAmU4T0Q">0</td><td class="num" data-page-node-id="jyX6BrOPZIYOLVeZB8fZI7">5.4°</td><td class="tag-bad" data-page-node-id="zQQlUSVtZmz8vcywy9eCLb">和 LieDown 几乎同一个姿态</td></tr>
+<tr data-page-node-id="RiXBIpANMCc3BrVhEwmPsf"><td data-page-node-id="Rb0yG89oNrjMFKyEFjR2Ip">PawPlay</td><td class="num" data-page-node-id="MTfseNK6B3zEPyTt7Qoihn">−8.7</td><td class="num" data-page-node-id="SfVtbLubGqsOxHLsEMlsR6">+1.3</td><td class="num" data-page-node-id="OY0thh6GRqAMHokCd1HQkZ">32.3</td><td class="num tag-ok" data-page-node-id="p3aaJYVWKOLnsvMhyqg9jH">左 131.7</td><td class="num" data-page-node-id="FMbJTbiiTZseFZVELIoGUu">0</td><td class="num" data-page-node-id="edGOaEnsAhCa4UhVxA6F0i">6.0°</td><td class="num" data-page-node-id="50bHsp8PfdNQHx4ZNyRdu2">0</td><td class="num tag-ok" data-page-node-id="GlrmtvGH83EFCXRbXPFB3r">57.7°</td><td class="tag-ok" data-page-node-id="lp9DQ05MvB2PoA96CrC1Y3">好：伏低 + 挥爪 + 甩尾</td></tr>
+</table>
+
+<h2 id="lie">躺姿重写（round-l）：从「压扁/悬空/同一张脸」到三种真姿态</h2>
+<p class="note">你点名的「躺下去效果不好」，病灶各不相同，都在 <code>pose()</code> 的三个躺姿块里量出来后重做的。<code>v6_clip_review.py</code> 的实测（round-k → round-l）：</p>
+<table>
+<tr><th>动作</th><th>病灶（round-k）</th><th>改法</th><th class="num">关键数字</th><th>判定</th></tr>
+<tr><td>LieDown</td><td>脊柱放平到 2.5°、身长比站立还长，像压扁的毯子；前爪白毛戳出身体前缘像两个雪橇</td><td>狮身趴：前臂平放在肩前的地上，胸贴地，颈压低头微抬，尾巴绕到镜头一侧</td><td class="num">最低点 Body <b>+0.4</b>；脊柱 2.5° → <b>4.5°</b>；前爪退到鼻尖后 27 mm</td><td class="tag-ok">已修</td></tr>
+<tr><td>SideLie</td><td>root 抬 139 mm，<b>躯干悬空 27 mm</b>；头立着（颈 13.1°）；四爪朝天（爪尖翘到 264–277 mm）——像翻滚装死的玩具球</td><td>转 1.25 → 1.57 rad，root 抬到体宽一半；头侧枕地；上侧两腿搭在下侧腿上</td><td class="num">悬空 27 → Body <b>+0.6</b>（贴地）；颈 13.1° → −7.4°；头离地 130 → <b>21 mm</b></td><td class="tag-ok">已修</td></tr>
+<tr><td>Sleep</td><td>与 SideLie 同一姿态（背高只差 0.1 mm）只闭了眼</td><td>蜷成一团：背弯成 C 形、后腿前收、前爪收、尾巴绕过臀部，整团转向让镜头看到脸</td><td class="num">身长 999.6 → <b>457 mm</b>；头 pitch 11.5° → 34.4°；尾 6.9° → 214.9°</td><td class="tag-ok">已修</td></tr>
+<tr><td>Lick</td><td>后半身一团棉（大腿轮廓糊平）、尾巴完全看不见；身体陷地 14.9 mm</td><td>后腿跗关节靶抬 30 mm、root 抬 3 mm；尾巴改成贴地绕右后腿</td><td class="num">最低点 −14.9 → <b>−6.4 mm</b>（剩下的是两大腿间的腹褶，渲染里看不到）</td><td class="tag-ok">已修到可接受</td></tr>
+<tr><td>Walk / Run</td><td>本批没动</td><td>只做回归验证</td><td class="num">支撑滑移 0.03 / 0.51 mm，腾空帧 0</td><td class="tag-ok">没改坏</td></tr>
+</table>
+<div class="grid2" style="margin-top:14px">
+  <div class="card"><div class="imgbox"><span class="badge">上：round-k（旧）· 下：round-l（现）</span><img src="lie-k-vs-l.png" alt="躺姿前后对比"></div><div class="cap"><b>躺姿四连</b>：LieDown / SideLie / Sleep / Lick</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">步态对照</span><img src="gait-k-vs-l.png" alt="步态前后对比"></div><div class="cap"><b>步态</b>：round-k 与 round-l 逐帧对照（本批未改步态，仅回归）</div></div>
+</div>
+<p class="note">遗留（要你定）：<b>①</b> SideLie 从默认镜头看是肚皮和四条腿朝你（上侧腿关节离地约 30 cm、爪最低只能到 22–24 cm，再压大腿皮肤会顶到髋上方）——想看背对镜头的侧躺可以翻到右侧试。<b>②</b> Sleep 的脸在有毛的渲染里埋在爪子和毛里、闭眼不太看得出来（无毛预览很清晰），有现成旋钮可以让头回正一些。<b>③</b> Lick 尾巴只绕到右后腿旁，再往前会穿进大腿；「后半身一团棉」剩下的是毛系统（大腿外侧白底毛把轮廓填平），按分工没动毛系统。<b>④</b> Run 的代表帧和 Walk 很像（步幅小、抬脚低，单看一张图分不出）。<b>⑤</b> Jump 后爪着地滑移 0.91 → 2.74 mm，是另一会话改身体比例/前臂蒙皮带来的，需那边复核。<b>⑥ 新回归</b>：并行会话把张口嘴角开宽（<code>GAPE_W</code> 1.0 → 1.2）后，<code>shell_rays</code> 从 20 反弹到 <b>Yawn 1622 / Bite 721</b>——口腔袋（42×40×20 mm）盖不住更宽的开口，张口时能看见头壳内壁。开口可见度反而没涨（Yawn 0.183 → 0.179）。<span class="done">已修复（round-m）</span>——<b>不是</b>口腔袋尺寸问题（x/y/z 三向 7 个候选全无效，还会把 Bite 开口挤小 27%），把口腔袋整体前推 66 mm（<code>V6_CAV_Y</code> −.392 → −.458）后三项漏光全零、Yawn 开口 0.218、Bite 开口 0.180，闭嘴零回归。排查表见 <code>reviews/ISSUES-2026-10-08.md</code> F1–F5。</p>
+
+<h2 id="views" data-page-node-id="iEJCxjTbTk3FaAzBxASDQS">四视图与面部</h2>
+<p class="note" data-page-node-id="bNwIbUdGn2IlzE3WqBFVlq">四视图与面部为 round-l 的 standard 渲染（与 15 个动作同一批，900px / 128spp）。定量判断以上面的几何实测与 <code>reviews/ISSUES-2026-10-08.md</code> 为准。</p>
+<div class="grid2" data-page-node-id="pUA3phNmwGKe618CZXCUyo">
+  <div class="card" data-page-node-id="WzkCMfWtAkRMwwMcnAmEUe"><div class="imgbox" data-page-node-id="zAxl19MiTql5jmNUsmyrYo"><span class="badge" data-page-node-id="Z86vUJJVDyoEJdzWjUAnMD">参考 turnaround-v1</span><img src="turnaround-v1.png" alt="参考" data-page-node-id="sW8ypYxjVY6gk3QxmfLFmx"></div><div class="cap" data-page-node-id="3PNzRdbIcaDJIIVKRBCAU2"><b data-page-node-id="imVtUW2255hJGjGFf5nAkc">参考</b>：半写实四视图</div></div>
+  <div class="card" data-page-node-id="OtMdT6wy9VCg8FaW024CNH"><div class="imgbox" data-page-node-id="B14OBvSx6wfEgC3AjIMqeH"><span class="badge" data-page-node-id="IcvOjFygy36JL4kA2L1s1b">当前 · front</span><img src="front.png" alt="B4正面" data-page-node-id="5IWpM0PZcydCWiZwHXvkex"></div><div class="cap" data-page-node-id="kSGjCJrDb3eLKbgCLO54Uw"><b data-page-node-id="fCA2Xq8nidzYzfMUl6bQhe">正面（round-k）</b>：轮廓饱满、配色接近</div></div>
+</div>
+<div class="grid2" style="margin-top:18px" data-page-node-id="rFAJUxnJ1VxQX57cAI6jcz">
+  <div class="card" data-page-node-id="v2V9NloyDt4E1sdoANCkvV"><div class="imgbox" data-page-node-id="ogD1F2zn46pGn8eNHL2brL"><span class="badge" data-page-node-id="tCY2bLHKvJhBVUICHLsXtf">当前 · side</span><img src="side.png" alt="B4侧面" data-page-node-id="7JvRTLykPaKbD5pxpkdHVF"></div><div class="cap" data-page-node-id="aMZfdtUzqzkZKzO6QrLuAu"><b data-page-node-id="TwTU85Shg3Ce6PKJRvGy1P">侧面（round-k）</b>：步态重写后站姿；肩高/身 0.67 仍高于参考 0.59</div></div>
+  <div class="card" data-page-node-id="4gBmf6RcZTq4r0UR0v7uN4"><div class="imgbox" data-page-node-id="EG5W0nWpU0b9E3mlZBV4t4"><span class="badge" data-page-node-id="4wAppVfSCJ8Ui9jSLB45Bg">参考 · face closeup</span><img src="lingxi-ref-face-closeup.png" alt="参考面部" data-page-node-id="x6zoFkaAKBQexalsQIIY6l"></div><div class="cap" data-page-node-id="OBhO3s0V6uoKJs6mfMEkpl"><b data-page-node-id="cjeyxjhaWQAzsMu1tfRhLt">参考面部</b>：瞳径 0.40E、鼻宽 0.311E、嘴宽 0.288E</div></div>
+</div>
+<div class="grid2" style="margin-top:18px" data-page-node-id="gzLvuIhVQe91c0mJwuTPwT">
+  <div class="card" data-page-node-id="g6wKXizm72ClVojjNU0vdI"><div class="imgbox" data-page-node-id="Z1JJcpiXEwHyKJw02zMDN7"><span class="badge" data-page-node-id="xXHuAp8ywDvi6f316YBHRO">当前 · face</span><img src="face.png" alt="B4面部" data-page-node-id="W2ePf2nL0LpR2kLxZb1146"></div><div class="cap" data-page-node-id="Bqj8XoTw6kbsukWuDvy2uF"><b data-page-node-id="0TtVxFllcodbGcF8xgBGHD">面部（round-k）</b>：round-j 嘴部重写后；眼径 0.44E（+10%），鼻镜粉已对上</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">round-m · 张口近景</span><img src="faces-m-yawn.png" alt="round-m 张口近景"></div><div class="cap"><b>张口（round-m）</b>：口腔袋前推后漏光全零、开口 0.218（参考 0.256）；遗留：下牙列在口缘露出一排小白三角、上犬齿仍被唇挡</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">round-m · 闭眼近景</span><img src="faces-m-idle.png" alt="round-m 闭嘴近景"></div><div class="cap"><b>闭嘴（round-m）</b>：Rest 漏光 0、开口 0.008、闭嘴犬齿露出 0——前推 66 mm 后闭嘴零回归</div></div>
+  <div class="card" data-page-node-id="m9MdMIzFGcH78Z3h3RSpTd"><div class="imgbox" data-page-node-id="7PLnkTG7GrWcWQcBJRd1wm"><span class="badge" data-page-node-id="3k76pa5EAckWFWmGWHPSrz">当前 · threequarter</span><img src="threequarter.png" alt="B4四分之三" data-page-node-id="xKRPkJlrWqIzDP7UDB4wsL"></div><div class="cap" data-page-node-id="iKlZMR3Lzm2QfWkikp7JEw"><b data-page-node-id="2MzQrEjv1qb3tbz6NLrkqw">四分之三（round-k）</b>：胸口白毛过渡自然</div></div>
+</div>
+
+<h2 id="lids" data-page-node-id="lidfix001">闭眼修复（round-h）：从「眼罩」到一条拱形睑缝</h2>
+<p class="note" data-page-node-id="lidfix002">旧做法靠 LidUpper/LidLower 骨骼旋转整片睑：上睑顶部那条 8mm 的带被拉成 38mm（4.5×）、上下睑在眼角交叉穿插 17mm、眼窝毛窗不跟随——闭眼看像戴了眼罩。新做法把闭合写进 Blink/Squint shape key：<b>逐顶点绕睑球心做球面旋转</b>，内缘转满、外缘与眼角权重 0、中间按弧长分配；下睑毛 24000×20mm、睑皮提到 .85×毛色。每张卡<b>上图＝修复后（round-h，当前状态）</b>，下图＝修复前的旧版对照（round-b4c，白眼睑就是当时的问题，不是现在的样子），640px 近景 48spp。</p>
+<div class="clips" style="grid-template-columns:repeat(2,1fr)" data-page-node-id="lidfix003">
+  <div class="c"><div class="pair"><div class="ph after"><img src="lid-after-blink.png" alt="眨眼后（当前状态）"><b>修复后 · 当前</b></div><div class="ph"><img src="lid-before-blink.png" alt="眨眼前（旧版对照）"><b>修复前 · 旧版</b></div></div><div class="nm">Idle · 眨眼（f47）<span>近景 640px</span></div><div class="st ok">眼角位移 0.0mm · 交叉 0.0mm · 露眼球 0%</div></div>
+  <div class="c"><div class="pair"><div class="ph after"><img src="lid-after-happy.png" alt="Happy后（当前状态）"><b>修复后 · 当前</b></div><div class="ph"><img src="lid-before-happy.png" alt="Happy前（旧版对照）"><b>修复前 · 旧版</b></div></div><div class="nm">Happy · 眯眼笑<span>近景 640px</span></div><div class="st ok">闭合线 +3.9mm 拱形（profile 0→3.9→0）· 睑缘带拉伸 1.00</div></div>
+</div>
+<div class="grid2" style="margin-top:12px" data-page-node-id="lidfix004">
+  <div class="card"><div class="imgbox"><span class="badge">修后 · 睁眼（无回归）</span><img src="lid-after-idle.png" alt="睁眼" loading="lazy" data-page-node-id="lidfix005"></div><div class="cap">睁眼（squint .14 常驻）与修复前几乎一致</div></div>
+  <div class="card"><div class="imgbox"><span class="badge">说明</span><div class="ph" style="padding:18px;font-size:14px;line-height:1.8">物理极限（如实报告）：外缘钉死在眶缘时，整条睑带的<b>平均</b>拉伸 = (带长+行程)/带长，上睑 2.68、下睑 3.43，任何分配方式都绕不开。但<b>看得见的闭合线</b>宽度拉伸 = 1.00；被拉开的那段用加密的睑毛盖住。审计已常驻 <code>v6_part_audit.py</code>（眼角位移 / 拉伸比 / 交叉量 / 露眼比例 / 拱形判定）。</div></div><div class="cap">验收口径与遗留</div></div>
+</div>
+
+<h2 id="actions" data-page-node-id="7OZA9yl1Gz8w5Vl1PpsXbP">收敛情况（按性价比排）</h2>
+<p class="note"><b>1 / 2 / 5 / 6 / 7 / 8 已完成</b>（爪子、五个动作陷地、Stretch、Walk 后腿、Bite/Yawn、Jump）。<b>round-h 批完成</b>：闭眼重写 + 嘴第一步；<b>round-j 批完成</b>：嘴部重写（Jaw 转向纠正，Yawn 0.037→0.183、舔爪接触、犬齿 8.5mm）；<b>round-k 批完成</b>：步态重写（Walk 同侧重叠 0、滑移 0.04mm/帧、Run 接地、头颈相位）+ 躯干下缘（前腿可见/身 0.176，参考 0.174）；<b>round-l 批完成</b>：躺姿三兄弟重写（LieDown 狮身趴、SideLie 真侧躺贴地、Sleep 蜷成团 457mm）+ Lick 后半身与尾巴（−14.9 → −6.4mm）。剩余：<b>3 的第二步（唇线 .970）</b>、<b>4（耳）</b>、<code>shell_rays</code> 20→0、Bite 开口 0.128→0.15，以及新确认的骨架级遗留 <b>肩高/身 0.67 vs 参考 0.59</b>（见 <code>reviews/ISSUES-2026-10-08.md</code> E 节）。</p>
+<table data-page-node-id="mE6s7r7Tj16F0ScAsblAnn">
+<tr data-page-node-id="FL8ue8xSsRmGZm37BAYv2l"><th data-page-node-id="NSB8czmsqFsTHkIAOF5jyk">#</th><th data-page-node-id="BIHYIkV1wbFv5h2J5AFO7Y">做什么</th><th data-page-node-id="HKjz2MldBMQJZpQPto9Xz6">怎么做</th><th data-page-node-id="ckdEFXBaaUJDhJ8DIr1weo">优先级</th><th data-page-node-id="ReQpmyBEdUP1I4Pdg7tFUA">验收指标</th></tr>
+<tr data-page-node-id="3rMVbZ9CVGOFV2pmk2ATnz"><td data-page-node-id="sMwsF6USjUpfFU1348DQTa">1</td><td data-page-node-id="UsJTAFhaxkyeJo5QueXqDV">爪子：让脚趾探出来</td><td data-page-node-id="OQSCrSZOzKtaGSQLqXwRNW">几何重建（<code>toe_xy()</code> / <code>PAW</code>）+ G2/G3：趾加高 42mm、外侧趾只后收 60%、趾毛改底绒 3.3mm×1400、剃毛区收窄。round-h 实测：前趾探出 <b>+16.3…+20.0 mm、52–63% 顶点外露</b>，四趾都有缝，秃带消失</td><td class="done">已完成</td><td class="done">外露 &gt; 60% ✅；最深点 ≥ +8 mm ✅ +20.0 mm</td></tr>
+<tr data-page-node-id="yIoFXc8an6LL6Tg3O4DUxA"><td data-page-node-id="XXewEvZ1YBsO4ejuNM6wAl">2</td><td data-page-node-id="TrtWgRbE6zQ1uvTfIG7bTi">五个动作陷进地面</td><td data-page-node-id="TcyCyV6KTrjqmGgokYFRtc">Sleep −151 → <b>−4.9</b>；SideLie −166 → <b>−4.5</b>；Lick −86 → <b>−15.0</b>（几何极限）；Stretch −72 → <b>−7.3</b>；LieDown −63 → <b>−8.0</b> mm（round-h 复测，含 G3 趾/嘴改动后的全身）</td><td class="done">已完成</td><td class="done">目标 [−5, +5] ✅；Lick −15 与前腿打直冲突，见上文</td></tr>
+<tr data-page-node-id="yx844qbijOAxMZ4umxhyJG"><td data-page-node-id="L7AiwOoFDW60CSNbtcWTff">3</td><td data-page-node-id="QoC2Umr7ObvB8vvO8Ame23">嘴：收窄 + 下移</td><td data-page-node-id="na4prsPsho6hNjGEaezEVD"><b>第一步已做</b>（round-h）：<code>V6_MOUTH_W</code> .69、<code>V6_LIP</code> .98、<code>V6_MUZZLE_GROW</code> .006（G2 的露犬齿由口鼻部随唇线生长 + 犬齿后收 4mm 解决）。<b>剩第二步</b>：唇线 .970（现 lip_below_nose 24.2mm，参考 0.31E≈35mm），需配 MG≈.010 + 犬齿前皮肤厚度审计</td><td class="tag-warn">中（剩第二步）</td><td>嘴宽 0.29E（现 .272E ✅）、唇线在鼻下 0.31E（现 0.21E）</td></tr>
+<tr data-page-node-id="pbtMnUW8wOWGLefKrGtgY6"><td data-page-node-id="qES973FI08A4T4d4FaoRsi">4</td><td data-page-node-id="0jpfbPqNDI9WRdgWcdRwMY">耳：改比例和顶端</td><td data-page-node-id="wmJrXOxPKb2oucTyyBFSvT"><code data-page-node-id="RgAG5kq3r4kywh9Hv0iRyR">ear_wid()</code> .058→.044、flare 1.30→1.20、t&gt;0.88 半圆封顶</td><td class="tag-bad" data-page-node-id="GCZlXjdDUAZTdvbI2AvNf8">高</td><td data-page-node-id="bF4qr9oBiMmt11gVraIZi0">宽 112 mm、w/h .83、顶端宽 ~30 mm</td></tr>
+<tr data-page-node-id="Li1OGvhIBsDJ2acxSEqNDi"><td data-page-node-id="C3adNHiBDAGHlmpvWDgrow">5</td><td data-page-node-id="mmVxBbBQeX3M0Jz3kO8rv8">Stretch 要真的"伸"</td><td data-page-node-id="MWCCscn4WKJv0Z2Jp33VrD">现在和 LieDown 是同一个姿态（root −110、身长变化 3.9 mm）。改成前爪大幅前伸 + 脊柱拉开 + 屁股翘起。<b>已做</b>：从 LieDown 组拆出独立成姿（root −.055、脊柱 .16、头 −.22、前爪前伸 −.11s、尾 −.35）</td><td class="done">已完成</td><td class="done">不再是 LieDown 的第二张卡 ✅ 离 Idle 149° → 170°，最低点 −72 → −7.3 mm</td></tr>
+<tr data-page-node-id="TfEcTsPXTakQJD3TSpZsLR"><td data-page-node-id="8vpH3coTiJJtUzLoIkqGGj">6</td><td data-page-node-id="ZOdbNqom57QnzDoAwB92ze">Walk 后腿摆幅</td><td data-page-node-id="BmLeGiroCqQJRcSDLBCgwZ">后爪行程 6.7 mm → 15–20 mm（<code data-page-node-id="LMCavauJjPjg7p8OoMc10l">place_legs</code> 的 gait 幅度）。<b>已做</b>：后腿 <code>dy*=1.30; dz*=1.25</code>（先试的 1.80 冲到 63.7 mm，过头了）</td><td class="done">已完成</td><td class="done">后/前行程比 ≥ 0.8 ✅ 实测 45.0 / 36.3 = 1.24</td></tr>
+<tr data-page-node-id="s3AE3U9UU1N5pl7XAuHIc8"><td data-page-node-id="yJyj7wMFxoGbHyp4OkO0Tc">7</td><td data-page-node-id="JMHFkMXUJI8MSqvSbCEnDg">Bite / Yawn 补身体</td><td data-page-node-id="V0OhK351y4ypYKXfH5Saqv">Bite：前爪抬起按住 + 头 pitch 到 15–20°；Yawn：加前腿前伸、弓背。<b>已做</b>：Bite 前爪抬 .11·fac + 头前冲；Yawn 前爪前伸 .075 + 弓背 .14 + 沉胸 −.030 + 尾 −.30/.22</td><td class="done">已完成</td><td class="done">Bite 前爪 ≥ 80 mm ✅ 83.7（离 Idle 123° → 220°）；Yawn 身长 ≥ 40 mm ✅ 47（离 Idle 81° → 157°）</td></tr>
+<tr data-page-node-id="T91Tcor8IkWOkmgXsii7RR"><td data-page-node-id="ExhczqelZ4XR5awwH9g3Vk">8</td><td data-page-node-id="LFJxb3ga534xaahIJB4OI9">Jump 加平衡信号</td><td data-page-node-id="ykleBSKBHYOwZrhrkhuRXw">起跳时尾摆动 ≥ 30°、耳朵后压、身体拉长。<b>已做</b>：尾 −.45/.30/.30、耳后压 .35、脊柱 +.10</td><td class="done">已完成</td><td class="done">尾 ≥ 30° ✅ 60.1°；耳 ✅ 20.0°</td></tr>
+<tr data-page-node-id="uOMBlxVgWouez2ah043Tjg"><td data-page-node-id="RqE6TgE0pIIDP3A3loLVH1">9</td><td data-page-node-id="QosxHMn5DIquuHTFfL8Xko">侧面腰线 + 膝关节折角（<b data-page-node-id="1kfGyGNoYLXxpC9QwM1KDw">你没点名，暂缓</b>）</td><td data-page-node-id="O5KmkrQyBGBNMES2MKFj3l">先不动，等上面八项做完再看还显不显眼</td><td data-page-node-id="hijSxv4ckr1AI1bqibKyOO">—</td><td data-page-node-id="xYpepR4gBaMO6Gu1pyj4os">—</td></tr>
+</table>
+
+<footer data-page-node-id="hLvdem1xKqtp1SeVlTDGA9">
+  2026-10-01 · 分支 <code data-page-node-id="1rtwB3nFJOPZQ5MTC0dhP5">lookdev/b4-review</code> · 修复前图：<code data-page-node-id="VK6j5mQLr5jIdTuiFd0TFY">assets/characters/lingxi/v6/round-b4/poses/</code> · 修复后图（本页「后」列）：<code>assets/characters/lingxi/v6/round-l/</code>（round-l 躺姿重写，旋钮见其 <code>knobs.txt</code>）；四视图与面部为 <code>round-l/</code>（与动作图同一批）· 眼睑近景：<code>round-h-test/b4c-faces</code>（前）/ <code>h4/faces</code>（后）· 数据：<code data-page-node-id="qBpK5dZX2uI6cGocRzrGGf">clips-before.json</code> / <code>round-l/review-clips.json</code> / <code>round-l/review-parts.json</code> · 工具：<code data-page-node-id="kc1TsYXp1o50B2l8q5EQPN">scripts/lookdev-v6/v6_part_audit.py</code>、<code data-page-node-id="CPw6rhpZewoX5asfSrXrxm">v6_clip_review.py</code>、<code>v6_ground_calib.py</code>
+</footer>
+</div>
+
+<script>
+const CLIPS = [
+ ['Idle','ok','静止基准：四爪行程 0，身体不动'],
+ ['Walk','bad','后腿摆幅只有前腿的 42%（6.7 vs 15–17 mm）'],
+ ['Run','ok','四爪行程 24–28 mm，身体起伏 30 mm'],
+ ['Jump','bad','跳起 317 mm，但耳 1.1°、尾 1.4° 几乎不动'],
+ ['LieDown','bad','陷地 63 mm；趴下后不再动'],
+ ['SideLie','bad','陷地 166 mm，最严重'],
+ ['Sleep','bad','陷地 151 mm；闭眼正确'],
+ ['Curious','warn','只有头（−15.6° 抬头）+ 耳 18.9°，四爪不动，识别度最低'],
+ ['Happy','ok','尾 96.3° 大摆 + 身长变化 150 mm（弓背蹭）'],
+ ['Yawn','warn','下颌 −76° 张得够大，但身体全静止'],
+ ['Lick','warn','右前爪抬起 438 mm、舌头伸出，形体最完整；陷地 86 mm'],
+ ['Bite','bad','耳朵后压 51.5° 很好，但四爪行程 0.1 mm'],
+ ['Knead','ok','交替踩 26 mm + 眯眼 34° + 伸爪 0.7'],
+ ['Stretch','bad','身长只变 3.9 mm，和 LieDown 是同一个姿态'],
+ ['PawPlay','ok','伏低 + 左爪挥出 131.7 mm + 甩尾 57.7°'],
+];
+const LABEL = {ok:'符合预期', warn:'部分欠缺', bad:'不符合预期'};
+document.getElementById('clipGrid').innerHTML = CLIPS.map(([n,st,txt])=>
+ `<div class="c"><img src="poses-b4/${n}.png" alt="${n}"><div class="nm">${n}<span>${LABEL[st]}</span></div><div class="st ${st}">${txt}</div></div>`).join('');
+
+// 修复后：左＝round-b4（最初），右＝round-h（G3 爪/嘴 + 闭眼重写，standard 重渲）
+const FIXED = [
+ ['Idle','ok','+1.0','基准'],
+ ['Walk','ok','+1.0','后爪行程 45.0 mm，后/前比 1.24'],
+ ['Run','ok','+9.1','腾空帧，四爪行程 51 / 63 mm'],
+ ['Jump','ok','+277.3','尾 60.1° + 耳 20.0° 的平衡信号'],
+ ['LieDown','ok','+0.4','round-l 狮身趴：胸贴地、前臂平放，前爪退到鼻尖后 27 mm'],
+ ['SideLie','ok','+0.6','round-l 真侧躺：躯干悬空 27 → 贴地 +0.6，头离地 130 → 21 mm'],
+ ['Sleep','ok','+0.2','round-l 蜷成团：身长 999.6 → 457 mm，尾绕体侧 214.9°'],
+ ['Curious','warn','+1.0','只有头 + 耳在动，这轮没改'],
+ ['Happy','ok','+1.0','尾 96.3° + 身长变化 150 mm；闭眼已重写（见上）'],
+ ['Yawn','ok','+1.0','弓背 + 前爪前伸：离 Idle 81° → 157°'],
+ ['Lick','ok','−6.4','round-l：跗关节抬 30 mm + 尾贴地绕后腿：−14.9 → −6.4'],
+ ['Bite','ok','+1.0','前爪抬起 83.7 mm + 头前冲：离 Idle 123° → 220°'],
+ ['Knead','ok','+0.7','交替踩 26 mm + 眯眼 + 伸爪'],
+ ['Stretch','ok','−7.3','从 LieDown 拆出独立成姿：离 Idle 149° → 170°'],
+ ['PawPlay','ok','−3.4','伏低 + 挥爪 131.7 mm + 甩尾 57.7°'],
+];
+document.getElementById('fixGrid').innerHTML = FIXED.map(([n,st,low,txt])=>
+ `<div class="c"><div class="pair"><div class="ph"><img src="poses-b4/${n}.png" alt="${n} 修复前"><b>前</b></div>`
+ + `<div class="ph after"><img src="poses-fix/${n}.png" alt="${n} 修复后"><b>后</b></div></div>`
+ + `<div class="nm">${n}<span>最低 ${low} mm</span></div><div class="st ${st}">${txt}</div></div>`).join('');
+</script>
+</body>
+</html>

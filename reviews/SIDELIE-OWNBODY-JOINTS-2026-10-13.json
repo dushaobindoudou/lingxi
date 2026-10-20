@@ -1,0 +1,620 @@
+{
+  "source_image": "assets/characters/lingxi/reference/lingxi-ref-sidelie-ownbody-top.png",
+  "companion_oblique_image": "assets/characters/lingxi/reference/lingxi-ref-sidelie-ownbody-app.png",
+  "image_size_px": [
+    1254,
+    1254
+  ],
+  "coordinate_system": "Image origin top-left; +x right, +y down. In this cat-facing-down image, anatomical right is approximately image-left. Heights use floor z=0. All joint locations and heights are estimates, not rig measurements.",
+  "calibration": {
+    "assumed_projected_hip_to_shoulder_mm": 368,
+    "hip_center_px": [
+      425,
+      395
+    ],
+    "shoulder_center_px": [
+      775,
+      745
+    ],
+    "hip_to_shoulder_projection_px": 495.0,
+    "px_per_mm": 1.345,
+    "mm_per_px": 0.7435,
+    "method": "Assign the visible/inferred hip-to-shoulder 2D chord a nominal 368 mm; apply one uniform scale to all x/y pixel coordinates. The true 3D distance and perspective scale cannot be recovered from imagegen imagery."
+  },
+  "joint_centers": {
+    "head_center": {
+      "px": {
+        "x": 825,
+        "y": 925
+      },
+      "projected_mm_from_image_origin": {
+        "x": 613.4,
+        "y": 687.7
+      },
+      "estimated_height_above_floor_mm_range": [
+        150,
+        190
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "neck_base": {
+      "px": {
+        "x": 800,
+        "y": 800
+      },
+      "projected_mm_from_image_origin": {
+        "x": 594.8,
+        "y": 594.8
+      },
+      "estimated_height_above_floor_mm_range": [
+        110,
+        150
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "thoracic_spine": {
+      "px": {
+        "x": 720,
+        "y": 680
+      },
+      "projected_mm_from_image_origin": {
+        "x": 535.3,
+        "y": 505.6
+      },
+      "estimated_height_above_floor_mm_range": [
+        75,
+        115
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "lumbar_spine": {
+      "px": {
+        "x": 565,
+        "y": 520
+      },
+      "projected_mm_from_image_origin": {
+        "x": 420.1,
+        "y": 386.6
+      },
+      "estimated_height_above_floor_mm_range": [
+        55,
+        95
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "pelvis": {
+      "px": {
+        "x": 440,
+        "y": 410
+      },
+      "projected_mm_from_image_origin": {
+        "x": 327.1,
+        "y": 304.8
+      },
+      "estimated_height_above_floor_mm_range": [
+        50,
+        90
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "shoulder_center": {
+      "px": {
+        "x": 775,
+        "y": 745
+      },
+      "projected_mm_from_image_origin": {
+        "x": 576.2,
+        "y": 553.9
+      },
+      "estimated_height_above_floor_mm_range": [
+        85,
+        125
+      ],
+      "visibility": "calibration_inferred"
+    },
+    "hip_center": {
+      "px": {
+        "x": 425,
+        "y": 395
+      },
+      "projected_mm_from_image_origin": {
+        "x": 316.0,
+        "y": 293.7
+      },
+      "estimated_height_above_floor_mm_range": [
+        55,
+        95
+      ],
+      "visibility": "calibration_inferred"
+    },
+    "front_right_shoulder": {
+      "px": {
+        "x": 735,
+        "y": 775
+      },
+      "projected_mm_from_image_origin": {
+        "x": 546.5,
+        "y": 576.2
+      },
+      "estimated_height_above_floor_mm_range": [
+        80,
+        120
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_right_elbow": {
+      "px": {
+        "x": 735,
+        "y": 965
+      },
+      "projected_mm_from_image_origin": {
+        "x": 546.5,
+        "y": 717.5
+      },
+      "estimated_height_above_floor_mm_range": [
+        20,
+        45
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_right_wrist": {
+      "px": {
+        "x": 750,
+        "y": 1060
+      },
+      "projected_mm_from_image_origin": {
+        "x": 557.6,
+        "y": 788.1
+      },
+      "estimated_height_above_floor_mm_range": [
+        5,
+        20
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_right_toe_tip": {
+      "px": {
+        "x": 750,
+        "y": 1140
+      },
+      "projected_mm_from_image_origin": {
+        "x": 557.6,
+        "y": 847.6
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        6
+      ],
+      "visibility": "visible_outline"
+    },
+    "front_left_shoulder": {
+      "px": {
+        "x": 855,
+        "y": 770
+      },
+      "projected_mm_from_image_origin": {
+        "x": 635.7,
+        "y": 572.5
+      },
+      "estimated_height_above_floor_mm_range": [
+        80,
+        120
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_left_elbow": {
+      "px": {
+        "x": 870,
+        "y": 960
+      },
+      "projected_mm_from_image_origin": {
+        "x": 646.8,
+        "y": 713.7
+      },
+      "estimated_height_above_floor_mm_range": [
+        20,
+        45
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_left_wrist": {
+      "px": {
+        "x": 880,
+        "y": 1055
+      },
+      "projected_mm_from_image_origin": {
+        "x": 654.3,
+        "y": 784.4
+      },
+      "estimated_height_above_floor_mm_range": [
+        5,
+        20
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_left_toe_tip": {
+      "px": {
+        "x": 885,
+        "y": 1140
+      },
+      "projected_mm_from_image_origin": {
+        "x": 658.0,
+        "y": 847.6
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        6
+      ],
+      "visibility": "visible_outline"
+    },
+    "rear_right_hip": {
+      "px": {
+        "x": 390,
+        "y": 405
+      },
+      "projected_mm_from_image_origin": {
+        "x": 290.0,
+        "y": 301.1
+      },
+      "estimated_height_above_floor_mm_range": [
+        50,
+        90
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_right_knee": {
+      "px": {
+        "x": 335,
+        "y": 350
+      },
+      "projected_mm_from_image_origin": {
+        "x": 249.1,
+        "y": 260.2
+      },
+      "estimated_height_above_floor_mm_range": [
+        25,
+        55
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_right_hock": {
+      "px": {
+        "x": 280,
+        "y": 385
+      },
+      "projected_mm_from_image_origin": {
+        "x": 208.2,
+        "y": 286.2
+      },
+      "estimated_height_above_floor_mm_range": [
+        5,
+        25
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_right_toe_tip": {
+      "px": {
+        "x": 195,
+        "y": 400
+      },
+      "projected_mm_from_image_origin": {
+        "x": 145.0,
+        "y": 297.4
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        6
+      ],
+      "visibility": "visible_outline"
+    },
+    "rear_left_hip": {
+      "px": {
+        "x": 455,
+        "y": 445
+      },
+      "projected_mm_from_image_origin": {
+        "x": 338.3,
+        "y": 330.8
+      },
+      "estimated_height_above_floor_mm_range": [
+        50,
+        90
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_left_knee": {
+      "px": {
+        "x": 355,
+        "y": 480
+      },
+      "projected_mm_from_image_origin": {
+        "x": 263.9,
+        "y": 356.9
+      },
+      "estimated_height_above_floor_mm_range": [
+        20,
+        50
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_left_hock": {
+      "px": {
+        "x": 265,
+        "y": 535
+      },
+      "projected_mm_from_image_origin": {
+        "x": 197.0,
+        "y": 397.8
+      },
+      "estimated_height_above_floor_mm_range": [
+        5,
+        25
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_left_toe_tip": {
+      "px": {
+        "x": 178,
+        "y": 557
+      },
+      "projected_mm_from_image_origin": {
+        "x": 132.3,
+        "y": 414.1
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        6
+      ],
+      "visibility": "visible_outline"
+    },
+    "tail_root": {
+      "px": {
+        "x": 355,
+        "y": 300
+      },
+      "projected_mm_from_image_origin": {
+        "x": 263.9,
+        "y": 223.0
+      },
+      "estimated_height_above_floor_mm_range": [
+        15,
+        45
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "tail_tip": {
+      "px": {
+        "x": 105,
+        "y": 150
+      },
+      "projected_mm_from_image_origin": {
+        "x": 78.1,
+        "y": 111.5
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        15
+      ],
+      "visibility": "visible_outline"
+    },
+    "front_right_scapula": {
+      "px": {
+        "x": 695,
+        "y": 705
+      },
+      "projected_mm_from_image_origin": {
+        "x": 516.7,
+        "y": 524.1
+      },
+      "estimated_height_above_floor_mm_range": [
+        85,
+        130
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_right_metacarpophalangeal": {
+      "px": {
+        "x": 755,
+        "y": 1100
+      },
+      "projected_mm_from_image_origin": {
+        "x": 561.3,
+        "y": 817.8
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        10
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_left_scapula": {
+      "px": {
+        "x": 830,
+        "y": 710
+      },
+      "projected_mm_from_image_origin": {
+        "x": 617.1,
+        "y": 527.9
+      },
+      "estimated_height_above_floor_mm_range": [
+        85,
+        130
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "front_left_metacarpophalangeal": {
+      "px": {
+        "x": 882,
+        "y": 1100
+      },
+      "projected_mm_from_image_origin": {
+        "x": 655.7,
+        "y": 817.8
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        10
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_right_metatarsophalangeal": {
+      "px": {
+        "x": 235,
+        "y": 395
+      },
+      "projected_mm_from_image_origin": {
+        "x": 174.7,
+        "y": 293.7
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        10
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "rear_left_metatarsophalangeal": {
+      "px": {
+        "x": 220,
+        "y": 550
+      },
+      "projected_mm_from_image_origin": {
+        "x": 163.6,
+        "y": 408.9
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        10
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "tail_joint_1": {
+      "px": {
+        "x": 305,
+        "y": 275
+      },
+      "projected_mm_from_image_origin": {
+        "x": 226.8,
+        "y": 204.5
+      },
+      "estimated_height_above_floor_mm_range": [
+        5,
+        25
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "tail_joint_2": {
+      "px": {
+        "x": 245,
+        "y": 235
+      },
+      "projected_mm_from_image_origin": {
+        "x": 182.2,
+        "y": 174.7
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        20
+      ],
+      "visibility": "inferred_under_fur"
+    },
+    "tail_joint_3": {
+      "px": {
+        "x": 170,
+        "y": 190
+      },
+      "projected_mm_from_image_origin": {
+        "x": 126.4,
+        "y": 141.3
+      },
+      "estimated_height_above_floor_mm_range": [
+        0,
+        20
+      ],
+      "visibility": "inferred_under_fur"
+    }
+  },
+  "joint_chains": {
+    "axial": [
+      "hip_center",
+      "pelvis",
+      "lumbar_spine",
+      "thoracic_spine",
+      "shoulder_center",
+      "neck_base",
+      "head_center"
+    ],
+    "front_right": [
+      "front_right_scapula",
+      "front_right_shoulder",
+      "front_right_elbow",
+      "front_right_wrist",
+      "front_right_metacarpophalangeal",
+      "front_right_toe_tip"
+    ],
+    "front_left": [
+      "front_left_scapula",
+      "front_left_shoulder",
+      "front_left_elbow",
+      "front_left_wrist",
+      "front_left_metacarpophalangeal",
+      "front_left_toe_tip"
+    ],
+    "rear_right": [
+      "rear_right_hip",
+      "rear_right_knee",
+      "rear_right_hock",
+      "rear_right_metatarsophalangeal",
+      "rear_right_toe_tip"
+    ],
+    "rear_left": [
+      "rear_left_hip",
+      "rear_left_knee",
+      "rear_left_hock",
+      "rear_left_metatarsophalangeal",
+      "rear_left_toe_tip"
+    ],
+    "tail": [
+      "tail_root",
+      "tail_joint_1",
+      "tail_joint_2",
+      "tail_joint_3",
+      "tail_tip"
+    ]
+  },
+  "estimated_body_angles": {
+    "roll_definition": "0 degrees = sternum/belly down (prone); 90 degrees = fully on side. These are visual estimates from the top and companion oblique generated images, not solved joint rotations.",
+    "chest_roll_deg": {
+      "estimate": 25,
+      "plausible_range": [
+        15,
+        35
+      ]
+    },
+    "lumbar_roll_deg": {
+      "estimate": 55,
+      "plausible_range": [
+        45,
+        65
+      ]
+    },
+    "pelvis_roll_deg": {
+      "estimate": 75,
+      "plausible_range": [
+        65,
+        85
+      ]
+    },
+    "body_long_axis_in_image": {
+      "direction": "hip_center to shoulder_center, toward head",
+      "delta_px": [
+        350,
+        350
+      ],
+      "clockwise_deg_from_image_positive_x": 45.0,
+      "toward_image_right_deg_from_image_down": 45.0,
+      "radians_clockwise_from_image_positive_x": 0.7854
+    }
+  },
+  "interpretation": "The rear half rests on its side, the lumbar segment transitions, and the chest remains partly upright on both forearms; both front paws are adjacent below the raised head. Tail lies beside the rear body on the floor.",
+  "uncertainty": "Generated image has no physical camera calibration. Fur hides all joint centers except approximate toe and tail outlines. Hip/shoulder centers may be off 30-60 px; limb intermediate centers 35-70 px. 2D millimeters are nominal projected distances; height and segment roll are independent visual estimates with at least 20-40 mm / 10-20 degree uncertainty. The raised head remains slightly face-visible even in the overhead image, so it must not be treated as a perfectly orthographic rig diagram."
+}

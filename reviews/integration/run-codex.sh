@@ -1,0 +1,1 @@
+cd /Users/liepin/workspace/lingxi && codex exec --dangerously-bypass-approvals-and-sandbox -C /Users/liepin/workspace/lingxi -o /Users/liepin/workspace/lingxi-v5fix/reviews/integration/codex-final.md - < /Users/liepin/workspace/lingxi-v5fix/reviews/integration/prompt.md > /Users/liepin/workspace/lingxi-v5fix/reviews/integration/codex.log 2>&1

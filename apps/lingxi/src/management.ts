@@ -136,7 +136,7 @@ const TOYS = [
   { kind: 'yarn', name: '毛线球', description: '会滚会反弹，猫拍一爪又飞出去，能自己玩下去' },
   { kind: 'feather', name: '逗猫棒', description: '握住棍尾挑动，羽毛在另一端摆动，猫靠近会蓄力跳扑' },
   { kind: 'laser', name: '激光笔', description: '钉死在光标上，拍到也抓不住' },
-  { kind: 'pet', name: '撸猫', description: '用手来回顺毛，猫会停下来享受呼噜' },
+  { kind: 'pet', name: '撸猫', description: '按住左键轻抚头部和身体，翻肚后可摸腹部' },
 ] as const;
 
 const PERFORMANCES = [

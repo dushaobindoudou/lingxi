@@ -2343,8 +2343,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (moving) oneShot = null;
         // A real stroke is the one already moving the coat. Sample the previous posed rig before the mixer replaces it;
         // on a walking, turning or staged cat the response yields immediately to locomotion and authored action.
-        const petInterrupted = moving || pivoting || !!oneShot || !!staged || currentName === 'Walk' || currentName === 'Run';
-        samplePet(cursor, !petInterrupted);
+        const petInterrupted = moving || pivoting || (!!oneShot && !/^pet-(head|back)$/.test(oneShot.id)) || !!staged || currentName === 'Walk' || currentName === 'Run';
+        samplePet(cursor, state.pettingContact === true && !petInterrupted);
         // a settled cat picks something to do now and then (the voxel director's job on the other style)
         if (moving || state.state !== 'idle' || oneShot || staged || petTarget.contact > 0.1 || petPose.contact > 0.1) idleSince = elapsed;
         else if (autonomous && elapsed - idleSince > nextIdlePick) {
@@ -2466,7 +2466,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       overlayHead(deltaSeconds, moving);
       overlayPotty(deltaSeconds);
       overlayStage(deltaSeconds);
-      overlayPet(deltaSeconds, moving || pivoting || !!oneShot || !!staged || currentName === 'Walk' || currentName === 'Run');
+      overlayPet(deltaSeconds, moving || pivoting || (!!oneShot && !/^pet-(head|back)$/.test(oneShot.id)) || !!staged || currentName === 'Walk' || currentName === 'Run');
 
       // Read the final pose, after locomotion and touch overlays, so each patch follows the sole that is drawn.
       catRoot.updateMatrixWorld(true);

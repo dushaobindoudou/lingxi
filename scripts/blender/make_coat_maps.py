@@ -91,6 +91,39 @@ def clean(name: str) -> np.ndarray:
     return grow(a, valid)
 
 
+# Coat grade, measured against the photographic reference (lingxi-ref-face-closeup.png) on the
+# rendered portrait's coloured fur (2026-09-29): the dark stripes came out hue 26°/sat .57 against
+# the reference's 20°/.45, and the light brown 27° against 21° - orange where the reference is a
+# warm grey-brown. Pull every hue back, and take saturation out of the DARK tones only: the pale
+# coat already matches (.36 vs .38), it is the stripes that read as orange.
+GRADE_HUE_SHIFT_DEG = -6.0
+GRADE_DARK_SAT = 0.65     # saturation multiplier at value 0, easing to 1.0 at GRADE_LIGHT_V
+GRADE_LIGHT_V = 0.80
+
+
+def grade(rgb: np.ndarray) -> np.ndarray:
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    mx, mn = rgb.max(-1), rgb.min(-1)
+    d = mx - mn
+    s = np.where(mx > 0, d / np.maximum(mx, 1e-9), 0)
+    h = np.zeros_like(mx)
+    nz = d > 1e-9
+    rc = np.where(nz, (mx - r) / np.maximum(d, 1e-9), 0)
+    gc = np.where(nz, (mx - g) / np.maximum(d, 1e-9), 0)
+    bc = np.where(nz, (mx - b) / np.maximum(d, 1e-9), 0)
+    h = np.where(r == mx, bc - gc, np.where(g == mx, 2 + rc - bc, 4 + gc - rc))
+    h = np.where(nz, (h / 6) % 1, 0)
+    h = (h + GRADE_HUE_SHIFT_DEG / 360) % 1
+    s = s * (GRADE_DARK_SAT + (1 - GRADE_DARK_SAT) * np.clip(mx / GRADE_LIGHT_V, 0, 1))
+    v = mx
+    i = np.floor(h * 6).astype(int) % 6
+    f = h * 6 - np.floor(h * 6)
+    p_, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
+    out = np.select([i[..., None] == k for k in range(6)],
+                    [np.stack(c, -1) for c in ((v, t, p_), (q, v, p_), (p_, v, t), (p_, q, v), (t, p_, v), (v, p_, q))])
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--out', default=str(ROOT / 'assets/characters/lingxi/v5/textures'))
@@ -101,7 +134,7 @@ def main() -> None:
     for name in tpl.FRAMES:
         if not (SRC / f'{name}.png').exists():
             continue                                  # the build falls back to procedural colour
-        img = clean(name)
+        img = grade(clean(name))
         Image.fromarray(np.clip(img * 255 + .5, 0, 255).astype(np.uint8)).save(out / f'{name}.png')
         written += 1
     (out / 'coat_frames.json').write_text(json.dumps(
