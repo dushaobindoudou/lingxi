@@ -18,6 +18,7 @@ import { createFurWind } from './realistic-wind.ts';
 import { WHISKER, stepWhiskerSpring, whiskerMood, type WhiskerSpring, type WhiskerVec } from './realistic-whiskers.ts';
 import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
+import { rebuildLidMorphNormals, createLidFuzz } from './realistic-lid-surface.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -80,7 +81,7 @@ const FUR: Record<string, { len: number; den: number }> = {
   LX_Tail: { len: 0.060, den: 380 },
 };
 // the lids' short coat (see lidCoat)
-const LID_FUR = { len: 0.007, den: 650 };
+const LID_FUR = { len: 0.0008, den: 1250 };
 // The lids' colour: the face's round the eye, carried in to where each lid vertex lies with the eye shut - the head's
 // vertices from `from` to `to` off the eye's axis (within `depth` of its centre), averaged into sectors round it and
 // blended by inverse squared distance (softened over `softness`). One average for the whole lid drew a lid the colour of
@@ -94,13 +95,13 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
 // the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
-const LASH_WIDTH = 0.004;
+const LASH_WIDTH = 0.0028;
 // Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's
 // dome still showed through a closing lid's edge (world units)
 const LID_SOLIDIFY_OUT = 0.0022;
 // the lids' undercoat lifted to the face coat's brightness round it (the face's vertex colours are the skin under its
 // lighter strands; the lids grow none - realistic-groom LIDS): at the skin's own colour a closed lid read as a dark pad
-const LID_UNDERCOAT_LIFT = 1.5;
+const LID_UNDERCOAT_LIFT = 1.45;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
 // Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
 // cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need. At .28 the desktop cat
@@ -255,16 +256,16 @@ const COAT_GRADE = `
 // line rides the face as the lips and corners move. The head mesh is too sparse there to carry it as vertex colour -
 // painted, it broke up into ragged dark triangles, a crack from the nose down. (Traced off LX_LipUpper's rim it was a
 // ω - out, then up to the corners - a cartoon smile; a cat's mouth runs down from the philtrum.)
-const MOUTH_CURVE: [number, number][] = [[0, 0.4465], [0.0030, 0.4449], [0.0060, 0.4432], [0.0090, 0.4417], [0.0120, 0.4405],
-  [0.0150, 0.4397]];
-const PHILTRUM: [[number, number], [number, number]] = [[0, 0.4465], [0, 0.4690]];
+const MOUTH_CURVE: [number, number][] = [[0, 0.4465], [0.0020, 0.4458], [0.0050, 0.4442], [0.0080, 0.4425], [0.0115, 0.4412],
+  [0.0145, 0.4406]];
+const PHILTRUM: [[number, number], [number, number]] = [[0, 0.4465], [0, 0.4670]];
 // half-widths (model units; never under ~a pixel), the mouth only on the face's front (rest z), its colour, how dark
 // the line and the philtrum are drawn, and where the line fades out toward its ends (|x|): a cat's mouth has no
 // marked corners, it trails off under the whisker pads. The philtrum is a faint groove, its coat not parted (parted,
 // the bare undercoat down the middle read as a crack from the nose to the mouth).
 const MOUTH = {
-  width: 0.0007, philtrumWidth: 0.0004, frontFrom: 0.425, frontFull: 0.44, colour: [0.22, 0.14, 0.13],
-  line: 0.9, philtrum: 0.4, fadeFrom: 0.009, fadeTo: 0.016,
+  width: 0.0006, philtrumWidth: 0.0003, frontFrom: 0.425, frontFull: 0.44, colour: [0.22, 0.14, 0.13],
+  line: 0.84, philtrum: 0.28, fadeFrom: 0.009, fadeTo: 0.016,
 } as const;
 const glslVec2 = ([x, y]: [number, number]) => `vec2(${x.toFixed(5)}, ${y.toFixed(5)})`;
 const MOUTH_GLSL = `
@@ -530,6 +531,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let faceRig: FaceRig | null = null;
   let faceSpec: FaceSpec | null = null;
   const faceProblems: string[] = [];
+  const eyeOcclusion: { surface: THREE.Object3D; lid: THREE.Mesh }[] = [];
   let heldExpression: { name: string; until: number } | null = null;
   let faceName = '';
   let faceTarget: Record<string, number> = {};
@@ -728,8 +730,12 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
               vec2 md = mouthDistance(vRest);
               float lipW = max(${MOUTH.width}, fwidth(md.x) * 0.75), philW = max(${MOUTH.philtrumWidth}, fwidth(md.y) * 0.6);
               float ends = 1.0 - smoothstep(${MOUTH.fadeFrom}, ${MOUTH.fadeTo}, abs(vRest.x));
-              float line = max((1.0 - smoothstep(lipW * 0.5, lipW * 1.5, md.x)) * ends, ${MOUTH.philtrum} * (1.0 - smoothstep(philW * 0.5, philW * 1.5, md.y)));
-              float crease = 1.0 - smoothstep(0.0, 0.0035, min(md.x, md.y));
+              // The nose groove blends into the upper lip, with no dark cap at the nose or hard Y-shaped junction.
+              float philFade = smoothstep(0.4455, 0.4500, vRest.y) * (1.0 - smoothstep(0.4620, 0.4685, vRest.y));
+              float lipLine = (1.0 - smoothstep(lipW * 0.5, lipW * 1.5, md.x)) * ends;
+              float philLine = ${MOUTH.philtrum} * (1.0 - smoothstep(philW * 0.5, philW * 1.5, md.y)) * philFade;
+              float line = max(lipLine, philLine);
+              float crease = max((1.0 - smoothstep(0.0, 0.0025, md.x)) * ends, 0.45 * (1.0 - smoothstep(0.0, 0.0018, md.y)) * philFade);
               diffuseColor.rgb *= 1.0 - 0.16 * crease * front;
               diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${MOUTH.colour.join(', ')}), ${MOUTH.line} * line * front);
             }`)
@@ -739,7 +745,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             outgoingLight += uRim * pow(1.0 - ndv, 2.2) * uShell * 0.28;
             #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v5' : underCurves ? 'realcat-fur-shell-under-curves-v3' : 'realcat-fur-shell-opaque-v7');
+    m.customProgramCacheKey = () => (solid ? 'realcat-fur-undercoat-v6' : underCurves ? 'realcat-fur-shell-under-curves-v4' : 'realcat-fur-shell-opaque-v8');
     shellMaterials.push(m);
     return m;
   }
@@ -1198,6 +1204,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const eyes = lidMeshes.length ? eyeFrames(root, lidMeshes[0]) : null;
     lidTuckGlsl = lidTuck(eyes);
     if (eyes) for (const lid of lidMeshes) raiseShutLid(lid, eyes[/\.L$/.test((lid.userData.name as string | undefined) ?? '') ? 0 : 1]);
+    for (const lid of lidMeshes) rebuildLidMorphNormals(lid.geometry);
+    root.traverse(surface => {
+      const name = (surface.userData.name as string | undefined) ?? surface.name;
+      const side = /^LX_(?:Eye|Cornea)\.([LR])$/.exec(name)?.[1];
+      const lid = side && lidMeshes.find(mesh => ((mesh.userData.name as string | undefined) ?? mesh.name) === `LX_LidUpper.${side}`);
+      if (lid) eyeOcclusion.push({ surface, lid });
+    });
     const head = root.getObjectByName('LX_Head') as THREE.Mesh | undefined;
     if (head) {
       cleanMouthPaint(head, groomAsset);
@@ -1307,7 +1320,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           sh.fragmentShader = 'varying vec3 vLidRest;\n' + lidTuckGlsl + '\n' + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
             if (lidShown(vLidRest) <= fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453)) discard;`);
         };
-        s.customProgramCacheKey = () => (lid ? 'realcat-lid-skin-v1' : 'realcat-skin');
+        s.customProgramCacheKey = () => (lid ? 'realcat-lid-skin-v2' : 'realcat-skin');
         ownedMaterials.push(s);
         m.material = s;
       } else if (mat?.isMaterial) {
@@ -1369,15 +1382,20 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         base.parent!.add(s);
       }
     }
-    // With the original groom the lids grow the same opaque undercoat as the face round them, under their own strands:
-    // bare, a closed lid was a smooth flat brown disc, cut off where it met the face's undercoat - a patch over the eye.
-    // Same shading as the face's (the undercoat's reach), just short.
+    // A short stochastic coat covers the whole lid. The original groom's regular rows are omitted; solid shells
+    // alone left a smooth brown pad. Fine stranded shells break up that surface and blend its rim into the face.
+    for (const lid of lidFur) {
+      const frames = eyeFrames(root, lid);
+      const side = /\.L$/.test((lid.userData.name as string | undefined) ?? '') ? 0 : 1;
+      const fuzz = createLidFuzz(lid, 1100, frames?.[side].centre);
+      ownedMaterials.push(fuzz.material as THREE.Material);
+      lid.parent!.add(fuzz);
+    }
     const lidLayers = groom ? LID_UNDERCOAT_LAYERS : Math.ceil(shellCount / 2);
     for (const lid of lidFur) {
       for (let i = 1; i <= lidLayers; i++) {
-        const s = new THREE.SkinnedMesh(lid.geometry, groom
-          ? shellMaterial(LID_FUR.len / UNDERCOAT_REACH, LID_FUR.den, UNDERCOAT_REACH * i / lidLayers, true, true, true)
-          : shellMaterial(LID_FUR.len, LID_FUR.den, i / lidLayers, false, false, true));
+        const s = new THREE.SkinnedMesh(lid.geometry,
+          shellMaterial(LID_FUR.len, LID_FUR.den, i / lidLayers, false, false, true));
         s.bind(lid.skeleton, lid.bindMatrix);
         // the same influences array: a blink closes the lid's coat with it
         s.morphTargetInfluences = lid.morphTargetInfluences;
@@ -2337,6 +2355,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
             faceRig.apply(blinking, clipLids * (1 - eyelid));
           } else faceRig.apply(faceNow, clipLids);
         }
+      }
+      // A fully closed eye occludes the globe and its reflection. They must not glint through the eyelid seam.
+      for (const { surface, lid } of eyeOcclusion) {
+        const blink = lid.morphTargetDictionary?.Blink;
+        surface.visible = blink == null || (lid.morphTargetInfluences?.[blink] ?? 0) < 0.98;
       }
       if (jawBone) {
         const open = 2 * Math.acos(Math.min(1, Math.abs(jawBone.quaternion.dot(jawRest))));
