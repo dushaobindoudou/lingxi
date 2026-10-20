@@ -27,6 +27,7 @@ import { digHead, digPaw, POTTY_DIG, POTTY_SQUAT, smooth01 } from './realistic-p
 import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 import { createNeckBlend, neckShellScale } from './realistic-neck.ts';
+import { CONTACT_SHADOW, bodyContactShadow, pawContactShadow } from './realistic-shadow.ts';
 
 export interface RealisticRendererOptions {
   /** URL of the exported GLB. */
@@ -403,9 +404,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   {
     const g = shadowCanvas.getContext('2d')!;
     const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    grad.addColorStop(0, 'rgba(70,52,40,0.42)');
-    grad.addColorStop(0.55, 'rgba(70,52,40,0.18)');
-    grad.addColorStop(1, 'rgba(70,52,40,0)');
+    grad.addColorStop(0, 'rgba(35,29,26,0.64)');
+    grad.addColorStop(0.55, 'rgba(35,29,26,0.22)');
+    grad.addColorStop(1, 'rgba(35,29,26,0)');
     g.fillStyle = grad;
     g.fillRect(0, 0, 128, 128);
   }
@@ -417,6 +418,24 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   shadow.rotation.x = -Math.PI / 2;
   shadow.renderOrder = -1;
   scene.add(shadow);
+  const shadowPlane = shadow.geometry;
+  const pawNames = ['FrontPawL', 'FrontPawR', 'RearPawL', 'RearPawR'];
+  const pawBones: (THREE.Bone | undefined)[] = [];
+  const pawPoint = new THREE.Vector3();
+  const groundAxis = new THREE.Vector3(0, 1, 0);
+  const flatPlane = shadow.quaternion.clone();
+  // Reuse the body's soft radial texture: four small quads add contact without sampling a shadow map.
+  const pawShadows = pawNames.map(() => {
+    const material = new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false, toneMapped: false });
+    const mesh = new THREE.Mesh(shadowPlane, material);
+    mesh.quaternion.copy(flatPlane);
+    mesh.renderOrder = -0.5;
+    mesh.visible = false;
+    scene.add(mesh);
+    return mesh;
+  });
+  // The existing shadow geometry is disposed with the renderer; its four private materials follow it.
+  shadowPlane.addEventListener('dispose', () => pawShadows.forEach((paw) => (paw.material as THREE.Material).dispose()));
 
   // --- the cat ----------------------------------------------------------------------------
   const catRoot = new THREE.Group();
@@ -2370,16 +2389,6 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       // --- placement and facing (as renderer.ts) ---
       const stand = screenToWorld(state.position.x, state.position.y, 0);
       catRoot.position.set(stand.x, 0, stand.z);
-      shadow.position.copy(screenToWorld(state.position.x, state.position.y, 0.004));
-      // under the body, not the paws' anchor: sitting or lying the body moves back over the ground, and a contact
-      // shadow left at the paws made the cat float above it
-      if (pelvisBone && chestBone) {
-        catRoot.updateMatrixWorld(true);
-        const body = pelvisBone.getWorldPosition(bodyCentre).add(chestBone.getWorldPosition(bodyPoint)).multiplyScalar(0.5);
-        shadow.position.x = body.x; shadow.position.z = body.z;
-      }
-      const spread = TARGET_HEIGHT * (performanceScale ?? modelScale) * 0.95;
-      shadow.scale.set(spread, spread * 0.62, 1);
       // the key light and its shadow frustum ride with the cat, sized to it
       const reach = TARGET_HEIGHT * (performanceScale ?? modelScale) * 1.4;
       key.target.position.set(stand.x, 0, stand.z);
@@ -2396,6 +2405,37 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       overlayPotty(deltaSeconds);
       overlayStage(deltaSeconds);
       overlayPet(deltaSeconds, moving || pivoting || !!oneShot || !!staged || currentName === 'Walk' || currentName === 'Run');
+
+      // Read the final pose, after locomotion and touch overlays, so each patch follows the sole that is drawn.
+      catRoot.updateMatrixWorld(true);
+      const shadowScale = TARGET_HEIGHT * (performanceScale ?? modelScale);
+      shadow.position.set(catRoot.position.x, 0.004, catRoot.position.z);
+      if (pelvisBone && chestBone) {
+        pelvisBone.getWorldPosition(bodyCentre);
+        chestBone.getWorldPosition(bodyPoint);
+        shadow.position.x = (bodyCentre.x + bodyPoint.x) * 0.5;
+        shadow.position.z = (bodyCentre.z + bodyPoint.z) * 0.5;
+        shadow.quaternion.setFromAxisAngle(groundAxis, Math.atan2(bodyCentre.z - bodyPoint.z, bodyPoint.x - bodyCentre.x)).multiply(flatPlane);
+      }
+      const bodyHeight = pelvisBone && chestBone ? (bodyCentre.y + bodyPoint.y) * 0.5 / effectiveScale() : CONTACT_SHADOW.bodyRestY;
+      const torsoShadow = bodyContactShadow(CONTACT_SHADOW.bodyRestY - bodyHeight);
+      (shadow.material as THREE.MeshBasicMaterial).opacity = torsoShadow.opacity;
+      shadow.scale.set(shadowScale * torsoShadow.length, shadowScale * torsoShadow.width, 1);
+      if (!pawBones.length && bones.length) {
+        for (const name of pawNames) pawBones.push(bones.find((bone) => bone.name.replace(/[._]/g, '') === name));
+      }
+      for (let i = 0; i < pawShadows.length; i++) {
+        const paw = pawShadows[i], bone = pawBones[i];
+        if (!bone) { paw.visible = false; continue; }
+        bone.getWorldPosition(pawPoint);
+        const lift = Math.max(0, pawPoint.y / effectiveScale() - CONTACT_SHADOW.pawRestY[i]);
+        const contact = pawContactShadow(lift);
+        paw.visible = contact.opacity > 0.015;
+        if (!paw.visible) continue;
+        paw.position.set(pawPoint.x, 0.005, pawPoint.z);
+        paw.scale.set(shadowScale * CONTACT_SHADOW.pawSize[0] * contact.spread, shadowScale * CONTACT_SHADOW.pawSize[1] * contact.spread, 1);
+        (paw.material as THREE.MeshBasicMaterial).opacity = contact.opacity;
+      }
 
       updateToy(state, deltaSeconds);
       if (contextLost) return;
