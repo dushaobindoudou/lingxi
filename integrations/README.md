@@ -39,6 +39,10 @@ codex plugin add lingxi@lingxi
 /plugin install lingxi@lingxi
 # 要 MCP 和真实图标再跑一次：<repo>/integrations/hosts/workbuddy/install.sh
 
+# WorkBuddy 技能市场：无需 shell 命令，在市场里搜「灵犀桌宠」直接安装。
+# 只带 skill（模型驱动猫），不带 hooks/MCP；要完整接入再跑上面那条 install.sh。
+# 发布包与流程：<repo>/integrations/hosts/workbuddy/marketplace/PUBLISH-GUIDE.md
+
 # Cursor：用户级 hooks + MCP + skill。不改机器级署名：
 <repo>/integrations/hosts/cursor/install.sh
 

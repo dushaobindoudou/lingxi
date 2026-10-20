@@ -137,6 +137,16 @@ emit 那条命令的后半段——后者以 `exec` 结尾，同一条 shell 里
   warning 监听器也拦不住，脚本内部压不掉。python 的 `sqlite3` 没这问题，所以默认路径根本
   不碰 node:sqlite。（hook 命令仍带 `--no-warnings`，那是给兜底路径用的。）
 
+### 另一条路：WorkBuddy 技能市场
+
+不想碰 shell 的用户可以在 WorkBuddy 左侧「专家 · 技能 · 连接器 → 技能」里搜「灵犀桌宠」安装。
+那份是**纯技能包**（`marketplace/lingxi-desktop-cat/`）：只有 `SKILL.md` + 脚本 + 参考资料，
+**不带 hooks、不带 MCP、也不装应用**——没装灵犀时它会给出下载地址，装好后立刻生效。
+
+- 打包与校验：`marketplace/pack.sh`
+- 发布流程、详情页文案、审核要点：`marketplace/PUBLISH-GUIDE.md`
+- 和插件的关系：技能只调 CLI，hooks 只由本目录的安装器或 `plugin/` 写，**不会双发**
+
 ### 替代路径：marketplace 插件包
 
 不想跑安装器的用户可以走 marketplace 安装自包含插件包（`plugin/`，含 hooks + 两份 skill）：
