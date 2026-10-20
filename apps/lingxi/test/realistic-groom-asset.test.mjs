@@ -46,7 +46,11 @@ test('original groom is paired with this model and follows its animated skeleton
     const base = model.scene.getObjectByName('LX_Body');
     const groom = createGroom({ spec, bytes }, base);
     groom.meshes.forEach(m => base.parent.add(m));
-    assert.equal(groom.meshes.reduce((sum, m) => sum + m.geometry.getAttribute('position').count / 12, 0), spec.strands);
+    // every part's strands but the lids' (not drawn: a closed lid is skin and undercoat in the face's colour)
+    const drawn = spec.parts.filter((p) => !/_LX_Lid/.test(p.name)).reduce((sum, p) => sum + p.strands, 0);
+    assert.ok(drawn < spec.strands, 'the groom still carries lid strands to leave out');
+    assert.equal(groom.meshes.reduce((sum, m) => sum + m.geometry.getAttribute('position').count / 12, 0), drawn);
+    assert.ok(groom.meshes.every((m) => !/_LX_Lid/.test(m.name)));
     const mixer = new THREE.AnimationMixer(model.scene);
     const walk = model.animations.find(a => a.name === 'Walk');
     mixer.clipAction(walk).play();
@@ -96,10 +100,7 @@ test('original groom is paired with this model and follows its animated skeleton
     groom.setDensity(0.3);
     for (const mesh of groom.meshes) {
       const strands = mesh.userData.groomStrands;
-      // (the lids' coat is drawn fuller than the rest - thinned with it, their undercoat's rows showed as rings round a
-      // closed eye)
-      const share = /_LX_Lid/.test(mesh.name) ? 0.65 : 0.3;
-      assert.equal(mesh.geometry.drawRange.count, Math.max(1, Math.round(strands * share)) * 30, mesh.name);
+      assert.equal(mesh.geometry.drawRange.count, Math.max(1, Math.round(strands * 0.3)) * 30, mesh.name);
       assert.equal(new Set(mesh.userData.groomOrder).size, strands, `${mesh.name}: the shuffle must keep every strand`);
     }
     assert.equal(groom.density, 0.3);

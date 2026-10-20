@@ -40,9 +40,6 @@ const GROOM = {
   tt: { exp: '5.0', strength: '1.6' },
   // the room the cat stands in (the other materials' RoomEnvironment at 0.5): soft light from everywhere
   ambient: '0.32',
-  lidShine: '0.15',
-  // the lids' rows of strands lie about this far apart (model units)
-  lidRowSpacing: '0.012',
   // How far a tip trails the body's motion (see the coat's inertia in createGroom): this share of where it would be
   // with the skeleton's sprung copy, at most this share of the strand's length.
   lagGain: '0.9', lagMax: '0.75',
@@ -60,7 +57,7 @@ const GROOM = {
 export const GROOM_CHILDREN = 2;
 // The coat's inertia (simulate): Hz, damping ratio, and a jump (model units) that is a teleport, not a motion
 const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
-// The coat a touch shorter than the Blender groom (lids as groomed, the tail its own): longer (1.15-1.25, tried to make
+// The coat a touch shorter than the Blender groom (the tail its own): longer (1.15-1.25, tried to make
 // the coat read at desktop size) the strands stood out one by one, long and sparse; shorter and drawn denser (the
 // renderer's GROOM_MIN_DENSITY) it is a thick, soft coat. At .95 it was still too long and too few (the user, by eye on
 // the desktop): frizzy at the outline, single hairs standing off the back; .85 and drawn denser it is a close, soft coat
@@ -68,23 +65,19 @@ const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
 const COAT_LENGTH = 0.85;
 const FACE_LENGTH = 0.9;
 const FACE = /_LX_Head$/;
-const KEEP_LENGTH = /_LX_Lid/;
 // The tail's own coat: shorter than groomed. At its groomed length (kept when the body's grew) it was a bottle brush
 // twice the kitten's body thickness; a kitten's tail is slim, its fur short and soft.
 const TAIL_LENGTH = 0.62;
 const TAIL = /_LX_(Tail|TailTip)/;
 /** How much of its groomed length a part's strands keep (see COAT_LENGTH). */
 export function coatLength(partName: string) {
-  return KEEP_LENGTH.test(partName) ? 1 : TAIL.test(partName) ? TAIL_LENGTH : FACE.test(partName) ? FACE_LENGTH : COAT_LENGTH;
+  return TAIL.test(partName) ? TAIL_LENGTH : FACE.test(partName) ? FACE_LENGTH : COAT_LENGTH;
 }
-// The lids' strands lie flat in rows along the lid; at their own width the rows showed as lines of lit hair with the
-// undercoat dark between them, ring after ring round a closed eye, so they were drawn 8x wide - and veiled, and shaded
-// even from root to tip (see the fragment shader) - into one coat: a pale felt pad. The rings came as much from the
-// lids' evened colours and their sunken shut pose, both gone (continueCoatOntoLids, LID_DOME); a little wider than a
-// hair, shaded as the face's coat is, a closed lid now reads as short fur with its lash line.
-const LID_STRAND_WIDTH = 2;
-// how much more of the lids' coat than of the rest is drawn (see setDensity)
-const LID_DENSITY_LEAD = 0.35;
+// The lids' own strands (groom.bin's _LX_Lid parts) are not drawn. Rooted in rows across a lid a centimetre wide, they
+// drew a closed eye as rings of bands; widened, veiled and shaded even to hide that, as a pale felt pad; as plain fine
+// hairs, as stripes again. A closed lid is its skin and short undercoat in the face's colour (the renderer's lidCoat),
+// with the face's coat combed in over its edge (EYE_LEAN).
+const LIDS = /_LX_Lid/;
 // A closed eye's lids were a pad with an edge round it: the face's coat stopped at the eye's rim, where its strands
 // (some 20 mm long there) are groomed away from the eye. Closing, the face's coat round the eye is combed in over the
 // lids instead - each strand laid from its root toward the eye's middle, along the closed lid's dome - leaving the lash
@@ -101,22 +94,15 @@ const EYE_LEAN = {
 // 7-8 mm at their edge, 40-48 mm off it, where the face round them stands at 17-24 mm - the hollow's wall was the hard
 // edge round a closed eye, a pad sunk in the face. Shut, the lids are lifted onto this dome instead: `crown` in front of
 // the eye's centre on its axis, falling to `edge` (level with the face) at `rim` off it, lifted no more from `rim` to
-// `fade` (where LID_TUCK has them gone). On the Blink key only, the lids' skin and undercoat (the renderer) and their
-// strands (createGroom) alike: an open eye is untouched, and a closing lid rises onto the dome as it shuts.
+// `fade` (where LID_TUCK has them gone). On the Blink key only (the renderer's raiseShutLid): an open eye is untouched,
+// and a closing lid rises onto the dome as it shuts.
 export const LID_DOME = { crown: 0.027, edge: 0.02, rim: 0.044, fade: 0.05 };
 export interface EyeFrame { centre: readonly [number, number, number]; axis: readonly [number, number, number] }
-// The lids' strands are rooted on lids.glb's lid surface, the skin drawn this much further out (the renderer's
-// LID_SOLIDIFY_OUT): lifted as though on the skin, they keep under it - lifted onto the dome themselves, they rose over
-// the bare lash line and a shut eye lost its one dark line.
-export const LID_STRAND_UNDER = 0.0022;
-/**
- * How far out along the eye's axis a lid point, where it lies shut, is lifted onto LID_DOME (rest space); `under`: how
- * far beneath the lid's skin the point lies.
- */
-export function shutLidLift(x: number, y: number, z: number, eye: EyeFrame, under = 0): number {
+/** How far out along the eye's axis a lid point, where it lies shut, is lifted onto LID_DOME (rest space). */
+export function shutLidLift(x: number, y: number, z: number, eye: EyeFrame): number {
   const d = [x - eye.centre[0], y - eye.centre[1], z - eye.centre[2]];
   const al = Math.hypot(eye.axis[0], eye.axis[1], eye.axis[2]) || 1;
-  const depth = (d[0] * eye.axis[0] + d[1] * eye.axis[1] + d[2] * eye.axis[2]) / al + under;
+  const depth = (d[0] * eye.axis[0] + d[1] * eye.axis[1] + d[2] * eye.axis[2]) / al;
   const r = Math.sqrt(Math.max(0, d[0] * d[0] + d[1] * d[1] + d[2] * d[2] - depth * depth));
   const dome = LID_DOME.crown - (LID_DOME.crown - LID_DOME.edge) * (r / LID_DOME.rim) ** 2;
   return Math.max(0, dome - depth) * (1 - THREE.MathUtils.smoothstep(r, LID_DOME.rim, LID_DOME.fade));
@@ -135,7 +121,7 @@ attribute vec2 groomLean;      // a face strand round an eye: weight (negative r
 uniform vec3 uGroomEyeL, uGroomEyeR, uGroomEyeAxisL, uGroomEyeAxisR; // the eyes in the rest pose (createGroom options.eyes)
 uniform vec2 uGroomShut;       // how closed each eye is (left, right)
 attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
-attribute vec3 groomStrand; // length (model units), random 0..1, 1 on the lids' coat
+attribute vec3 groomStrand; // length (model units), random 0..1, the part's root spacing
 uniform float uGroomTime, uGroomHeight, uGroomGust;
 uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axes
 uniform vec4 uGroomStroke;  // pointer (NDC xy), radius (view units), bend
@@ -149,7 +135,7 @@ mat4 groomLagMatrix(const in float i) {
   return mat4(texelFetch(uGroomLagBones, ivec2(x, y), 0), texelFetch(uGroomLagBones, ivec2(x + 1, y), 0),
     texelFetch(uGroomLagBones, ivec2(x + 2, y), 0), texelFetch(uGroomLagBones, ivec2(x + 3, y), 0));
 }
-varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomChildEnd;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomChildEnd;
 varying vec3 vGroomT, vGroomN, vGroomColor, vGroomRest;
 #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
   struct DirectionalLightShadow { float shadowIntensity; float shadowBias; float shadowNormalBias; float shadowRadius; vec2 shadowMapSize; };
@@ -172,16 +158,8 @@ void main() {
   #include <defaultnormal_vertex>
   #include <begin_vertex>
   #include <morphtarget_vertex>
-  // groomStrand.z: the part's root spacing, negative on the lids' coat
-  float spacing = abs(groomStrand.z), random = groomStrand.y;
+  float spacing = groomStrand.z, random = groomStrand.y;
   vGroomChildEnd = 2.0;
-  if (groomStrand.z < 0.0) {
-    // the lids' strands are rooted in rows across the lid, each row's tips ending short of the next row's roots: each
-    // moved along itself by up to a row's spacing, or the gaps read as rings round a closed eye (not across: moved
-    // sideways they strayed over the lash line)
-    vec3 along = normalize(groomTangent + vec3(1e-5, 0.0, 0.0));
-    transformed += along * (fract(random * 31.7) - 0.5) * ${GROOM.lidRowSpacing};
-  }
   if (uGroomChild > 0.5) {
     // a child hair: the parent moved across the skin (rest space, before skinning, so it rides the body the same way)
     vec3 h = fract(sin(vec3(12.9898, 78.233, 37.719) * (random * 57.3 + uGroomChild * 11.17)) * 43758.5453);
@@ -267,7 +245,6 @@ void main() {
   vGroomN = N;
   vGroomAlong = along;
   vGroomRandom = random;
-  vGroomLid = step(groomStrand.z, 0.0);
   vec2 across = vec2(-T.y, T.x);
   across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
   float radiusView = groomData.y * viewScale;
@@ -309,16 +286,14 @@ const groomFragment = (part: string) => /* glsl */ `
 #include <common>
 #include <lights_pars_begin>
 uniform float uGroomStack;
-varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomLid, vGroomChildEnd;
+varying float vGroomEdge, vGroomCoverage, vGroomAlong, vGroomRandom, vGroomShadow, vGroomChildEnd;
 varying vec3 vGroomT, vGroomN, vGroomColor, vGroomRest;
 ${part}
 float hairLobe(vec3 T, vec3 H, float e) { float d = dot(T, H); return pow(sqrt(max(0.0, 1.0 - d * d)), e); }
 void main() {
   float alpha = vGroomCoverage * (1.0 - smoothstep(0.65, 1.0, abs(vGroomEdge)));
-  // a child hair ends at its own length; so does each of the lids' strands, whose tips otherwise end row by row in
-  // lines round a closed eye
-  float end = mix(vGroomChildEnd, 0.55 + 0.45 * fract(vGroomRandom * 13.7), vGroomLid);
-  alpha *= 1.0 - smoothstep(end - 0.12, end, sqrt(vGroomAlong));
+  // a child hair ends at its own length
+  alpha *= 1.0 - smoothstep(vGroomChildEnd - 0.12, vGroomChildEnd, sqrt(vGroomAlong));
   // each strand drawn stands for uGroomStack of them (see setDensity): the opacity of that many overlapping
   alpha = 1.0 - pow(1.0 - min(alpha, 0.999), uGroomStack);
   vec3 base = pow(max(vGroomColor, vec3(1e-4)), vec3(${GROOM.absorption}));
@@ -367,9 +342,6 @@ void main() {
   #if NUM_HEMI_LIGHTS > 0
     ambient += getHemisphereLightIrradiance(hemisphereLights[0], N);
   #endif
-  // the lids' strands lie flat, facing the light all together: at the coat's shine every one of them caught it, a white
-  // sparkle over a closed eye
-  shine *= mix(1.0, ${GROOM.lidShine}, vGroomLid);
   vec3 color = base * (diffuse + ambient) * RECIPROCAL_PI * occlusion + shine * RECIPROCAL_PI * t;
   gl_FragColor = vec4(color, alpha);
   #include <tonemapping_fragment>
@@ -449,17 +421,17 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     return index;
   });
   const floats = (b: Block) => new Float32Array(asset.bytes, b.offset, b.count);
-  const strandsOf = (part: GroomPart) => ({ positions: floats(part.positions), colors: floats(part.colors), normals: floats(part.normals), strands: part.strands, points: part.points });
-  const faceCoat = asset.spec.parts.find((part) => part.name === 'LX_Fur_guard_LX_Head');
-  const lidColours = faceCoat ? continueCoatOntoLids(strandsOf(faceCoat), asset.spec.parts.filter((part) => /_LX_Lid/.test(part.name)).map((part) => ({
-    ...strandsOf(part), name: part.name, blink: part.morphs?.Blink ? floats(part.morphs.Blink) : null,
-  }))) : new Map<string, Float32Array>();
   // the upper lids' shape keys, for how closed each eye is (EYE_LEAN)
   const shutters: { left: boolean; influences: number[]; keys: Record<string, number> }[] = [];
+  root.traverse((o) => {
+    const upper = /^LX_LidUpper\.([LR])$/.exec(((o.userData.name as string | undefined) ?? '') as string);
+    const lid = o as THREE.Mesh;
+    if (upper && lid.morphTargetInfluences && lid.morphTargetDictionary) shutters.push({ left: upper[1] === 'L', influences: lid.morphTargetInfluences, keys: lid.morphTargetDictionary });
+  });
   const eyeShut = [0, 0];
-  const meshes = asset.spec.parts.map((part) => {
+  const meshes = asset.spec.parts.filter((part) => !LIDS.test(part.name)).map((part) => {
     const source = floats(part.positions), radii = floats(part.radii);
-    const colors = /_LX_Lid/.test(part.name) ? lidColours.get(part.name) ?? evened(floats(part.colors), part.points, LID_COLOUR_EVENING) : floats(part.colors);
+    const colors = floats(part.colors);
     const normals = floats(part.normals), weights = floats(part.weights);
     const joints = new Uint16Array(asset.bytes, part.joints.offset, part.joints.count);
     const count = part.strands * part.points * 2;
@@ -500,7 +472,6 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     }
     const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
     const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
-    const lidCoat = /_LX_Lid/.test(part.name) ? 1 : 0;
     const pawLength = part.name.includes('_under_') ? 0.006 : 0.012;
     const spacing = rootSpacing(source, part.strands, part.points);
     const shorten = coatLength(part.name);
@@ -544,8 +515,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
             normal[v * 3 + c] = normals[strand * 3 + c];
             tangent[v * 3 + c] = source[after + c] - source[before + c];
           }
-          data.set([side ? 1 : -1, radii[p] * part.widthCompensation * (lidCoat ? LID_STRAND_WIDTH : 1), (point / (part.points - 1)) ** 2, phase], v * 4);
-          strandData.set([strandLength, random, lidCoat ? -spacing : spacing], v * 3);
+          data.set([side ? 1 : -1, radii[p] * part.widthCompensation, (point / (part.points - 1)) ** 2, phase], v * 4);
+          strandData.set([strandLength, random, spacing], v * 3);
           for (let c = 0; c < 4; c++) {
             const offset = (part.skinPerPoint ? p : strand) * 4 + c;
             skinIndex[v * 4 + c] = jointMap[joints[offset]];
@@ -577,18 +548,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       geometry.morphTargetsRelative = true;
       geometry.morphAttributes.position = [];
       for (const [name, index] of Object.entries(lid.morphTargetDictionary)) {
-        let delta = part.morphs?.[name] ? floats(part.morphs[name]) : null;
-        // shutting, onto the dome (LID_DOME), as the lid's own skin is in the renderer
-        const eye = eyes && name === 'Blink' ? eyes[/\.L$/.test(part.morphTarget ?? '') ? 0 : 1] : null;
-        if (delta && eye) {
-          const al = Math.hypot(eye.axis[0], eye.axis[1], eye.axis[2]) || 1;
-          delta = delta.slice();
-          for (let s = 0; s < part.strands; s++) {
-            const r = s * part.points * 3;
-            const lift = shutLidLift(source[r] + delta[s * 3], source[r + 1] + delta[s * 3 + 1], source[r + 2] + delta[s * 3 + 2], eye, LID_STRAND_UNDER) / al;
-            for (let c = 0; c < 3; c++) delta[s * 3 + c] += eye.axis[c] * lift;
-          }
-        }
+        const delta = part.morphs?.[name] ? floats(part.morphs[name]) : null;
         const values = new Float32Array(count * 3);
         if (delta) for (let v = 0; v < count; v++) {
           const strand = order[Math.floor(v / (part.points * 2))];
@@ -601,8 +561,6 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     }
     const mesh = new THREE.SkinnedMesh(geometry, material);
     mesh.name = part.name;
-    const upper = /LidUpper\.([LR])$/.exec(part.morphTarget ?? '');
-    if (lid?.morphTargetInfluences && upper) shutters.push({ left: upper[1] === 'L', influences: lid.morphTargetInfluences, keys: lid.morphTargetDictionary! });
     if (lid) {
       mesh.morphTargetInfluences = lid.morphTargetInfluences;
       mesh.morphTargetDictionary = lid.morphTargetDictionary;
@@ -740,10 +698,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         mesh.visible = share > 0;
         if (share > 0) mesh.geometry.setDrawRange(0, Math.max(1, Math.round(total * Math.min(1, share))) * (mesh.userData.groomIndicesPerStrand as number));
       };
-      // the lids' coat drawn fuller than the rest: thinned with it, the rows of the undercoat under it showed through as
-      // rings round a closed eye. Not whole at desktop size, where a lid is a few pixels and its 68k strands - a fifth of
-      // the coat's - cost more than they show
-      for (const mesh of meshes) drawn(mesh, /_LX_Lid/.test(mesh.name) ? Math.max(density, Math.min(1, LID_DENSITY_LEAD + density)) : density);
+      for (const mesh of meshes) drawn(mesh, density);
       children.forEach((pass, k) => { for (const mesh of pass) drawn(mesh, density - 1 - k); });
       uniforms.uGroomStack.value = 1 / Math.min(1, density);
     },
@@ -751,122 +706,6 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   };
 }
 
-// The lids' strands take their colour from the face texture under them - the tabby's dark stripes and the muzzle's
-// white side by side. Open, the lid hides them; closed, they lay round the eye as rings of dark and light bands, a
-// striped pad under the lash line. Each lid's coat is drawn this much of the way to its own average (point by point,
-// root to tip); the shader's per-strand melanin keeps it from going flat. (Only where the face round it can't be read:
-// see continueCoatOntoLids.)
-const LID_COLOUR_EVENING = 0.75;
-const LID_SHADE = 0.8;
-// Evened, though, a closed eye was a felt patch in one flat tan with a hard outline - a mask laid over the face, where
-// the review renders' closed eye is the face's own coat, stripes and all, with a dark lash line across it. So each lid
-// strand takes the coat round the eye, carried in to where it lies with the eye shut (its Blink key): the head's strands
-// in a ring just outside the lids (from this share of the lids' reach, ringWidth wide, model units, within depth of the
-// eye's plane), averaged into sectors round the eye, blended by distance (inverse, to this power, softened over
-// softness) - beside the lid's edge the coat next to it, across the lid a soft mix of the stripes that reach the eye.
-const LID_CONTINUE = { sectors: 32, ringFrom: 0.9, ringWidth: 0.012, depth: 0.03, softness: 0.004, power: 3 };
-
-interface Strands { positions: Float32Array; colors: Float32Array; normals: Float32Array; strands: number; points: number }
-/**
- * The face's coat carried onto each eye's lids (LID_CONTINUE): per lid, its strands' colours (point by point, as
- * `colors`), or none for a lid whose eye has no face coat round it. Lids are paired by their side suffix (.L / .R).
- */
-export function continueCoatOntoLids(head: Strands, lids: (Strands & { name: string; blink: Float32Array | null })[]): Map<string, Float32Array> {
-  const out = new Map<string, Float32Array>();
-  const sides = new Map<string, typeof lids>();
-  for (const lid of lids) {
-    const side = /\.([LR])$/.exec(lid.name)?.[1] ?? '';
-    sides.set(side, [...(sides.get(side) ?? []), lid]);
-  }
-  const P = head.points;
-  for (const pair of sides.values()) {
-    // each lid strand's root with the eye shut
-    const closed = pair.map((lid) => {
-      const roots = new Float32Array(lid.strands * 3);
-      for (let s = 0; s < lid.strands; s++) for (let c = 0; c < 3; c++) {
-        roots[s * 3 + c] = lid.positions[s * lid.points * 3 + c] + (lid.blink ? lid.blink[s * 3 + c] : 0);
-      }
-      return roots;
-    });
-    // the shut eye's centre, and the way it faces (the lids' strands' normals: up and down round a forward mean)
-    const centre = [0, 0, 0], axis = [0, 0, 0];
-    let n = 0;
-    pair.forEach((lid, k) => {
-      for (let s = 0; s < lid.strands; s++) for (let c = 0; c < 3; c++) { centre[c] += closed[k][s * 3 + c]; axis[c] += lid.normals[s * 3 + c]; }
-      n += lid.strands;
-    });
-    if (!n) continue;
-    for (let c = 0; c < 3; c++) centre[c] /= n;
-    const al = Math.hypot(axis[0], axis[1], axis[2]) || 1;
-    for (let c = 0; c < 3; c++) axis[c] /= al;
-    // two directions across the eye, for the sectors' angles
-    const u = Math.abs(axis[1]) < 0.9 ? cross(axis, [0, 1, 0]) : cross(axis, [1, 0, 0]);
-    const ul = Math.hypot(u[0], u[1], u[2]);
-    for (let c = 0; c < 3; c++) u[c] /= ul;
-    const v = cross(axis, u);
-    const across = (x: number, y: number, z: number) => {
-      const q = [x - centre[0], y - centre[1], z - centre[2]];
-      const a = q[0] * u[0] + q[1] * u[1] + q[2] * u[2], b = q[0] * v[0] + q[1] * v[1] + q[2] * v[2];
-      return { depth: q[0] * axis[0] + q[1] * axis[1] + q[2] * axis[2], radius: Math.hypot(a, b), angle: Math.atan2(b, a) };
-    };
-    // how far out the shut lids reach, most of their strands within it
-    const reach: number[] = [];
-    for (const roots of closed) for (let s = 0; s < roots.length / 3; s++) reach.push(across(roots[s * 3], roots[s * 3 + 1], roots[s * 3 + 2]).radius);
-    reach.sort((a, b) => a - b);
-    const from = reach[Math.floor((reach.length - 1) * LID_CONTINUE.ringFrom)];
-    const K = LID_CONTINUE.sectors;
-    const where = new Float64Array(K * 3), colour = new Float64Array(K * P * 3), count = new Float64Array(K);
-    for (let s = 0; s < head.strands; s++) {
-      const r = s * P * 3;
-      const at = across(head.positions[r], head.positions[r + 1], head.positions[r + 2]);
-      if (at.radius < from || at.radius > from + LID_CONTINUE.ringWidth || Math.abs(at.depth) > LID_CONTINUE.depth) continue;
-      const k = Math.min(K - 1, Math.floor((at.angle / (2 * Math.PI) + 0.5) * K));
-      for (let c = 0; c < 3; c++) where[k * 3 + c] += head.positions[r + c];
-      for (let i = 0; i < P * 3; i++) colour[k * P * 3 + i] += head.colors[r + i];
-      count[k]++;
-    }
-    const filled = [...count.keys()].filter((k) => count[k] > 0);
-    if (filled.length < K / 2) continue;
-    for (const k of filled) {
-      for (let c = 0; c < 3; c++) where[k * 3 + c] /= count[k];
-      for (let i = 0; i < P * 3; i++) colour[k * P * 3 + i] /= count[k];
-    }
-    pair.forEach((lid, k) => {
-      const roots = closed[k];
-      const colors = new Float32Array(lid.strands * lid.points * 3);
-      const mix = new Float64Array(P * 3);
-      for (let s = 0; s < lid.strands; s++) {
-        mix.fill(0);
-        let total = 0;
-        for (const j of filled) {
-          const d2 = (roots[s * 3] - where[j * 3]) ** 2 + (roots[s * 3 + 1] - where[j * 3 + 1]) ** 2 + (roots[s * 3 + 2] - where[j * 3 + 2]) ** 2;
-          const w = (d2 + LID_CONTINUE.softness ** 2) ** (-LID_CONTINUE.power / 2);
-          for (let i = 0; i < P * 3; i++) mix[i] += w * colour[j * P * 3 + i];
-          total += w;
-        }
-        // root to tip as the face's strands are (point for point where both have as many)
-        for (let p = 0; p < lid.points; p++) {
-          const at = Math.min(P - 1, Math.round(p * (P - 1) / Math.max(1, lid.points - 1)));
-          for (let c = 0; c < 3; c++) colors[(s * lid.points + p) * 3 + c] = mix[at * 3 + c] / total * LID_SHADE;
-        }
-      }
-      out.set(lid.name, colors);
-    });
-  }
-  return out;
-}
-function cross(a: number[], b: number[]) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
-
-function evened(colors: Float32Array, points: number, share: number): Float32Array {
-  const strands = colors.length / (points * 3);
-  const mean = new Float64Array(points * 3);
-  for (let i = 0; i < colors.length; i++) mean[i % (points * 3)] += colors[i] / strands;
-  const out = new Float32Array(colors.length);
-  // and a shade darker: drawn whole (setDensity), the lid's coat stacks more opaque than the thinned face coat round
-  // it, and at its own colour a closed eye read as a pale pad laid over the face
-  for (let i = 0; i < colors.length; i++) out[i] = (colors[i] + (mean[i % (points * 3)] - colors[i]) * share) * LID_SHADE;
-  return out;
-}
 
 /**
  * A part's typical distance between neighbouring roots (model units): the surface its roots cover, from the cells of a

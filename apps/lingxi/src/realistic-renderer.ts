@@ -80,9 +80,14 @@ const FUR: Record<string, { len: number; den: number }> = {
 };
 // the lids' short coat (see lidCoat)
 const LID_FUR = { len: 0.007, den: 650 };
+// The lids' colour: the face's round the eye, carried in to where each lid vertex lies with the eye shut - the head's
+// vertices from `from` to `to` off the eye's axis (within `depth` of its centre), averaged into sectors round it and
+// blended by inverse squared distance (softened over `softness`). One average for the whole lid drew a lid the colour of
+// neither the brow above it nor the cheek below.
+const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.004 };
 // The lids reach well past the eye: open, all of each lid lies in a ring 0.044-0.065 from the eye's axis, over the face's
 // own coat (the eyeball is 0.0445 in radius, the face's coat starts at 0.042-0.046), and shut, its outer part still
-// does. That ring - lid skin, undercoat and strands - was a flat brown mask round every eye, and an oval with a hard
+// does. That ring - lid skin and undercoat - was a flat brown mask round every eye, and an oval with a hard
 // edge on a closed one. Past the eye the lids give way to the face: whole within `from` of the eye's axis, gone by `to`
 // (model units). Their free edge, the lash line over the eyeball, stays.
 const LID_TUCK = { from: 0.044, to: 0.05 };
@@ -92,8 +97,8 @@ const LASH_WIDTH = 0.004;
 // Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's
 // dome still showed through a closing lid's edge (world units)
 const LID_SOLIDIFY_OUT = 0.0022;
-// the lids' undercoat lifted to their own strands' brightness: the ring average round the eye takes in the dark tabby
-// stripes, and a closed lid read as a dark pad over the eye
+// the lids' undercoat lifted to the face coat's brightness round it (the face's vertex colours are the skin under its
+// lighter strands; the lids grow none - realistic-groom LIDS): at the skin's own colour a closed lid read as a dark pad
 const LID_UNDERCOAT_LIFT = 1.5;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
 // Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
@@ -740,7 +745,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   /**
    * GLSL `float lidShown(vec3 rest)`: how much of a lid to draw at a point of its rest pose (shape keys and all) - whole
    * over the eye, gone past it (LID_TUCK), by the distance from the nearer eye's axis. The lids, face and groom share
-   * one rest space (their nodes carry no transform), so one function serves the lids' skin, undercoat and strands.
+   * one rest space (their nodes carry no transform), so one function serves the lids' skin and undercoat.
    */
   /** A lid's Blink key lifted onto the closed eye's dome (realistic-groom LID_DOME): shut, it sat in a hollow. */
   function raiseShutLid(lid: THREE.Mesh, eye: { centre: THREE.Vector3; axis: THREE.Vector3 }) {
@@ -799,22 +804,44 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const centre = eye.getWorldPosition(new THREE.Vector3());
       solidifyLid(m, centre);
       const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(eye.getWorldQuaternion(new THREE.Quaternion()));
-      const sum = [0, 0, 0];
-      let n = 0;
+      // the face round the eye, sector by sector (LID_SKIN): the head's vertices just outside the eye's hole
+      const u = new THREE.Vector3(1, 0, 0).addScaledVector(axis, -axis.x).normalize(), w = new THREE.Vector3().crossVectors(axis, u);
+      const K = LID_SKIN.sectors;
+      const where = Array.from({ length: K }, () => new THREE.Vector3()), colour = Array.from({ length: K }, () => [0, 0, 0]), count = new Array(K).fill(0);
       for (let i = 0; i < hp.count; i++) {
         v.fromBufferAttribute(hp, i).applyMatrix4(head.matrixWorld);
         radial.subVectors(v, centre);
-        radial.addScaledVector(axis, -radial.dot(axis));
+        const depth = radial.dot(axis);
+        radial.addScaledVector(axis, -depth);
         const r = radial.length();
-        if (r < 0.025 || r > 0.045 || radial.y < 0.3 * r) continue;
-        sum[0] += hc.getX(i); sum[1] += hc.getY(i); sum[2] += hc.getZ(i); n++;
+        if (r < LID_SKIN.from || r > LID_SKIN.to || Math.abs(depth) > LID_SKIN.depth) continue;
+        const k = Math.min(K - 1, Math.floor((Math.atan2(radial.dot(w), radial.dot(u)) / (2 * Math.PI) + 0.5) * K));
+        where[k].add(v);
+        colour[k][0] += hc.getX(i); colour[k][1] += hc.getY(i); colour[k][2] += hc.getZ(i);
+        count[k]++;
       }
-      if (!n) continue;
-      // the vertex colour is the skin under the coat; the shells' lit tips draw the coat ~1.4x brighter
-      for (let c = 0; c < 3; c++) sum[c] = Math.min(1, (sum[c] / n) * lift) * n;
+      const filled = [...count.keys()].filter((k) => count[k] > 0);
+      if (filled.length < K / 2) continue;
+      // the vertex colour is the skin under the coat; the face's coat over it draws lighter
+      for (const k of filled) { where[k].divideScalar(count[k]); for (let c = 0; c < 3; c++) colour[k][c] = Math.min(1, colour[k][c] / count[k] * lift); }
+      // where each lid vertex lies with the eye shut (its Blink key)
+      const blinkIndex = m.morphTargetDictionary?.Blink;
+      const blink = blinkIndex == null ? undefined : m.geometry.morphAttributes.position?.[blinkIndex];
+      const lp = m.geometry.getAttribute('position');
+      const shut = new THREE.Vector3();
       const scale = new Float32Array(lc.count);
       const fromLash = lashDistance(m, centre);
       for (let i = 0; i < lc.count; i++) {
+        shut.fromBufferAttribute(lp, i);
+        if (blink) shut.add(v.fromBufferAttribute(blink, i));
+        shut.applyMatrix4(m.matrixWorld);
+        const mixed = [0, 0, 0];
+        let total = 0;
+        for (const k of filled) {
+          const weight = 1 / (shut.distanceToSquared(where[k]) + LID_SKIN.softness ** 2);
+          for (let c = 0; c < 3; c++) mixed[c] += weight * colour[k][c];
+          total += weight;
+        }
         // the lash line by where it is - the lid's free edge, the one of its two open rims nearer the eye - not by how
         // dark it is: the lid's skin is dark in patches all over, and every dark vertex stayed bare, dark skin, which
         // showed between the rows of lid strands as rings of dark bands round a closed eye
@@ -822,7 +849,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         // Leave a narrow brown lash, but lift its nearly black source skin toward the coat to avoid a row of dark
         // polygon steps at the eye's edge. Fur still starts beyond the free edge, so a blink keeps its clear outline.
         const tint = 0.27 + 0.73 * coat;
-        lc.setXYZ(i, THREE.MathUtils.lerp(lc.getX(i), sum[0] / n, tint), THREE.MathUtils.lerp(lc.getY(i), sum[1] / n, tint), THREE.MathUtils.lerp(lc.getZ(i), sum[2] / n, tint));
+        lc.setXYZ(i, THREE.MathUtils.lerp(lc.getX(i), mixed[0] / total, tint), THREE.MathUtils.lerp(lc.getY(i), mixed[1] / total, tint), THREE.MathUtils.lerp(lc.getZ(i), mixed[2] / total, tint));
         scale[i] = coat;
       }
       lc.needsUpdate = true;
@@ -1307,13 +1334,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         neckBlend,
         // the muzzle's hairs part along the closed mouth's line (drawn in the undercoat), or they lay across it
         part: `${MOUTH_GLSL}
-          ${lidTuckGlsl}
           float groomPart(vec3 rest) {
-            // the lids' strands past the eye give way to the face's (LID_TUCK)
-            float keep = vGroomLid > 0.5 ? lidShown(rest) : 1.0;
-            if (rest.z < ${MOUTH.frontFrom}) return keep;
+            if (rest.z < ${MOUTH.frontFrom}) return 1.0;
             vec2 md = mouthDistance(rest);
-            return keep * smoothstep(${MOUTH.width}, ${MOUTH.width * 3.5}, md.x);
+            return smoothstep(${MOUTH.width}, ${MOUTH.width * 3.5}, md.x);
           }`,
       });
       ownedMaterials.push(...groom.materials);
