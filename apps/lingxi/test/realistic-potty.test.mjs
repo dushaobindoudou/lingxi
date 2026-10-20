@@ -15,7 +15,7 @@ test('squat lift leaves room below the rump while its spread keeps the rear paws
   assert.equal(smooth01(1), 1);
 });
 
-test('four alternating scratches lift, reach, scrape at floor height, and recover', () => {
+test('three alternating scratches lift, reach, scrape at floor height, and recover before the set piece walks away', () => {
   for (let stroke = 0; stroke < POTTY_DIG.strokes; stroke++) {
     const start = POTTY_DIG.leadIn + stroke * POTTY_DIG.strokeSeconds;
     const active = stroke % 2 === 0 ? 'L' : 'R';
@@ -27,11 +27,12 @@ test('four alternating scratches lift, reach, scrape at floor height, and recove
     assert.deepEqual(digPaw(start + POTTY_DIG.strokeSeconds * 0.27, resting), { y: 0, z: 0 });
   }
   for (const side of ['L', 'R']) assert.deepEqual(digPaw(POTTY_DIG.sniffAt, side), { y: 0, z: 0 });
+  assert.ok(POTTY_DIG.sniffAt < POTTY_DIG.duration && POTTY_DIG.duration <= 1.4);
 });
 
 test('head looks down for scratching then dips for one final sniff', () => {
   assert.deepEqual(digHead(0), { neck: 0, head: 0 });
-  const digging = digHead(0.8), sniff = digHead(3.4), end = digHead(3.95);
+  const digging = digHead(0.6), sniff = digHead(1.2), end = digHead(1.4);
   assert.ok(digging.neck > 0.17 && digging.head > 0.15);
   assert.ok(sniff.neck > digging.neck && sniff.head > digging.head);
   assert.ok(end.neck < sniff.neck && end.head < sniff.head);
