@@ -22,7 +22,7 @@ import type { Renderer, RendererCapabilities } from '../../../packages/desktop-h
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 import { createLocomotion, KITTEN_WALK, placePaw, steeringStrideScale } from './realistic-locomotion.ts';
-import { digHead, digPaw, POTTY_SQUAT, smooth01 } from './realistic-potty.ts';
+import { digHead, digPaw, POTTY_DIG, POTTY_SQUAT, smooth01 } from './realistic-potty.ts';
 import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
 import { createNeckBlend, neckShellScale } from './realistic-neck.ts';
@@ -187,7 +187,7 @@ const TAIL_RUN = { lift: [37, 2, -12, -26, -22], sway: [1, 2, 3, 4, 5], period: 
 // clip's: the squat's sit wraps the tail round the paws, and a squatting cat holds it up and back, quivering. The sit
 // pitches the pelvis up ~60 degrees, so the root lifts that much just to stand level behind.
 // How long a held pose is held for these host actions (ms, once reached), where a set piece times its beats round it
-const ACTION_HOLD_MS: Record<string, number> = { 'potty-squat': 2000, 'potty-poop': 2600, 'potty-pee': 3200 };
+const ACTION_HOLD_MS: Record<string, number> = { 'potty-squat': 2000, 'potty-poop': 2600, 'potty-pee': 3200, 'potty-dig': POTTY_DIG.duration * 1000 };
 // Set pieces that stage the cat before they play: it turns on the spot to `yaw` (0 faces the viewer, PI away; the side
 // it already shows), and only then acts - a standing cat is otherwise always shown three-quarter on to the viewer, and an
 // action freezes its facing. Over the clip: `look` turns the chest, neck and head round to the viewer (over its
