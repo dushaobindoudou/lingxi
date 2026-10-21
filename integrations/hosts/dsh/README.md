@@ -1,18 +1,28 @@
 # lingxi-dsh — 灵犀的 DSH（DeepSeek Harness）专用插件
 
 DSH 没有进程外插件机制——宿主能力以**动态 Cordis 插件**注册。本目录存的是插件源码
-（`lingxi-dsh-plugin.js`，即 `cordis_define` 的 `code.host` 函数体），把它注册为 5 个
-model Tools，DSH 会话里的模型从此可以直呼其名地驱动桌上的猫。
+（`lingxi-dsh-plugin.js`，即 `cordis_define` 的 `code.host` 函数体），把它注册为与 MCP 相同的
+13 个 model Tools，DSH 会话里的模型从此可以直呼其名地驱动桌上的猫。
 
 ## 能力
 
+工具名和顺序与 `packages/mcp-server` 的目录一致。旧名 `lingxi_react` 改为 `lingxi_express`。
+
 | Tool | 作用 | 走的接口 |
 |---|---|---|
-| `lingxi_task` | 报任务流程 + **心情**（state/kind/mood/summary/progress） | `POST /task-event` |
+| `lingxi_capabilities` | 列出动作、表情、主题、玩具和特效 | `GET /capabilities` |
+| `lingxi_state` | 读猫现在在做什么 | `GET /status`、`GET /perception` |
 | `lingxi_say` | 让猫说一句话 | `POST /control {say}` |
-| `lingxi_react` | 直接做一个表情/动作 | `POST /control` |
-| `lingxi_state` | 读猫的状态与完整表情/动作库 | `GET /perception` |
+| `lingxi_express` | 直接做一个表情或动作 | `POST /control` |
+| `lingxi_perform` | 播放全屏特效；自动播放服从设置和冷却 | `POST /control {perform}` |
+| `lingxi_play` | 放下或收走玩具 | `POST /control {toy}` |
 | `lingxi_remember` | 持久记住一条关于用户的事实 | `POST /memory` |
+| `lingxi_recall` | 读回记住的事 | `GET /memory` |
+| `lingxi_remind` | 设一条稍后提醒 | `POST /reminders` |
+| `lingxi_look` | 改视角或主题（仅当用户明确要求） | `POST /control` |
+| `lingxi_register` | 更新 DSH 的名字、徽标或 logo；id 固定 `dsh` | `POST /agents` |
+| `lingxi_task` | 报任务流程和心情 | `POST /task-event` |
+| `lingxi_reload_assets` | 重新加载用户自定义资源 | `POST /control {reloadAssets}` |
 
 `lingxi_task` 的 `summary` 是必填项：开始时用 `running` 报当前目标，结束时用
 `completed` / `failed` / `cancelled` 报结果，并在 `summary` 写清具体任务。完成气泡会把
@@ -21,14 +31,12 @@ model Tools，DSH 会话里的模型从此可以直呼其名地驱动桌上的�
 
 ## 安装与升级引导（skill）
 
-DSH 动态插件只会尝试启动已有的「灵犀.app」，不会自动下载 DMG。加载插件时，同时让模型读取
+应用没装、且没有关掉 `LINGXI_AUTOINSTALL` 时，插件会在后台用和其他宿主相同的安装器从 GitHub 下载最新版（校验 SHA256、bundle id、签名），装进「应用程序」并打开。`LINGXI_AUTOSTART=0` 时不打开也不下载。下载不挡住当次工具调用；进度在 `~/.lingxi/dsh/install.log`。已安装的旧版不会被自动替换。加载插件时，同时让模型读取
 [共享系统层 skill](../../skills/lingxi/SKILL.md) 和 [DSH 宿主层 skill](skills/lingxi-dsh/SKILL.md)。
 使用 profile/preset 的宿主应把两份 skill 一起加入其实际支持的技能配置；只复制插件 JavaScript
 不会自动加载 skill，不能保证安装引导被触发。
 
-DSH skill 会区分应用缺失、未启动和桥接故障。未安装时，引导用户从官方 Releases 下载、校验并安装
-v1.0.0 或更新稳定版；已安装旧版时，在用户要求升级后使用 `lingxi update` 或共享安装器。
-目标版本尚未发布时照实说明，不把旧版下载当成 v1.0.0 安装成功。配置和数据沿用原目录。
+DSH skill 会区分应用缺失、未启动和桥接故障。未安装且自动安装被关掉或没能开始时，才引导用户从官方 Releases 下载、校验并安装；已安装旧版时，在用户要求升级后使用 `lingxi update` 或共享安装器。目标版本尚未发布时照实说明。配置和数据沿用原目录。
 
 ## 稳定事件契约
 
@@ -66,7 +74,7 @@ v1.0.0 或更新稳定版；已安装旧版时，在用户要求升级后使用 
 0. 在宿主支持的 skill/profile 中加载上述系统层和 `lingxi-dsh`；一次性接入也可以直接读取两份 SKILL.md。
 1. `cordis_define`：`code.host` = 本文件内容（去掉首尾注释也可，整段贴进去即可）；
 2. `cordis_run`：激活返回的 packageId（Host-only 包，无需浏览器批准）；
-3. 下一步起 `lingxi_*` 五个工具即可被模型调用。
+3. 下一步起上述 13 个 `lingxi_*` 工具即可被模型调用。旧会话里的 `lingxi_react` 要重新定义并激活插件后才会变成 `lingxi_express`。
 
 如果 DSH 采用 profile/preset 管理动态插件，建议把 `cordis_define` 与 `cordis_run` 收进该 preset，
 避免每次新会话手工重贴；插件生命周期仍由宿主管理，更新源码后要重新定义并激活，旧会话里的

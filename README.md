@@ -41,7 +41,7 @@
 已有应用和用户数据会被复用。自动下载需要网络；桌面猫的日常行为在本地运行。
 DSH 推荐使用独立 npm 集成：`dsh plugin --profile <名称> add dsh-lingxi`。新版随包注册安装引导和互动 skill，支持实时能力查询及受设置控制的自动特效；[说明与版本](https://www.npmjs.com/package/dsh-lingxi)。不要同时加载 npm 集成和旧动态插件，以免重复注册工具。
 
-DSH 动态插件通过 [DSH skill](integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md) 引导安装和升级，不自动下载 DMG。
+DSH 动态插件注册与 MCP 相同的 13 个工具。应用没装时，它会在后台用同一套安装器下载最新版；`LINGXI_AUTOINSTALL=0` 可关闭。说明见 [DSH skill](integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md)。
 
 **Claude Code**（需要宿主 CLI；MCP 服务需要 Node.js 22+）：
 

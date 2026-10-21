@@ -3,18 +3,28 @@
 # lingxi-dsh — Lingxi's dedicated DSH (DeepSeek Harness) plugin
 
 DSH has no out-of-process plugin mechanism — host capabilities are registered as a **dynamic Cordis plugin**. This directory holds the plugin source
-(`lingxi-dsh-plugin.js`, that is, the `code.host` function body of `cordis_define`). Register it as 5
-model Tools, and from then on the model in a DSH session can drive the cat on the desk by calling them by name.
+(`lingxi-dsh-plugin.js`, that is, the `code.host` function body of `cordis_define`). Register it as the same 13
+model Tools as MCP, and from then on the model in a DSH session can drive the cat on the desk by calling them by name.
 
 ## Capabilities
 
+Names and order match the `packages/mcp-server` catalogue. The old name `lingxi_react` is now `lingxi_express`.
+
 | Tool | Role | Endpoint it uses |
 |---|---|---|
-| `lingxi_task` | Report task flow + **mood** (state/kind/mood/summary/progress) | `POST /task-event` |
+| `lingxi_capabilities` | List actions, expressions, themes, toys and performances | `GET /capabilities` |
+| `lingxi_state` | Read what the cat is doing | `GET /status`, `GET /perception` |
 | `lingxi_say` | Make the cat say one sentence | `POST /control {say}` |
-| `lingxi_react` | Directly play an expression / action | `POST /control` |
-| `lingxi_state` | Read the cat's state and the full expression / action library | `GET /perception` |
+| `lingxi_express` | Play an expression or an action directly | `POST /control` |
+| `lingxi_perform` | Play a full-screen performance; automatic playback obeys the setting and cooldown | `POST /control {perform}` |
+| `lingxi_play` | Put a toy out or take it away | `POST /control {toy}` |
 | `lingxi_remember` | Durably remember one fact about the user | `POST /memory` |
+| `lingxi_recall` | Read back what it remembers | `GET /memory` |
+| `lingxi_remind` | Set a reminder for later | `POST /reminders` |
+| `lingxi_look` | Change camera or theme, only when the user asks | `POST /control` |
+| `lingxi_register` | Update DSH's name, badge or logo; id stays `dsh` | `POST /agents` |
+| `lingxi_task` | Report task flow and mood | `POST /task-event` |
+| `lingxi_reload_assets` | Reload the user's custom assets | `POST /control {reloadAssets}` |
 
 `summary` on `lingxi_task` is required: at the start, report the current goal with `running`; at the end, report the result with
 `completed` / `failed` / `cancelled`, and write the specific task in `summary`. The completion bubble shows
@@ -23,14 +33,12 @@ host loads a separate agent skill does installing the skill as well improve how 
 
 ## Installation and upgrade guidance (skill)
 
-The DSH plugin starts an existing app but does not download a missing DMG. Load the shared
+When the app is missing and `LINGXI_AUTOINSTALL` is not off, the plugin downloads the latest release in the background with the same installer the other hosts use (SHA256, bundle id, signature), installs it into Applications and opens it. `LINGXI_AUTOSTART=0` neither opens nor downloads. The download does not block the tool call; progress is in `~/.lingxi/dsh/install.log`. An already installed older app is not replaced automatically. Load the shared
 [lingxi skill](../../../../../integrations/skills/lingxi/SKILL.md) together with the
 [DSH host skill](../../../../../integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md) in the host's supported skill/profile configuration.
 Copying the JavaScript plugin alone does not load either skill.
 
-The host skill distinguishes a missing app, a stopped app and a bridge failure. It guides users through installing
-v1.0.0 or a newer stable release, or upgrading an existing app when requested. It verifies the installed version and bridge
-before claiming success, preserves local data and reports if the target release is not yet available.
+The host skill distinguishes a missing app, a stopped app and a bridge failure. A manual Releases download is the fallback when automatic install is off or could not start. An older installed app is upgraded only when the user asks, via `lingxi update` or the shared installer. It verifies the installed version and bridge before claiming success, preserves local data and reports if the target release is not yet available.
 
 ## Stable event contract
 
@@ -67,7 +75,7 @@ The identity is fixed as `dsh`. At startup it `POST /agents` to register the bad
 
 1. `cordis_define`: `code.host` = the contents of this file (the leading and trailing comments may be removed; pasting the whole block is enough);
 2. `cordis_run`: activate the returned packageId (a Host-only package; no browser approval needed);
-3. From the next step on, the five `lingxi_*` tools can be called by the model.
+3. From the next step on, the 13 `lingxi_*` tools can be called by the model. An old session that still has `lingxi_react` picks up `lingxi_express` only after the plugin is defined and activated again.
 
 If DSH manages dynamic plugins with a profile/preset, put `cordis_define` and `cordis_run` into that preset,
 so a new session does not have to paste them by hand every time. The plugin lifecycle is still managed by the host. After the source is updated it has to be redefined and activated. Tools in an old session

@@ -41,7 +41,7 @@ The app and integrations support macOS. Plugins and the MCP server can install a
 Automatic downloads require internet access; everyday cat behavior runs locally.
 For DSH, use `dsh plugin --profile <name> add dsh-lingxi`. The [npm integration](https://www.npmjs.com/package/dsh-lingxi) registers a bundled setup and interaction skill, reads live capabilities, and respects the app's automatic-effects policy. Use either this package or the older dynamic adapter to avoid duplicate tools.
 
-The DSH dynamic plugin uses its [host skill](integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md) to guide installation and upgrades; it does not download a DMG automatically.
+The DSH dynamic plugin registers the same 13 tools as MCP. When the app is missing it downloads the latest release in the background with the shared installer; set `LINGXI_AUTOINSTALL=0` to turn that off. See the [DSH skill](integrations/hosts/dsh/skills/lingxi-dsh/SKILL.md).
 
 **Claude Code** (host CLI required; the MCP server needs Node.js 22+):
 
