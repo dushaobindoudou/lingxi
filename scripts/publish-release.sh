@@ -55,7 +55,7 @@ git cat-file -e "$BUILD_COMMIT^{commit}" 2>/dev/null || die "the build's commit 
 git diff --quiet "$BUILD_COMMIT" HEAD -- "${APP_PATHS[@]}" \
   || die "app sources changed since this build ($BUILD_COMMIT) - rebuild: ./scripts/release.sh"
 
-ASSETS=("$OUT"/Lingxi-*.dmg "$OUT"/Lingxi-*.app.zip "$OUT/SHA256SUMS.txt")
+ASSETS=("$OUT"/Lingxi-*.dmg "$OUT"/Lingxi-*.app.zip "$OUT"/Lingxi-*-integrations.tar.gz "$OUT/SHA256SUMS.txt")
 for asset in "${ASSETS[@]}"; do [ -f "$asset" ] || die "missing $asset"; done
 ( cd "$OUT" && shasum -a 256 -c SHA256SUMS.txt >/dev/null ) || die "SHA256SUMS.txt does not match the files in $OUT"
 

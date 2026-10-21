@@ -42,6 +42,7 @@
 | U2 | 每个 ✗ 后面跟一句能照着做的话 |
 | U3 | 提供"装/修/升级"和"看状态"两个入口（Claude 是 `/lingxi:setup`、`/lingxi:status`），输出给模型读、由模型转述 |
 | U4 | 给模型的说明（skill / 规则文件）写清：安装和启动不归模型管；应用正在安装或没装时这个会话别调 `lingxi` |
+| U5 | **接入引导**：宿主层必须有「接入引导」一节，指回系统层「第二步：接入引导」并给出本宿主的 `lingxi connect` 写法。模型每个会话首次用猫时扫描一次，`OFFER: yes` 才问用户，同意后 `lingxi connect --all`、拒绝则 `--decline`；接入只走 `lingxi connect`（各宿主官方插件命令，或 release 里经 SHA256 校验的 `Lingxi-*-integrations.tar.gz`），模型不手改别的宿主配置。`integrations/test/skill-layers.test.mjs` 守着每个宿主层都引用它 |
 
 ## 五、工程
 
@@ -97,7 +98,7 @@
 | **Cursor**（`cursor/install.sh`） | ✓ 第 0 步 + MCP | ✗ 指向仓库 | MCP 可改用 `npx -y lingxi-mcp` |
 | **豆包**（`doubao/install.sh`） | ✓ 第 0 步 | ✗ 指向仓库 | 豆包没有插件机制 |
 | **MCP server / npm `lingxi-mcp`** | ✓ 宿主连上时 | ✓ | 后台起安装器，调用方得到"正在安装" |
-| **DSH**（`dsh/`） | ✗ | ✓ | 单文件 Cordis 插件，仍只会拉起已装的应用 |
+| **DSH**（`dsh/`） | ✓ 工具调用时后台安装 | ✓ | 单文件。没装时用本机安装器、`npx lingxi-mcp`，或拉取 shared 安装器；`LINGXI_AUTOINSTALL=0` 关闭（2026-10-20） |
 
 ## 审查结果 · 2026-09-24
 

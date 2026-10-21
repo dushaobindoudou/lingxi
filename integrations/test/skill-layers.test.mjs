@@ -58,3 +58,35 @@ test('installers put both layers in place', () => {
   assert.match(app, /integrations\/skills\/lingxi\/SKILL\.md/);
   assert.match(app, /integrations\/hosts\/codex\/skills\/lingxi-codex\/SKILL\.md/);
 });
+
+test('every host layer points at the onboarding rule, and the system layer defines it', () => {
+  const system = readFileSync(join(REPO, SYSTEM), 'utf8');
+  assert.match(system, /### 第二步：接入引导/);
+  assert.match(system, /lingxi connect --all/);
+  assert.match(system, /lingxi connect --decline/);
+  for (const host of ['claude', 'codex', 'cursor', 'doubao', 'workbuddy', 'dsh']) {
+    const layer = readFileSync(join(REPO, `integrations/hosts/${host}/skills/lingxi-${host}/SKILL.md`), 'utf8');
+    assert.match(layer, /## 接入引导/, `lingxi-${host} must point at the onboarding rule (PLUGIN-STANDARD U5)`);
+    assert.match(layer, /lingxi"? connect/, `lingxi-${host} must say how to run the scan here`);
+  }
+  const market = readFileSync(join(REPO, 'integrations/hosts/workbuddy/marketplace/lingxi-desktop-cat/SKILL.md'), 'utf8');
+  assert.match(market, /bash scripts\/lingxi\.sh connect/, 'the market skill carries the rule too');
+});
+
+// The cat's small surprises: every skill an agent actually loads must say when it may pick a
+// full-screen performance itself, and that it checks the user's switch and cooldown first. The
+// market skill ships alone, without the system layer, so it carries its own copy of the rule.
+test('every skill an agent loads can give an automatic surprise, and gates it on the switch', () => {
+  const system = readFileSync(join(REPO, SYSTEM), 'utf8');
+  const market = readFileSync(join(REPO, 'integrations/hosts/workbuddy/marketplace/lingxi-desktop-cat/SKILL.md'), 'utf8');
+  for (const [name, body, perform] of [
+    ['system layer', system, /lingxi_perform\(\{id, automatic: true\}\)/],
+    ['market skill', market, /bash scripts\/lingxi\.sh perform <id>/],
+  ]) {
+    assert.match(body, /自动特效/, `${name} must describe automatic effects`);
+    assert.match(body, /autoEffects/, `${name} must check the switch before playing`);
+    assert.match(body, /remainingCooldownMs/, `${name} must respect the cooldown`);
+    assert.match(body, perform, `${name} must say how to play one`);
+    assert.match(body, /小惊喜/, `${name} must frame it as a surprise, not a report`);
+  }
+});

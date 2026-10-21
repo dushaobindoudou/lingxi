@@ -20,7 +20,8 @@ test('the system layer states the check-first, mention-once, never-install rule'
   assert.match(body, /确定性的一半/);
   assert.match(body, /默认不去查/);
   assert.match(body, /一场对话最多提一次/);
-  assert.match(body, /不替用户安装/);
+  assert.match(body, /不自己手改宿主的配置文件/);
+  assert.match(body, /用户同意后走 `lingxi connect/, 'filling the gap goes through connect, after a yes');
 });
 
 test('every host that can have the half documents a check that prints installed or absent', () => {

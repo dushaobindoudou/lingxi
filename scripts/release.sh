@@ -249,7 +249,11 @@ cp "$DMG" "$OUT/$BASE.dmg"
 # ditto, not zip: zip does not preserve the bundle's symlinks and extended attributes, and a
 # re-zipped bundle whose seal no longer matches is exactly the "damaged" error again.
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/$BASE.app.zip"
-( cd "$OUT" && shasum -a 256 "$BASE.dmg" "$BASE.app.zip" > SHA256SUMS.txt )
+# The host installers, for `lingxi connect` on machines without a checkout: integrations/ and the
+# MCP server they point at, about 1 MB, instead of the whole 300 MB source tree.
+INTEGRATIONS="Lingxi-$VERSION-integrations.tar.gz"
+git -C "$REPO" archive --format=tar.gz --prefix=lingxi/ -o "$OUT/$INTEGRATIONS" HEAD integrations packages/mcp-server
+( cd "$OUT" && shasum -a 256 "$BASE.dmg" "$BASE.app.zip" "$INTEGRATIONS" > SHA256SUMS.txt )
 
 DIRTY_FLAG=false; [ -n "$DIRTY" ] && DIRTY_FLAG=true
 TAURI_VERSION="$(cd "$APP_DIR" && node -p "require('@tauri-apps/cli/package.json').version" 2>/dev/null || echo unknown)"

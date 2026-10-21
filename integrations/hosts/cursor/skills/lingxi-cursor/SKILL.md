@@ -58,3 +58,7 @@ grep -qs 'lingxi' ~/.cursor/hooks.json 2>/dev/null && echo installed || echo abs
 
 `absent` 时告诉用户跑一次 `integrations/hosts/cursor/install.sh`（幂等，重复跑不会重复装）。
 不要自己写 `~/.cursor/hooks.json`，也不要改成 `beforeSubmitPrompt` 的其他输出格式。
+
+## 接入引导
+
+照系统层「第二步：接入引导」做，扫描写成 `LINGXI_AGENT=cursor lingxi connect`；本宿主（`cursor`）已接入，只问 `OFFER: yes` 列出的其他软件。

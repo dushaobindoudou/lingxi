@@ -56,3 +56,7 @@ launchctl print "gui/$(id -u)/com.dushaobin.lingxi.doubao-watch" >/dev/null 2>&1
 在，说明写好了但没被 launchd 接管，让用户重跑安装器或注销重新登录；不在，就是根本没装，
 跑一次插件目录里的 `install.sh`（`LINGXI_DOUBAO_WATCH=0` 会跳过它）。
 **不要自己 `launchctl load`，也不要读豆包日志手工补报**——那是重复的一条路，还会和监听抢着说。
+
+## 接入引导
+
+照系统层「第二步：接入引导」做，扫描写成 `lingxi connect`；本宿主（`doubao`）已接入，只问 `OFFER: yes` 列出的其他软件。

@@ -20,6 +20,7 @@
 #   lingxi state                               # position, state, expression, heading, intent
 #   lingxi status                              # theme, camera, size, visibility
 #   lingxi integration                         # the full contract, machine-readable
+#   lingxi connect [--all | <host>...]         # find the other AI apps on this Mac and connect them
 #
 #   lingxi register <id> --logo <file.svg> [--name N] [--color #rrggbb]
 #       Your logo is a mark you GENERATE for yourself - a small flat SVG, two or three colours,
@@ -434,6 +435,192 @@ process.stdout.write(JSON.stringify(out));
   fi
 }
 
+# --- connecting the other agents on this Mac ------------------------------------------------
+#
+# 灵犀 arrives through one host, but the same Mac usually runs two or three more - Claude Code
+# beside Cursor beside WorkBuddy - and each used to be connected by hand from a README nobody
+# opens. `lingxi connect` finds them and connects the ones that are present but not connected yet,
+# each through its own route:
+#
+#   claude, codex              the host's own plugin command (claude plugin install / codex plugin add)
+#   cursor, workbuddy, doubao  integrations/hosts/<id>/install.sh, from the checkout this CLI runs in
+#                              or from the release's integrations bundle, verified against its
+#                              SHA256SUMS.txt and kept at ~/.lingxi/src (their hooks link into it)
+#
+# Scanning only reads. Connecting writes another program's configuration, so the model asks the
+# user first; `--decline` records a no, and the scan stops offering for 30 days unless a host
+# that was not there when they said no shows up. The last line is machine-readable:
+#   OFFER: yes <hosts>   ask the user now, then `lingxi connect --all` or `lingxi connect --decline`
+#   OFFER: no            say nothing
+
+CONNECT_HOSTS="claude codex cursor workbuddy doubao"
+CONNECT_DIR="$HOME/.lingxi"
+CONNECT_STATE="$CONNECT_DIR/connect.state"
+CONNECT_LOG="$CONNECT_DIR/connect.log"
+RELEASE_REPO="${LINGXI_RELEASE_REPO:-dushaobindoudou/lingxi}"
+APPS_DIR="${LINGXI_APPS_DIR:-/Applications}"
+
+host_name() {
+  case "$1" in
+    claude) printf 'Claude Code' ;; codex) printf 'Codex' ;; cursor) printf 'Cursor' ;;
+    workbuddy) printf 'WorkBuddy' ;; doubao) printf '豆包' ;; *) printf '%s' "$1" ;;
+  esac
+}
+
+host_present() {
+  case "$1" in
+    claude)    command -v claude >/dev/null 2>&1 || [ -d "$HOME/.claude" ] ;;
+    codex)     command -v codex >/dev/null 2>&1 || [ -d "$HOME/.codex" ] ;;
+    cursor)    [ -d "$APPS_DIR/Cursor.app" ] || [ -d "$HOME/.cursor" ] ;;
+    workbuddy) [ -d "$APPS_DIR/WorkBuddy.app" ] || [ -d "$HOME/.workbuddy" ] ;;
+    doubao)    [ -d "$APPS_DIR/Doubao.app" ] || [ -d "$HOME/Library/Application Support/Doubao" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Connected by any route: the host's plugin, the app's 一键接入, or the repo installer. The marks
+# are the ones those routes write - the same ones `doctor` and check.sh look for.
+host_connected() {
+  case "$1" in
+    claude) grep -qs '"lingxi@' "$HOME/.claude/plugins/installed_plugins.json" \
+              || grep -qs '47811/task-event' "$HOME/.claude/settings.json" ;;
+    codex)  grep -qsE 'lingxi@|^[[:space:]]*notify[[:space:]]*=.*(lingxi|fanout)' "$HOME/.codex/config.toml" ;;
+    cursor) grep -qs 'lingxi' "$HOME/.cursor/hooks.json" ;;
+    workbuddy) grep -qs 'lingxi-emit\.mjs' "$HOME/.workbuddy/settings.json" \
+                 "$HOME"/.workbuddy/plugins/*/hooks/hooks.json "$HOME"/.workbuddy/plugins/*/*/hooks/hooks.json ;;
+    doubao) [ -f "$HOME/Library/LaunchAgents/com.dushaobin.lingxi.doubao-watch.plist" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# The integrations tree: a checkout this CLI runs from, LINGXI_SOURCE_DIR, or the latest release's
+# bundle. Prints the directory that holds integrations/, or fails with a reason on stderr.
+connect_source() {
+  local self="${BASH_SOURCE[0]}" link dir dest tag api url sums tmp top expected actual
+  if [ -n "${LINGXI_SOURCE_DIR:-}" ]; then printf '%s' "$LINGXI_SOURCE_DIR"; return 0; fi
+  while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case "$link" in /*) self="$link" ;; *) self="$(cd "$(dirname "$self")" && pwd)/$link" ;; esac
+  done
+  dir="$(cd "$(dirname "$self")" && pwd)"
+  if [ -f "$dir/../hosts/cursor/install.sh" ]; then (cd "$dir/../.." && pwd); return 0; fi
+
+  dest="$CONNECT_DIR/src"
+  api="$(curl -fsSL -m 20 "https://api.github.com/repos/$RELEASE_REPO/releases/latest" 2>>"$CONNECT_LOG")" \
+    || { echo "拿不到 $RELEASE_REPO 的最新 release（网络不通或 GitHub 限流），稍后再试" >&2; return 1; }
+  tag="$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' <<<"$api" | sed -n 1p)"
+  if [ -f "$dest/.lingxi-tag" ] && [ "$(cat "$dest/.lingxi-tag")" = "$tag" ]; then printf '%s' "$dest"; return 0; fi
+  url="$(grep -o '"browser_download_url": *"[^"]*-integrations\.tar\.gz"' <<<"$api" | sed 's/.*"\(https[^"]*\)"/\1/' | sed -n 1p)"
+  sums="$(grep -o '"browser_download_url": *"[^"]*/SHA256SUMS\.txt"' <<<"$api" | sed 's/.*"\(https[^"]*\)"/\1/' | sed -n 1p)"
+  [ -n "$url" ] && [ -n "$sums" ] \
+    || { echo "$tag 还没有附带接入包（Lingxi-*-integrations.tar.gz），等下一个版本，或在这些软件里按灵犀 README 手动接入" >&2; return 1; }
+  tmp="$(mktemp -d)"
+  curl -fsSL -m 120 -o "$tmp/integrations.tar.gz" "$url" >>"$CONNECT_LOG" 2>&1 \
+    && curl -fsSL -m 30 -o "$tmp/SHA256SUMS.txt" "$sums" >>"$CONNECT_LOG" 2>&1 \
+    || { rm -rf "$tmp"; echo "下载接入包失败，详情见 $CONNECT_LOG" >&2; return 1; }
+  expected="$(awk -v f="$(basename "$url")" '$2 == f || $2 == "*"f {print $1}' "$tmp/SHA256SUMS.txt")"
+  actual="$(shasum -a 256 "$tmp/integrations.tar.gz" | awk '{print $1}')"
+  [ -n "$expected" ] && [ "$expected" = "$actual" ] \
+    || { rm -rf "$tmp"; echo "接入包校验和不匹配，拒绝使用" >&2; return 1; }
+  mkdir -p "$tmp/x" && tar -xzf "$tmp/integrations.tar.gz" -C "$tmp/x" \
+    || { rm -rf "$tmp"; echo "接入包解不开" >&2; return 1; }
+  top="$tmp/x/lingxi"
+  [ -f "$top/integrations/hosts/cursor/install.sh" ] || { rm -rf "$tmp"; echo "接入包内容不完整" >&2; return 1; }
+  printf '%s\n' "$tag" > "$top/.lingxi-tag"
+  # Swap, never half-replace: the installed hooks point into this directory.
+  rm -rf "$dest.old"; [ -d "$dest" ] && mv "$dest" "$dest.old"
+  mv "$top" "$dest" && rm -rf "$dest.old" "$tmp"
+  printf '%s' "$dest"
+}
+
+connect_one() {
+  local id="$1" dry="$2" src
+  case "$id" in
+    claude|codex)
+      if ! command -v "$id" >/dev/null 2>&1; then
+        if [ "$id" = claude ]; then
+          echo "  ✗ Claude Code：找不到 claude 命令。在 Claude Code 里输入 /plugin marketplace add ${RELEASE_REPO}，再输入 /plugin install lingxi@lingxi"
+        else
+          echo "  ✗ Codex：找不到 codex 命令。装好 Codex CLI 后重跑 lingxi connect codex"
+        fi
+        return 1
+      fi
+      if [ "$dry" = 1 ]; then
+        [ "$id" = claude ] && echo "  · claude plugin marketplace add $RELEASE_REPO && claude plugin install lingxi@lingxi" \
+                           || echo "  · codex plugin marketplace add $RELEASE_REPO && codex plugin add lingxi@lingxi"
+        return 0
+      fi
+      # Adding a marketplace that is already there fails harmlessly; the install decides.
+      "$id" plugin marketplace add "$RELEASE_REPO" >>"$CONNECT_LOG" 2>&1 || true
+      if [ "$id" = claude ]; then claude plugin install lingxi@lingxi >>"$CONNECT_LOG" 2>&1
+      else codex plugin add lingxi@lingxi >>"$CONNECT_LOG" 2>&1; fi \
+        || { echo "  ✗ $(host_name "$id")：插件安装失败，详情见 $CONNECT_LOG"; return 1; } ;;
+    cursor|workbuddy|doubao)
+      src="$(connect_source)" || { echo "  ✗ $(host_name "$id")：拿不到接入脚本"; return 1; }
+      if [ "$dry" = 1 ]; then echo "  · bash $src/integrations/hosts/$id/install.sh"; return 0; fi
+      bash "$src/integrations/hosts/$id/install.sh" >>"$CONNECT_LOG" 2>&1 \
+        || { echo "  ✗ $(host_name "$id")：接入脚本失败，详情见 $CONNECT_LOG"; return 1; } ;;
+    *) echo "  ✗ 不认识的软件：${id}（可选：${CONNECT_HOSTS}）"; return 1 ;;
+  esac
+  echo "  ✓ $(host_name "$id") 已接入，新开一个会话后生效"
+}
+
+connect_scan() {
+  local id available="" seen_list="" new="" decided="" when=0 now
+  printf '这台 Mac 上的 AI 软件\n'
+  for id in $CONNECT_HOSTS; do
+    if ! host_present "$id"; then printf '  · %s  未安装\n' "$(host_name "$id")"
+    elif host_connected "$id"; then printf '  ✓ %s  已接入\n' "$(host_name "$id")"
+    else printf '  ○ %s  已安装，未接入\n' "$(host_name "$id")"; available="$available $id"; fi
+  done
+  available="${available# }"
+  if [ -z "$available" ]; then printf '\nOFFER: no\n'; return 0; fi
+  if [ -f "$CONNECT_STATE" ]; then
+    read -r decided when seen_list < "$CONNECT_STATE" || true
+    for id in $available; do
+      case " ${seen_list:-} " in *" $id "*) ;; *) new="$new $id" ;; esac
+    done
+  fi
+  now="$(date +%s)"
+  if [ "${decided:-}" = declined ] && [ -z "$new" ] && [ $((now - ${when:-0})) -lt 2592000 ]; then
+    printf '\nOFFER: no\n'; return 0
+  fi
+  printf '\nOFFER: yes %s\n' "$available"
+}
+
+connect_main() {
+  local dry=0 all=0 hosts="" id failed=0
+  mkdir -p "$CONNECT_DIR"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) dry=1 ;;
+      --all) all=1 ;;
+      --decline)
+        local present=""
+        for id in $CONNECT_HOSTS; do host_present "$id" && present="$present $id"; done
+        printf 'declined %s%s\n' "$(date +%s)" "$present" > "$CONNECT_STATE"
+        echo "好的，不接入。30 天内不再询问（出现新的软件时除外）；想接入时运行 lingxi connect --all"
+        return 0 ;;
+      -*) die "usage: lingxi connect [--all | <host>...] [--dry-run] | --decline" ;;
+      *) hosts="$hosts $1" ;;
+    esac
+    shift
+  done
+  if [ "$all" = 0 ] && [ -z "$hosts" ]; then connect_scan; return 0; fi
+  [ "$(uname -s)" = Darwin ] || die "灵犀只支持 macOS"
+  if [ "$all" = 1 ]; then
+    for id in $CONNECT_HOSTS; do host_present "$id" && ! host_connected "$id" && hosts="$hosts $id"; done
+  fi
+  hosts="${hosts# }"
+  [ -n "$hosts" ] || { echo "没有需要接入的软件：装着的都已经接好了"; return 0; }
+  printf '%s %s\n' "$(date '+%F %T')" "connect $hosts" >> "$CONNECT_LOG"
+  for id in $hosts; do
+    if host_connected "$id"; then echo "  ✓ $(host_name "$id") 已经接入过"; continue; fi
+    connect_one "$id" "$dry" || failed=$((failed + 1))
+  done
+  [ "$failed" = 0 ]
+}
+
 cmd="${1:-help}"; shift || true
 case "$cmd" in
   doctor)
@@ -567,6 +754,7 @@ if isinstance(rows, list):
   state)             request GET /perception ;;
   status)            request GET /status ;;
   integration)       request GET /integration ;;
+  connect)           connect_main "$@" ;;
   agents)            request GET /agents ;;
   activity)          request GET /activity ;;
   events)            request GET /debug/events ;;

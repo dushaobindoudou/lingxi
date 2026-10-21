@@ -84,3 +84,7 @@ grep -qs 'notify-fanout\.sh' ~/.codex/config.toml 2>/dev/null && echo installed 
 `absent` 时给一条路：`codex plugin add lingxi@lingxi`（插件，覆盖会话开始/提交/等授权/结束），
 或跑 `integrations/hosts/codex/install.sh`（写 notify，只覆盖回合结束但不动其他配置）。
 **不要自己改 `config.toml`**——见上一条。
+
+## 接入引导
+
+照系统层「第二步：接入引导」做，扫描写成 `LINGXI_AGENT=codex lingxi connect`；本宿主（`codex`）已接入，只问 `OFFER: yes` 列出的其他软件。

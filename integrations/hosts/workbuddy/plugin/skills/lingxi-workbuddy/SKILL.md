@@ -84,14 +84,10 @@ LINGXI_AGENT=workbuddy "$HOME/Library/Application Support/com.dushaobin.lingxi-d
 - **不要重复跑 `lingxi register`**——不带全参数的那次会把 badge 和 name 覆盖成默认值。
 - **别想用 env 覆盖身份**，MCP 读的是这个文件，env 在这里不起作用。
 
-## 七、应用由用户装，不由你装
+## 七、应用的安装和启动不归你管
 
-猫的应用是**用户自己安装并常驻**的，`install.sh` 只负责把集成接上去（MCP、两份 skill、
-署名、hooks），不负责装应用。
-
-- 应用没在跑时，其它子命令会自己拉起一次（`open -g -b com.dushaobin.lingxi-desktop`），
-  所以通常不用你管。
-- 用户设了 `LINGXI_AUTOSTART=0` 就是不想让你开猫——照实说，别绕过去。
+插件在会话开始时检查：没装就下载、校验、安装并打开，没开就后台拉起；其它子命令遇到猫没开也会拉起一次。
+用户设了 `LINGXI_AUTOSTART=0` 就是不想让你开猫——照实说，别绕过去。
 
 ## 八、排障
 
@@ -115,3 +111,7 @@ LINGXI_QUOTA_DEBUG=1  # 额度守卫为什么没说话（它会读 ~/.workbuddy/
 **只读这两个文件**——`plugins/` 有几百 MB，递归 grep 会卡死。
 
 `absent` → 装插件或跑本目录 `install.sh`。不要自己写 hooks（见第四、五节）。
+
+## 接入引导
+
+照系统层「第二步：接入引导」做，扫描写成 `LINGXI_AGENT=workbuddy "$HOME/Library/Application Support/com.dushaobin.lingxi-desktop/bin/lingxi" connect`；本宿主（`workbuddy`）已接入，只问 `OFFER: yes` 列出的其他软件。
