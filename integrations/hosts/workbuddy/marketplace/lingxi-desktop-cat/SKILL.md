@@ -158,6 +158,7 @@ LINGXI_TASK_ID=fix-login bash scripts/lingxi.sh task completed write proud "登�
 3. 放 `bash scripts/lingxi.sh perform <id>`（不加 `--manual`）。被拒或跳过就到此为止，不重试。
 
 同一任务最多一次，所有 Agent 共用至少 10 分钟冷却；用户正拖猫、玩玩具或撸猫时别抢。
+应用也会在 `completed` + `proud` / `tender` 时有一半机会自己放一个，所以报准 mood 本身就是在给惊喜。
 特效是任务报告的点缀，不代替 `completed` 那条报告，也不重复播报同一结果。
 用户点名要看某个特效时，才用 `perform <id> --manual`；不要把自己挑的特效标成手动来绕开开关。
 

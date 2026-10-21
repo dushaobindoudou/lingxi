@@ -5623,6 +5623,47 @@ fn bubble_line(text: &str) -> String {
 
 /// Match the bubble's own hold (`1.8s + 0.13s` per character) so a short cheeky line
 /// does not sit there, and a 24-character line still finishes being read.
+/// The cat's own surprise for a turn that landed well (the user's 「自动特效」 switch). Agents may
+/// pick one themselves (lingxi_perform), but in practice they never did: the skill leaves it to
+/// judgement and the judgement always came out "skip". So the moments the skill names - something
+/// hard finally worked (`proud`), something warm (`tender`) - also get a chance here, every other
+/// time (a surprise, not a rule), through the same switch and shared cooldown as an agent's.
+fn surprise_for(event: &TaskEvent, coin: u32) -> Option<&'static str> {
+    if event.state != "completed" || coin % 2 != 0 {
+        return None;
+    }
+    match event.mood.as_str() {
+        "proud" => Some("zoomies"),
+        "tender" => Some("kiss-rush"),
+        _ => None,
+    }
+}
+
+/// Plays `surprise_for`'s pick once the turn's bubble has been read: the report comes first.
+fn maybe_surprise(app: &tauri::AppHandle, event: &TaskEvent) {
+    let coin = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() >> 10)
+        .unwrap_or(1);
+    let Some(id) = surprise_for(event, coin) else { return };
+    if app.state::<TrayState>().auto_effects.may_start(std::time::Instant::now()).is_err() {
+        return;
+    }
+    let after = std::time::Duration::from_millis(bubble_hold_ms(event.summary.trim()).min(8_000) + 1_200);
+    let (app, task_id) = (app.clone(), event.task_id.clone());
+    std::thread::spawn(move || {
+        std::thread::sleep(after);
+        let outcome = match app.state::<TrayState>().auto_effects.try_start(true, std::time::Instant::now()) {
+            Ok(()) => {
+                let _ = app.emit("perform", serde_json::json!({ "id": id, "automatic": true }));
+                "played"
+            }
+            Err(_) => "skipped: off or cooling down",
+        };
+        log_task_event(&app, serde_json::json!({ "dir": "react", "taskId": task_id, "surprise": id, "outcome": outcome }));
+    });
+}
+
 fn bubble_hold_ms(text: &str) -> u64 {
     let chars = text.chars().count() as u64;
     (1800 + chars * 130).clamp(3200, 20_000)
@@ -6149,6 +6190,9 @@ fn react_to_task_event(app: &tauri::AppHandle, event: &TaskEvent) {
         serde_json::json!({ "busy": busy }),
     );
     forward_to_sinks(app, event);
+    if already_reported.is_none() {
+        maybe_surprise(app, event);
+    }
     if already_reported.is_some() {
         log_task_event(app, serde_json::json!({ "dir": "react", "taskId": event.task_id, "state": event.state, "outcome": "silent: task result already reported" }));
         return;
@@ -7334,6 +7378,20 @@ mod tests {
         assert!(bubble_hold_ms(&"啊".repeat(24)) <= 6400);
         assert!(bubble_hold_ms(&"啊".repeat(140)) >= 18_000, "a full report stays up long enough to read");
         assert!(bubble_hold_ms(&"啊".repeat(100)) > 10_000, "long task summaries need time to read");
+    }
+
+    #[test]
+    fn a_turn_that_landed_well_sometimes_gets_a_surprise() {
+        let event = |state: &str, mood: &str| normalize_generic_task_event(&serde_json::json!({
+            "provider": "codex", "state": state, "kind": "test", "mood": mood,
+            "taskId": "t", "summary": "登录测试已修复，18 项全部通过",
+        }), 1).unwrap();
+        assert_eq!(surprise_for(&event("completed", "proud"), 0), Some("zoomies"));
+        assert_eq!(surprise_for(&event("completed", "tender"), 2), Some("kiss-rush"));
+        assert_eq!(surprise_for(&event("completed", "proud"), 1), None, "every other time, not every time");
+        for (state, mood) in [("completed", "focused"), ("completed", "frustrated"), ("failed", "proud"), ("running", "proud"), ("needs_input", "tender")] {
+            assert_eq!(surprise_for(&event(state, mood), 0), None, "{state}:{mood} is no moment for a show");
+        }
     }
 
     #[test]
