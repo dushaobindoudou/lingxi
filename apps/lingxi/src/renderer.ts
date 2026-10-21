@@ -527,6 +527,14 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
   // and the whole point of the face decal - is pointing at the wallpaper. See the fold in
   // render() for how rear-facing travel directions get mirrored into this range.
   const MAX_FACING_YAW = Math.PI * 0.42;
+  // The one exception: the potty set pieces (fx/performances.ts) are aimed AT the viewer, so for
+  // their clips the cat turns its rump to the screen and looks back over its shoulder. Without
+  // this the cat squatted facing the viewer and the stream and the drop came out of its chest.
+  // Same staging as the realistic renderer's ACTION_STAGING; ground-plane yaw, 0 faces the viewer.
+  const POTTY_STAGING: Record<string, number> = {
+    'potty-poop': Math.PI - 0.85,
+    'potty-pee': Math.PI - 0.5,
+  };
 
   // --- facing stability -----------------------------------------------------------------
   // Facing used to be read straight off one frame's position delta. At 60fps a wandering cat
@@ -622,6 +630,7 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
   };
 
   const headProjection = new THREE.Vector3();
+  const rumpProjection = new THREE.Vector3();
   // --- exact screen -> world placement ----------------------------------------------------
   // worldPerPixelX/Z describe how much world travel a pixel of screen travel is worth. That is
   // a DIFFERENTIAL relationship and it is correct as one, but it says nothing about the origin:
@@ -989,6 +998,18 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
      *  resize/render. Projected from the real head bone plus the head's own height, so a
      *  bubble clears the ears instead of sitting across the face, and so it tracks the model
      *  through crouches, jumps, camera angle changes and the performance zoom. */
+    /** Just under the root of the tail, where the potty set pieces start the stream and the drop;
+     *  with `onGround`, the floor straight below it, where they land. */
+    rumpScreenPoint(onGround = false) {
+      rig.node('tail0').getWorldPosition(rumpProjection);
+      rumpProjection.y = onGround ? 0 : rumpProjection.y - rig.boundingRadius * effectiveScale() * 0.06;
+      rumpProjection.project(camera);
+      return {
+        x: (rumpProjection.x * 0.5 + 0.5) * width,
+        y: (-rumpProjection.y * 0.5 + 0.5) * height,
+      };
+    },
+
     headScreenPoint() {
       const head = rig.node('head');
       head.getWorldPosition(headProjection);
@@ -1257,6 +1278,9 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
         }
       }
 
+      const pottyYaw = director.playing ? POTTY_STAGING[director.playing.id] : undefined;
+      if (pottyYaw !== undefined && state.state !== 'dragged') facingAngle = pottyYaw;
+
       // Position already snaps 1:1 to the cursor while dragged (see main.ts's native
       // mousemove handler) - a slower rotation catch-up during a fast drag makes the body
       // visibly lag the anchor point even though the anchor itself is instant, reading as
@@ -1312,6 +1336,8 @@ export function createThreeRenderer(options: ThreeRendererOptions = {}): Rendere
       // to one side. Good behaviour in general; wrong while the camera is rolling.
       const performing = performanceScale != null;
       if (performing) targetHeadYaw = 0; // square to the lens, not merely un-glanced
+      // ...unless it has its back to the lens on purpose: then it looks back over its shoulder.
+      if (pottyYaw !== undefined) targetHeadYaw = Math.max(-1.2, Math.min(1.2, -Math.atan2(Math.sin(bodyYaw), Math.cos(bodyYaw))));
       if (cursor && state.pointer?.engaged && !performing) {
         const toCursorX = cursor.x - state.position.x;
         const toCursorY = cursor.y - state.position.y;
