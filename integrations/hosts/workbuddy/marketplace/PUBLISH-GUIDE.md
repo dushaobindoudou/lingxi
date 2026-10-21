@@ -88,8 +88,8 @@ cd integrations/hosts/workbuddy/marketplace
 
 | 文件 | 结构 | 什么时候用 |
 |---|---|---|
-| `dist/lingxi-desktop-cat-v1.0.1.zip`（15.9 KB） | `lingxi-desktop-cat/SKILL.md` | **先传这个** |
-| `dist/lingxi-desktop-cat-v1.0.1-flat.zip`（15.7 KB） | `SKILL.md` 在第一层 | 上面那个解析失败时换它 |
+| `dist/lingxi-desktop-cat-v1.0.2.zip`（27.3 KB） | `lingxi-desktop-cat/SKILL.md` | **先传这个** |
+| `dist/lingxi-desktop-cat-v1.0.2-flat.zip`（27.0 KB） | `SKILL.md` 在第一层 | 上面那个解析失败时换它 |
 
 同目录的 `avatar-512.jpg` 单独上传（不进 zip）。
 

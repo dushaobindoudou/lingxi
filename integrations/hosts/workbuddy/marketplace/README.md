@@ -10,8 +10,8 @@ marketplace/
 ├── pack.sh                       # 打包 + 四项前置校验
 ├── avatar-512.jpg                # 平台头像（512×512，44 KB）
 ├── dist/                         # 产物，dist/ 在 .gitignore 里
-│   ├── lingxi-desktop-cat-v1.0.1.zip        # 首选：{skill}/SKILL.md
-│   └── lingxi-desktop-cat-v1.0.1-flat.zip   # 备选：SKILL.md 在根
+│   ├── lingxi-desktop-cat-v1.0.2.zip        # 首选：{skill}/SKILL.md
+│   └── lingxi-desktop-cat-v1.0.2-flat.zip   # 备选：SKILL.md 在根
 └── lingxi-desktop-cat/
     ├── SKILL.md                  # 发布版技能定义（自包含，不引用宿主层）
     ├── references/

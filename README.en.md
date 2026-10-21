@@ -13,7 +13,7 @@ Connect a coding agent and it reacts to completed tasks, failures and requests f
 
 Switch between block-style and realistic cats in the main window under Appearance → Style. The image above is the brand illustration.
 
-**v1.0.1 is the latest release.** Supports **macOS 12+, Apple Silicon and Intel**.
+**v1.1.0 is the latest release.** Supports **macOS 12+, Apple Silicon and Intel**.
 
 ## Download and install
 
