@@ -192,9 +192,9 @@ export function faceFuzzRegion(frame: { eyes: THREE.Vector3[]; nose: THREE.Vecto
 // thigh as smooth striped skin - but not on the pads underneath. Combed down the leg to the toes; longer up the leg.
 // Lying, the forelegs, hind feet and thighs are right in front of the viewer.
 export const LEG_FUZZ = {
-  count: 200000,
+  count: 260000,
   // the lower body (rest height, model units; the cat stands ~.6 tall): full below `lowFrom`, none above `lowTo`
-  lowFrom: 0.30, lowTo: 0.36,
+  lowFrom: 0.30, lowTo: 0.36, bellyTo: 0.45,
   bones: /^(FrontUpper|RearUpper|FrontLower|FrontPaw|FrontFoot|FrontToe\d|ForearmTwist|RearLower|RearPaw|RearFoot|RearToe\d)[._]?[LR]$/,  // the loader drops the '.' (FrontLower.L -> FrontLowerL)
   // the pads: normals this far down (rest space) carry none
   sole: -0.55,
@@ -225,9 +225,12 @@ export function legFuzzRegion(mesh: THREE.SkinnedMesh, undercoat: number): CoatF
     vertexValues: legShare,
     weight(v, n, share) {
       // the leg bones' share, and anything low on the body: lying, the inside of a thigh skinned to the pelvis showed
-      const leg = Math.max(THREE.MathUtils.smoothstep(share(legShare), 0.35, 0.8), 1 - THREE.MathUtils.smoothstep(v.y, LEG_FUZZ.lowFrom, LEG_FUZZ.lowTo));
+      // and the belly (facing down at rest): on its side the cat showed it as a smooth white band
+      const belly = THREE.MathUtils.smoothstep(-n.y, 0.25, 0.6) * (1 - THREE.MathUtils.smoothstep(v.y, LEG_FUZZ.bellyTo - 0.05, LEG_FUZZ.bellyTo));
+      const leg = Math.max(THREE.MathUtils.smoothstep(share(legShare), 0.35, 0.8), 1 - THREE.MathUtils.smoothstep(v.y, LEG_FUZZ.lowFrom, LEG_FUZZ.lowTo), belly);
       upperHere = share(upperShare) / Math.max(share(legShare), 1e-3);
-      return leg * (1 - THREE.MathUtils.smoothstep(-n.y, -LEG_FUZZ.sole - 0.2, -LEG_FUZZ.sole));
+      const pad = (1 - THREE.MathUtils.smoothstep(v.y, 0.04, 0.08)) * THREE.MathUtils.smoothstep(-n.y, -LEG_FUZZ.sole - 0.2, -LEG_FUZZ.sole);
+      return leg * (1 - pad);
     },
     flow(_v, _n, random) { return down.clone().add(new THREE.Vector3((random() - 0.5) * 0.4, 0, (random() - 0.5) * 0.4)); },
     length(_v, w, random) {
