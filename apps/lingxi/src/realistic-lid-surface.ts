@@ -65,7 +65,9 @@ export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: 
         const blend = (attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, component: number) => verts.reduce((sum, vertex, k) => sum + bary[k] * attr.getComponent(vertex, component), 0);
         const coat = g.getAttribute('furScale');
         const coverage = coat ? THREE.MathUtils.smoothstep(blend(coat, 0), .25, .85) : 1;
-        const length = (.0026 + random() * .0026) * coverage, width = (.00018 + random() * .00016) * coverage, lean = (random() - .5) * .8, tone = .88 + random() * .35;
+        // longer and more varied than first drawn (2.6-5.2 mm, tone .88-1.23): open, the lids are the ring round the eye,
+        // and that ring read close up as smooth tan skin
+        const length = (.0038 + random() * .0034) * coverage, width = (.0002 + random() * .0002) * coverage, lean = (random() - .5) * .8, tone = .78 + random() * .48;
         const influences = new Map<number, number>();
         verts.forEach((vertex, k) => { for (let j = 0; j < 4; j++) {
             const joint = joints.getComponent(vertex, j);

@@ -19,6 +19,7 @@ import { WHISKER, stepWhiskerSpring, whiskerMood, type WhiskerSpring, type Whisk
 import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
 import { rebuildLidMorphNormals, createLidFuzz } from './realistic-lid-surface.ts';
+import { createFaceFuzz } from './realistic-face-fuzz.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -97,6 +98,9 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 // (model units). Their free edge, the lash line over the eyeball, stays.
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
+// the lid's short hairs (createLidFuzz): open, the lids are the ring round each eye, and at 1100 a lid that ring read
+// close up as bare brown skin (the user, zoomed in: "脸上太少")
+const LID_FUZZ_COUNT = 3600;
 // the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
 const LASH_WIDTH = 0.0028;
 // Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's
@@ -1455,9 +1459,21 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     for (const lid of lidFur) {
       const frames = eyeFrames(root, lid);
       const side = /\.L$/.test((lid.userData.name as string | undefined) ?? '') ? 0 : 1;
-      const fuzz = createLidFuzz(lid, 1100, frames?.[side].centre);
+      const fuzz = createLidFuzz(lid, LID_FUZZ_COUNT, frames?.[side].centre);
       ownedMaterials.push(fuzz.material as THREE.Material);
       lid.parent!.add(fuzz);
+    }
+    // the face's velvet round the eyes, down the bridge and over the muzzle, where the groom leaves the skin showing
+    const headCoat = coat.find((m) => m.name.startsWith('LX_Head'));
+    if (groom && headCoat && bonePos.EyeL && bonePos.EyeR && bonePos.Nose) {
+      const inv = new THREE.Matrix4().copy(headCoat.matrixWorld).invert();
+      const fuzz = createFaceFuzz(headCoat, {
+        eyes: [bonePos.EyeL, bonePos.EyeR].map((e) => e.clone().applyMatrix4(inv)),
+        nose: bonePos.Nose.clone().applyMatrix4(inv),
+        mouthDistance: mouthLineDistance,
+        undercoat: UNDERCOAT_REACH * FUR.LX_Head.len,
+      });
+      if (fuzz) { ownedMaterials.push(fuzz.material as THREE.Material); headCoat.parent!.add(fuzz); }
     }
     const lidLayers = groom ? LID_UNDERCOAT_LAYERS : Math.ceil(shellCount / 2);
     for (const lid of lidFur) {
