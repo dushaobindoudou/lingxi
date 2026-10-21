@@ -14,15 +14,17 @@ bash scripts/check.sh
 |---|---|---|
 | `ready` | 环境完整，桥接在跑 | 直接调用命令 |
 | `app-not-running` | 应用装着，当前没开 | 调一次 `scripts/lingxi.sh`，它会拉起 |
-| `app-missing` | 没有安装 | 给用户下载页与安装步骤，等他自己装 |
+| `app-missing` | 没有安装 | 问用户要不要帮他装，同意后跑 `bash scripts/install.sh` |
 | `app-not-started` | 装了但从没启动过，CLI 还没生成 | 让用户打开一次，或调 `scripts/lingxi.sh` |
 | `token-missing` | 桥接 token 没生成 | 同上一行 |
 | `unsupported-os` | 不是 macOS | 直接说明不支持 |
 
 `scripts/lingxi.sh` 返回 127 时，把它的输出原样读一遍——脚本已经把「不是 macOS / 没装 /
-装了没启动」分开写清了，照着它最后三行做即可。
+装了没启动」分开写清了，照着它最后几行做即可。
 
-**不要**替用户下载 dmg、挂载、或复制 `.app`。安装是用户的选择动作，你只负责把话说准确。
+安装只走 `scripts/install.sh`，并且只在用户同意之后：不要自己拼 curl / hdiutil，也不要复制别处的 `.app`。
+`install.sh` 失败时转述它最后一行的原因（网络不通、GitHub 限流、目录不可写、校验不过），
+再给下载页 `https://github.com/dushaobindoudou/lingxi/releases/latest` 作为退路。
 
 ## 二、命令能跑，但猫毫无反应
 

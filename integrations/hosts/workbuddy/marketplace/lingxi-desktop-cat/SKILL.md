@@ -2,11 +2,11 @@
 name: lingxi-desktop-cat
 display_name: 灵犀桌宠
 display_name_en: Lingxi Desktop Cat
-description: "让桌面上的 3D 小猫替你传达任务的开始、结果、失败和等待，并按内容判断心情（得意、温柔、挫败、担心、疲惫）。适用于已安装「灵犀」macOS 应用的用户。触发词：灵犀、桌宠、小猫、让猫、猫的反应、提醒我、lingxi、desktop cat。"
-description_zh: 把任务状态和情绪交给桌面上的 3D 小猫：完成时一起得意，失败时接住你，需要你处理时凑过来提醒。需先安装「灵犀」macOS 应用。
-description_en: "Let a 3D desktop cat carry your task states and moods: celebrate completions, soften failures, and nudge you when input is needed. Requires the Lingxi macOS app."
+description: "让桌面上的 3D 小猫替你传达任务的开始、结果、失败和等待，并按内容判断心情（得意、温柔、挫败、担心、疲惫）。需要「灵犀」macOS 应用，没装时经用户同意可一键下载安装。触发词：灵犀、桌宠、小猫、让猫、猫的反应、提醒我、lingxi、desktop cat。"
+description_zh: 把任务状态和情绪交给桌面上的 3D 小猫：完成时一起得意，失败时接住你，需要你处理时凑过来提醒。需要「灵犀」macOS 应用，没装时经你同意可一键下载安装。
+description_en: "Let a 3D desktop cat carry your task states and moods: celebrate completions, soften failures, and nudge you when input is needed. Requires the Lingxi macOS app, which it can download and install for you once you agree."
 category: productivity
-version: 1.0.1
+version: 1.0.2
 author: 灵犀 Lingxi
 ---
 
@@ -31,17 +31,51 @@ bash scripts/check.sh
 |---|---|---|
 | `ready` | 一切就绪 | 继续，往下读 |
 | `app-not-running` | 装了但当前没开 | 直接调用 `scripts/lingxi.sh`，它会拉起一次 |
-| `app-missing` | 没有安装 | 把下载页和安装步骤告诉用户，等他装完再说 |
+| `app-missing` | 没有安装 | 问用户要不要帮他装，同意后跑 `bash scripts/install.sh`（见下） |
 | `app-not-started` | 装了，但从没启动过 | 让用户打开一次，或直接调用 `scripts/lingxi.sh` |
 | `token-missing` | 桥接 token 还没生成 | 同上一行：让应用启动一次 |
 | `unsupported-os` | 不是 macOS | 直接说明不支持，不要找替代路径 |
 
-**安装是用户的动作，你只负责把话说清楚。** 不要替用户下载 dmg、不要挂载、
-不要把别处的 `.app` 复制过去，也不要说「已经装好了」——没装就是没装。
+### 没装：问一句，同意就替他装好
+
+用户不会自己去 GitHub 找安装包，别把下载页甩给他。`app-missing` 时**只问一句**，例如：
+
+> 桌面猫「灵犀」还没装。要我现在帮你下载安装吗？大约一两分钟，装好会自动打开。
+
+- 用户同意（「好」「装吧」「可以」都算）→ 立刻执行，不再追问：
+
+  ```bash
+  bash scripts/install.sh
+  ```
+
+  它从 GitHub Releases 下载最新版，校验 SHA256、bundle id 和代码签名，不对就拒装；
+  装进「应用程序」（不可写时装到 `~/Applications`）并打开。已经装着就什么也不做。
+- 最后一行有 `✓` 才算成功：告诉用户猫已经出来了，然后继续他原本的任务。
+  没成功就照实转述那一行原因，再给下载页 `https://github.com/dushaobindoudou/lingxi/releases/latest`
+  作为退路；退出码 3 表示另一个安装正在进行，等半分钟再跑一次 `check.sh`。
+- 用户拒绝或没回应 → 不装，本次对话不再提，照常完成他的任务。
+- 只能用 `scripts/install.sh` 安装：不要自己拼 curl / hdiutil，不要复制别处的 `.app`，
+  没跑成功之前不要说「已经装好了」。
+
 用户设了 `LINGXI_AUTOSTART=0` 表示不想让猫自己冒出来，照实说明，别绕过去。
 
 体检通过后，`scripts/lingxi.sh` 是唯一入口：它定位 CLI、在需要时拉起应用，然后把参数原样转发。
 **下面所有命令都写成 `bash scripts/lingxi.sh ...`。** CLI 不在 PATH 上，这是正常的。
+
+### 接入引导：把这台 Mac 上其他 AI 软件也接上
+
+灵犀就绪后，每个会话第一次用猫时跑一次扫描（只读）：
+
+```bash
+bash scripts/lingxi.sh connect
+```
+
+- 最后一行 `OFFER: no` → 什么都不说。
+- `OFFER: yes <软件…>` → 在自然停顿处问一句，例如「这台 Mac 上还有 Cursor 没接上灵犀，要我一起接上吗？」
+  同意就 `bash scripts/lingxi.sh connect --all`，把每行 ✓ / ✗ 转述给用户，并提醒「新开一个会话后生效」；
+  只要其中几个就 `connect <软件 id>…`；拒绝或没回应就 `connect --decline`（30 天内不再问）。
+- 只通过 `connect` 接入，不要自己改别的软件的配置文件。整场对话最多问一次。
+- 命令报不认识 `connect`，说明灵犀应用版本较旧，跳过这一步，不要提。
 
 ## 一、最重要的一件事：报心情，不只是状态
 
@@ -110,6 +144,22 @@ LINGXI_TASK_ID=fix-login bash scripts/lingxi.sh task completed write proud "登�
 | 在等超过两分钟的外部过程 | `blocked`，说在等什么 |
 
 一个时刻只报一次，不为同一件事叠加。
+
+### 偶尔给一点小惊喜：自动特效
+
+全屏特效由你根据任务语境自己挑，但只在用户开了「设置 → 自动特效」时才放。时机是上表里分量最重的
+那几种：难啃的问题终于解决、长时间构建首次全绿、交付了重要成果，或者用户道谢、表达亲近。
+普通改动、日常问答、每次测试通过都不放；失败、风险、等授权**绝不**用特效。拿不准就不放。
+
+1. 先 `bash scripts/lingxi.sh caps`，看 `autoEffects`：`enabled: true` 且 `remainingCooldownMs: 0`
+   才继续；关着、冷却中或没有这个字段就安静跳过，不替用户打开，也不等冷却结束再试。
+2. 从同一份结果的 `performances` 里挑一个合情绪的：庆祝或放松挑 `zoomies`，回应亲近挑 `kiss-rush`。
+   `angry-claw` 只用于明确的玩笑；`pee-at-you` / `poop-at-you` 只在用户自己想看或已在开玩笑时用。
+3. 放 `bash scripts/lingxi.sh perform <id>`（不加 `--manual`）。被拒或跳过就到此为止，不重试。
+
+同一任务最多一次，所有 Agent 共用至少 10 分钟冷却；用户正拖猫、玩玩具或撸猫时别抢。
+特效是任务报告的点缀，不代替 `completed` 那条报告，也不重复播报同一结果。
+用户点名要看某个特效时，才用 `perform <id> --manual`；不要把自己挑的特效标成手动来绕开开关。
 
 ### 用户觉得猫不够主动时
 
@@ -197,7 +247,7 @@ bash scripts/lingxi.sh agents    # 谁在驱动
 
 ## 七、别做的事
 
-- **别自己挑动作和表情来表达任务结果**，报 `mood` 让猫决定。
+- **别自己挑动作和表情来表达任务结果**，报 `mood` 让猫决定；唯一例外是上面「自动特效」那条路。
 - **别改 `skin` / `camera` / `scale` / `visible`**——那是用户的偏好，不是你的表达手段。
 - **别把 `alert` 当默认**，用户要看的是要紧的事，不是要紧的工具。
 - **别在 `running` 时话多**，陪着比说话好，尤其是 `tender`。

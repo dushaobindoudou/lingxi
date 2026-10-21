@@ -7,7 +7,7 @@
 #   下载、挂载 dmg、复制 .app、写宿主的任何配置文件、改权限文件、启动应用。
 # 它读的东西：应用与 token 的存在性、/health、以及 ~/.workbuddy/settings.json 里有没有
 #   灵犀的 hooks（只读，用来判断"每轮自动反应"这一档体验装没装）。
-# 安装和启动都是用户的选择动作；这个脚本只观察。
+# 这个脚本只观察；没装时由模型征得用户同意后调用 scripts/install.sh。
 #
 # 用法：bash scripts/check.sh
 # 退出码：0 就绪 / 2 应用未安装 / 3 应用未启动 / 4 桥接不可达 / 5 token 缺失 / 6 不是 macOS
@@ -79,9 +79,10 @@ if [ -n "$APP" ]; then
   ok "应用已安装：${APP}${version:+（v${version}）}"
 else
   need "没有找到灵犀应用（${APP_ID}）。"
-  note "下载页：https://github.com/dushaobindoudou/lingxi/releases/latest"
-  note "要下的是 Lingxi-<版本>-universal.dmg；用户自己下载、拖进「应用程序」并打开一次。"
-  note "不要替用户下载或安装；也不要说「已经装好了」。"
+  note "先问用户一句「要我帮你下载并安装灵犀吗？」，用户同意后执行：bash scripts/install.sh"
+  note "它从 GitHub Releases 下载最新版，校验 SHA256、bundle id 和代码签名后装进「应用程序」并打开，约一两分钟。"
+  note "用户没同意就不装；install.sh 成功之前不要说「已经装好了」。"
+  note "install.sh 失败（网络、权限）时再给下载页：https://github.com/dushaobindoudou/lingxi/releases/latest"
   finish app-missing 2
 fi
 

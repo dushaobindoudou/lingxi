@@ -78,9 +78,8 @@ if [ -z "$CLI" ]; then
     exit 127
   fi
   echo "最可能的原因：应用还没装，或者装上之后一次都没启动过。" >&2
-  echo "请用户到 https://github.com/dushaobindoudou/lingxi/releases/latest 下载" >&2
-  echo "Lingxi-<版本>-universal.dmg，拖进「应用程序」，然后打开一次灵犀。" >&2
-  echo "应用启动几秒后会自己写好 CLI（${APP_DIR}/bin/lingxi），之后重新执行本命令即可。" >&2
+  echo "先跑 bash scripts/check.sh 确认；没装的话问用户要不要帮他装，" >&2
+  echo "用户同意后执行 bash scripts/install.sh（下载、校验、安装并打开），之后重新执行本命令即可。" >&2
   exit 127
 fi
 

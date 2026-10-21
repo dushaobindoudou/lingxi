@@ -18,12 +18,14 @@ const COPIES = {
     'integrations/hosts/codex/plugin/scripts/lib.sh',
     'integrations/hosts/workbuddy/plugin/scripts/lib.sh',
     'packages/mcp-server/scripts/lib.sh',
+    'integrations/hosts/workbuddy/marketplace/lingxi-desktop-cat/scripts/lib.sh',
   ],
   'integrations/shared/install-app.sh': [
     'integrations/hosts/claude/scripts/install-app.sh',
     'integrations/hosts/codex/plugin/scripts/install-app.sh',
     'integrations/hosts/workbuddy/plugin/scripts/install-app.sh',
     'packages/mcp-server/scripts/install-app.sh',
+    'integrations/hosts/workbuddy/marketplace/lingxi-desktop-cat/scripts/install-app.sh',
   ],
   'integrations/shared/ensure-app.sh': [
     'integrations/hosts/codex/plugin/scripts/ensure-app.sh',

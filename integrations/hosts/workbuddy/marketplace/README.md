@@ -32,7 +32,7 @@ marketplace/
 | `integrations/hosts/workbuddy/skills/lingxi-workbuddy` | hooks 已装好、MCP 信任闸门、额度守卫 | 技能包不装 hooks、不带 MCP，这些前提不成立 |
 
 所以 `lingxi-desktop-cat/SKILL.md` 是**按同样的行为契约重写的自包含版本**：
-去掉所有"宿主层会告诉你"的分叉，把"先查环境、没装就引导下载"写进正文，
+去掉所有"宿主层会告诉你"的分叉，把"先查环境、没装就征得同意后代为安装"写进正文，
 并新增 `scripts/lingxi.sh` 解决 CLI 不在 PATH 上的问题。
 
 ## 必须与系统层一致的（行为契约）
@@ -53,12 +53,12 @@ marketplace/
 |---|---|
 | 没有「宿主层」概念 | 技能市场里只有这一份，模型读不到第二份 |
 | 正文要求先跑 `scripts/lingxi.sh doctor` | 没有插件替它检查应用 |
-| 不自动安装应用，只给下载地址 | 平台安全扫描禁止下载并执行；安装也是用户的选择 |
+| 不在后台自动安装；问一句、同意后才跑 `scripts/install.sh` | 用户不会自己去 GitHub 找 dmg；但下载安装是对用户机器的动作，必须先得到同意 |
 | 不写 hooks / MCP / 信任闸门 | 技能包没有这些能力，写了就是误导 |
 | 命令统一写成 `bash scripts/lingxi.sh ...` | CLI 不在 PATH，且技能目录位置由平台决定 |
 | `LINGXI_AGENT` 默认 `workbuddy` | 在 WorkBuddy 里跑，署名应与宿主一致 |
 
-## 检查做到什么程度（安装不代劳）
+## 检查与安装分开：`check.sh` 只看，`install.sh` 经同意才装
 
 `scripts/check.sh` **只观察，不动作**：不下载、不挂载、不复制 `.app`、不写任何宿主配置、不启动应用。
 它把「到底缺什么」分成六种结论，写在最后一行：
@@ -67,7 +67,7 @@ marketplace/
 |---|---|---|
 | `ready` | 环境完整，桥接在跑 | — |
 | `app-not-running` | 装了，当前没开 | `lingxi.sh` 会拉起一次 |
-| `app-missing` | 没装 | **用户自己下载安装** |
+| `app-missing` | 没装 | 模型问一句，**用户同意后跑 `install.sh`** |
 | `app-not-started` | 装了但没启动过，CLI 还没生成 | 用户打开一次，或 `lingxi.sh` 拉起 |
 | `token-missing` | 桥接 token 没生成 | 同上 |
 | `unsupported-os` | 不是 macOS | 说明不支持，不找替代 |
@@ -77,9 +77,11 @@ marketplace/
 `check.sh` 不依赖 CLI，用文件系统、`Info.plist` 和 `/health` 就能判断。
 两者分工：应用没装或没启动用 `check.sh`；已经在跑、要看更深的前置条件时用 `doctor`。
 
-对应地，`SKILL.md` 明确禁止模型代劳安装：不下载 dmg、不挂载、不复制 `.app`、
-不说「已经装好了」。模型只负责把结论翻译成一句用户能照做的话。
-这条由 `integrations/test/marketplace-package.test.mjs` 守着（禁止 `hdiutil` / `cp -R` / `open -g` 等）。
+安装由 `scripts/install.sh` 负责：它把宿主身份定成 `workbuddy`，再调用同目录的 `install-app.sh`
+（`integrations/shared/install-app.sh` 的逐字副本，与各插件同一份）：从 GitHub Releases 取最新版，
+校验 SHA256、bundle id 与代码签名，复制到旁边再原子替换，然后打开。`SKILL.md` 要求模型**先问一句、
+用户同意后才跑**，失败才退回下载页；不许自己拼 curl / hdiutil，也不许在成功前说「已经装好了」。
+`integrations/test/marketplace-package.test.mjs` 守着 `check.sh` 只读，`shared-copies.test.mjs` 守着副本不漂移。
 
 ## 改完怎么验
 

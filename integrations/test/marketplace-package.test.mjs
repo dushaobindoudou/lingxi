@@ -1,10 +1,12 @@
 // The skill-market package (integrations/hosts/workbuddy/marketplace/) is not a copy of the host
 // plugin: it ships to people who never ran install.sh, so it must not assume hooks, an MCP trust
-// gate, or a host layer exists. These tests keep it self-contained and keep the platform's
+// gate, or a host layer exists. Those same people will not go to GitHub for a dmg either, so when
+// the app is missing the skill asks once and, on a yes, installs it with the shared installer. These tests keep it self-contained and keep the platform's
 // packaging rules (frontmatter fields, two-level depth, scripts/ entry point) from drifting.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -78,12 +80,70 @@ test('the wrapper exists, is executable, and parses as bash', () => {
   assert.equal(parsed.status, 0, parsed.stderr);
 });
 
-test('the skill states the macOS limit and does not install or download anything', () => {
+test('the skill states the macOS limit and installs only through install.sh, after the user agrees', () => {
   const body = read(SKILL);
   assert.match(body, /macOS/, 'the skill must say it only works on macOS');
-  assert.match(body, /不要替用户下载/);
+  assert.match(body, /bash scripts\/install\.sh/, 'a missing app is installed for the user, not left to them');
+  assert.match(body, /同意/, 'installing touches the user\'s machine: ask first');
+  assert.match(body, /用户拒绝或没回应 → 不装/);
+  assert.match(body, /releases\/latest/, 'the download page stays as the fallback when install.sh fails');
+  for (const diy of ['hdiutil attach', 'curl -fL', 'curl -L', 'ditto ']) {
+    assert.ok(!body.includes(diy), `the model must not hand-roll an install ("${diy}")`);
+  }
   // `update` replaces the app from GitHub Releases - never something the model should trigger.
   assert.ok(!/scripts\/lingxi\.sh update/.test(body), 'the skill must not call update');
+  const head = frontmatter(body);
+  assert.match(head, /^description:.*同意.*安装/m, 'the listing must disclose that the skill can install the app');
+  assert.match(head, /^description_en:.*install/m);
+});
+
+test('install.sh installs as the workbuddy host and opens the app', () => {
+  const script = read(`${PKG}/scripts/install.sh`);
+  assert.equal(spawnSync('bash', ['-n', join(REPO, PKG, 'scripts/install.sh')]).status, 0);
+  assert.match(script, /LINGXI_HOST="\$\{LINGXI_HOST:-workbuddy\}"/);
+  assert.match(script, /exec bash "\$DIR\/install-app\.sh" --open/, 'call through bash: unzip may drop the exec bit');
+});
+
+test('install.sh downloads, verifies and installs a release end to end', { skip: platform() !== 'darwin' && 'macOS only' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'lingxi-market-'));
+  const home = join(root, 'home');
+  const bin = join(root, 'bin');
+  const dest = join(root, 'Applications');
+  const app = join(dest, '灵犀.app');
+  for (const dir of [home, bin]) mkdirSync(dir, { recursive: true });
+  const stub = (name, body) => { writeFileSync(join(bin, name), `#!/bin/bash\n${body}\n`); chmodSync(join(bin, name), 0o755); };
+  stub('open', `printf '%s\\n' "$*" >> '${root}/opened'`);
+  stub('curl', 'exit 7'); // the bridge never answers: install, open, then give up waiting quietly
+
+  const stage = join(root, 'stage', '灵犀.app');
+  mkdirSync(join(stage, 'Contents/MacOS'), { recursive: true });
+  writeFileSync(join(stage, 'Contents/Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.dushaobin.lingxi-desktop</string>
+<key>CFBundleShortVersionString</key><string>9.8.0</string>
+<key>CFBundleExecutable</key><string>lingxi</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+</dict></plist>`);
+  writeFileSync(join(stage, 'Contents/MacOS/lingxi'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(stage, 'Contents/MacOS/lingxi'), 0o755);
+  assert.equal(spawnSync('codesign', ['--force', '--deep', '--sign', '-', stage]).status, 0, 'codesign failed');
+  const release = join(root, 'release');
+  mkdirSync(release);
+  const dmg = join(release, 'Lingxi-9.8.0-universal.dmg');
+  assert.equal(spawnSync('hdiutil', ['create', '-quiet', '-fs', 'HFS+', '-srcfolder', join(root, 'stage'), '-volname', 'Lingxi', dmg]).status, 0);
+  const sum = spawnSync('shasum', ['-a', '256', dmg], { encoding: 'utf8' }).stdout.split(' ')[0];
+  writeFileSync(join(release, 'SHA256SUMS.txt'), `${sum}  Lingxi-9.8.0-universal.dmg\n`);
+
+  const r = spawnSync('bash', [join(REPO, PKG, 'scripts/install.sh'), '--from', release, '--dest', dest], {
+    env: { PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, LANG: 'zh_CN.UTF-8', LC_ALL: 'zh_CN.UTF-8',
+      LINGXI_APP_PATH: app, LINGXI_CONFIG_DIR: join(root, 'config'), LINGXI_NO_SPOTLIGHT: '1' },
+    encoding: 'utf8', timeout: 120000,
+  });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /✓ 灵犀 9\.8\.0 已安装/);
+  assert.ok(existsSync(join(app, 'Contents/Info.plist')), 'the app landed in the destination');
+  assert.ok(existsSync(join(home, '.lingxi/workbuddy/install.state')), 'progress is filed under the workbuddy host');
+  assert.ok(existsSync(join(root, 'opened')), 'the app is opened once installed');
 });
 
 test('the checker only observes: it never installs, downloads, starts, or writes config', () => {
@@ -115,7 +175,7 @@ test('the skill points first-time users at the checker, not at the app-side doct
   const body = read(SKILL);
   assert.match(body, /bash scripts\/check\.sh/);
   assert.ok(!/scripts\/lingxi\.sh doctor/.test(body), 'check.sh must be the first step; doctor needs the CLI');
-  assert.match(body, /不要替用户下载/);
+  assert.match(read(`${PKG}/scripts/check.sh`), /bash scripts\/install\.sh/, 'app-missing names the installer');
 });
 
 test('the checker detects hooks but never installs or edits them', () => {
