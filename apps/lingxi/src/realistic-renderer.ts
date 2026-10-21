@@ -19,7 +19,7 @@ import { WHISKER, stepWhiskerSpring, whiskerMood, type WhiskerSpring, type Whisk
 import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
 import { rebuildLidMorphNormals, createLidFuzz } from './realistic-lid-surface.ts';
-import { createFaceFuzz } from './realistic-face-fuzz.ts';
+import { createCoatFuzz, faceFuzzRegion, legFuzzRegion, tailFuzzRegion } from './realistic-coat-fuzz.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -1463,17 +1463,25 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       ownedMaterials.push(fuzz.material as THREE.Material);
       lid.parent!.add(fuzz);
     }
-    // the face's velvet round the eyes, down the bridge and over the muzzle, where the groom leaves the skin showing
-    const headCoat = coat.find((m) => m.name.startsWith('LX_Head'));
+    // short hairs where the groom leaves the skin showing (realistic-coat-fuzz): the face's velvet round the eyes, down
+    // the bridge and over the muzzle, the legs and paws, and the tail
+    const headCoat = coat.find((m) => m.name.startsWith('LX_Head')), bodyCoat = coat.find((m) => m.name.startsWith('LX_Body'));
+    const fuzzRegions: [THREE.SkinnedMesh, ReturnType<typeof legFuzzRegion>][] = [];
     if (groom && headCoat && bonePos.EyeL && bonePos.EyeR && bonePos.Nose) {
       const inv = new THREE.Matrix4().copy(headCoat.matrixWorld).invert();
-      const fuzz = createFaceFuzz(headCoat, {
+      fuzzRegions.push([headCoat, faceFuzzRegion({
         eyes: [bonePos.EyeL, bonePos.EyeR].map((e) => e.clone().applyMatrix4(inv)),
         nose: bonePos.Nose.clone().applyMatrix4(inv),
         mouthDistance: mouthLineDistance,
         undercoat: UNDERCOAT_REACH * FUR.LX_Head.len,
-      });
-      if (fuzz) { ownedMaterials.push(fuzz.material as THREE.Material); headCoat.parent!.add(fuzz); }
+      })]);
+    }
+    if (groom && bodyCoat) fuzzRegions.push([bodyCoat, legFuzzRegion(bodyCoat, UNDERCOAT_REACH * FUR.LX_Body.len)]);
+    const tailCoat = coat.find((m) => m.name.startsWith('LX_Tail'));
+    if (groom && tailCoat) fuzzRegions.push([tailCoat, tailFuzzRegion(tailCoat, UNDERCOAT_REACH * FUR.LX_Tail.len)]);
+    for (const [mesh, region] of fuzzRegions) {
+      const fuzz = region && createCoatFuzz(mesh, region);
+      if (fuzz) { ownedMaterials.push(fuzz.material as THREE.Material); mesh.parent!.add(fuzz); }
     }
     const lidLayers = groom ? LID_UNDERCOAT_LAYERS : Math.ceil(shellCount / 2);
     for (const lid of lidFur) {
