@@ -19,6 +19,14 @@
 - 动作/表情/皮肤来自用户可编辑 JSON，调用前必须查 capabilities，不能硬编码 id。
 - `actions.json`、`expressions.json` 是整体替换，`skins.json` 是合并；改自定义资源前先读、备份。本机有其他 agent 并发写入。
 - 测试：`npm run check && npm test`；应用侧再跑 `npx tsc --noEmit` 与 `cargo test`；渲染动画用 `probe-*.html`。
+- **给模型写的检测命令必须是「只读固定文件」**：`~/.workbuddy/plugins` 实测 458 MB，
+  `grep -r` 会被 SIGTERM（exit 137）。宿主配置只查 `settings.json` / `config.toml` /
+  `hooks.json` / `installed_plugins.json` 这几个文件。
+- **macOS 的 grep 是 BSD 版**：BRE 里 `\|` 不是「或」，会被当字面量 → 假阴性；
+  要用 `grep -qs -e A -e B`。同理 zsh 下未匹配的 glob 会 nomatch 中断整条命令，命令里别用。
+- **检测 hook 不能按产品名查**：Codex 的 `config.toml` 本来就有 `[mcp_servers.lingxi]`，
+  WorkBuddy 的 settings 也可能因别的原因出现 lingxi。要查 hook 命令的特征
+  （`notify-fanout.sh` / `lingxi-emit` / 桥端口 `47811`）或插件开关（`lingxi@`）。
 
 ## Skill 与宿主
 
