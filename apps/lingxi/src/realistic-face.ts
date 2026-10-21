@@ -45,6 +45,17 @@ const KEY_MAX: Record<string, number> = { Up: 2.5, Out: 1.5 };
 const EYES_OWN_LIDS = new Set(['happy', 'closed', 'wink-left', 'wink-right']);
 
 /** The controls of a named expression, as v6_face_apply.expression(): its four layers plus its extras, summed. */
+// 安心 - the loaf's face, and so the face of a cat lying about doing nothing - took the look-dev 'soft' eyes (lids a
+// quarter down, the lower lids lifted .6): with the clip's own blink on top a narrow slit that read as unwell, not at
+// ease (the user: "没事趴在这发现姿势不够自然"). Its own lighter layer: the lids a little lowered, the lower lids barely.
+export const CALM_EYES = { blink: 0.12, lowerLift: 0.26 };
+export function calmLoafFace(spec: FaceSpec) {
+  const soft = spec.layers.eye?.soft, calm = spec.expressions['安心'];
+  if (!soft || !calm || calm.eye !== 'soft') return;
+  spec.layers.eye.calm = { ...soft, 'Blink.L': CALM_EYES.blink, 'Blink.R': CALM_EYES.blink, 'LowerLift.L': CALM_EYES.lowerLift, 'LowerLift.R': CALM_EYES.lowerLift };
+  spec.expressions['安心'] = { ...calm, eye: 'calm' };
+}
+
 export function expressionValues(spec: FaceSpec, name: string): Record<string, number> | null {
   const e = spec.expressions[name];
   if (!e) return null;

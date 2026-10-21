@@ -21,7 +21,7 @@ import { rebalanceLimbWeights } from './realistic-skin.ts';
 import { rebuildLidMorphNormals, createLidFuzz } from './realistic-lid-surface.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
-import { APP_PUPIL, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
+import { APP_PUPIL, calmLoafFace, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 import { createLocomotion, KITTEN_WALK, placePaw, steeringStrideScale } from './realistic-locomotion.ts';
 import { digHead, digPaw, POTTY_DIG, POTTY_SQUAT, smooth01 } from './realistic-potty.ts';
 import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
@@ -1478,6 +1478,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
 
     if (spec) {
       // before any clip has posed the bones: the face reads their rest frames
+      calmLoafFace(spec);
       faceRig = createFaceRig(spec, root, irisUniforms);
       faceSpec = spec;
       if (faceRig.missing.length) faceProblems.push(`not in the model: ${faceRig.missing.join(', ')}`);
