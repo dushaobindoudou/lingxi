@@ -204,9 +204,13 @@ const ACTION_STAGING: Record<string, { yaw: number; look?: boolean; liftHind?: b
 // The lying clips were authored and approved for the camera square in front of the cat (the review renders' "-app"
 // views): SideLie and Sleep even set the head's world orientation to face that camera. Played from the three-quarter
 // stance the cat stands in - or whatever heading it stopped at - the face pointed off past the viewer, the head looked
-// wrenched round on the lying body. So the cat turns square on first, then lies down (the same staging as the potty set
+// wrenched round on the lying body. So the cat turns to its mark first, then lies down (the same staging as the potty set
 // pieces), and the engine's sleep the same way.
-const FRONT_FACING_CLIPS = new Set(['LieDown', 'Loaf', 'SideLie', 'Sleep']);
+// The mark (yaw, on the side it already shows): square on for SideLie and Sleep, whose heads are set to face the camera.
+// LieDown and Loaf leave the head on the body, and square on the body hid behind the head and paws - from the eye-level
+// camera ('auto' at rest) a head on two paws, nothing that read as lying down. Three-quarter on, as it stands, the length
+// of the lying body shows and the face still turns to the viewer.
+const LYING_YAW: Record<string, number> = { LieDown: MIN_PRESENT_YAW, Loaf: MIN_PRESENT_YAW, SideLie: 0, Sleep: 0 };
 // the look over the shoulder: the most it turns (radians), and each bone's share of it, chest to head
 const LOOK_BACK = { most: 2.3, shares: { Chest: 0.18, Neck: 0.4, Head: 0.42 } as Record<string, number> };
 // the leg-lift (radians): out from the body, forward at the hip, the knee bent; the pelvis rolls away from it a little
@@ -1508,12 +1512,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     // a held pose is held 4 s once reached (getting down to it, and curling up by way of lying down, take their own time)
     oneShot = { id, clip, startedAt: elapsed, endsAt: elapsed + seconds };
   }
-  // a set piece's staging (ACTION_STAGING, FRONT_FACING_CLIPS): turning to its mark, then (started) playing
+  // a set piece's staging (ACTION_STAGING, LYING_YAW): turning to its mark, then (started) playing
   let staged: { id: string; clip: string; yaw: number; started: boolean; seconds?: number } | null = null;
   /** Play `id` (as `clip`), turning to its mark first if it has one. */
   function stageOrStart(id: string, clip: string, seconds?: number) {
     const stage = ACTION_STAGING[id];
-    const yaw = stage ? (Math.sign(bodyYaw) || 1) * stage.yaw : FRONT_FACING_CLIPS.has(clip) ? 0 : null;
+    const mark = stage?.yaw ?? LYING_YAW[clip];
+    const yaw = mark == null ? null : (Math.sign(bodyYaw) || 1) * mark;
     if (yaw == null || Math.abs(Math.atan2(Math.sin(yaw - bodyYaw), Math.cos(yaw - bodyYaw))) < 0.06) {
       staged = stage ? { id, clip, yaw: bodyYaw, started: true, seconds } : null;
       startAction(id, clip, seconds);
@@ -2301,7 +2306,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         startAction(staged.id, staged.clip, staged.seconds);
       }
       if (staged?.started && oneShot?.id !== staged.id) staged = null;
-      // the engine's sleep: square on before it lies down (FRONT_FACING_CLIPS), then held
+      // the engine's sleep: square on before it lies down (LYING_YAW), then held
       const sleepTurn = state.state === 'sleep' && currentName !== 'Sleep' && !lyingVia && !oneShot && !staged
         && Math.abs(Math.atan2(Math.sin(bodyYaw), Math.cos(bodyYaw))) > 0.06;
       const yawRate = deltaSeconds > 0 ? Math.atan2(Math.sin(bodyYaw - previousYaw), Math.cos(bodyYaw - previousYaw)) / deltaSeconds : 0;
