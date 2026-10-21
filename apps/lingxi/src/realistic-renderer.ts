@@ -645,15 +645,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           float pd = mix(length(pe), lensD, lens);
           float pw = max(fwidth(pd) * 1.5, 0.035);
           diffuseColor.rgb = mix(vec3(0.008, 0.007, 0.006), diffuseColor.rgb, smoothstep(1.0 - pw, 1.0 + pw, pd));
-          // a big soft catchlight up-left, a small one down-right - most of a kitten's 'wet', alive look - and, for
-          // 闪亮 / 期待, two more small sparkles. (A square window and a lower bounce were tried: they greyed the
-          // pupil over, a milky eye.)
-          float catchL = smoothstep(0.085, 0.050, distance(vMapUv, vec2(0.37, 0.36))) + 0.7 * smoothstep(0.035, 0.018, distance(vMapUv, vec2(0.63, 0.64)));
-          catchL += uSpark * 0.22 * (smoothstep(0.03, 0.012, distance(vMapUv, vec2(0.62, 0.33))) + smoothstep(0.022, 0.008, distance(vMapUv, vec2(0.33, 0.62))));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), clamp(catchL * 0.92 * uCatch, 0.0, 1.0));
+          // a small soft catchlight up-left and a faint one down-right - a wet eye's reflections - and, for 闪亮 / 期待, two more small sparkles. (A square window and a lower bounce were tried: they greyed the
+          // pupil over, a milky eye. A big near-white disc, 0.085 across at 92%, read close up as a sticker: the user,
+          // zoomed in, "太反光了". A broad dim sheen under them greyed the pupil again.)
+          float catchL = smoothstep(0.048, 0.020, distance(vMapUv, vec2(0.38, 0.37))) + 0.35 * smoothstep(0.020, 0.008, distance(vMapUv, vec2(0.62, 0.63)));
+          catchL += uSpark * 0.18 * (smoothstep(0.024, 0.010, distance(vMapUv, vec2(0.62, 0.33))) + smoothstep(0.018, 0.007, distance(vMapUv, vec2(0.33, 0.62))));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.96, 1.0), clamp(catchL * 0.70 * uCatch, 0.0, 1.0));
         #endif`);
     };
-    m.customProgramCacheKey = () => 'realcat-iris-v3';
+    m.customProgramCacheKey = () => 'realcat-iris-v4';
     ownedMaterials.push(m);
     return m;
   }
