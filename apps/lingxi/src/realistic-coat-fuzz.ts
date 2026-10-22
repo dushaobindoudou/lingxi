@@ -153,6 +153,9 @@ export const FACE_FUZZ = {
   short: [0.0024, 0.0042], long: [0.007, 0.014],
   width: [0.00026, 0.00042],
   lift: 0.4,
+  // a hair near the mouth is at most this share of its root's distance from the mouth's line; the hairs thin out from
+  // `mouth` to `mouthClear` off the line, and none grow on the groove under the nose (half-width, from y, to y)
+  mouthRoom: 0.5, mouthClear: 0.02, groove: [0.0025, 0.4455, 0.468],
   colourLift: 1.17,
 } as const;
 
@@ -167,7 +170,11 @@ export function faceFuzzRegion(frame: { eyes: THREE.Vector3[]; nose: THREE.Vecto
       if (n.z < 0.05 || v.distanceTo(centre) > F.reach) return 0;
       for (const e of eyes) if (v.distanceTo(e) < F.eyeHole) return 0;
       if (v.distanceTo(nose) < F.noseLeather || frame.mouthDistance(v.x, v.y) < F.mouth) return 0;
-      return THREE.MathUtils.smoothstep(n.z, 0.05, 0.4) * (1 - THREE.MathUtils.smoothstep(v.distanceTo(centre), F.reach - F.fade, F.reach));
+      // thinning out toward the mouth and off the groove from the nose down to it: the velvet over them hid the closed
+      // mouth, drawn by the coat beneath ("嘴巴效果不好")
+      const groove = Math.abs(v.x) < F.groove[0] && v.y > F.groove[1] && v.y < F.groove[2] ? 0 : 1;
+      return groove * THREE.MathUtils.smoothstep(frame.mouthDistance(v.x, v.y), F.mouth, F.mouthClear)
+        * THREE.MathUtils.smoothstep(n.z, 0.05, 0.4) * (1 - THREE.MathUtils.smoothstep(v.distanceTo(centre), F.reach - F.fade, F.reach));
     },
     // out from the nose and back toward the ears, and away from each eye near it
     flow(v, _n, random) {
@@ -182,7 +189,10 @@ export function faceFuzzRegion(frame: { eyes: THREE.Vector3[]; nose: THREE.Vecto
     length(v, w, random) {
       const outward = THREE.MathUtils.smoothstep(v.distanceTo(centre), 0.03, F.reach);
       const s = THREE.MathUtils.lerp(F.short[0], F.short[1], random()), l = THREE.MathUtils.lerp(F.long[0], F.long[1], random());
-      return THREE.MathUtils.lerp(l, s, Math.max(nearEye(v), 1 - outward)) * (0.9 + 0.1 * w);
+      // never long enough to lie over the mouth's line: grown out to 14 mm, the hairs above it hid the closed mouth
+      // ("嘴巴效果不好")
+      const room = Math.max(F.short[0] * 0.5, (frame.mouthDistance(v.x, v.y) - F.mouth) * F.mouthRoom);
+      return Math.min(room, THREE.MathUtils.lerp(l, s, Math.max(nearEye(v), 1 - outward)) * (0.9 + 0.1 * w));
     },
   };
 }
