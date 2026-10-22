@@ -179,7 +179,8 @@ const DEFAULT_CAMERA: &str = "game";
 /// one (realistic-renderer.ts). Separate from the theme on purpose: the voxel themes do not apply to the realistic cat,
 /// and switching back must find the user's theme where they left it.
 const KNOWN_RENDER_STYLES: [&str; 2] = ["voxel", "realistic"];
-const DEFAULT_RENDER_STYLE: &str = "voxel";
+// The realistic kitten is the companion now (the owner, 2026-10-22: 「默认切换到实体猫」); the voxel cat stays one click away.
+const DEFAULT_RENDER_STYLE: &str = "realistic";
 
 /// Toys and affection ("玩具"). Physical ids match life-engine's TOY_KINDS; petting
 /// is handled by the host interaction director. The engine owns the
@@ -286,6 +287,11 @@ struct PersistedSettings {
     input_avoidance: bool,
     #[serde(default)]
     auto_effects: bool,
+    /// Whether this settings file has been moved onto the realistic default once. Every save writes the style, so a
+    /// file from before the default changed says "voxel" whether or not anyone chose it; on first load it is switched
+    /// over, and after that a choice of the voxel cat is kept like any other.
+    #[serde(default)]
+    realistic_default_applied: bool,
 }
 
 fn default_cat_name() -> String {
@@ -331,6 +337,7 @@ impl PersistedSettings {
             render_style: default_render_style(),
             input_avoidance: true,
             auto_effects: false,
+            realistic_default_applied: true,
         }
     }
 }
@@ -364,7 +371,11 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
     // ignored by setSkin, which leaves the built-in default showing anyway.
     let skin = if settings.skin.trim().is_empty() { default_skin() } else { settings.skin };
     let camera = if KNOWN_CAMERAS.contains(&settings.camera.as_str()) { settings.camera } else { default_camera() };
-    let render_style = if KNOWN_RENDER_STYLES.contains(&settings.render_style.as_str()) { settings.render_style } else { default_render_style() };
+    let render_style = if !settings.realistic_default_applied || !KNOWN_RENDER_STYLES.contains(&settings.render_style.as_str()) {
+        default_render_style()
+    } else {
+        settings.render_style
+    };
     PersistedSettings {
         version: 1,
         scale: if known_scale { settings.scale } else { SCALE_LARGE },
@@ -380,6 +391,7 @@ fn sanitize_settings(settings: PersistedSettings) -> PersistedSettings {
         render_style,
         input_avoidance: settings.input_avoidance,
         auto_effects: settings.auto_effects,
+        realistic_default_applied: true,
     }
 }
 
@@ -585,6 +597,7 @@ impl TrayState {
             render_style: self.render_style.lock().unwrap().clone(),
             input_avoidance: self.input_avoidance.load(Ordering::Relaxed),
             auto_effects: self.auto_effects.enabled(),
+            realistic_default_applied: true,
         };
         let Ok(body) = serde_json::to_string_pretty(&settings) else { return };
         if let Some(parent) = path.parent() {
@@ -8798,6 +8811,25 @@ command = "node"
     }
 
     #[test]
+    fn an_older_voxel_setting_moves_to_the_realistic_cat_once_and_a_later_choice_sticks() {
+        let path = temp_settings_path("style-default");
+        // written before the default changed: every save carried the style, chosen or not
+        let body = serde_json::json!({
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE, "render_style": "voxel"
+        });
+        std::fs::write(&path, body.to_string()).unwrap();
+        assert_eq!(load_persisted_settings(Some(&path)).render_style, "realistic");
+        // after the move, choosing the voxel cat is kept
+        let body = serde_json::json!({
+            "version": 1, "scale": SCALE_LARGE, "visible": true, "mode": MODE_FREE, "render_style": "voxel",
+            "realistic_default_applied": true
+        });
+        std::fs::write(&path, body.to_string()).unwrap();
+        assert_eq!(load_persisted_settings(Some(&path)).render_style, "voxel");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn load_accepts_a_known_theme_and_angle_and_rejects_anything_else() {
         let path = temp_settings_path("theme");
         let body = serde_json::json!({
@@ -8829,7 +8861,7 @@ command = "node"
         let settings = load_persisted_settings(Some(&path));
         assert_eq!(settings.skin, "rainbow-dragon", "a user-authored theme must survive a restart");
         assert_eq!(settings.camera, DEFAULT_CAMERA);
-        assert_eq!(settings.render_style, DEFAULT_RENDER_STYLE, "a settings file from before 风格 existed opens on the voxel cat");
+        assert_eq!(settings.render_style, DEFAULT_RENDER_STYLE, "a settings file from before 风格 existed opens on the realistic cat");
 
         // ...but a blank one is still a blank one.
         let body = serde_json::json!({
@@ -8874,6 +8906,7 @@ command = "node"
             render_style: "realistic".to_string(),
             input_avoidance: false,
             auto_effects: true,
+            realistic_default_applied: true,
         };
         // Serialize the same way TrayState::persist does (tmp file + rename) and load
         // it back through the same loader the app startup uses.

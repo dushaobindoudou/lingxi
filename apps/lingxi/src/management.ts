@@ -1397,7 +1397,7 @@ async function main() {
   renderPlayPage();
   void refreshSkinCatalogue().then(() => renderSkinCards(status.skin));
   renderCameraOptions(status.camera);
-  renderStyleOptions(status.renderStyle ?? 'voxel');
+  renderStyleOptions(status.renderStyle ?? 'realistic');
 
   for (const selector of SIZE_BUTTON_GROUPS) {
     document.querySelectorAll<HTMLButtonElement>(selector).forEach((btn) => {

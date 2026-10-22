@@ -83,7 +83,7 @@ async function main() {
     },
   });
   function applyRenderStyle(style: string | undefined): void {
-    const wanted: RenderStyle = style === 'realistic' ? 'realistic' : 'voxel';
+    const wanted: RenderStyle = style === 'voxel' ? 'voxel' : 'realistic';
     void invoke('debug_log', { message: `[realcat] style requested ${style} -> ${wanted}, active ${renderer.activeStyle}` }).catch(() => {});
     if (wanted === renderer.requestedStyle) return;
     void renderer.switchStyle(wanted).then((result) => {
