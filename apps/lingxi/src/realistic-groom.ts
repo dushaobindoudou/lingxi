@@ -95,6 +95,10 @@ const GROOM_FLEX = { short: 0.015, long: 0.065, slowFrom: 0.48, gravity: 0.24, f
 // that shows the tabby crisply. The face keeps a little more (FACE_LENGTH): its fluff is the kitten's round cheeks.
 const COAT_LENGTH = 0.85;
 const FACE_LENGTH = 0.9;
+// The sides of the face: strands whose root faces out along the line between the eyes (|n.across| from `from` to `to`)
+// keep only 1 - `trim` of their length. At full length they flared past the whiskers, a frizzy ruff either side of a
+// face that should read round and neat ("两侧的毛也太多了").
+const CHEEK = { from: 0.45, to: 0.85, trim: 0.35 };
 const FACE = /_LX_Head$/;
 // The tail's own coat: shorter than groomed. At its groomed length (kept when the body's grew) it was a bottle brush
 // twice the kitten's body thickness; a kitten's tail is slim, its fur short and soft.
@@ -560,6 +564,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const headCoat = FACE.test(part.name);
     const guard = part.name.startsWith('LX_Fur_guard_');
     const clumping = TAIL.test(part.name) ? CLUMP.tail : 1;
+    const across = headCoat && eyes
+      ? new THREE.Vector3().fromArray(eyes[1].centre).sub(new THREE.Vector3().fromArray(eyes[0].centre)).normalize() : null;
     let ii = 0;
     for (let slot = 0; slot < part.strands; slot++) {
       const strand = order[slot];
@@ -574,7 +580,9 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       // The exported lower rear cheek guards are longer than the shoulder's coat. Ease their tips into the shoulder
       // where the two skins actually meet, keeping the free round muzzle and all strand roots in their original place.
       const strandShorten = shorten * (headCoat && options.neckBlend
-        ? neckStrandScale(options.neckBlend(source[root], source[root + 1], source[root + 2]), guard) : 1);
+        ? neckStrandScale(options.neckBlend(source[root], source[root + 1], source[root + 2]), guard) : 1)
+        * (across ? 1 - CHEEK.trim * THREE.MathUtils.smoothstep(Math.abs(
+          normals[strand * 3] * across.x + normals[strand * 3 + 1] * across.y + normals[strand * 3 + 2] * across.z), CHEEK.from, CHEEK.to) : 1);
       // The exported paw curves are only 2-6 mm long, shorter than the body's opaque undercoat. Let their tips clear
       // that layer without lengthening the already groomed ankle. Leave downward-facing sole fibres and pads alone.
       const paw = pawCoat

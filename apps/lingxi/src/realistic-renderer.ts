@@ -1080,9 +1080,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (nrm) {
           nv.fromBufferAttribute(nrm, i).applyMatrix3(toWorldDir).normalize();
           s = Math.min(s, THREE.MathUtils.lerp(1, 0.7, THREE.MathUtils.smoothstep(nv.z, 0.35, 0.8)));
-          // the cheeks: the sides of the lower head carry the long fluff that makes the kitten's head round
+          // the cheeks: a little more under-fluff on the sides of the lower head keeps it round. At 1.4 it and the
+          // groom together were a frizzy ruff either side of the face
           const side = THREE.MathUtils.smoothstep(Math.abs(nv.x), 0.45, 0.85) * THREE.MathUtils.smoothstep(-nv.y, -0.2, 0.3);
-          s *= 1 + 0.4 * side;
+          s *= 1 + 0.15 * side;
         }
         // The nearest head vertices start about 4.2 cm from each Eye bone. The previous 4.2-6.6 cm ramp left most
         // of that visible ring nearly bare, exposing a flat brown patch of head skin around the short lid coat.
