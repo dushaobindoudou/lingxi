@@ -121,9 +121,12 @@ const LIDS = /_LX_Lid/;
 // the shut lid (LID_DOME) and this far above it (model units). `shut`: how much each of the upper lid's keys closes the
 // eye; followed over `settle` seconds and from `from` shut on, so a blink leaves the coat alone (the fur round the eye
 // twitched with every one) and a sleeping, slow-blinking or petted cat's closed eye gets it.
+// Smile counts in full: a smile-closed eye (满足, 开心) is as shut as a blink, and at half it never reached `from` -
+// those lids stayed a bare tan disc in a ring of fur ("眼皮没有毛"). Strands from as far as `near` reach, combed in
+// over more of their length, cover the middle of the lid too.
 const EYE_LEAN = {
-  near: 0.056, far: 0.072, depth: 0.012, comb: 0.9, lift: 0.0015,
-  shut: { Blink: 1, Smile: 0.5, Squint: 0.25 }, settle: 0.35, from: 0.45,
+  near: 0.06, far: 0.078, depth: 0.012, comb: 1.3, lift: 0.0015,
+  shut: { Blink: 1, Smile: 1, Squint: 0.25 }, settle: 0.35, from: 0.45,
 };
 // A closed eye sat in a hollow (lids.glb, Blink on): its lids 24.5 mm in front of the eye's centre on its axis but only
 // 7-8 mm at their edge, 40-48 mm off it, where the face round them stands at 17-24 mm - the hollow's wall was the hard
