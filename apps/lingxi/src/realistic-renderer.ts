@@ -2149,8 +2149,15 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (elapsed - shrinkWantedSince >= 2) { w = fitW; h = fitH; shrinkWantedSince = null; }
       } else shrinkWantedSince = null;
     }
-    const x = Math.floor(Math.min(Math.max((x0 + x1 - w) / 2, 0), Math.max(0, width - w)));
-    const y = Math.floor(Math.min(Math.max((y0 + y1 - h) / 2, 0), Math.max(0, height - h)));
+    // The canvas stays put while the cat is inside it, and is re-centred only when the cat nears an edge (or the canvas
+    // is resized). Moved every frame, its CSS position and its WebGL image reach the screen out of step in the shipped
+    // webview now and then: the whole cat jumped a few pixels, and a paw at the edge was cut off for a frame
+    // ("右手感觉突然消失一下", "身体抖").
+    const inside = (cx: number, cy: number) => x0 >= cx && y0 >= cy && x1 <= cx + w && y1 <= cy + h;
+    const resized = w !== canvasRect.width || h !== canvasRect.height;
+    const keep = !full && !resized && canvasRect.width > 0 && inside(canvasRect.x, canvasRect.y);
+    const x = keep ? canvasRect.x : Math.floor(Math.min(Math.max((x0 + x1 - w) / 2, 0), Math.max(0, width - w)));
+    const y = keep ? canvasRect.y : Math.floor(Math.min(Math.max((y0 + y1 - h) / 2, 0), Math.max(0, height - h)));
     if (w !== canvasRect.width || h !== canvasRect.height) {
       renderer.setSize(w, h, true);
       canvasRect.width = w;

@@ -755,13 +755,15 @@ async function main() {
   let perceptionTimer: ReturnType<typeof setInterval> | null = null;
   function pushPerception() {
     const now = performance.now();
-    const renderState = renderer.describeCapabilities?.() as { style?: string; gait?: unknown; textures?: unknown } | undefined;
+    const renderState = renderer.describeCapabilities?.() as { style?: string; gait?: unknown; textures?: unknown; animation?: { fps?: number } } | undefined;
     const snapshot = {
       observedAt: Date.now(),
       cursor,
       petPosition: engine.position,
       petState: engine.state,
-      renderDiagnostics: renderState?.style === 'realistic' ? { gait: renderState.gait, textures: renderState.textures } : null,
+      renderDiagnostics: renderState?.style === 'realistic'
+        // fps and power tier: what the shipped webview actually manages, which a Chrome capture cannot tell ("游戏慢半拍")
+        ? { gait: renderState.gait, textures: renderState.textures, fps: renderState.animation?.fps ?? null, tier } : null,
       mode: engine.mode,
       // What the cat is doing right now, beyond where it is: which clip is playing and what it
       // is playing with. Both are things an agent (or the debug console, or a person watching
