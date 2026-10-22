@@ -458,6 +458,10 @@ test('a toy outranks autonomous behavior: the cat goes to it and swats it', () =
     batted = engine.tick(frame * (1000 / 60), null).batted;
   }
   assert.ok(batted, 'the cat should reach the ball and bat it');
+  // The paw goes up first: the ball waits under it, then the strike launches it.
+  const [whenBatted] = [Math.hypot(engine.toy.velocity.x, engine.toy.velocity.y)];
+  assert.ok(whenBatted < 1, 'the ball waits under the raised paw');
+  for (let frame = 241; frame <= 260; frame += 1) engine.tick(frame * (1000 / 60) + 1000, null);
   // A swat launches the ball - that is what keeps the rally going without the user.
   assert.ok(Math.hypot(engine.toy.velocity.x, engine.toy.velocity.y) > 100);
 });

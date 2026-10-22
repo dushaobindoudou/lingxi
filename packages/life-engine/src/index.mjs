@@ -216,6 +216,10 @@ const DEFAULTS = Object.freeze({
   toyChaseSpeedMultiplier: 3.2, // a cat going after a toy sprints; this is not a stroll
   toyReach: 34, // how close the cat's anchor gets before it can bat the toy
   toyBatCooldownMs: 520, // one swat per approach, not one per frame
+  // The paw goes up before the ball goes anywhere: the cat stops on the ball, draws back and strikes, and the ball
+  // leaves as the paw comes down. Launched on contact, the ball flew off before any paw had moved and the play read as
+  // a ball bouncing off a running cat ("看不到他玩的动作，也不会踢球").
+  toySwatWindupMs: 200,
   toyBatSpeed: 520, // px/s imparted to the yarn ball by a swat
   toyFriction: 1.9, // per-second exponential decay of the yarn ball's speed
   toyRestSpeed: 12, // below this the ball counts as stopped
@@ -620,6 +624,7 @@ export function createLifeEngine(config = {}) {
   let pointerEngaged = false;
   let toy = null; // { kind, position:{x,y}, velocity:{x,y} } | null - see TOY_KINDS
   let lastBatAt = -Infinity;
+  let swatLaunchAt = null; // the wound-up swat's strike, while the paw is up
   let batThisTick = false; // one-frame flag the renderer turns into a pounce/swat clip
   let toyHoldUntil = 0;
   let petting = false;
@@ -895,6 +900,7 @@ export function createLifeEngine(config = {}) {
       ...(kind === 'feather' ? { hand: { x: clamp(spawn.x, 0, bounds.width), y: clamp(spawn.y, 0, bounds.height) } } : {}),
     };
     lastBatAt = -Infinity;
+    swatLaunchAt = null;
     charge = null;
     // The yarn ball arrives in your hand; the other props are cursor-driven.
     toyHeld = kind === 'yarn';
@@ -1068,6 +1074,12 @@ export function createLifeEngine(config = {}) {
   /** The cat's half of the game: run the toy down, and swat it when in reach. */
   function chaseToy(now, deltaSeconds, previousPosition, previousPetPosition) {
     state = 'play_toy';
+    // Paw up over the ball: hold still, ball held under it, and strike on time.
+    if (swatLaunchAt != null) {
+      if (toy.kind !== 'yarn' || toyHeld || charge) { swatLaunchAt = null; }
+      else if (now < swatLaunchAt) { toy.velocity = { x: 0, y: 0 }; return; }
+      else { swatLaunchAt = null; launchYarn(); return; }
+    }
     const interaction = () => toyInteraction?.({
       kind: toy.kind, position: { ...toy.position }, previousPosition,
       petPosition: { ...position }, previousPetPosition,
@@ -1106,16 +1118,22 @@ export function createLifeEngine(config = {}) {
       // Only the yarn ball can actually be sent flying. Swatting the wand or the laser plays
       // the swat animation and achieves nothing, which is correct and is the joke.
       if (toy.kind === 'yarn') {
-        // Away from the cat, with a wide random spread so the rally never turns into the ball
-        // shuttling along one line forever.
-        const dx = toy.position.x - position.x;
-        const dy = toy.position.y - position.y;
-        const base = Math.hypot(dx, dy) < 1e-6 ? rand(0, Math.PI * 2) : Math.atan2(dy, dx);
-        const angle = base + rand(-0.9, 0.9);
-        const speed = cfg.toyBatSpeed * rand(0.65, 1);
-        toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
+        toy.velocity = { x: 0, y: 0 };
+        swatLaunchAt = now + cfg.toySwatWindupMs;
       }
     }
+  }
+
+  /** The swat lands: the ball away from the cat. */
+  function launchYarn() {
+    // Away from the cat, with a wide random spread so the rally never turns into the ball
+    // shuttling along one line forever.
+    const dx = toy.position.x - position.x;
+    const dy = toy.position.y - position.y;
+    const base = Math.hypot(dx, dy) < 1e-6 ? rand(0, Math.PI * 2) : Math.atan2(dy, dx);
+    const angle = base + rand(-0.9, 0.9);
+    const speed = cfg.toyBatSpeed * rand(0.65, 1);
+    toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
   }
 
   function shortestAngle(radians) {

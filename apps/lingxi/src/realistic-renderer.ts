@@ -29,6 +29,7 @@ import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransiti
 import { stationaryJump, holdBellyPose } from './realistic-play.ts';
 import { createSkinnedPettingProbe } from './rig/petting.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
+import { createRealisticYarn } from './realistic-yarn.ts';
 import { createNeckBlend, neckShellScale } from './realistic-neck.ts';
 import { CONTACT_SHADOW, bodyContactShadow, pawContactShadow } from './realistic-shadow.ts';
 
@@ -1698,7 +1699,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       removeToy();
       toyKind = (toyState?.kind as ToyKind | undefined) ?? null;
       if (toyKind) {
-        toyProp = createToyProp(toyKind);
+        toyProp = toyKind === 'yarn' ? createRealisticYarn() : createToyProp(toyKind);
         scene.add(toyProp.object);
         // world layers are added unscaled and unmoved - see ToyProp.worldLayer
         if (toyProp.worldLayer) scene.add(toyProp.worldLayer);
@@ -1716,7 +1717,36 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       z: toyState.velocity.y * worldPerPixelZ,
       scale: 1 / Math.max(1e-6, toyScale),
     });
-    if ((state as { batted?: boolean }).batted) toyProp.struck?.();
+    if ((state as { batted?: boolean }).batted) {
+      toyProp.struck?.();
+      // the paw nearer the toy, as the cat faces it (world: the toy's side of the cat's own side axis)
+      catRoot.getWorldQuaternion(petRootQ);
+      const toyWorld = screenToWorld(toyState.position.x, toyState.position.y, 0), catWorld = screenToWorld(state.position.x, state.position.y, 0);
+      swatSide = toyWorld.sub(catWorld).dot(new THREE.Vector3(1, 0, 0).applyQuaternion(petRootQ)) >= 0 ? 1 : -1;
+      swatAt = elapsed;
+    }
+  }
+  // The swat (life-engine toySwatWindupMs): the paw nearer the ball goes up and back, strikes down and across as the ball
+  // leaves, and comes back down; the head drops to watch it and the chest rises with the reach. Laid over whatever clip
+  // is playing - the run up to the ball included - and undone with the pet overlay each frame. Angles in radians, times
+  // in seconds from the moment the paw starts up (the strike at SWAT.strike, when the ball is launched).
+  const SWAT = { seconds: 0.5, strike: 0.2, lift: 1.25, bend: 1.1, flick: 0.7, across: 0.4, chest: 0.16, head: 0.22 };
+  let swatAt = -Infinity, swatSide = 1;
+  function overlaySwat() {
+    const t = elapsed - swatAt;
+    if (!model || t < 0 || t > SWAT.seconds) return;
+    const up = THREE.MathUtils.smoothstep(t, 0, SWAT.strike * 0.9) * (1 - THREE.MathUtils.smoothstep(t, SWAT.strike, SWAT.strike + 0.12));
+    const strike = Math.exp(-(((t - SWAT.strike) / 0.05) ** 2));
+    const settle = 1 - THREE.MathUtils.smoothstep(t, SWAT.strike, SWAT.seconds);
+    catRoot.getWorldQuaternion(petRootQ);
+    const side = new THREE.Vector3(1, 0, 0).applyQuaternion(petRootQ), forward = new THREE.Vector3(0, 0, 1).applyQuaternion(petRootQ);
+    const paw = swatSide > 0 ? 'L' : 'R';
+    turnPetBone(`FrontUpper${paw}`, side, -(up * SWAT.lift + strike * 0.35));
+    turnPetBone(`FrontUpper${paw}`, forward, -swatSide * strike * SWAT.across);
+    turnPetBone(`FrontLower${paw}`, side, up * SWAT.bend - strike * 0.5);
+    turnPetBone(`FrontPaw${paw}`, side, up * SWAT.flick);
+    turnPetBone('Chest', side, -SWAT.chest * Math.max(up, strike));
+    turnPetBone('Head', side, SWAT.head * settle);
   }
   // On top of the clip's pose: ease toward the playing clip's carriage, then turn each bone about the model's side axis
   // (lift) and up axis (sway), both carried into its parent's frame, root first so every bone builds on the one before.
@@ -2527,6 +2557,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       overlayPotty(deltaSeconds);
       overlayStage(deltaSeconds);
       overlayPet(deltaSeconds, moving || pivoting || (!!oneShot && !/^pet-(head|back)$/.test(oneShot.id)) || !!staged || currentName === 'Walk' || currentName === 'Run');
+      overlaySwat();
 
       // Read the final pose, after locomotion and touch overlays, so each patch follows the sole that is drawn.
       catRoot.updateMatrixWorld(true);
