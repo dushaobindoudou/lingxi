@@ -25,7 +25,7 @@ import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMER
 import { APP_PUPIL, calmLoafFace, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
 import { createLocomotion, KITTEN_WALK, placePaw, steeringStrideScale } from './realistic-locomotion.ts';
 import { digHead, digPaw, POTTY_DIG, POTTY_SQUAT, smooth01 } from './realistic-potty.ts';
-import { comfortableWalkPace, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
+import { comfortableWalkPace, GAIT_PHASE_OFFSET, locomotionClip, locomotionRate, locomotionTransitionPhase, matchedWalkStride, sprintPace, walkCadence } from './realistic-motion.ts';
 import { stationaryJump, holdBellyPose } from './realistic-play.ts';
 import { createSkinnedPettingProbe } from './rig/petting.ts';
 import { createToyProp, type ToyKind, type ToyProp } from './rig/toys.ts';
@@ -1673,6 +1673,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // two or three times a second on a walk, each move a chance for the frame and the canvas to land out of step.
   const FIT_HEADROOM = 1.5;
   const FIT_EDGE = 0.06;
+  const FIT_LEAD = 0.6;
   // the drawn cat's centre last frame and its smoothed travel (pixels a frame), for leading the canvas
   let fitCentre: { x: number; y: number } | null = null;
   const fitTravel = { x: 0, y: 0 };
@@ -1828,12 +1829,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     // ("尾巴似乎不会配合动作"). In step, the tip's sideways swing follows the stride 0.94 (R²) of the time, from 0.76.
     const gait = (currentName === 'Walk' || currentName === 'Run') && current ? current : null;
     if (gait && !own) {
-      const target = 2 * Math.PI * (gait.time / gait.getClip().duration) + TAIL_GAIT.lead;
+      // on the stride Walk and Run share, so a change of gait does not throw the tail across
+      const target = 2 * Math.PI * (gait.time / gait.getClip().duration + GAIT_PHASE_OFFSET[currentName]) + TAIL_GAIT.lead;
       const off = Math.atan2(Math.sin(target - tailPhase), Math.cos(target - tailPhase));
       tailPhase += off * (1 - Math.exp(-deltaSeconds / TAIL_GAIT.lockSeconds));
     }
-    // and on a turn it swings out to the outside of the curve, the tip most, lagging the turn
-    tailTurnBend += ((gait ? -steeringTurnRate * TAIL_GAIT.turn : 0) - tailTurnBend) * (1 - Math.exp(-deltaSeconds / TAIL_GAIT.turnSeconds));
+    // and on a turn it swings out to the outside of the curve, the tip most, lagging the turn (the model faces +z, the
+    // tail -z: a turn toward +x is a positive turn rate, and the tail goes out to -x turning positively about +y)
+    tailTurnBend += ((gait ? steeringTurnRate * TAIL_GAIT.turn : 0) - tailTurnBend) * (1 - Math.exp(-deltaSeconds / TAIL_GAIT.turnSeconds));
     tailFrame.getWorldQuaternion(tailFrameQ);
     for (let i = 0; i < 5; i++) tailClipPose[i].copy(tailBones[i].quaternion);
     // an action's own carriage starts from the rest pose, eased in and out
@@ -2194,7 +2197,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     if (fitCentre) { fitTravel.x += (cx - fitCentre.x - fitTravel.x) * 0.2; fitTravel.y += (cy - fitCentre.y - fitTravel.y) * 0.2; }
     fitCentre = { x: cx, y: cy };
-    const lead = (travel: number, slack: number) => Math.abs(travel) < 0.3 ? 0 : Math.sign(travel) * slack;
+    // led only part of the way, so the cat is not left on the trigger's edge: turning back, it has room before the
+    // canvas moves again
+    const lead = (travel: number, slack: number) => Math.abs(travel) < 0.3 ? 0 : Math.sign(travel) * slack * FIT_LEAD;
     const x = keep ? canvasRect.x : Math.floor(Math.min(Math.max((x0 + x1 - w) / 2 + lead(fitTravel.x, Math.max(0, (w - (x1 - x0)) / 2 - mx)), 0), Math.max(0, width - w)));
     const y = keep ? canvasRect.y : Math.floor(Math.min(Math.max((y0 + y1 - h) / 2 + lead(fitTravel.y, Math.max(0, (h - (y1 - y0)) / 2 - my)), 0), Math.max(0, height - h)));
     if (w !== canvasRect.width || h !== canvasRect.height) {

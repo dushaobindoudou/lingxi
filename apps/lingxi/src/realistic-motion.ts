@@ -57,8 +57,10 @@ export function sprintPace(stride: number, duration: number, scale: number, pixe
 }
 
 /** Match the left forepaw's contact phase when changing between walk and gallop. */
+/** Where each gait clip's own time sits on the shared stride (cycles): Walk's start is Run's .47. */
+export const GAIT_PHASE_OFFSET: Record<string, number> = { Walk: 0, Run: .47 };
 export function locomotionTransitionPhase(from: string, to: string, phase: number): number {
-  const offset: Record<string, number> = { Walk: 0, Run: .47 };
+  const offset = GAIT_PHASE_OFFSET;
   if (!(from in offset) || !(to in offset)) return 0;
   return ((phase + offset[from] - offset[to]) % 1 + 1) % 1;
 }
