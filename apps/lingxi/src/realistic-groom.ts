@@ -638,7 +638,13 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   const boneCount = skeleton.bones.length;
   const lagSize = Math.max(4, Math.ceil(Math.sqrt(boneCount * 4) / 4) * 4);
   const lagMatrices = new Float32Array(lagSize * lagSize * 4);
+  // The copy is sprung in a frame that turns with the cat (the armature's rotation), not the world's. Sprung in the world, the cat turning
+  // round - its whole body swinging through half a circle in a few frames - flung every strand on it at once: for a
+  // tenth of a second the coat stood off the body, thinned to the undercoat, and a leg flashed bare ("右前腿我觉得走路
+  // 的时候偶尔会闪一下"). A real coat does not do that when a kitten turns; it follows what moves under it.
+  const lagRelative = new Float32Array(boneCount * 16);
   const lagVelocity = new Float32Array(boneCount * 16);
+  const frame = new THREE.Matrix4(), frameInverse = new THREE.Matrix4(), lagWorld = new THREE.Matrix4();
   const lagTexture = new THREE.DataTexture(lagMatrices, lagSize, lagSize, THREE.RGBAFormat, THREE.FloatType);
   lagTexture.needsUpdate = true;
   material.uniforms.uGroomLagBones.value = lagTexture;
@@ -664,24 +670,30 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const snap = !lagPrimed || seconds > 0.25;
     const steps = Math.max(1, Math.ceil(seconds * 240));
     const dt = seconds / steps;
+    const armature = skeleton.bones[0].parent;
+    // its turning only: where it walks to still trails the coat behind it
+    frame.extractRotation(armature ? armature.matrixWorld : base.matrixWorld);
+    frameInverse.copy(frame).transpose();
     for (let i = 0; i < boneCount; i++) {
-      offsetMatrix.multiplyMatrices(skeleton.bones[i].matrixWorld, skeleton.boneInverses[i]).toArray(target);
+      offsetMatrix.multiplyMatrices(skeleton.bones[i].matrixWorld, skeleton.boneInverses[i]).premultiply(frameInverse).toArray(target);
       const o = i * 16;
-      const far = Math.hypot(target[12] - lagMatrices[o + 12], target[13] - lagMatrices[o + 13], target[14] - lagMatrices[o + 14]) > GROOM_LAG.snapDistance;
+      const far = Math.hypot(target[12] - lagRelative[o + 12], target[13] - lagRelative[o + 13], target[14] - lagRelative[o + 14]) > GROOM_LAG.snapDistance;
       if (snap || far) {
-        lagMatrices.set(target, o);
+        lagRelative.set(target, o);
         lagVelocity.fill(0, o, o + 16);
+        lagWorld.fromArray(lagRelative, o).premultiply(frame).toArray(lagMatrices, o);
         continue;
       }
       for (let k = 0; k < 16; k++) {
         if (k % 4 === 3) continue; // the bottom row stays 0 0 0 1
-        let x = lagMatrices[o + k], v = lagVelocity[o + k];
+        let x = lagRelative[o + k], v = lagVelocity[o + k];
         for (let n = 0; n < steps; n++) {
           v += ((target[k] - x) * w * w - 2 * zeta * w * v) * dt;
           x += v * dt;
         }
-        lagMatrices[o + k] = x; lagVelocity[o + k] = v;
+        lagRelative[o + k] = x; lagVelocity[o + k] = v;
       }
+      lagWorld.fromArray(lagRelative, o).premultiply(frame).toArray(lagMatrices, o);
     }
     lagPrimed = true;
     lagTexture.needsUpdate = true;
