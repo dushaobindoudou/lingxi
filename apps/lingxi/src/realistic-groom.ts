@@ -49,6 +49,11 @@ const GROOM = {
   // A child hair (see GROOM_CHILDREN) grows this far from its parent, in the parent's spacing (its part's average
   // distance between roots), and ends between these shares of its parent's length.
   childSpread: '0.7', childShortest: '0.62',
+  // A real hair thins to a point and lets light through its last third, so a coat's edge is a soft halo; drawn the same
+  // width and opacity to the end, straight, the strands read as wire. Taper: the radius lost by the tip; tipFade: the
+  // opacity lost over the outer half; wave: a lateral wave along the strand (share of its length, at the tip), waveFreq
+  // cycles of it; tipLight: the tip's lift toward a paler, warmer shade.
+  taper: '0.45', tipFade: '0.5', wave: '0.07', waveFreq: '1.6', tipLight: '0.3',
 } as const;
 // Close up the coat gets denser rather than coarser: each drawn strand gains up to this many child hairs beside it, the
 // way an offline groom interpolates children between its guides - fine single hairs, a parent's copy moved a little
@@ -261,7 +266,7 @@ void main() {
   vGroomRandom = random;
   vec2 across = vec2(-T.y, T.x);
   across = length(across) > 0.0001 ? normalize(across) : vec2(1.0, 0.0);
-  float radiusView = groomData.y * viewScale;
+  float radiusView = groomData.y * viewScale * (1.0 - ${GROOM.taper} * along);
   float pixelsPerView = projectionMatrix[1][1] * uGroomHeight * 0.5;
   float minimumRadius = ${GROOM.minimumWidthPx} / pixelsPerView;
   float drawnRadius = max(radiusView, minimumRadius);
@@ -269,6 +274,8 @@ void main() {
   vGroomCoverage = pow(min(1.0, radiusView / drawnRadius), ${GROOM.coverageExp});
   vGroomEdge = groomData.x;
   mvPosition.xy += across * groomData.x * drawnRadius;
+  // a lateral wave toward the tip, its phase the strand's own
+  mvPosition.xy += across * sin(t * ${GROOM.waveFreq} * 6.2831853 + random * 6.2831853) * ${GROOM.wave} * strandLength * t;
   gl_Position = projectionMatrix * mvPosition;
 
   // The key light's shadow, looked up once per strand point rather than for every pixel of every strand: a hair is
@@ -321,6 +328,8 @@ void main() {
   // the root rises out of the undercoat: drawn from inside it, a strand's dark root showed as a speck (most of all
   // at desktop size, where each drawn strand stands for several)
   alpha *= smoothstep(0.0, 0.3, t);
+  alpha *= 1.0 - ${GROOM.tipFade} * smoothstep(0.5, 1.0, t);
+  base = mix(base, min(base * 1.22 + 0.03, vec3(1.0)), ${GROOM.tipLight} * t * t);
   // where the face wants its coat parted (createGroom's options.part): the closed mouth's line
   alpha *= groomPart(vGroomRest);
   float occlusion = mix(${GROOM.rootShade}, 1.0, t);
