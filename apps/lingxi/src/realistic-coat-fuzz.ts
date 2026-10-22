@@ -145,15 +145,15 @@ export function createCoatFuzz(mesh: THREE.SkinnedMesh, region: CoatFuzzRegion):
 
 // ---- the face: round the eyes, down the bridge, over the muzzle ----
 export const FACE_FUZZ = {
-  count: 18000,
-  // the front of the face within `reach` of the point between the eyes and nose, fading out over its last `fade` into
-  // the long groom; never on the eye's opening, the nose leather or the mouth's line (head rest space, model units)
-  reach: 0.105, fade: 0.03, eyeHole: 0.046, noseLeather: 0.011, mouth: 0.0022,
+  count: 26000,
+  // Blend over the whole forward cheek into the groom. The old 30 mm falloff compounded the visible edge of the
+  // exported cheek lobes with a separate patch of short, bright hairs.
+  reach: 0.15, fade: 0.075, eyeHole: 0.046, noseLeather: 0.011, mouth: 0.0022,
   // hair length (m): shortest right at the eye's rim and on the bridge, longer out on the cheeks
-  short: [0.0024, 0.0042], long: [0.0055, 0.0095],
+  short: [0.0024, 0.0042], long: [0.007, 0.014],
   width: [0.00026, 0.00042],
   lift: 0.4,
-  colourLift: 1.32,
+  colourLift: 1.17,
 } as const;
 
 export function faceFuzzRegion(frame: { eyes: THREE.Vector3[]; nose: THREE.Vector3; mouthDistance(x: number, y: number): number; undercoat: number }): CoatFuzzRegion {
@@ -182,7 +182,7 @@ export function faceFuzzRegion(frame: { eyes: THREE.Vector3[]; nose: THREE.Vecto
     length(v, w, random) {
       const outward = THREE.MathUtils.smoothstep(v.distanceTo(centre), 0.03, F.reach);
       const s = THREE.MathUtils.lerp(F.short[0], F.short[1], random()), l = THREE.MathUtils.lerp(F.long[0], F.long[1], random());
-      return THREE.MathUtils.lerp(l, s, Math.max(nearEye(v), 1 - outward)) * (0.75 + 0.25 * w);
+      return THREE.MathUtils.lerp(l, s, Math.max(nearEye(v), 1 - outward)) * (0.9 + 0.1 * w);
     },
   };
 }
