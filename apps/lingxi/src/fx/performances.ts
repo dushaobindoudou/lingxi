@@ -572,6 +572,47 @@ export const PERFORMANCES: PerformanceDef[] = [
       },
     ],
   },
+  {
+    // The small one: no walk to the middle of the screen, no camera, no change of size - the cat stays where it is (on
+    // the border, out of the work) and is cheeky from there. The big set pieces cost the person ten seconds and their
+    // screen; a pet that works beside you shows its character in passing ("我没看到一次他对我做小动作，例如放屁").
+    id: 'little-toot',
+    name: '偷偷放个小屁',
+    description: '就在原地，把屁股转向你，噗地放个小屁，自己吓一跳，回头无辜地看你一眼',
+    durationMs: 3800,
+    beats: [
+      {
+        atMs: 0,
+        run(context) {
+          context.engine.clearIntent();
+          context.engine.hold?.(3800, context.now());
+          // rump toward the middle of the screen - toward the person working there
+          const at = context.petPosition(), { width, height } = context.viewport();
+          context.engine.turnTo(Math.atan2(at.y - height / 2, at.x - width / 2));
+          context.renderer.playExpression?.('认真', 1200);
+        },
+      },
+      {
+        atMs: 1300,
+        run(context) {
+          const from = rumpOf(context), at = context.petPosition(), { width, height } = context.viewport();
+          const extent = context.renderer.screenExtent?.();
+          const size = extent ? (extent.above + extent.below) / 250 : pottySize(context) * 0.6;
+          const toward = { x: width / 2 - at.x, y: height / 2 - at.y }, n = Math.hypot(toward.x, toward.y) || 1;
+          context.fx.fart?.(from, size, { x: (toward.x / n) * 0.7, y: -0.6 });
+          context.renderer.playExpression?.('惊吓', 700);
+        },
+      },
+      {
+        // a look back over its shoulder, all innocence
+        atMs: 2100,
+        run(context) {
+          context.engine.turnTo(FACING_VIEWER);
+          context.renderer.playExpression?.('害羞', 1700);
+        },
+      },
+    ],
+  },
 ];
 
 export interface PerformanceRunner {

@@ -529,6 +529,20 @@ async function main() {
   });
   void listen('perform-stop', () => performances.stop());
 
+  // The cat's own small moments, from where it sits: every so often, while it is idle on its border and nobody is
+  // playing with it, a cheeky little toot in the person's direction. Only with 自动特效 on, and through the same shared
+  // cooldown as an agent's surprise (claim_auto_effect, which also logs it). Minutes between them, random.
+  const MISCHIEF = { firstMin: [6, 12], everyMin: [14, 32], ids: ['little-toot'] } as const;
+  const minutes = ([lo, hi]: readonly [number, number]) => (lo + Math.random() * (hi - lo)) * 60_000;
+  let nextMischiefAt = Date.now() + minutes(MISCHIEF.firstMin);
+  setInterval(() => {
+    if (!autoEffectsEnabled || Date.now() < nextMischiefAt) return;
+    if (engine.state !== 'idle' || engine.toy || performances.active || petting.enabled) return;
+    nextMischiefAt = Date.now() + minutes(MISCHIEF.everyMin);
+    const id = MISCHIEF.ids[Math.floor(Math.random() * MISCHIEF.ids.length)];
+    void invoke<boolean>('claim_auto_effect', { id }).then((ok) => { if (ok) performanceGate.play(id, true); }).catch(() => {});
+  }, 20_000);
+
   void listen<{ kind: string }>('set-toy', (event) => {
     markInteresting();
     if (event.payload.kind === 'pet' || event.payload.kind === 'petting') {

@@ -57,7 +57,7 @@ const fx = createStageFx();
 fx.mount(stage);
 say('renderer + fx mounted');
 // for scripted look-dev captures (Chrome DevTools protocol): the renderer, to hold expressions and find the head
-(window as unknown as { __harness: unknown }).__harness = { renderer, get engine() { return engine; } };
+(window as unknown as { __harness: unknown }).__harness = { renderer, get engine() { return engine; }, get performances() { return performances; } };
 
 const width = stage.clientWidth;
 const height = stage.clientHeight;

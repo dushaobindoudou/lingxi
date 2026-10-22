@@ -195,7 +195,7 @@ fn canonical_toy(kind: &str) -> &str {
 
 /// Scripted set-pieces ("特效"). Ids must match src/fx/performances.ts's PERFORMANCES, which
 /// owns the actual choreography.
-const KNOWN_PERFORMANCES: [&str; 5] = ["angry-claw", "kiss-rush", "zoomies", "pee-at-you", "poop-at-you"];
+const KNOWN_PERFORMANCES: [&str; 6] = ["angry-claw", "kiss-rush", "zoomies", "pee-at-you", "poop-at-you", "little-toot"];
 
 /// Quick-access physical toys. Petting stays in the main window and agent skills.
 const TRAY_TOYS: [(&str, &str); 3] = [
@@ -832,6 +832,17 @@ fn capabilities_snapshot(state: &CapabilitiesState, tray: &TrayState) -> serde_j
     if !value.is_object() { value = serde_json::json!({}); }
     value["autoEffects"] = serde_json::to_value(tray.auto_effects.status(std::time::Instant::now())).unwrap();
     value
+}
+
+/// The cat's own small moments (a cheeky toot from where it sits, main.ts): it asks for the same switch and shared
+/// cooldown as an agent's surprise, and leaves a line in the task log either way - before this, "why does it never do
+/// anything to me" had no trace to answer it.
+#[tauri::command]
+fn claim_auto_effect(app: tauri::AppHandle, state: State<TrayState>, id: String) -> bool {
+    let known = KNOWN_PERFORMANCES.contains(&id.as_str());
+    let outcome = if !known { Err("unknown performance") } else { state.auto_effects.try_start(true, std::time::Instant::now()) };
+    log_task_event(&app, serde_json::json!({ "dir": "self", "surprise": id, "outcome": match outcome { Ok(()) => "played", Err(reason) => reason } }));
+    outcome.is_ok()
 }
 
 #[tauri::command]
@@ -7062,6 +7073,7 @@ pub fn run() {
             set_render_style,
             set_input_avoidance,
             set_auto_effects,
+            claim_auto_effect,
             input_avoidance_status,
             request_input_avoidance_permission,
             focused_input_region,
