@@ -27,7 +27,9 @@ export interface GroomAsset { spec: GroomSpec; bytes: ArrayBuffer }
 // comb of parallel lines - and a sparse layer of longer guard hairs stands over the dense down ("没有细毛和长毛的错综复杂
 // 的感觉"). strength: how far a tip is drawn toward its clump's centre; cell: a clump's size, in the part's root
 // spacings; guard: the share of strands that are guard hairs; guardExtra: how much longer they are.
-export const CLUMP = { strength: 0.7, cell: 3.0, guard: 0.06, guardExtra: 0.45 };
+// tail: its long coat clumped into points and studded with guard hairs read as spines ("尾巴上的毛毛刺有点多"): it
+// clumps this much of the rest, and grows no guard hairs
+export const CLUMP = { strength: 0.7, cell: 3.0, guard: 0.06, guardExtra: 0.45, tail: 0.3 };
 const GROOM = {
   coverageExp: '0.50',
   absorption: '1.45',
@@ -80,9 +82,12 @@ const CLOSE_STACK = { extra: 1, from: 1, full: 2 };
 // pass draws one strand for the first few frames after loading, and the cost is paid there (load time unchanged).
 const WARM_FRAMES = 3;
 // The coat's inertia (simulate): Hz, damping ratio, and a jump (model units) that is a teleport, not a motion
-const GROOM_LAG = { shortHz: 4.5, shortDamping: 0.8, longHz: 1.8, longDamping: 0.48, snapDistance: 1.5 };
+// The long coat's spring is kept off the walk's step rate (about 2 Hz) and near critically damped: at 1.8 Hz, damping
+// 0.48 every step pumped it and the coat swung wider and wider, the cat seemed to shake as it walked
+const GROOM_LAG = { shortHz: 4.5, shortDamping: 0.8, longHz: 3.2, longDamping: 0.85, snapDistance: 1.5 };
 // Only the exported guard hairs get free tips. The shorter skin-close fibres are carried by the live skeleton.
-const GROOM_FLEX = { short: 0.015, long: 0.065, slowFrom: 0.48, gravity: 0.24 };
+// face: the head's coat is far stiffer than the body's - a kitten's face does not sway as it walks ("脸上的效果一晃一晃的不好")
+const GROOM_FLEX = { short: 0.015, long: 0.065, slowFrom: 0.48, gravity: 0.24, face: 0.3 };
 // The coat a touch shorter than the Blender groom (the tail its own): longer (1.15-1.25, tried to make
 // the coat read at desktop size) the strands stood out one by one, long and sparse; shorter and drawn denser (the
 // renderer's GROOM_MIN_DENSITY) it is a thick, soft coat. At .95 it was still too long and too few (the user, by eye on
@@ -147,7 +152,7 @@ attribute vec2 groomLean;      // a face strand round an eye: weight (negative r
 uniform vec3 uGroomEyeL, uGroomEyeR, uGroomEyeAxisL, uGroomEyeAxisR; // the eyes in the rest pose (createGroom options.eyes)
 uniform vec2 uGroomShut;       // how closed each eye is (left, right)
 attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
-attribute vec3 groomStrand; // length (model units), random 0..1, the part's root spacing
+attribute vec4 groomStrand; // length (model units), random 0..1, the part's root spacing, its clumping (CLUMP.tail)
 attribute float groomFlex;   // free-tip compliance, 0 for short/skin-close fibres
 uniform float uGroomTime, uGroomHeight, uGroomGust;
 uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axes
@@ -214,10 +219,10 @@ void main() {
     vec3 jitter = fract(sin(vec3(dot(cell, vec3(127.1, 311.7, 74.7)), dot(cell, vec3(269.5, 183.3, 246.1)), dot(cell, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
     vec3 toCentre = (cell + 0.2 + 0.6 * jitter) * cellSize - root;
     toCentre -= normal * dot(toCentre, normal);
-    float pull = uGroomClump.x * (0.55 + 0.45 * jitter.x);
+    float pull = uGroomClump.x * groomStrand.w * (0.55 + 0.45 * jitter.x);
     transformed += toCentre * pull * smoothstep(0.15, 1.0, tc);
     // a few long guard hairs over the down, standing a little further off the coat
-    if (fract(random * 13.37) < uGroomClump.z) {
+    if (groomStrand.w > 0.99 && fract(random * 13.37) < uGroomClump.z) {
       transformed += (dir + normal * 0.25) * groomStrand.x * ${CLUMP.guardExtra} * tc * tc;
     }
   }
@@ -546,7 +551,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         if (best) for (let k = 0; k < part.points * 2; k++) lean.set(best, ((slot * part.points * 2) + k) * 2);
       }
     }
-    const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), flexData = new Float32Array(count);
+    const data = new Float32Array(count * 4), strandData = new Float32Array(count * 4), flexData = new Float32Array(count);
     const skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
     const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
     const pawLength = part.name.includes('_under_') ? 0.006 : 0.012;
@@ -554,6 +559,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const shorten = coatLength(part.name);
     const headCoat = FACE.test(part.name);
     const guard = part.name.startsWith('LX_Fur_guard_');
+    const clumping = TAIL.test(part.name) ? CLUMP.tail : 1;
     let ii = 0;
     for (let slot = 0; slot < part.strands; slot++) {
       const strand = order[slot];
@@ -578,7 +584,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       const pawExtension = paw * Math.max(0, pawLength - strandLength * strandShorten);
       const pawScale = pawExtension / Math.max(strandLength, 1e-6);
       strandLength = strandLength * strandShorten + pawExtension;
-      const flex = guard ? THREE.MathUtils.smoothstep(strandLength, GROOM_FLEX.short, GROOM_FLEX.long) : 0;
+      const flex = (guard ? THREE.MathUtils.smoothstep(strandLength, GROOM_FLEX.short, GROOM_FLEX.long) : 0) * (headCoat ? GROOM_FLEX.face : 1);
       for (let point = 0; point < part.points; point++) {
         const p = strand * part.points + point;
         const before = (strand * part.points + Math.max(0, point - 1)) * 3;
@@ -594,7 +600,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
             tangent[v * 3 + c] = source[after + c] - source[before + c];
           }
           data.set([side ? 1 : -1, radii[p] * part.widthCompensation, (point / (part.points - 1)) ** 2, phase], v * 4);
-          strandData.set([strandLength, random, spacing], v * 3);
+          strandData.set([strandLength, random, spacing, clumping], v * 4);
           flexData[v] = flex;
           for (let c = 0; c < 4; c++) {
             const offset = (part.skinPerPoint ? p : strand) * 4 + c;
@@ -612,7 +618,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const geometry = new THREE.BufferGeometry();
     for (const [name, array, size] of [
       ['position', position, 3], ['color', color, 3], ['normal', normal, 3], ['groomTangent', tangent, 3],
-      ['groomData', data, 4], ['groomStrand', strandData, 3], ['groomFlex', flexData, 1],
+      ['groomData', data, 4], ['groomStrand', strandData, 4], ['groomFlex', flexData, 1],
       ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
     ] as const) geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
     if (pawOffset) geometry.setAttribute('groomPawOffset', new THREE.BufferAttribute(pawOffset, 3));
