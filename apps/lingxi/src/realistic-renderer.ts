@@ -432,6 +432,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   const shadowPlane = shadow.geometry;
   const pawNames = ['FrontPawL', 'FrontPawR', 'RearPawL', 'RearPawR'];
   const pawBones: (THREE.Bone | undefined)[] = [];
+  const pawPeakLift: number[] = [];
   const pawPoint = new THREE.Vector3();
   const groundAxis = new THREE.Vector3(0, 1, 0);
   const flatPlane = shadow.quaternion.clone();
@@ -2582,6 +2583,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         if (!bone) { paw.visible = false; continue; }
         bone.getWorldPosition(pawPoint);
         const lift = Math.max(0, pawPoint.y / effectiveScale() - CONTACT_SHADOW.pawRestY[i]);
+        if (lift < 0.004) {
+          if (pawPeakLift[i] > 0.012) groom?.impact(0.07 + Math.min(0.11, pawPeakLift[i] * 1.5));
+          pawPeakLift[i] = 0;
+        } else pawPeakLift[i] = Math.max(pawPeakLift[i] ?? 0, lift);
         const contact = pawContactShadow(lift);
         paw.visible = contact.opacity > 0.015;
         if (!paw.visible) continue;

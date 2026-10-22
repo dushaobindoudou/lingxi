@@ -80,7 +80,9 @@ const CLOSE_STACK = { extra: 1, from: 1, full: 2 };
 // pass draws one strand for the first few frames after loading, and the cost is paid there (load time unchanged).
 const WARM_FRAMES = 3;
 // The coat's inertia (simulate): Hz, damping ratio, and a jump (model units) that is a teleport, not a motion
-const GROOM_LAG = { hz: 2.2, damping: 0.4, snapDistance: 1.5 };
+const GROOM_LAG = { shortHz: 4.5, shortDamping: 0.8, longHz: 1.8, longDamping: 0.48, snapDistance: 1.5 };
+// Only the exported guard hairs get free tips. The shorter skin-close fibres are carried by the live skeleton.
+const GROOM_FLEX = { short: 0.015, long: 0.065, slowFrom: 0.48, gravity: 0.24 };
 // The coat a touch shorter than the Blender groom (the tail its own): longer (1.15-1.25, tried to make
 // the coat read at desktop size) the strands stood out one by one, long and sparse; shorter and drawn denser (the
 // renderer's GROOM_MIN_DENSITY) it is a thick, soft coat. At .95 it was still too long and too few (the user, by eye on
@@ -146,17 +148,23 @@ uniform vec3 uGroomEyeL, uGroomEyeR, uGroomEyeAxisL, uGroomEyeAxisR; // the eyes
 uniform vec2 uGroomShut;       // how closed each eye is (left, right)
 attribute vec4 groomData;   // across -1/1, radius, root 0 -> tip 1 (squared), phase
 attribute vec3 groomStrand; // length (model units), random 0..1, the part's root spacing
+attribute float groomFlex;   // free-tip compliance, 0 for short/skin-close fibres
 uniform float uGroomTime, uGroomHeight, uGroomGust;
 uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axes
 uniform vec4 uGroomStroke;  // pointer (NDC xy), radius (view units), bend
 uniform vec2 uGroomStrokeDir;
+uniform vec4 uGroomStrokeTrail; // delayed hand position and force: adjacent strands recover in sequence
+uniform vec2 uGroomImpact; // landing impulse and seconds since contact
 uniform float uGroomChild;  // 0 the strand itself, 1.. its child hairs
 uniform vec3 uGroomClump;   // CLUMP: strength, cell (in root spacings), guard share
 uniform highp sampler2D uGroomLagBones; // the skeleton's sprung copy, laid out as three's boneTexture
-mat4 groomLagMatrix(const in float i) {
+uniform highp sampler2D uGroomSlowBones;
+mat4 groomLagMatrix(const in float i, const in bool soft) {
   int size = textureSize(uGroomLagBones, 0).x;
   int j = int(i) * 4;
   int x = j % size, y = j / size;
+  if (soft) return mat4(texelFetch(uGroomSlowBones, ivec2(x, y), 0), texelFetch(uGroomSlowBones, ivec2(x + 1, y), 0),
+    texelFetch(uGroomSlowBones, ivec2(x + 2, y), 0), texelFetch(uGroomSlowBones, ivec2(x + 3, y), 0));
   return mat4(texelFetch(uGroomLagBones, ivec2(x, y), 0), texelFetch(uGroomLagBones, ivec2(x + 1, y), 0),
     texelFetch(uGroomLagBones, ivec2(x + 2, y), 0), texelFetch(uGroomLagBones, ivec2(x + 3, y), 0));
 }
@@ -243,7 +251,7 @@ void main() {
   vec3 lagDelta = vec3(0.0);
   #ifdef USE_SKINNING
     vec4 restSkin = bindMatrix * vec4(groomRest, 1.0);
-    lagDelta = (bindMatrixInverse * ((groomLagMatrix(skinIndex.x) - boneMatX) * restSkin)).xyz;
+    lagDelta = (bindMatrixInverse * ((groomLagMatrix(skinIndex.x, groomFlex > ${GROOM_FLEX.slowFrom}) - boneMatX) * restSkin)).xyz;
   #endif
   vec3 hairTangent = groomT;
   #ifdef USE_SKINNING
@@ -261,24 +269,39 @@ void main() {
   float wave = sin(dot(position, vec3(0.0, 7.0, 17.0)) - uGroomTime * 5.5 + 1.7 * sin(dot(position.xz, vec2(13.0, 4.0)) + uGroomTime * 0.9));
   float flutter = sin(uGroomTime * (7.0 + 3.0 * groomStrand.y) + groomData.w);
   vec3 bend = (viewMatrix * vec4(uGroomWind, 0.0)).xyz;
-  bend *= 1.0 + uGroomGust * 0.55 * wave + 0.12 * flutter;
-  bend += cross(N, bend) * 0.25 * flutter;
+  bend *= (0.18 + 0.82 * groomFlex) * (1.0 + uGroomGust * 0.55 * wave + 0.12 * flutter);
+  bend += cross(N, bend) * 0.25 * flutter * groomFlex;
+  // Gravity is in world space, so the same free tip hangs down when the cat rolls over.
+  vec3 down = normalize((viewMatrix * vec4(0.0, -1.0, 0.0, 0.0)).xyz);
+  bend += down * (${GROOM_FLEX.gravity} * groomFlex * groomFlex);
   // a hand through the coat: the strands under the pointer go along with it, lifting a little
   vec2 fromPointer = (projectionMatrix * mvPosition).xy - uGroomStroke.xy;
   fromPointer /= vec2(projectionMatrix[0][0], projectionMatrix[1][1]);
-  float touch = uGroomStroke.w * exp(-dot(fromPointer, fromPointer) / max(1e-6, uGroomStroke.z * uGroomStroke.z));
-  bend += vec3(uGroomStrokeDir, 0.0) * touch + N * abs(touch) * 0.6;
+  vec2 fromTrail = (projectionMatrix * mvPosition).xy - uGroomStrokeTrail.xy;
+  fromTrail /= vec2(projectionMatrix[0][0], projectionMatrix[1][1]);
+  float touch = 0.65 * uGroomStroke.w * exp(-dot(fromPointer, fromPointer) / max(1e-6, uGroomStroke.z * uGroomStroke.z));
+  touch += 0.45 * uGroomStrokeTrail.w * exp(-dot(fromTrail, fromTrail) / max(1e-6, uGroomStrokeTrail.z * uGroomStrokeTrail.z));
+  vec3 hand = normalize(vec3(uGroomStrokeDir, 0.0));
+  float against = max(0.0, -dot(T, hand));
+  // Along the lay: comb toward the skin. Against it: the free tips turn out before springing back.
+  bend += (hand - N * min(0.0, dot(hand, N))) * touch * (0.3 + 0.7 * groomFlex);
+  bend += N * touch * groomFlex * (0.05 + 0.45 * against);
   // the body's own motion: the tip trails where the sprung skeleton still has it, swings past when it stops
-  vec3 lagView = mat3(modelViewMatrix) * lagDelta * ${GROOM.lagGain};
+  vec3 lagView = mat3(modelViewMatrix) * lagDelta * ${GROOM.lagGain} * groomFlex;
   float lagLength = length(lagView), lagMost = ${GROOM.lagMax} * strandLength;
   if (lagLength > lagMost) lagView *= lagMost / lagLength;
   bend += lagView / max(strandLength, 1e-6);
+  // Contact shock travels through the loose chest/belly/tail tips and damps before the next step.
+  float jolt = uGroomImpact.x * sin(uGroomImpact.y * mix(16.0, 8.0, groomFlex) + groomData.w * 0.18);
+  bend += (down + cross(N, down) * 0.3) * jolt * groomFlex;
   bend -= N * min(0.0, dot(bend, N));
   // slow breathing of the coat, so a still cat's fur is never frozen
-  bend += vec3(sin(uGroomTime * 1.7 + groomData.w), 0.25 * sin(uGroomTime * 1.3 + groomData.w), 0.45 * cos(uGroomTime * 1.5 + groomData.w)) * 0.012;
+  bend += vec3(sin(uGroomTime * 1.7 + groomData.w), 0.25 * sin(uGroomTime * 1.3 + groomData.w), 0.45 * cos(uGroomTime * 1.5 + groomData.w)) * (0.003 + 0.009 * groomFlex);
   vec3 tipShift = bend * strandLength;
   // the tip moves along an arc, not out of the strand's length: what it gains sideways it loses along the strand
   vec3 shiftView = tipShift * along - T * (dot(tipShift, tipShift) / max(1e-6, 2.0 * strandLength)) * along * along;
+  // Arc shortening can otherwise pull a heavily bent strand under its own opaque skin.
+  shiftView -= N * min(0.0, dot(shiftView, N));
   mvPosition.xyz += shiftView;
   T = normalize(T * strandLength + 2.0 * t * tipShift);
 
@@ -425,8 +448,10 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     uGroomClump: { value: new THREE.Vector3(CLUMP.strength, CLUMP.cell, CLUMP.guard) },
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
     uGroomWind: { value: new THREE.Vector3() }, uGroomStroke: { value: new THREE.Vector4() }, uGroomStrokeDir: { value: new THREE.Vector2(1, 0) },
+    uGroomStrokeTrail: { value: new THREE.Vector4() }, uGroomImpact: { value: new THREE.Vector2() },
     uGroomChild: { value: 0 },
     uGroomLagBones: { value: null as THREE.DataTexture | null },
+    uGroomSlowBones: { value: null as THREE.DataTexture | null },
     uGroomBreath: { value: 0 },
     uGroomEyeL: { value: new THREE.Vector3() }, uGroomEyeR: { value: new THREE.Vector3() },
     uGroomEyeAxisL: { value: new THREE.Vector3(0, 0, 1) }, uGroomEyeAxisR: { value: new THREE.Vector3(0, 0, 1) },
@@ -517,7 +542,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
         if (best) for (let k = 0; k < part.points * 2; k++) lean.set(best, ((slot * part.points * 2) + k) * 2);
       }
     }
-    const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
+    const data = new Float32Array(count * 4), strandData = new Float32Array(count * 3), flexData = new Float32Array(count);
+    const skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
     const indices = new Uint32Array(part.strands * (part.points - 1) * 6);
     const pawLength = part.name.includes('_under_') ? 0.006 : 0.012;
     const spacing = rootSpacing(source, part.strands, part.points);
@@ -548,6 +574,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       const pawExtension = paw * Math.max(0, pawLength - strandLength * strandShorten);
       const pawScale = pawExtension / Math.max(strandLength, 1e-6);
       strandLength = strandLength * strandShorten + pawExtension;
+      const flex = guard ? THREE.MathUtils.smoothstep(strandLength, GROOM_FLEX.short, GROOM_FLEX.long) : 0;
       for (let point = 0; point < part.points; point++) {
         const p = strand * part.points + point;
         const before = (strand * part.points + Math.max(0, point - 1)) * 3;
@@ -564,6 +591,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
           }
           data.set([side ? 1 : -1, radii[p] * part.widthCompensation, (point / (part.points - 1)) ** 2, phase], v * 4);
           strandData.set([strandLength, random, spacing], v * 3);
+          flexData[v] = flex;
           for (let c = 0; c < 4; c++) {
             const offset = (part.skinPerPoint ? p : strand) * 4 + c;
             skinIndex[v * 4 + c] = jointMap[joints[offset]];
@@ -580,7 +608,8 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     const geometry = new THREE.BufferGeometry();
     for (const [name, array, size] of [
       ['position', position, 3], ['color', color, 3], ['normal', normal, 3], ['groomTangent', tangent, 3],
-      ['groomData', data, 4], ['groomStrand', strandData, 3], ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
+      ['groomData', data, 4], ['groomStrand', strandData, 3], ['groomFlex', flexData, 1],
+      ['skinIndex', skinIndex, 4], ['skinWeight', skinWeight, 4],
     ] as const) geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
     if (pawOffset) geometry.setAttribute('groomPawOffset', new THREE.BufferAttribute(pawOffset, 3));
     if (breath) geometry.setAttribute('groomBreath', new THREE.BufferAttribute(breath, 3));
@@ -661,20 +690,23 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   const skeleton = base.skeleton;
   const boneCount = skeleton.bones.length;
   const lagSize = Math.max(4, Math.ceil(Math.sqrt(boneCount * 4) / 4) * 4);
-  const lagMatrices = new Float32Array(lagSize * lagSize * 4);
+  const lagMatrices = [new Float32Array(lagSize * lagSize * 4), new Float32Array(lagSize * lagSize * 4)];
   // The copy is sprung in a frame that turns with the cat (the armature's rotation), not the world's. Sprung in the world, the cat turning
   // round - its whole body swinging through half a circle in a few frames - flung every strand on it at once: for a
   // tenth of a second the coat stood off the body, thinned to the undercoat, and a leg flashed bare ("右前腿我觉得走路
   // 的时候偶尔会闪一下"). A real coat does not do that when a kitten turns; it follows what moves under it.
-  const lagRelative = new Float32Array(boneCount * 16);
-  const lagVelocity = new Float32Array(boneCount * 16);
+  const lagRelative = [new Float32Array(boneCount * 16), new Float32Array(boneCount * 16)];
+  const lagVelocity = [new Float32Array(boneCount * 16), new Float32Array(boneCount * 16)];
   const frame = new THREE.Matrix4(), frameInverse = new THREE.Matrix4(), lagWorld = new THREE.Matrix4();
-  const lagTexture = new THREE.DataTexture(lagMatrices, lagSize, lagSize, THREE.RGBAFormat, THREE.FloatType);
-  lagTexture.needsUpdate = true;
-  material.uniforms.uGroomLagBones.value = lagTexture;
+  const lagTextures = lagMatrices.map((data) => new THREE.DataTexture(data, lagSize, lagSize, THREE.RGBAFormat, THREE.FloatType));
+  lagTextures.forEach((texture) => { texture.needsUpdate = true; });
+  material.uniforms.uGroomLagBones.value = lagTextures[0];
+  material.uniforms.uGroomSlowBones.value = lagTextures[1];
   const offsetMatrix = new THREE.Matrix4();
   const target = new Float32Array(16);
   let lagPrimed = false;
+  let impactStrength = 0, impactAge = 0;
+  let trailTime = 0, trailStrength = 0;
   function simulate(seconds: number) {
     if (warming > 0 && --warming === 0) applyDensity();
     if (eyes) {
@@ -689,7 +721,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       const lean = (v: number) => THREE.MathUtils.smoothstep(v, EYE_LEAN.from, 1);
       uniforms.uGroomShut.value.set(lean(eyeShut[0]), lean(eyeShut[1]));
     }
-    const w = 2 * Math.PI * GROOM_LAG.hz, zeta = GROOM_LAG.damping;
+    const springs = [[GROOM_LAG.shortHz, GROOM_LAG.shortDamping], [GROOM_LAG.longHz, GROOM_LAG.longDamping]];
     // a jump (the first frame, a long stall, a teleport) starts the copy where the skeleton is
     const snap = !lagPrimed || seconds > 0.25;
     const steps = Math.max(1, Math.ceil(seconds * 240));
@@ -701,26 +733,32 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
     for (let i = 0; i < boneCount; i++) {
       offsetMatrix.multiplyMatrices(skeleton.bones[i].matrixWorld, skeleton.boneInverses[i]).premultiply(frameInverse).toArray(target);
       const o = i * 16;
-      const far = Math.hypot(target[12] - lagRelative[o + 12], target[13] - lagRelative[o + 13], target[14] - lagRelative[o + 14]) > GROOM_LAG.snapDistance;
-      if (snap || far) {
-        lagRelative.set(target, o);
-        lagVelocity.fill(0, o, o + 16);
-        lagWorld.fromArray(lagRelative, o).premultiply(frame).toArray(lagMatrices, o);
-        continue;
-      }
-      for (let k = 0; k < 16; k++) {
-        if (k % 4 === 3) continue; // the bottom row stays 0 0 0 1
-        let x = lagRelative[o + k], v = lagVelocity[o + k];
-        for (let n = 0; n < steps; n++) {
-          v += ((target[k] - x) * w * w - 2 * zeta * w * v) * dt;
-          x += v * dt;
+      for (let layer = 0; layer < 2; layer++) {
+        const relative = lagRelative[layer], velocity = lagVelocity[layer];
+        const far = Math.hypot(target[12] - relative[o + 12], target[13] - relative[o + 13], target[14] - relative[o + 14]) > GROOM_LAG.snapDistance;
+        if (snap || far) {
+          relative.set(target, o);
+          velocity.fill(0, o, o + 16);
+        } else {
+          const w = 2 * Math.PI * springs[layer][0], zeta = springs[layer][1];
+          for (let k = 0; k < 16; k++) {
+            if (k % 4 === 3) continue; // the bottom row stays 0 0 0 1
+            let x = relative[o + k], v = velocity[o + k];
+            for (let n = 0; n < steps; n++) {
+              v += ((target[k] - x) * w * w - 2 * zeta * w * v) * dt;
+              x += v * dt;
+            }
+            relative[o + k] = x; velocity[o + k] = v;
+          }
         }
-        lagRelative[o + k] = x; lagVelocity[o + k] = v;
+        lagWorld.fromArray(relative, o).premultiply(frame).toArray(lagMatrices[layer], o);
       }
-      lagWorld.fromArray(lagRelative, o).premultiply(frame).toArray(lagMatrices, o);
     }
     lagPrimed = true;
-    lagTexture.needsUpdate = true;
+    lagTextures.forEach((texture) => { texture.needsUpdate = true; });
+    impactAge += Math.max(0, seconds);
+    impactStrength *= Math.exp(-Math.max(0, seconds) * 9);
+    uniforms.uGroomImpact.value.set(impactStrength, impactAge);
   }
   let density = 1;
   function applyDensity() {
@@ -739,7 +777,9 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   return {
     /** Advance the coat's inertia; after the skeleton is posed for the frame (world matrices up to date). */
     simulate,
-    dispose() { lagTexture.dispose(); },
+    dispose() { lagTextures.forEach((texture) => texture.dispose()); },
+    /** A paw touching down sends a small decaying ripple through free tips. */
+    impact(strength: number) { impactStrength = Math.max(impactStrength, Math.min(0.18, strength)); impactAge = 0; },
     /** the strands themselves, and (drawn only close up) their child hairs */
     meshes, children: children.flat(), material, materials: [material, ...childMaterials],
     /** How far the skin is breathing in this frame (its Breath shape key's influence): the strands rise and fall with it. */
@@ -753,9 +793,20 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       uniforms.uGroomWind.value.set(wind[0], wind[1], wind[2]);
       uniforms.uGroomGust.value = gust;
       if (stroke) {
-        uniforms.uGroomStroke.value.set(stroke.x, stroke.y, stroke.radius, stroke.amount);
+        const amount = Math.max(0, stroke.amount);
+        const trail = uniforms.uGroomStrokeTrail.value;
+        const dt = Math.min(0.05, Math.max(0, uniforms.uGroomTime.value - trailTime));
+        if (trailStrength < 0.01) trail.set(stroke.x, stroke.y, stroke.radius, 0);
+        const follow = 1 - Math.exp(-dt / 0.085);
+        trail.x += (stroke.x - trail.x) * follow;
+        trail.y += (stroke.y - trail.y) * follow;
+        trail.z = stroke.radius;
+        trailStrength += (amount - trailStrength) * (1 - Math.exp(-dt / 0.11));
+        trail.w = trailStrength;
+        trailTime = uniforms.uGroomTime.value;
+        uniforms.uGroomStroke.value.set(stroke.x, stroke.y, stroke.radius, amount);
         uniforms.uGroomStrokeDir.value.set(stroke.dx, stroke.dy);
-      } else uniforms.uGroomStroke.value.w = 0;
+      } else { uniforms.uGroomStroke.value.w = 0; uniforms.uGroomStrokeTrail.value.w = trailStrength = 0; }
     },
     /**
      * Draw only this share of every part's strands, each standing for 1/share of them. Small on the desktop a cat is a
