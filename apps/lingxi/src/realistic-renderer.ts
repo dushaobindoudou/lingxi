@@ -1665,7 +1665,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let elapsed = 0;
   const FIT_PADDING_PX = 10;
   const FIT_QUANTUM_PX = 64;
-  const FIT_HEADROOM = 1.2;
+  // Room round the cat: half as much again as it needs, and the canvas moves once the cat is within FIT_EDGE (a share
+  // of the canvas) of an edge - before a reaching paw can pass it in one frame. At 1.2 and no margin the canvas moved
+  // two or three times a second on a walk, each move a chance for the frame and the canvas to land out of step.
+  const FIT_HEADROOM = 1.5;
+  const FIT_EDGE = 0.06;
+  // the drawn cat's centre last frame and its smoothed travel (pixels a frame), for leading the canvas
+  let fitCentre: { x: number; y: number } | null = null;
+  const fitTravel = { x: 0, y: 0 };
   const bonePoint = new THREE.Vector3();
 
   /** Screen rect of the posed cat: every bone, padded by the coat and the ears' and paws' reach past their bones. */
@@ -2162,11 +2169,19 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     // is resized). Moved every frame, its CSS position and its WebGL image reach the screen out of step in the shipped
     // webview now and then: the whole cat jumped a few pixels, and a paw at the edge was cut off for a frame
     // ("右手感觉突然消失一下", "身体抖").
-    const inside = (cx: number, cy: number) => x0 >= cx && y0 >= cy && x1 <= cx + w && y1 <= cy + h;
+    const mx = Math.min(x0, Math.round(w * FIT_EDGE)), my = Math.min(y0, Math.round(h * FIT_EDGE));
+    const inside = (cx: number, cy: number) => x0 - mx >= cx && y0 - my >= cy
+      && Math.min(width, x1 + Math.round(w * FIT_EDGE)) <= cx + w && Math.min(height, y1 + Math.round(h * FIT_EDGE)) <= cy + h;
     const resized = w !== canvasRect.width || h !== canvasRect.height;
     const keep = !full && !resized && canvasRect.width > 0 && inside(canvasRect.x, canvasRect.y);
-    const x = keep ? canvasRect.x : Math.floor(Math.min(Math.max((x0 + x1 - w) / 2, 0), Math.max(0, width - w)));
-    const y = keep ? canvasRect.y : Math.floor(Math.min(Math.max((y0 + y1 - h) / 2, 0), Math.max(0, height - h)));
+    // re-centred ahead of the cat's travel: the cat at the trailing side, the room in front of it, so a walk across the
+    // screen moves the canvas half as often
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    if (fitCentre) { fitTravel.x += (cx - fitCentre.x - fitTravel.x) * 0.2; fitTravel.y += (cy - fitCentre.y - fitTravel.y) * 0.2; }
+    fitCentre = { x: cx, y: cy };
+    const lead = (travel: number, slack: number) => Math.abs(travel) < 0.3 ? 0 : Math.sign(travel) * slack;
+    const x = keep ? canvasRect.x : Math.floor(Math.min(Math.max((x0 + x1 - w) / 2 + lead(fitTravel.x, Math.max(0, (w - (x1 - x0)) / 2 - mx)), 0), Math.max(0, width - w)));
+    const y = keep ? canvasRect.y : Math.floor(Math.min(Math.max((y0 + y1 - h) / 2 + lead(fitTravel.y, Math.max(0, (h - (y1 - y0)) / 2 - my)), 0), Math.max(0, height - h)));
     if (w !== canvasRect.width || h !== canvasRect.height) {
       renderer.setSize(w, h, true);
       canvasRect.width = w;
