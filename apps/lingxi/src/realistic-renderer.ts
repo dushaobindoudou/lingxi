@@ -244,6 +244,9 @@ const TAIL_SPRING_HZ = [2.4, 2.0, 1.7, 1.4, 1.15];
 const TAIL_DAMPING = 0.6;
 // how far (radians) the sway wave lags from one tail bone to the next
 const TAIL_WAVE_LAG = 0.6;
+// The tail on the move: its sway's phase past the hips' (radians), how fast it is pulled onto the stride (s), and the
+// bend out of a turn (degrees at the tip per radian a second of turn, eased over `turnSeconds`)
+const TAIL_GAIT = { lead: 0.4, lockSeconds: 0.25, turn: 9, turnSeconds: 0.35 };
 // The coat's color attribute is the SKIN under the Cycles hair, darker and duller than the golden caramel the hair
 // shader makes of it: richer and a touch warmer here, on the shells and the bare skin alike.
 // The face a clip implies while it plays and nothing is held (the voxel cat's actions carry theirs in actions.json).
@@ -538,7 +541,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let tailFrame: THREE.Object3D | null = null;
   const tailLift = [0, 0, 0, 0, 0], tailLiftVelocity = [0, 0, 0, 0, 0];
   const tailSway = [0, 0, 0, 0, 0];
-  let tailPhase = 0;
+  let tailPhase = 0, tailTurnBend = 0;
   const shellMaterials: THREE.Material[] = [];
   const ownedMaterials: THREE.Material[] = [];
   const whiskerBends = [new THREE.Vector3(), new THREE.Vector3()];
@@ -1819,6 +1822,18 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       tailSway[i] += ((pose?.sway[i] ?? 0) - tailSway[i]) * (1 - Math.exp(-deltaSeconds / 0.5));
     }
     tailPhase = (tailPhase + deltaSeconds * Math.PI * 2 / (pose?.period ?? TAIL_STAND.period)) % (Math.PI * 2);
+    // Walking, the sway keeps the stride's time: once a stride, with the swing the clip and the hips (realistic-
+    // locomotion's hipSway) already give the tail, pulled onto it over a few frames. On its own 1.5 s clock it drifted
+    // in and out of step with the legs, now adding to that swing and now cancelling it - a tail waving to its own tune
+    // ("尾巴似乎不会配合动作"). In step, the tip's sideways swing follows the stride 0.94 (R²) of the time, from 0.76.
+    const gait = (currentName === 'Walk' || currentName === 'Run') && current ? current : null;
+    if (gait && !own) {
+      const target = 2 * Math.PI * (gait.time / gait.getClip().duration) + TAIL_GAIT.lead;
+      const off = Math.atan2(Math.sin(target - tailPhase), Math.cos(target - tailPhase));
+      tailPhase += off * (1 - Math.exp(-deltaSeconds / TAIL_GAIT.lockSeconds));
+    }
+    // and on a turn it swings out to the outside of the curve, the tip most, lagging the turn
+    tailTurnBend += ((gait ? -steeringTurnRate * TAIL_GAIT.turn : 0) - tailTurnBend) * (1 - Math.exp(-deltaSeconds / TAIL_GAIT.turnSeconds));
     tailFrame.getWorldQuaternion(tailFrameQ);
     for (let i = 0; i < 5; i++) tailClipPose[i].copy(tailBones[i].quaternion);
     // an action's own carriage starts from the rest pose, eased in and out
@@ -1830,7 +1845,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       tailAxis.set(1, 0, 0).applyQuaternion(tailFrameQ).applyQuaternion(tailParentQ);
       bone.quaternion.premultiply(tailTurn.setFromAxisAngle(tailAxis, THREE.MathUtils.degToRad(tailLift[i])));
       tailAxis.set(0, 1, 0).applyQuaternion(tailFrameQ).applyQuaternion(tailParentQ);
-      const sway = tailSway[i] * Math.sin(tailPhase - i * TAIL_WAVE_LAG);
+      const sway = tailSway[i] * Math.sin(tailPhase - i * TAIL_WAVE_LAG) + tailTurnBend * (i + 1) / 5;
       bone.quaternion.premultiply(tailTurn.setFromAxisAngle(tailAxis, THREE.MathUtils.degToRad(sway)));
     }
   }
