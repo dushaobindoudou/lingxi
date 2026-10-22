@@ -288,3 +288,48 @@ export function tailFuzzRegion(mesh: THREE.SkinnedMesh, undercoat: number): Coat
     length(_v, _w, random) { return THREE.MathUtils.lerp(TAIL_FUZZ.length[0], TAIL_FUZZ.length[1], random()); },
   };
 }
+
+// ---- the roots of the ears ----
+// The ear is its own mesh pushed into the head, and the head's groom is combed away from it: from three-quarter on, the
+// ear's pale rim ran on down into the head, a cut-out stuck on rather than an ear growing out of a furred head ("耳朵跟头
+//居然没有完全连起来"). The head's own coat grows up over the join: within `reach` of the ear (model units), thinning
+// out by `reach`, combed up toward the ear's tip, standing well off the skin to lie over the ear's base.
+export const EAR_ROOT_FUZZ = {
+  count: 9000,
+  near: 0.008, reach: 0.03,
+  length: [0.02, 0.032] as const,
+  width: [0.0003, 0.00048] as const,
+  lift: 0.75,
+  colourLift: 1.2,
+} as const;
+
+/** `ears`: each ear's surface points (head mesh rest space) and its tip */
+export function earRootFuzzRegion(ears: { points: THREE.Vector3[]; tip: THREE.Vector3 }[], undercoat: number): CoatFuzzRegion | null {
+  if (!ears.length) return null;
+  const E = EAR_ROOT_FUZZ;
+  let nearest: { points: THREE.Vector3[]; tip: THREE.Vector3 } = ears[0];
+  const closest = (v: THREE.Vector3) => {
+    let best = Infinity;
+    for (const ear of ears) for (const q of ear.points) {
+      const d = q.distanceToSquared(v);
+      if (d < best) { best = d; nearest = ear; }
+    }
+    return Math.sqrt(best);
+  };
+  const up = new THREE.Vector3();
+  // nothing below the lowest ear point by more than `reach`: most of the head, skipped without a search
+  const low = Math.min(...ears.flatMap((e) => e.points.map((q) => q.y))) - E.reach;
+  return {
+    name: 'EarRootFuzz', count: E.count, seed: 6619, toneSpread: 0.36, width: E.width, lift: E.lift, colourLift: E.colourLift, undercoat,
+    weight(v) {
+      if (v.y < low) return 0;
+      const d = closest(v);
+      return 1 - THREE.MathUtils.smoothstep(d, E.near, E.reach);
+    },
+    flow(v, _n, random) {
+      closest(v);
+      return up.copy(nearest.tip).sub(v).normalize().add(new THREE.Vector3((random() - 0.5) * 0.5, 0, (random() - 0.5) * 0.5));
+    },
+    length(_v, w, random) { return THREE.MathUtils.lerp(E.length[0], E.length[1], random()) * (0.6 + 0.4 * w); },
+  };
+}

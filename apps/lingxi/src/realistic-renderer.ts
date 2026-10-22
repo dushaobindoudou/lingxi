@@ -19,7 +19,7 @@ import { WHISKER, stepWhiskerSpring, whiskerMood, type WhiskerSpring, type Whisk
 import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
 import { rebuildLidMorphNormals, createLidFuzz } from './realistic-lid-surface.ts';
-import { createCoatFuzz, faceFuzzRegion, legFuzzRegion, tailFuzzRegion } from './realistic-coat-fuzz.ts';
+import { createCoatFuzz, earRootFuzzRegion, faceFuzzRegion, legFuzzRegion, tailFuzzRegion } from './realistic-coat-fuzz.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, calmLoafFace, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -1518,6 +1518,24 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         mouthDistance: mouthLineDistance,
         undercoat: UNDERCOAT_REACH * FUR.LX_Head.len,
       })]);
+    }
+    if (groom && headCoat) {
+      // each ear's points (every few of its vertices) and its tip (the point farthest above the head's centre), in the
+      // head coat's rest space; the two ears told apart by side
+      const inv = new THREE.Matrix4().copy(headCoat.matrixWorld).invert();
+      const sides: THREE.Vector3[][] = [[], []];
+      root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !/^Ear/.test(m.name)) return;
+        const pos = m.geometry.getAttribute('position');
+        m.updateWorldMatrix(true, false);
+        for (let i = 0; i < pos.count; i += 3) {
+          const q = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld).applyMatrix4(inv);
+          sides[q.x < 0 ? 0 : 1].push(q);
+        }
+      });
+      const ears = sides.filter((pts) => pts.length).map((points) => ({ points, tip: points.reduce((t, q) => (q.y > t.y ? q : t)) }));
+      fuzzRegions.push([headCoat, earRootFuzzRegion(ears, UNDERCOAT_REACH * FUR.LX_Head.len)]);
     }
     if (groom && bodyCoat) fuzzRegions.push([bodyCoat, legFuzzRegion(bodyCoat, UNDERCOAT_REACH * FUR.LX_Body.len)]);
     const tailCoat = coat.find((m) => m.name.startsWith('LX_Tail'));
