@@ -178,6 +178,10 @@ const SETTLE_CLIPS: Record<string, { hold: number; rise: 'rest' | 'reverse'; pac
 // Curling up to sleep goes by way of lying down (the Sleep clip is one held pose: straight from standing it popped into a
 // curl, and popped back up on waking): down, then the curl crossfaded in this slowly; waking, the reverse.
 const CURL_SECONDS = 1.6;
+const SLEEP_CURL = { pitch: 0.6, roll: 0.6, yaw: 0.4, neckShare: 0.45 };
+// The curl is shown turned this far (radians, always this side: the curl is not symmetric, and from here the tucked face
+// and the tail round it show; square on, the body hid behind an upright face).
+const SLEEP_YAW = -0.6;
 // Clips that carry the body across the floor; the engine owns position, so their horizontal travel is removed.
 const TRAVELLING = ['Walk', 'Run', 'Jump'];
 // The tail's carriage while a clip that leaves it alone plays. The standing clips never move Tail0, Tail1 or Tail4 (a few
@@ -211,7 +215,8 @@ const ACTION_STAGING: Record<string, { yaw: number; look?: boolean; liftHind?: b
 // stance the cat stands in - or whatever heading it stopped at - the face pointed off past the viewer, the head looked
 // wrenched round on the lying body. So the cat turns to its mark first, then lies down (the same staging as the potty set
 // pieces), and the engine's sleep the same way.
-// The mark (yaw, on the side it already shows): square on for SideLie and Sleep, whose heads are set to face the camera.
+// The mark (yaw, on the side it already shows): square on for SideLie, whose head is set to face the camera; Sleep has
+// its own (SLEEP_YAW), its head laid down on the curl (overlayCurl).
 // LieDown and Loaf leave the head on the body, and square on the body hid behind the head and paws - from the eye-level
 // camera ('auto' at rest) a head on two paws, nothing that read as lying down. Three-quarter on, as it stands, the length
 // of the lying body shows and the face still turns to the viewer.
@@ -1575,7 +1580,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   function stageOrStart(id: string, clip: string, seconds?: number) {
     const stage = ACTION_STAGING[id];
     const mark = stage?.yaw ?? LYING_YAW[clip];
-    const yaw = mark == null ? null : (Math.sign(bodyYaw) || 1) * mark;
+    const yaw = clip === 'Sleep' && !stage ? SLEEP_YAW : mark == null ? null : (Math.sign(bodyYaw) || 1) * mark;
     if (yaw == null || Math.abs(Math.atan2(Math.sin(yaw - bodyYaw), Math.cos(yaw - bodyYaw))) < 0.06) {
       staged = stage ? { id, clip, yaw: bodyYaw, started: true, seconds } : null;
       startAction(id, clip, seconds);
@@ -1748,6 +1753,24 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     turnPetBone(`FrontPaw${paw}`, side, up * SWAT.flick);
     turnPetBone('Chest', side, -SWAT.chest * Math.max(up, strike));
     turnPetBone('Head', side, SWAT.head * settle);
+  }
+  // The curled sleep's head. The Sleep clip turns the head square to the camera, upright on the curl: a face set on a
+  // ball of fur ("蜷缩太傻了…跟揉成一团一样"). A sleeping kitten lays it down on its own flank, the chin tucked, the
+  // crown tipped over: pitch (nose down), roll (crown toward the tail side) and yaw (the face round toward the tail),
+  // radians, shared between neck and head, faded in with the clip.
+  function overlayCurl() {
+    const sleep = actions.Sleep;
+    const weight = sleep?.isRunning() ? sleep.getEffectiveWeight() : 0;
+    if (!model || weight < 1e-3) return;
+    const c = SLEEP_CURL;
+    catRoot.getWorldQuaternion(petRootQ);
+    const side = new THREE.Vector3(1, 0, 0).applyQuaternion(petRootQ), forward = new THREE.Vector3(0, 0, 1).applyQuaternion(petRootQ);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(petRootQ);
+    for (const [bone, share] of [['Neck', c.neckShare], ['Head', 1 - c.neckShare]] as const) {
+      turnPetBone(bone, up, c.yaw * share * weight);
+      turnPetBone(bone, forward, c.roll * share * weight);
+      turnPetBone(bone, side, c.pitch * share * weight);
+    }
   }
   // On top of the clip's pose: ease toward the playing clip's carriage, then turn each bone about the model's side axis
   // (lift) and up axis (sway), both carried into its parent's frame, root first so every bone builds on the one before.
@@ -2354,7 +2377,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         // a staged set piece turns to its mark first (ACTION_STAGING); not while it plays an action (a head bump, a
         // stretch): the body would spin rigidly under it - it holds still
         if (staged && !staged.started) facingAngle = staged.yaw;
-        else if (state.state === 'sleep') facingAngle = currentName === 'Sleep' || lyingVia ? bodyYaw : 0;
+        else if (state.state === 'sleep') facingAngle = currentName === 'Sleep' || lyingVia ? bodyYaw : SLEEP_YAW;
         else if (oneShot) facingAngle = bodyYaw;
         else if (elapsed - settledSince > SETTLE_DELAY_SECONDS) {
           let presentation = 0;
@@ -2392,9 +2415,9 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
         startAction(staged.id, staged.clip, staged.seconds);
       }
       if (staged?.started && oneShot?.id !== staged.id) staged = null;
-      // the engine's sleep: square on before it lies down (LYING_YAW), then held
+      // the engine's sleep: turned to SLEEP_YAW before it lies down, then held
       const sleepTurn = state.state === 'sleep' && currentName !== 'Sleep' && !lyingVia && !oneShot && !staged
-        && Math.abs(Math.atan2(Math.sin(bodyYaw), Math.cos(bodyYaw))) > 0.06;
+        && Math.abs(Math.atan2(Math.sin(bodyYaw - SLEEP_YAW), Math.cos(bodyYaw - SLEEP_YAW))) > 0.06;
       const yawRate = deltaSeconds > 0 ? Math.atan2(Math.sin(bodyYaw - previousYaw), Math.cos(bodyYaw - previousYaw)) / deltaSeconds : 0;
       steeringTurnRate += ((moving ? yawRate : 0) - steeringTurnRate) * (1 - Math.exp(-deltaSeconds / .16));
       walkStrideScale = steeringStrideScale(steeringTurnRate) * KITTEN_WALK.stride;
@@ -2559,6 +2582,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       overlayStage(deltaSeconds);
       overlayPet(deltaSeconds, moving || pivoting || (!!oneShot && !/^pet-(head|back)$/.test(oneShot.id)) || !!staged || currentName === 'Walk' || currentName === 'Run');
       overlaySwat();
+      overlayCurl();
 
       // Read the final pose, after locomotion and touch overlays, so each patch follows the sole that is drawn.
       catRoot.updateMatrixWorld(true);
