@@ -558,6 +558,8 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // GLSL `float lidShown(vec3 rest)` (see LID_TUCK), written once the eyes are found
   let lidTuckGlsl = 'float lidShown(vec3 rest) { return 1.0; }';
   let loaded = false;
+  // realistic-coat-fuzz's short-hair meshes (face, legs, tail), thinned with the groom's density
+  const coatFuzz: THREE.Mesh[] = [];
   let frameSeconds = 1 / 60;
   let debugInfo: unknown = null;
   let locomotion: ReturnType<typeof createLocomotion> | null = null;
@@ -1519,7 +1521,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     if (groom && tailCoat) fuzzRegions.push([tailCoat, tailFuzzRegion(tailCoat, UNDERCOAT_REACH * FUR.LX_Tail.len)]);
     for (const [mesh, region] of fuzzRegions) {
       const fuzz = region && createCoatFuzz(mesh, region);
-      if (fuzz) { ownedMaterials.push(fuzz.material as THREE.Material); mesh.parent!.add(fuzz); }
+      if (fuzz) { ownedMaterials.push(fuzz.material as THREE.Material); mesh.parent!.add(fuzz); coatFuzz.push(fuzz); }
     }
     const lidLayers = groom ? LID_UNDERCOAT_LAYERS : Math.ceil(shellCount / 2);
     for (const lid of lidFur) {
@@ -2332,7 +2334,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       elapsed += deltaSeconds;
       if (deltaSeconds > 0) frameSeconds += (deltaSeconds - frameSeconds) * .08;
       groom?.update(elapsed, renderer.domElement.height);
-      groom?.setDensity(Math.max(GROOM_MIN_DENSITY, TARGET_HEIGHT * effectiveScale() / unitsPerPixel * renderer.getPixelRatio() / GROOM_FULL_DENSITY_PX));
+      const coatDensity = Math.max(GROOM_MIN_DENSITY, TARGET_HEIGHT * effectiveScale() / unitsPerPixel * renderer.getPixelRatio() / GROOM_FULL_DENSITY_PX);
+      groom?.setDensity(coatDensity);
+      // the short hairs thin with the groom: a desktop-sized kitten drew all 310k of them, most sub-pixel, every frame
+      // (their order is random, so the first share of them is an even thinning)
+      for (const fuzz of coatFuzz) {
+        const total = fuzz.geometry.index?.count ?? 0;
+        fuzz.geometry.setDrawRange(0, Math.floor(total * Math.min(1, coatDensity) / 6) * 6);
+      }
       lastAnchor = { x: state.position.x, y: state.position.y };
 
       if (performanceScale != null) {
