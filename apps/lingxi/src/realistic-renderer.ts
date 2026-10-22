@@ -1724,8 +1724,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       z: toyState.velocity.y * worldPerPixelZ,
       scale: 1 / Math.max(1e-6, toyScale),
     });
+    // the ball leaves when the paw comes down on it (the engine launches it SWAT.strike after the paw starts up), not
+    // as the paw starts up: struck at once, it hopped a fifth of a second ahead of the swat ("游戏居然会慢半拍")
+    if (elapsed >= swatAt + SWAT.strike && !swatStruck) { swatStruck = true; toyProp.struck?.(); }
     if ((state as { batted?: boolean }).batted) {
-      toyProp.struck?.();
+      swatStruck = false;
       // the paw nearer the toy, as the cat faces it (world: the toy's side of the cat's own side axis)
       catRoot.getWorldQuaternion(petRootQ);
       const toyWorld = screenToWorld(toyState.position.x, toyState.position.y, 0), catWorld = screenToWorld(state.position.x, state.position.y, 0);
@@ -1738,10 +1741,13 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // is playing - the run up to the ball included - and undone with the pet overlay each frame. Angles in radians, times
   // in seconds from the moment the paw starts up (the strike at SWAT.strike, when the ball is launched).
   const SWAT = { seconds: 0.5, strike: 0.2, lift: 1.25, bend: 1.1, flick: 0.7, across: 0.4, chest: 0.16, head: 0.22 };
-  let swatAt = -Infinity, swatSide = 1;
-  function overlaySwat() {
+  let swatAt = -Infinity, swatSide = 1, swatStruck = true;
+  function overlaySwat(state: Parameters<Renderer['render']>[0]) {
     const t = elapsed - swatAt;
-    if (!model || t < 0 || t > SWAT.seconds) return;
+    // picked up or the toy put away mid-swat: the paw and head go back to the clip at once (left to run out, the head
+    // kept turning with the cat in hand)
+    if (state.state !== 'play_toy') swatAt = -Infinity;
+    if (!model || t < 0 || t > SWAT.seconds || state.state !== 'play_toy') return;
     const up = THREE.MathUtils.smoothstep(t, 0, SWAT.strike * 0.9) * (1 - THREE.MathUtils.smoothstep(t, SWAT.strike, SWAT.strike + 0.12));
     const strike = Math.exp(-(((t - SWAT.strike) / 0.05) ** 2));
     const settle = 1 - THREE.MathUtils.smoothstep(t, SWAT.strike, SWAT.seconds);
@@ -2589,7 +2595,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       overlayPotty(deltaSeconds);
       overlayStage(deltaSeconds);
       overlayPet(deltaSeconds, moving || pivoting || (!!oneShot && !/^pet-(head|back)$/.test(oneShot.id)) || !!staged || currentName === 'Walk' || currentName === 'Run');
-      overlaySwat();
+      overlaySwat(state);
       overlayCurl();
 
       // Read the final pose, after locomotion and touch overlays, so each patch follows the sole that is drawn.
