@@ -23,6 +23,11 @@ export interface GroomAsset { spec: GroomSpec; bytes: ArrayBuffer }
 // - three highlight lobes along the strand (Marschner): R, a thin white line off the surface, shifted toward the root;
 //   TRT, through the hair and back, broader and in the coat's own colour, toward the tip; TT, straight through - the
 //   warm glow of a backlit coat's edge
+// Fur grows in clumps: the tips of neighbouring hairs gather, so the coat reads as locks and partings rather than a
+// comb of parallel lines - and a sparse layer of longer guard hairs stands over the dense down ("没有细毛和长毛的错综复杂
+// 的感觉"). strength: how far a tip is drawn toward its clump's centre; cell: a clump's size, in the part's root
+// spacings; guard: the share of strands that are guard hairs; guardExtra: how much longer they are.
+export const CLUMP = { strength: 0.7, cell: 3.0, guard: 0.06, guardExtra: 0.45 };
 const GROOM = {
   coverageExp: '0.50',
   absorption: '1.45',
@@ -146,6 +151,7 @@ uniform vec3 uGroomWind;    // tip bend, share of the strand's length, world axe
 uniform vec4 uGroomStroke;  // pointer (NDC xy), radius (view units), bend
 uniform vec2 uGroomStrokeDir;
 uniform float uGroomChild;  // 0 the strand itself, 1.. its child hairs
+uniform vec3 uGroomClump;   // CLUMP: strength, cell (in root spacings), guard share
 uniform highp sampler2D uGroomLagBones; // the skeleton's sprung copy, laid out as three's boneTexture
 mat4 groomLagMatrix(const in float i) {
   int size = textureSize(uGroomLagBones, 0).x;
@@ -190,6 +196,23 @@ void main() {
     vGroomChildEnd = mix(${GROOM.childShortest}, 1.0, fract(h.z * 7.31));
   }
   transformed += groomPawOffset + groomBreath * uGroomBreath;
+  // Clumps and guard hairs (CLUMP), in the rest pose so they ride the body. Not round the eyes (groomLean).
+  if (groomLean.x == 0.0 && groomStrand.x > 0.0) {
+    float tc = sqrt(groomData.z);
+    vec3 dir = normalize(groomTangent + vec3(1e-6));
+    vec3 root = transformed - dir * groomStrand.x * tc;
+    float cellSize = spacing * uGroomClump.y;
+    vec3 cell = floor(root / cellSize);
+    vec3 jitter = fract(sin(vec3(dot(cell, vec3(127.1, 311.7, 74.7)), dot(cell, vec3(269.5, 183.3, 246.1)), dot(cell, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
+    vec3 toCentre = (cell + 0.2 + 0.6 * jitter) * cellSize - root;
+    toCentre -= normal * dot(toCentre, normal);
+    float pull = uGroomClump.x * (0.55 + 0.45 * jitter.x);
+    transformed += toCentre * pull * smoothstep(0.15, 1.0, tc);
+    // a few long guard hairs over the down, standing a little further off the coat
+    if (fract(random * 13.37) < uGroomClump.z) {
+      transformed += (dir + normal * 0.25) * groomStrand.x * ${CLUMP.guardExtra} * tc * tc;
+    }
+  }
   // the face's coat round a closing eye combed in over its lids (EYE_LEAN)
   vec3 groomT = groomTangent;
   if (groomLean.x != 0.0) {
@@ -399,6 +422,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   neckBlend?: (x: number, y: number, z: number) => number;
 } = {}) {
   const uniforms = {
+    uGroomClump: { value: new THREE.Vector3(CLUMP.strength, CLUMP.cell, CLUMP.guard) },
     uGroomTime: { value: 0 }, uGroomHeight: { value: 1 }, uGroomStack: { value: 1 }, uGroomGust: { value: 0 },
     uGroomWind: { value: new THREE.Vector3() }, uGroomStroke: { value: new THREE.Vector4() }, uGroomStrokeDir: { value: new THREE.Vector2(1, 0) },
     uGroomChild: { value: 0 },
