@@ -64,10 +64,10 @@ export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: 
         const verts = [at(lo * 3), at(lo * 3 + 1), at(lo * 3 + 2)], u = Math.sqrt(random()), v = random(), bary = [1 - u, u * (1 - v), u * v];
         const blend = (attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, component: number) => verts.reduce((sum, vertex, k) => sum + bary[k] * attr.getComponent(vertex, component), 0);
         const coat = g.getAttribute('furScale');
-        const coverage = coat ? THREE.MathUtils.smoothstep(blend(coat, 0), .25, .85) : 1;
-        // longer and more varied than first drawn (2.6-5.2 mm, tone .88-1.23): open, the lids are the ring round the eye,
-        // and that ring read close up as smooth tan skin
-        const length = (.0038 + random() * .0034) * coverage, width = (.0002 + random() * .0002) * coverage, lean = (random() - .5) * .8, tone = .78 + random() * .48;
+        // The old .25-.85 ramp left most of a closed lid's dome with subpixel stubs. Only the thin free edge is bare;
+        // the rest carries short, overlapping hairs in the same colour as the surrounding face.
+        const coverage = coat ? THREE.MathUtils.smoothstep(blend(coat, 0), .03, .5) : 1;
+        const length = (.0026 + random() * .0023) * coverage, width = (.0004 + random() * .0003) * coverage, lean = (random() - .5) * .8, tone = .55 + random() * 1.0;
         const influences = new Map<number, number>();
         verts.forEach((vertex, k) => { for (let j = 0; j < 4; j++) {
             const joint = joints.getComponent(vertex, j);
@@ -101,7 +101,7 @@ export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: 
             const out: number[] = [];
             for (let corner = 0; corner < 4; corner++) {
                 const tip = corner >= 2, side = corner % 2 ? 1 : -1;
-                point.copy(root).addScaledVector(normal, .0012 + (tip ? length * .45 : 0)).addScaledVector(tangent, tip ? length : 0).addScaledVector(across, side * width * (tip ? .035 : .5));
+                point.copy(root).addScaledVector(normal, .00135 + (tip ? length * .4 : 0)).addScaledVector(tangent, tip ? length : 0).addScaledVector(across, side * width * (tip ? .035 : .5));
                 out.push(point.x, point.y, point.z);
             }
             return out;
@@ -112,7 +112,7 @@ export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: 
         for (let corner = 0; corner < 4; corner++) {
             const vertex = h * 4 + corner;
             for (let component = 0; component < 3; component++)
-                colors[vertex * 3 + component] = Math.min(1, blend(col, component) * tone * (corner >= 2 ? 1.12 : .96));
+                colors[vertex * 3 + component] = Math.min(1, blend(col, component) * 1.18 * tone * (corner >= 2 ? 1.12 : .9));
             skin.forEach(([joint, weight], j) => { ji[vertex * 4 + j] = joint; sw[vertex * 4 + j] = weight / weightSum; });
         }
         indices.push(h * 4, h * 4 + 1, h * 4 + 2, h * 4 + 2, h * 4 + 1, h * 4 + 3);
@@ -126,7 +126,9 @@ export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: 
     geometry.morphTargetsRelative = true;
     geometry.morphAttributes.position = morphs.map(values => new THREE.BufferAttribute(values, 3));
     rebuildLidMorphNormals(geometry);
-    const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, side: THREE.DoubleSide }));
+    const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: .92, side: THREE.DoubleSide, alphaHash: true, opacity: .45,
+    }));
     mesh.name = `${lid.name}_ShortFur`;
     mesh.bind(lid.skeleton, lid.bindMatrix);
     mesh.bindMode = lid.bindMode;
