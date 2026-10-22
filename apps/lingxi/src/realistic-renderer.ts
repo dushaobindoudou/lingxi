@@ -98,17 +98,16 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 // (model units). Their free edge, the lash line over the eyeball, stays.
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
-// the lid's short hairs (createLidFuzz): open, the lids are the ring round each eye, and at 1100 a lid that ring read
-// close up as bare brown skin (the user, zoomed in: "脸上太少")
-const LID_FUZZ_COUNT = 3600;
+// The short skinned hairs sit over an irregular undercoat grain; fewer opaque cards avoid a felt-like pad.
+const LID_FUZZ_COUNT = 1800;
 // the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
-const LASH_WIDTH = 0.0028;
+const LASH_WIDTH = 0.0016;
 // Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's
 // dome still showed through a closing lid's edge (world units)
 const LID_SOLIDIFY_OUT = 0.0022;
 // the lids' undercoat lifted to the face coat's brightness round it (the face's vertex colours are the skin under its
 // lighter strands; the lids grow none - realistic-groom LIDS): at the skin's own colour a closed lid read as a dark pad
-const LID_UNDERCOAT_LIFT = 1.45;
+const LID_UNDERCOAT_LIFT = 1.3;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
 // Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
 // cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need. At .28 the desktop cat
@@ -689,8 +688,30 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   // fades from about half opaque at its root to nothing at its tip, unwritten to depth, so together they are a soft
   // white down.
   const EAR_TUFT = { alpha: 0.5, fadeFrom: 0.2 };
+  const treatedEarSkin = new Set<THREE.MeshStandardMaterial>();
   // the bump textures' relief (see the normal-map fix in the material pass): 1 reads at desktop size, 3 turned the ears grainy
   const BUMP_SCALE = 1;
+  function softenEarRim(mat: THREE.MeshStandardMaterial) {
+    if (treatedEarSkin.has(mat)) return;
+    treatedEarSkin.add(mat);
+    mat.roughness = 0.88;
+    mat.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          // The ear atlas paints a broad near-white frame. Blend it into the brown outer fur before it can read as
+          // a thick plastic bevel; keep the centre pink and its sparse white furnishing hairs untouched.
+          float earEdge = min(min(vMapUv.x, 1.0 - vMapUv.x), vMapUv.y);
+          float earRim = 1.0 - smoothstep(0.015, 0.11, earEdge);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.58, 0.38, 0.29), earRim * 0.82);`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          // A little warm scattered light at grazing angles suggests the thin ear membrane in backlight.
+          float earGrazing = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+          totalEmissiveRadiance += vec3(0.045, 0.014, 0.012) * earGrazing * earGrazing
+            * smoothstep(0.04, 0.16, earEdge);`);
+    };
+    mat.customProgramCacheKey = () => 'realcat-ear-skin-v2';
+    mat.needsUpdate = true;
+  }
   function earTuftMaterial(source: THREE.MeshStandardMaterial) {
     const m = new THREE.MeshStandardMaterial({
       color: source.color.clone(), roughness: 0.9, transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -1318,6 +1339,14 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       const name = mat?.name ?? '';
       if (/^LX_(Tooth|Lip|Mouth|Tongue)/.test(m.name)) teeth.push(m);
       if (/^LX_EarFurnish/.test(m.name)) m.material = earTuftMaterial(m.material as THREE.MeshStandardMaterial);
+      if (name === 'LX_Tex_Ear') softenEarRim(mat);
+      if (/^LX_ShortFur_EarOuterTabby/.test(name)) {
+        // The exported outer rim is a separate, several-millimetre strip. Its bright studio material read as white
+        // plastic against the pink membrane; a matte tabby tint lets its existing short groom read as fur instead.
+        mat.color.set(0xad8063);
+        mat.roughness = 0.94;
+        mat.envMapIntensity = 0.35;
+      }
       // The export hands Blender's bump textures over as normal maps: ear_bump, nose_bump, the pads', the tongue's - one
       // grey channel each, read as a normal they point every which way, and the ears came out streaked with hard white
       // lines and black specks. They are height, so they go back to being height.
@@ -1389,10 +1418,20 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           if (!lid) return;
           // the lid's skin past the eye gives way to the face (LID_TUCK), dithered: it is opaque
           sh.vertexShader = 'varying vec3 vLidRest;\n' + sh.vertexShader.replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n vLidRest = transformed;');
-          sh.fragmentShader = 'varying vec3 vLidRest;\n' + lidTuckGlsl + '\n' + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+          sh.fragmentShader = 'varying vec3 vLidRest;\n' + lidTuckGlsl + '\n' + sh.fragmentShader
+            .replace('#include <color_fragment>', `#include <color_fragment>
+              // Subpixel lid hairs merge into a flat pad at desktop scale. Small, irregular strokes in the undercoat
+              // keep its texture visible between the actual skinned hairs without changing the lash line.
+              vec2 furCell = vLidRest.xy * vec2(400.0, 300.0);
+              vec2 furLocal = fract(furCell);
+              float furOffset = fract(sin(dot(floor(furCell), vec2(127.1, 311.7))) * 43758.5453);
+              float furStroke = (1.0 - smoothstep(0.10, 0.42, abs(furLocal.x - furOffset)))
+                * smoothstep(0.02, 0.18, furLocal.y) * (1.0 - smoothstep(0.7, 1.0, furLocal.y));
+              diffuseColor.rgb *= 0.5 + 0.75 * furStroke;`)
+            .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
             if (lidShown(vLidRest) <= fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453)) discard;`);
         };
-        s.customProgramCacheKey = () => (lid ? 'realcat-lid-skin-v2' : 'realcat-skin');
+        s.customProgramCacheKey = () => (lid ? 'realcat-lid-skin-v3' : 'realcat-skin');
         ownedMaterials.push(s);
         m.material = s;
       } else if (mat?.isMaterial) {
