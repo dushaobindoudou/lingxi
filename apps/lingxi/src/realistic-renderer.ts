@@ -98,16 +98,17 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 // (model units). Their free edge, the lash line over the eyeball, stays.
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
-// The short skinned hairs sit over an irregular undercoat grain; fewer opaque cards avoid a felt-like pad.
-const LID_FUZZ_COUNT = 1800;
+// the lid's short hairs (createLidFuzz): open, the lids are the ring round each eye, and at 1100 a lid that ring read
+// close up as bare brown skin (the user, zoomed in: "脸上太少")
+const LID_FUZZ_COUNT = 3600;
 // the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
-const LASH_WIDTH = 0.0016;
+const LASH_WIDTH = 0.0028;
 // Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's
 // dome still showed through a closing lid's edge (world units)
 const LID_SOLIDIFY_OUT = 0.0022;
 // the lids' undercoat lifted to the face coat's brightness round it (the face's vertex colours are the skin under its
 // lighter strands; the lids grow none - realistic-groom LIDS): at the skin's own colour a closed lid read as a dark pad
-const LID_UNDERCOAT_LIFT = 1.3;
+const LID_UNDERCOAT_LIFT = 1.45;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
 // Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
 // cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need. At .28 the desktop cat
@@ -1418,20 +1419,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           if (!lid) return;
           // the lid's skin past the eye gives way to the face (LID_TUCK), dithered: it is opaque
           sh.vertexShader = 'varying vec3 vLidRest;\n' + sh.vertexShader.replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\n vLidRest = transformed;');
-          sh.fragmentShader = 'varying vec3 vLidRest;\n' + lidTuckGlsl + '\n' + sh.fragmentShader
-            .replace('#include <color_fragment>', `#include <color_fragment>
-              // Subpixel lid hairs merge into a flat pad at desktop scale. Small, irregular strokes in the undercoat
-              // keep its texture visible between the actual skinned hairs without changing the lash line.
-              vec2 furCell = vLidRest.xy * vec2(400.0, 300.0);
-              vec2 furLocal = fract(furCell);
-              float furOffset = fract(sin(dot(floor(furCell), vec2(127.1, 311.7))) * 43758.5453);
-              float furStroke = (1.0 - smoothstep(0.10, 0.42, abs(furLocal.x - furOffset)))
-                * smoothstep(0.02, 0.18, furLocal.y) * (1.0 - smoothstep(0.7, 1.0, furLocal.y));
-              diffuseColor.rgb *= 0.5 + 0.75 * furStroke;`)
-            .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+          sh.fragmentShader = 'varying vec3 vLidRest;\n' + lidTuckGlsl + '\n' + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
             if (lidShown(vLidRest) <= fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453)) discard;`);
         };
-        s.customProgramCacheKey = () => (lid ? 'realcat-lid-skin-v3' : 'realcat-skin');
+        s.customProgramCacheKey = () => (lid ? 'realcat-lid-skin-v2' : 'realcat-skin');
         ownedMaterials.push(s);
         m.material = s;
       } else if (mat?.isMaterial) {
