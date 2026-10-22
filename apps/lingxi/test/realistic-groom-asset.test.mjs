@@ -51,6 +51,14 @@ test('original groom is paired with this model and follows its animated skeleton
     assert.ok(drawn < spec.strands, 'the groom still carries lid strands to leave out');
     assert.equal(groom.meshes.reduce((sum, m) => sum + m.geometry.getAttribute('position').count / 12, 0), drawn);
     assert.ok(groom.meshes.every((m) => !/_LX_Lid/.test(m.name)));
+    const meanFlex = (name) => {
+      const values = groom.meshes.find((m) => m.name === name).geometry.getAttribute('groomFlex').array;
+      let total = 0;
+      for (let i = 0; i < values.length; i++) total += values[i];
+      return total / values.length;
+    };
+    assert.equal(meanFlex('LX_Fur_under_LX_Body'), 0, 'skin-close fibres stay attached to the live skeleton');
+    assert.ok(meanFlex('LX_Fur_guard_LX_Tail') > meanFlex('LX_Fur_guard_LX_Body'), 'long tail guards are more compliant');
     const mixer = new THREE.AnimationMixer(model.scene);
     const walk = model.animations.find(a => a.name === 'Walk');
     mixer.clipAction(walk).play();
@@ -104,6 +112,21 @@ test('original groom is paired with this model and follows its animated skeleton
       assert.equal(new Set(mesh.userData.groomOrder).size, strands, `${mesh.name}: the shuffle must keep every strand`);
     }
     assert.equal(groom.density, 0.3);
+    mixer.setTime(0);
+    model.scene.updateMatrixWorld(true);
+    groom.simulate(1 / 60);
+    mixer.setTime(0.08);
+    model.scene.updateMatrixWorld(true);
+    groom.simulate(1 / 60);
+    const fast = groom.material.uniforms.uGroomLagBones.value.image.data;
+    const slow = groom.material.uniforms.uGroomSlowBones.value.image.data;
+    assert.ok(fast.some((v, i) => Math.abs(v - slow[i]) > 1e-5), 'long and short guards follow different spring clocks');
+    groom.impact(0.12);
+    groom.simulate(1 / 60);
+    const firstJolt = groom.material.uniforms.uGroomImpact.value.x;
+    groom.simulate(1);
+    assert.ok(firstJolt > 0.05 && groom.material.uniforms.uGroomImpact.value.x < 0.001, 'landing ripple dies away');
     for (const mesh of groom.meshes) mesh.geometry.dispose();
     groom.material.dispose();
+    groom.dispose();
   });

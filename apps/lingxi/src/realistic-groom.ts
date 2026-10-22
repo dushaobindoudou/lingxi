@@ -250,8 +250,10 @@ void main() {
   // vertex - sixteen texture reads, on millions of strand vertices - cost the small desktop cat a third of its frame
   vec3 lagDelta = vec3(0.0);
   #ifdef USE_SKINNING
-    vec4 restSkin = bindMatrix * vec4(groomRest, 1.0);
-    lagDelta = (bindMatrixInverse * ((groomLagMatrix(skinIndex.x, groomFlex > ${GROOM_FLEX.slowFrom}) - boneMatX) * restSkin)).xyz;
+    if (groomFlex > 0.02) {
+      vec4 restSkin = bindMatrix * vec4(groomRest, 1.0);
+      lagDelta = (bindMatrixInverse * ((groomLagMatrix(skinIndex.x, groomFlex > ${GROOM_FLEX.slowFrom}) - boneMatX) * restSkin)).xyz;
+    }
   #endif
   vec3 hairTangent = groomT;
   #ifdef USE_SKINNING
@@ -284,7 +286,7 @@ void main() {
   vec3 hand = normalize(vec3(uGroomStrokeDir, 0.0));
   float against = max(0.0, -dot(T, hand));
   // Along the lay: comb toward the skin. Against it: the free tips turn out before springing back.
-  bend += (hand - N * min(0.0, dot(hand, N))) * touch * (0.3 + 0.7 * groomFlex);
+  bend += (hand - N * dot(hand, N)) * touch * (0.3 + 0.7 * groomFlex);
   bend += N * touch * groomFlex * (0.05 + 0.45 * against);
   // the body's own motion: the tip trails where the sprung skeleton still has it, swings past when it stops
   vec3 lagView = mat3(modelViewMatrix) * lagDelta * ${GROOM.lagGain} * groomFlex;
@@ -297,6 +299,8 @@ void main() {
   bend -= N * min(0.0, dot(bend, N));
   // slow breathing of the coat, so a still cat's fur is never frozen
   bend += vec3(sin(uGroomTime * 1.7 + groomData.w), 0.25 * sin(uGroomTime * 1.3 + groomData.w), 0.45 * cos(uGroomTime * 1.5 + groomData.w)) * (0.003 + 0.009 * groomFlex);
+  float bendSize = length(bend);
+  if (bendSize > 0.9) bend *= 0.9 / bendSize;
   vec3 tipShift = bend * strandLength;
   // the tip moves along an arc, not out of the strand's length: what it gains sideways it loses along the strand
   vec3 shiftView = tipShift * along - T * (dot(tipShift, tipShift) / max(1e-6, 2.0 * strandLength)) * along * along;
@@ -707,6 +711,7 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
   let lagPrimed = false;
   let impactStrength = 0, impactAge = 0;
   let trailTime = 0, trailStrength = 0;
+  const springs = [[GROOM_LAG.shortHz, GROOM_LAG.shortDamping], [GROOM_LAG.longHz, GROOM_LAG.longDamping]];
   function simulate(seconds: number) {
     if (warming > 0 && --warming === 0) applyDensity();
     if (eyes) {
@@ -721,7 +726,6 @@ export function createGroom(asset: GroomAsset, base: THREE.SkinnedMesh, root: TH
       const lean = (v: number) => THREE.MathUtils.smoothstep(v, EYE_LEAN.from, 1);
       uniforms.uGroomShut.value.set(lean(eyeShut[0]), lean(eyeShut[1]));
     }
-    const springs = [[GROOM_LAG.shortHz, GROOM_LAG.shortDamping], [GROOM_LAG.longHz, GROOM_LAG.longDamping]];
     // a jump (the first frame, a long stall, a teleport) starts the copy where the skeleton is
     const snap = !lagPrimed || seconds > 0.25;
     const steps = Math.max(1, Math.ceil(seconds * 240));
