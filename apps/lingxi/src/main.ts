@@ -53,6 +53,11 @@ const TOY_CATALOGUE = [
   { kind: 'pet', name: '撸猫', description: '按住左键轻抚头部和身体，翻肚后可摸腹部' },
 ];
 
+const LAUNCH_STYLE_KEY = 'lingxi.launch-style';
+function readLaunchStyle(): RenderStyle {
+  try { return localStorage.getItem(LAUNCH_STYLE_KEY) === 'voxel' ? 'voxel' : 'realistic'; } catch { return 'realistic'; }
+}
+
 async function main() {
   // A rejected `void listen(...)` / `void invoke(...)` used to be an unhandled rejection:
   // invisible in release windows, and in dev a console error attributed to nothing. One
@@ -71,6 +76,10 @@ async function main() {
   const host = createTauriDesktopHost();
   // Fitted: the canvas follows the cat instead of covering the screen - see the renderer.
   // 风格: one facade for the life of the window; the voxel or the realistic cat behind it (renderer-switcher.ts).
+  // The window opens on the style it closed on (the realistic cat unless the user picked the voxel one), so the voxel
+  // cat no longer flashes up first while Rust's settings are on their way.
+  const launchStyle: RenderStyle = readLaunchStyle();
+  const firstRealistic: { ready?: Promise<void> } = {};
   const renderer = createRendererSwitcher({
     voxel: () => createThreeRenderer({ fitCanvasToCat: true }),
     realistic: () => {
@@ -79,11 +88,15 @@ async function main() {
       trace(`creating, asset ${url}`);
       const next = createRealisticRenderer({ assetUrl: url, fitCanvasToCat: true, shells: 32 });
       next.ready.then(() => trace('model ready'), (error) => trace(`model failed: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`));
+      firstRealistic.ready ??= next.ready;
       return next;
     },
-  });
+  }, launchStyle);
+  // opened on the realistic cat and its model will not load: fall back to the voxel cat rather than an empty window
+  if (launchStyle === 'realistic') firstRealistic.ready?.catch(() => { if (renderer.activeStyle === 'realistic') void renderer.switchStyle('voxel'); });
   function applyRenderStyle(style: string | undefined): void {
     const wanted: RenderStyle = style === 'voxel' ? 'voxel' : 'realistic';
+    try { localStorage.setItem(LAUNCH_STYLE_KEY, wanted); } catch { /* only costs the voxel user a flash of the realistic cat */ }
     void invoke('debug_log', { message: `[realcat] style requested ${style} -> ${wanted}, active ${renderer.activeStyle}` }).catch(() => {});
     if (wanted === renderer.requestedStyle) return;
     void renderer.switchStyle(wanted).then((result) => {
