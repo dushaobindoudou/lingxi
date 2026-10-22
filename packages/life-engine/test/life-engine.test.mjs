@@ -43,7 +43,8 @@ test('wandering arrives at its target and returns to idle', () => {
   // Steering means arrival takes a few frames even at absurd speed - the cat has to turn onto
   // its route before it can travel along it. That is the point of the heading model.
   let snap;
-  for (let frame = 1; frame <= 90 && engine.state === 'wander'; frame += 1) {
+  // From mid-screen it first steps out to a border and goes round by it (edgeRoute): several legs.
+  for (let frame = 1; frame <= 400 && engine.state === 'wander'; frame += 1) {
     snap = engine.tick(10 + frame * (1000 / 60), null);
   }
   assert.equal(engine.state, 'idle');
@@ -236,7 +237,7 @@ test('"auto" mode: edge choice is biased away from the cursor', () => {
     });
     const cursor = { x: 100, y: 100 };
     engine.tick(0, cursor);
-    const { target } = engine.tick(50, cursor);
+    const { destination: target } = engine.tick(50, cursor);
     if (Math.abs(target.x - (3000 - 24)) < 1 || Math.abs(target.y - (2000 - 24)) < 1) farSide += 1;
   }
   assert.ok(farSide / attempts > 0.8, `only ${farSide}/${attempts} picks were on the far side`);
@@ -1202,4 +1203,25 @@ test('the cat rarely walks the full width of the screen', () => {
   // Ten simulated minutes. Was 17 before the opposite-edge penalty and the patrol bias were
   // tuned; anything near that is the cat marching back and forth through the user's work.
   assert.ok(crossings <= 12, `crossed the full width ${crossings} times in 10 minutes`);
+});
+
+test('a trip to another border goes round by the corners, never across the middle', () => {
+  // Start on the left border, cursor parked there too, so the rest spot is on another border.
+  for (let i = 0; i < 40; i += 1) {
+    const engine = createLifeEngine({
+      bounds: { width: 3000, height: 2000 },
+      position: { x: 24, y: 1000 },
+      idleDurationMsRange: [1, 1],
+      margin: 24,
+      speed: 600,
+    });
+    const cursor = { x: 60, y: 1000 };
+    let farthestIn = 0;
+    for (let frame = 0; frame < 3000 && (frame < 5 || engine.state === 'wander'); frame += 1) {
+      const { position } = engine.tick(frame * (1000 / 60), frame < 3 ? cursor : null);
+      // distance in from the nearest border
+      farthestIn = Math.max(farthestIn, Math.min(position.x - 24, 3000 - 24 - position.x, position.y - 24, 2000 - 24 - position.y));
+    }
+    assert.ok(farthestIn < 260, `walked ${farthestIn.toFixed(0)}px in from the border`);
+  }
 });

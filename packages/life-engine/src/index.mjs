@@ -521,7 +521,7 @@ export function createLifeEngine(config = {}) {
     // in this same tick, so the stroll never fights a stronger drive for it.
     if (agentBusyUntil != null && now < agentBusyUntil && random() < strollChance()) {
       state = 'wander';
-      target = pickEdgeRestTarget(null);
+      target = startEdgeTrip(null);
       settledSince = null;
       return;
     }
@@ -760,6 +760,84 @@ export function createLifeEngine(config = {}) {
       }
     }
     return point;
+  }
+
+  // The rest of an edge trip: the corners still to pass and then the rest spot. A rest spot on
+  // another border, walked to in a straight line, took the cat across the middle of the screen -
+  // over the windows the user works in ("经常自由穿梭过屏幕中间位置，这个会经常挡住我的主屏幕").
+  // It goes round by the border instead. `tripLeg` is the waypoint the route expects the cat to
+  // be walking to; anything else that sets a target (a toy, an intent) leaves the route stale,
+  // and a stale route is dropped rather than resumed.
+  let tripRoute = [];
+  let tripLeg = null;
+
+  /** Pick a rest spot (pickEdgeRestTarget) and the way round the border to it; returns the first leg. */
+  function startEdgeTrip(cursor) {
+    const goal = pickEdgeRestTarget(cursor);
+    tripRoute = edgeRoute(position, goal, cursor);
+    tripLeg = tripRoute.shift() ?? goal;
+    return tripLeg;
+  }
+
+  /** The next leg once the cat reaches `arrivedAt`, or null when the trip is over. */
+  function nextTripLeg(arrivedAt) {
+    if (arrivedAt !== tripLeg || !tripRoute.length) { tripRoute = []; tripLeg = null; return null; }
+    tripLeg = tripRoute.shift();
+    return tripLeg;
+  }
+
+  /**
+   * Waypoints from `from` to `goal` (a point on the roam box's border) that keep to the border:
+   * off it, the cat first steps out to the nearest one; then it turns at the corner between two
+   * borders, or - for the opposite one - at two corners, round whichever side is shorter and
+   * further from the pointer.
+   */
+  function edgeRoute(from, goal, cursor) {
+    const [left, right, top, bottom] = [roamMinX(), roamMaxX(), roamMinY(), roamMaxY()];
+    if (!(right > left) || !(bottom > top)) return [goal];
+    // the corners are rounded off a little: a cat turns before it is wedged into one
+    const inset = Math.min(right - left, bottom - top) * 0.06;
+    const edgeOf = (point) => [
+      ['left', point.x - left], ['right', right - point.x], ['top', point.y - top], ['bottom', bottom - point.y],
+    ].reduce((best, candidate) => (candidate[1] < best[1] ? candidate : best))[0];
+    const corner = (a, b) => {
+      const ids = [a, b];
+      return {
+        x: ids.includes('left') ? left + inset : right - inset,
+        y: ids.includes('top') ? top + inset : bottom - inset,
+      };
+    };
+    const route = [];
+    let at = from;
+    let fromEdge = nearestEdge(from, left, right, top, bottom);
+    if (!fromEdge) {
+      fromEdge = edgeOf(from);
+      at = {
+        x: fromEdge === 'left' ? left : fromEdge === 'right' ? right : clamp(from.x, left, right),
+        y: fromEdge === 'top' ? top : fromEdge === 'bottom' ? bottom : clamp(from.y, top, bottom),
+      };
+      route.push(at);
+    }
+    const goalEdge = edgeOf(goal);
+    const OPPOSITE = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' };
+    if (goalEdge !== fromEdge) {
+      if (OPPOSITE[fromEdge] !== goalEdge) {
+        route.push(corner(fromEdge, goalEdge));
+      } else {
+        const sides = fromEdge === 'left' || fromEdge === 'right' ? ['top', 'bottom'] : ['left', 'right'];
+        const paths = sides.map((side) => [corner(fromEdge, side), corner(side, goalEdge)]);
+        const cost = (path) => {
+          const points = [at, ...path, goal];
+          let length = 0;
+          for (let i = 1; i < points.length; i += 1) length += distance(points[i - 1], points[i]);
+          const near = cursor ? Math.min(...path.map((p) => distance(p, cursor))) : Infinity;
+          return length + (near < cfg.cursorKeepOut ? 1e6 : 0);
+        };
+        route.push(...(cost(paths[0]) <= cost(paths[1]) ? paths[0] : paths[1]));
+      }
+    }
+    route.push(goal);
+    return route;
   }
 
   /** Which border the cat is actually standing on, or null if it isn't on one. "Nearest" alone
@@ -1637,7 +1715,7 @@ export function createLifeEngine(config = {}) {
       const cooledDown = now - lastAvoidRetargetAt >= cfg.avoidRetargetCooldownMs;
       if ((cursorOnTopOfMe || routeUnsafe) && cooledDown) {
         state = 'wander';
-        target = pickEdgeRestTarget(cursor);
+        target = startEdgeTrip(cursor);
         lastAvoidRetargetAt = now;
       }
     }
@@ -1688,13 +1766,13 @@ export function createLifeEngine(config = {}) {
       }
       if (now >= idleUntil) {
         state = 'wander';
-        target = pickEdgeRestTarget(cursor);
+        target = startEdgeTrip(cursor);
         settledSince = null;
         wanderWalkUntil = null;
         wanderPauseUntil = null;
       }
     } else if (state === 'wander') {
-      if (!target) target = pickEdgeRestTarget(cursor);
+      if (!target) target = startEdgeTrip(cursor);
       if (naturalWander && (!cursor || distance(position, cursor) > cfg.cursorKeepOut)) {
         if (wanderPauseUntil != null) {
           if (now < wanderPauseUntil) return snapshot();
@@ -1716,7 +1794,11 @@ export function createLifeEngine(config = {}) {
       // can afford to take the long way round. Chasing a toy or obeying an explicit intent must
       // still be able to go where it was told - including right at the pointer.
       const arrived = moveToward(target, deltaSeconds, walkSpeed(), cursor, !naturalWander);
-      if (arrived) {
+      const nextLeg = arrived ? nextTripLeg(target) : null;
+      if (nextLeg) {
+        // round the corner and on along the next border, without stopping to sit
+        target = nextLeg;
+      } else if (arrived) {
         state = 'idle';
         idleUntil = now + idleWindow();
         target = null;
@@ -1737,6 +1819,8 @@ export function createLifeEngine(config = {}) {
       heading,
       turning,
       target: target ? { ...target } : null,
+      /** Where an edge trip ends: `target` is only its current leg (see edgeRoute). */
+      destination: target && target === tripLeg && tripRoute.length ? { ...tripRoute[tripRoute.length - 1] } : target ? { ...target } : null,
       mode: 'free',
       /**
        * The pointer's relationship with the cat right now. `engaged` is contact; `byUser` says

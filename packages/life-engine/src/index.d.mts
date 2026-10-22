@@ -90,6 +90,8 @@ export interface LifeEngineSnapshot {
   /** Radians/second the heading is sweeping through this tick; 0 when not steering. */
   turning: number;
   target: Vec2 | null;
+  /** Where an edge trip ends; `target` is only its current leg. */
+  destination: Vec2 | null;
   mode: InteractionMode;
   /**
    * The pointer's relationship with the character right now.
