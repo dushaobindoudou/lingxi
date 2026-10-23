@@ -2182,7 +2182,11 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     catRect = drawn;
     // the whole frame while a toy is out: the yarn ball rolls anywhere and the laser's trail is a world layer, and a
     // canvas cropped to the cat would cut both off
-    const full = performanceScale != null || toyProp != null;
+    // or while there is no cat to measure (an empty or non-finite rect): any NaN reaching the canvas's transform or the
+    // camera's view offset left the canvas where it was and the cat drawn off it
+    const measured = [drawn.x0, drawn.y0, drawn.x1, drawn.y1].every(Number.isFinite) && drawn.x1 > drawn.x0 && drawn.y1 > drawn.y0;
+    if (!measured) catRect = null;
+    const full = performanceScale != null || toyProp != null || !measured;
     const x0 = full ? 0 : Math.max(0, Math.floor(drawn.x0 - FIT_PADDING_PX));
     const y0 = full ? 0 : Math.max(0, Math.floor(drawn.y0 - FIT_PADDING_PX));
     const x1 = full ? width : Math.min(width, Math.ceil(drawn.x1 + FIT_PADDING_PX));
@@ -2270,6 +2274,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       st.pointerEvents = 'none';
     },
     resize(w: number, h: number) {
+      if (!Number.isFinite(w) || !Number.isFinite(h)) return;
       width = Math.max(1, w);
       height = Math.max(1, h);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
