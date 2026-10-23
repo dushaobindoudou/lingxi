@@ -19,7 +19,7 @@ import { WHISKER, stepWhiskerSpring, whiskerMood, type WhiskerSpring, type Whisk
 import { PET, petWeights, type PetWeights } from './realistic-pet.ts';
 import { rebalanceLimbWeights } from './realistic-skin.ts';
 import { rebuildLidMorphNormals, createLidFuzz } from './realistic-lid-surface.ts';
-import { createCoatFuzz, earRootFuzzRegion, faceFuzzRegion, legFuzzRegion, tailFuzzRegion } from './realistic-coat-fuzz.ts';
+import { createCoatFuzz, earBaseFuzzRegion, earRootFuzzRegion, faceFuzzRegion, legFuzzRegion, tailFuzzRegion } from './realistic-coat-fuzz.ts';
 import type { Renderer, RendererCapabilities } from '../../../packages/desktop-host-contract/index.d.ts';
 import { AUTO_CAMERA_FOR_STATE, CAMERA_HEAD_PITCH, CAMERA_PRESETS, DEFAULT_CAMERA_ID, cameraPreset } from './rig/cameras.ts';
 import { APP_PUPIL, calmLoafFace, createFaceRig, expressionValues, eyesOwnLids, restValue, type FaceRig, type FaceSpec, type IrisUniforms } from './realistic-face.ts';
@@ -1539,6 +1539,29 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       });
       const ears = sides.filter((pts) => pts.length).map((points) => ({ points, tip: points.reduce((t, q) => (q.y > t.y ? q : t)) }));
       fuzzRegions.push([headCoat, earRootFuzzRegion(ears, UNDERCOAT_REACH * FUR.LX_Head.len)]);
+      // the ears' bases, front and furred back, painted with the head's colours at their nearest head vertex (EAR_BASE_FUZZ)
+      const hp = headCoat.geometry.getAttribute('position'), hc = headCoat.geometry.getAttribute('color');
+      root.traverse((o) => {
+        const m = o as THREE.SkinnedMesh;
+        if (!m.isSkinnedMesh || !/^Ear(\d+)?(_1)?$/.test(m.name) || !hc) return;
+        const pos = m.geometry.getAttribute('position'), paint = new Float32Array(pos.count * 3);
+        const toHead = new THREE.Matrix4().copy(inv).multiply(m.matrixWorld);
+        const v = new THREE.Vector3(), q = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(toHead);
+          let best = Infinity, at = 0;
+          for (let j = 0; j < hp.count; j += 2) { const d = q.fromBufferAttribute(hp, j).distanceToSquared(v); if (d < best) { best = d; at = j; } }
+          paint[i * 3] = hc.getX(at); paint[i * 3 + 1] = hc.getY(at); paint[i * 3 + 2] = hc.getZ(at);
+        }
+        m.geometry.setAttribute('color', new THREE.BufferAttribute(paint, 3));
+        let tip = 0, base = Infinity, x0 = Infinity, x1 = -Infinity;
+        for (let i = 0; i < pos.count; i++) {
+          if (pos.getY(i) > pos.getY(tip)) tip = i;
+          base = Math.min(base, pos.getY(i)); x0 = Math.min(x0, pos.getX(i)); x1 = Math.max(x1, pos.getX(i));
+        }
+        const ear = { tip: new THREE.Vector3().fromBufferAttribute(pos, tip), base, middle: (x0 + x1) / 2, half: (x1 - x0) / 2 };
+        fuzzRegions.push([m, earBaseFuzzRegion(ear, !m.name.endsWith('_1'))]);
+      });
     }
     if (groom && bodyCoat) fuzzRegions.push([bodyCoat, legFuzzRegion(bodyCoat, UNDERCOAT_REACH * FUR.LX_Body.len)]);
     const tailCoat = coat.find((m) => m.name.startsWith('LX_Tail'));

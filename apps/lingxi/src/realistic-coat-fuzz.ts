@@ -333,3 +333,34 @@ export function earRootFuzzRegion(ears: { points: THREE.Vector3[]; tip: THREE.Ve
     length(_v, w, random) { return THREE.MathUtils.lerp(E.length[0], E.length[1], random()) * (0.6 + 0.4 * w); },
   };
 }
+
+// ---- the ear's own base ----
+// The ear-root hairs grow from the head, and the head stops short of each ear's outer corner: there the ear's pale rim
+// ran down past the head's outline, an ear stuck on rather than grown out ("耳朵两侧还是漏出来，不是长在上面一样").
+// So the ear carries the coat up its base itself, front and back: hairs in the head's colours (the mesh's paint, see
+// the renderer), full up to `full` above the ear's lowest point and gone by `to`, laid toward the tip and standing off
+// the rim enough to round it. On the ear's pink front only toward its outer edge (from `outer[0]` to `outer[1]` of its
+// half-width out from its middle): the opening stays bare.
+export const EAR_BASE_FUZZ = {
+  count: 5000,
+  full: 0.025, to: 0.06,
+  outer: [0.15, 0.6] as const,
+  length: [0.016, 0.03] as const,
+  width: [0.0003, 0.00046] as const,
+  lift: 0.6,
+  colourLift: 1.45,
+} as const;
+
+/** `tip`, `base` (its lowest point's height), `middle` and `half` (its x and half-width): the ear in its mesh's rest
+ * space; `front`: the ear's pink front, its fur toward the outer edge only */
+export function earBaseFuzzRegion(ear: { tip: THREE.Vector3; base: number; middle: number; half: number }, front: boolean): CoatFuzzRegion {
+  const E = EAR_BASE_FUZZ, up = new THREE.Vector3();
+  const outward = Math.sign(ear.middle);
+  return {
+    name: front ? 'EarFrontFuzz' : 'EarBaseFuzz', count: E.count, seed: front ? 7853 : 7841, toneSpread: 0.36, width: E.width, lift: E.lift, colourLift: E.colourLift, undercoat: 0,
+    weight: (v) => (1 - THREE.MathUtils.smoothstep(v.y - ear.base, E.full, E.to))
+      * (front ? THREE.MathUtils.smoothstep((v.x - ear.middle) * outward / ear.half, E.outer[0], E.outer[1]) : 1),
+    flow: (v, _n, random) => up.copy(ear.tip).sub(v).normalize().add(new THREE.Vector3(outward * 0.25 + (random() - 0.5) * 0.4, 0, (random() - 0.5) * 0.4)),
+    length: (_v, w, random) => THREE.MathUtils.lerp(E.length[0], E.length[1], random()) * (0.5 + 0.5 * w),
+  };
+}
