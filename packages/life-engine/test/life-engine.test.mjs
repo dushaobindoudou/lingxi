@@ -1229,3 +1229,19 @@ test('a trip to another border goes round by the corners, never across the middl
     assert.ok(farthestIn < 260, `walked ${farthestIn.toFixed(0)}px in from the border`);
   }
 });
+
+test('the cat mostly taps the yarn about between its paws, and now and then sends it flying', () => {
+  const launchSpeed = (roll) => {
+    const engine = createLifeEngine({ bounds: { width: 1600, height: 1000 }, position: { x: 200, y: 500 }, toyReach: 34, random: () => roll });
+    engine.setToy('yarn', { x: 260, y: 500 });
+    engine.throwToy({ x: 0, y: 0 });
+    let frame = 0;
+    for (; frame <= 240 && !engine.tick(frame * (1000 / 60), null).batted; frame += 1);
+    for (let f = frame + 1; f <= frame + 20; f += 1) engine.tick(f * (1000 / 60), null);
+    return Math.hypot(engine.toy.velocity.x, engine.toy.velocity.y);
+  };
+  const tap = launchSpeed(0.1), swat = launchSpeed(0.95);
+  // a tap rolls the ball a paw's reach or two - the cat keeps playing with it where it is
+  assert.ok(tap > 50 && tap < 200, `tap ${tap}`);
+  assert.ok(swat > tap * 2.5, `swat ${swat} vs tap ${tap}`);
+});

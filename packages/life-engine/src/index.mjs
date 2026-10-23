@@ -221,6 +221,11 @@ const DEFAULTS = Object.freeze({
   // a ball bouncing off a running cat ("看不到他玩的动作，也不会踢球").
   toySwatWindupMs: 200,
   toyBatSpeed: 520, // px/s imparted to the yarn ball by a swat
+  // Most strikes are taps that roll the ball a paw's reach or two (toyTapSpeed, px/s), so the cat plays with it where
+  // it lies - batting it about, after it, batting again - and only now and then sends it flying. Every swat a full
+  // toyBatSpeed sent the ball ~270px off, and the game was the cat running after it ("应该把玩，用脚拍，追逐").
+  toyTapChance: 0.7,
+  toyTapSpeed: 200,
   toyFriction: 1.9, // per-second exponential decay of the yarn ball's speed
   toyRestSpeed: 12, // below this the ball counts as stopped
   toyBounceLoss: 0.62, // speed kept after bouncing off a screen edge
@@ -1131,8 +1136,10 @@ export function createLifeEngine(config = {}) {
     const dx = toy.position.x - position.x;
     const dy = toy.position.y - position.y;
     const base = Math.hypot(dx, dy) < 1e-6 ? rand(0, Math.PI * 2) : Math.atan2(dy, dx);
-    const angle = base + rand(-0.9, 0.9);
-    const speed = cfg.toyBatSpeed * rand(0.65, 1);
+    const tap = random() < cfg.toyTapChance;
+    // a tap goes off to the side as often as ahead: batted between the paws, not punted
+    const angle = base + (tap ? rand(-1.4, 1.4) : rand(-0.9, 0.9));
+    const speed = tap ? cfg.toyTapSpeed * rand(0.8, 1.25) : cfg.toyBatSpeed * rand(0.65, 1);
     toy.velocity = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed };
   }
 
