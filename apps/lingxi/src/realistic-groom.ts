@@ -125,8 +125,10 @@ const LIDS = /_LX_Lid/;
 // Smile counts in full: a smile-closed eye (满足, 开心) is as shut as a blink, and at half it never reached `from` -
 // those lids stayed a bare tan disc in a ring of fur ("眼皮没有毛"). Strands from as far as `near` reach, combed in
 // over more of their length, cover the middle of the lid too.
+// Laid no nearer the eye's axis than `core` of their root's distance: let all the way in, the tips met in a starburst on
+// the lid's middle (the lid's own short hairs cover it).
 const EYE_LEAN = {
-  near: 0.06, far: 0.078, depth: 0.012, comb: 1.3, lift: 0.0015,
+  near: 0.06, far: 0.078, depth: 0.012, comb: 1.3, core: 0.3, lift: 0.0015,
   shut: { Blink: 1, Smile: 1, Squint: 0.25 }, settle: 0.35, from: 0.45,
 };
 // A closed eye sat in a hollow (lids.glb, Blink on): its lids 24.5 mm in front of the eye's centre on its axis but only
@@ -246,7 +248,7 @@ void main() {
       vec3 across = d - axis * depth;
       float r = max(length(across), 1e-5);
       vec3 inward = -across / r;
-      float laid = max(0.0, groomLean.y - groomStrand.x * sqrt(groomData.z) * ${EYE_LEAN.comb});
+      float laid = max(groomLean.y * ${EYE_LEAN.core}, groomLean.y - groomStrand.x * sqrt(groomData.z) * ${EYE_LEAN.comb});
       float r2 = mix(r, laid, shut);
       // over the eye: across the hollow at the face's height, never into the shut lid's dome
       float dome = ${LID_DOME.crown} - ${LID_DOME.crown - LID_DOME.edge} * (r2 / ${LID_DOME.rim}) * (r2 / ${LID_DOME.rim}) + ${EYE_LEAN.lift};
