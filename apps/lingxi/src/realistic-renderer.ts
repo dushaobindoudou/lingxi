@@ -100,8 +100,8 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
 // the lid's short hairs (createLidFuzz): open, the lids are the ring round each eye, and at 1100 a lid that ring read
-// close up as bare brown skin (the user, zoomed in: "脸上太少"); 6000 with the lighter hairs ("眼皮没有毛")
-const LID_FUZZ_COUNT = 6000;
+// close up as bare brown skin (the user, zoomed in: "脸上太少"); at 6000 a shut lid still read as one flat colour ("现在是一片纯色")
+const LID_FUZZ_COUNT = 12000;
 // the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
 const LASH_WIDTH = 0.0028;
 // Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's

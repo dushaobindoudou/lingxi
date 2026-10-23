@@ -97,8 +97,9 @@ const COAT_LENGTH = 0.85;
 const FACE_LENGTH = 0.9;
 // The sides of the face: strands whose root faces out along the line between the eyes (|n.across| from `from` to `to`)
 // keep only 1 - `trim` of their length. At full length they flared past the whiskers, a frizzy ruff either side of a
-// face that should read round and neat ("两侧的毛也太多了").
-const CHEEK = { from: 0.45, to: 0.85, trim: 0.35 };
+// face that should read round and neat ("两侧的毛也太多了"). At .35 from .45 the sides still stood off as long sparse
+// wisps the body showed through ("脸上两侧的毛有点长能看穿").
+const CHEEK = { from: 0.35, to: 0.8, trim: 0.55 };
 const FACE = /_LX_Head$/;
 // The tail's own coat: shorter than groomed. At its groomed length (kept when the body's grew) it was a bottle brush
 // twice the kitten's body thickness; a kitten's tail is slim, its fur short and soft.
