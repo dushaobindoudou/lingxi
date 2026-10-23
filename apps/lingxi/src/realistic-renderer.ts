@@ -2757,7 +2757,10 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       return { target, touching: sphere.center.distanceTo(pawPoint) <= sphere.radius + 0.035 * effectiveScale() };
     },
     pettingHitTest(point, exposed) {
-      pettingNdc.set((point.x / width) * 2 - 1, -(point.y / height) * 2 + 1);
+      // in the canvas's own NDC: the camera's view offset frames only the canvas fitted to the cat (fitCanvasToFrame),
+      // and full-frame NDC aimed the ray elsewhere - a hand on the cat often missed it
+      const view = fitCanvas && canvasRect.width ? canvasRect : { x: 0, y: 0, width, height };
+      pettingNdc.set(((point.x - view.x) / view.width) * 2 - 1, -((point.y - view.y) / view.height) * 2 + 1);
       pettingRay.setFromCamera(pettingNdc, camera);
       return pettingProbe?.(pettingRay, exposed) ?? null;
     },

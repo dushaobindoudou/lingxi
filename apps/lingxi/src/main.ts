@@ -343,6 +343,8 @@ async function main() {
   let strokeDistance = 0;
   let lastHoverSample: { x: number; y: number } | null = null;
   let pointerReactionUntil = 0;
+  // A hand moving over the realistic cat's coat without pet mode: it leans into the hand until this time (see below)
+  let hoverStrokeUntil = 0;
   let lastAffectionLine: string | null = null;
   let toyReactionUntil = 0;
   const petting = createPettingSession();
@@ -898,7 +900,8 @@ async function main() {
       const exposedBelly = bellyIsExposed(renderer.playingAction, bellyDurationMs);
       const touched = petting.enabled && petting.pressed && cursor && !yieldingToInput
         ? renderer.pettingHitTest?.(cursor, exposedBelly) ?? null : null;
-      renderer.render({ ...snapshot, pettingContact: touched != null && touched !== 'belly' }, deltaSeconds, cursor);
+      const strokedInPassing = now < hoverStrokeUntil && wasHit && !isMouseDown;
+      renderer.render({ ...snapshot, pettingContact: (touched != null && touched !== 'belly') || strokedInPassing }, deltaSeconds, cursor);
       const affection = petting.tick(cursor, touched, now);
       if (affection) {
         // Keep the belly pose while stroking it; do not interrupt the roll with a standing clip.
@@ -954,17 +957,24 @@ async function main() {
           strokeDistance = 0;
           lastHoverSample = cursor;
         }
-        if (lastHoverSample) {
-          strokeDistance += Math.hypot(cursor.x - lastHoverSample.x, cursor.y - lastHoverSample.y);
-        }
+        const moved = lastHoverSample ? Math.hypot(cursor.x - lastHoverSample.x, cursor.y - lastHoverSample.y) : 0;
+        strokeDistance += moved;
         lastHoverSample = cursor;
+        // the lean lasts only while the hand keeps moving: a parked pointer is not a stroke
+        if (moved > 0.5 && now < hoverStrokeUntil) hoverStrokeUntil = now + 900;
         if (now >= pointerReactionUntil) {
           const reaction = pickPointerReaction({
             hovering: true,
             hoverMs: now - hoverSince,
             strokeDistance,
           });
-          if (reaction?.kind === 'notice') {
+          if (reaction?.kind === 'stroke' && renderer.activeStyle === 'realistic' && moved > 0.5) {
+            // A hand moving back and forth over the coat: the coat already parts under it, and the cat leans into it,
+            // eyes half shut - before, only the fur moved and the cat itself did nothing ("现在摸猫他没有动作了")
+            hoverStrokeUntil = now + 900;
+            renderer.playExpression?.(reaction.expression, 1800);
+            pointerReactionUntil = now + 250;
+          } else if (reaction?.kind === 'notice') {
             // Ordinary attention can acknowledge an approaching pointer. Stroking is handled only by the explicit
             // pressed, anatomically checked petting session above.
             const movingHand = renderer.activeStyle === 'realistic' && strokeDistance > 24;
