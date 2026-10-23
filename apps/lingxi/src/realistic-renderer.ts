@@ -2216,11 +2216,16 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     // re-centred ahead of the cat's travel: the cat at the trailing side, the room in front of it, so a walk across the
     // screen moves the canvas half as often
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    if (fitCentre) { fitTravel.x += (cx - fitCentre.x - fitTravel.x) * 0.2; fitTravel.y += (cy - fitCentre.y - fitTravel.y) * 0.2; }
-    fitCentre = { x: cx, y: cy };
+    // only from a measured cat: before the skeleton is posed the rect is empty (infinite), its centre NaN, and a NaN
+    // here stayed in the travel for good - every later position NaN, the canvas left where it was and the cat drawn
+    // off it ("重启之后我看不到猫咪了")
+    if (Number.isFinite(cx) && Number.isFinite(cy)) {
+      if (fitCentre) { fitTravel.x += (cx - fitCentre.x - fitTravel.x) * 0.2; fitTravel.y += (cy - fitCentre.y - fitTravel.y) * 0.2; }
+      fitCentre = { x: cx, y: cy };
+    }
     // led only part of the way, so the cat is not left on the trigger's edge: turning back, it has room before the
     // canvas moves again
-    const lead = (travel: number, slack: number) => Math.abs(travel) < 0.3 ? 0 : Math.sign(travel) * slack * FIT_LEAD;
+    const lead = (travel: number, slack: number) => !Number.isFinite(travel) || Math.abs(travel) < 0.3 ? 0 : Math.sign(travel) * slack * FIT_LEAD;
     const x = keep ? canvasRect.x : Math.floor(Math.min(Math.max((x0 + x1 - w) / 2 + lead(fitTravel.x, Math.max(0, (w - (x1 - x0)) / 2 - mx)), 0), Math.max(0, width - w)));
     const y = keep ? canvasRect.y : Math.floor(Math.min(Math.max((y0 + y1 - h) / 2 + lead(fitTravel.y, Math.max(0, (h - (y1 - y0)) / 2 - my)), 0), Math.max(0, height - h)));
     if (w !== canvasRect.width || h !== canvasRect.height) {
