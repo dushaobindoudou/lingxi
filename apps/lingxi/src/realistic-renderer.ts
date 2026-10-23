@@ -97,6 +97,9 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 // does. That ring - lid skin and undercoat - was a flat brown mask round every eye, and an oval with a hard
 // edge on a closed one. Past the eye the lids give way to the face: whole within `from` of the eye's axis, gone by `to`
 // (model units). Their free edge, the lash line over the eyeball, stays.
+// share of each ear bone's sideways offset taken in, and how far it is moved down into the skull (the head bone's +z,
+// model units). Lower and closer the ears also read younger.
+const EAR_SEAT = { inward: 0.12, down: 0.022 };
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
 // the lid's short hairs (createLidFuzz): open, the lids are the ring round each eye, and at 1100 a lid that ring read
@@ -2108,6 +2111,24 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
   let petRelax = 0;
   const petAxis = new THREE.Vector3(), petParentQ = new THREE.Quaternion(), petTurn = new THREE.Quaternion(), petRootQ = new THREE.Quaternion();
   const petHeadPoint = new THREE.Vector3();
+  // The ears seated into the head (EAR_SEAT): each ear bone pulled in toward the middle and down into the skull once
+  // every overlay has posed the head (earlier, one of them reset it), put back before the next mixer update. Whole ears move - the bases are skinned to the ear bones only -
+  // so their outer corner sits inside the head's outline instead of standing proud of it, a notch between ear and
+  // head ("耳朵不是平滑的在头上").
+  const earSeatSaved = new Map<THREE.Object3D, THREE.Vector3>();
+  function unseatEars() {
+    for (const [bone, p] of earSeatSaved) bone.position.copy(p);
+    earSeatSaved.clear();
+  }
+  function seatEars() {
+    for (const name of ['EarL', 'EarR']) {
+      const bone = model?.getObjectByName(name);
+      if (!bone) continue;
+      earSeatSaved.set(bone, bone.position.clone());
+      bone.position.x *= 1 - EAR_SEAT.inward;
+      bone.position.z += EAR_SEAT.down;
+    }
+  }
   function unoverlayPet() {
     for (const [bone, q] of petSaved) bone.quaternion.copy(q);
     petSaved.clear();
@@ -2611,6 +2632,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
           }
         }
         unoverlayPet();
+        unseatEars();
         unoverlayStage();
         unoverlayPotty();
         unoverlayHead();
@@ -2696,6 +2718,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
       overlaySwat(state);
       overlayCurl();
 
+      seatEars();
       // Read the final pose, after locomotion and touch overlays, so each patch follows the sole that is drawn.
       catRoot.updateMatrixWorld(true);
       const shadowScale = TARGET_HEIGHT * (performanceScale ?? modelScale);
