@@ -34,8 +34,10 @@ export interface IrisUniforms {
 
 // Keep the exported rig's .33 control values, but expose more of the textured iris at desktop size. A larger black
 // pupil swallowed the warm radial detail, especially after the eye was downsampled to the companion's actual size.
+// At .29 though the eyes read as a startled stare, a small cat rather than a kitten ("不够奶萌"): a kitten's pupils are
+// wide. .36 keeps a ring of iris round them.
 const BLENDER_PUPIL = 0.33;
-export const APP_PUPIL = 0.29;
+export const APP_PUPIL = 0.36;
 // Iris-UV shift per unit of look (V6_GAZE_UV): Blender subtracts (x, -y) from its UV; glTF's v runs the other way.
 const GAZE_UV = 0.30;
 // Shape keys allowed past 1 (build_lingxi_v5.py slider_max): the lick's tongue reach.
