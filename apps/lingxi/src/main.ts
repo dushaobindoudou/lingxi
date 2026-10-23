@@ -546,13 +546,15 @@ async function main() {
 
   // The cat's own small moments, from where it sits: every so often, while it is idle on its border and nobody is
   // playing with it, a cheeky little toot in the person's direction. Only with 自动特效 on, and through the same shared
-  // cooldown as an agent's surprise (claim_auto_effect, which also logs it). Minutes between them, random.
-  const MISCHIEF = { firstMin: [6, 12], everyMin: [14, 32], ids: ['little-toot'] } as const;
+  // cooldown as an agent's surprise (claim_auto_effect, which also logs it). Minutes between them, random. Idle or
+  // strolling: only when it happened to stand idle on a check, 14-32 minutes apart, the lively cat (mostly strolling)
+  // let nearly every turn pass ("给你惊喜这个，我现在都没咋看到").
+  const MISCHIEF = { firstMin: [3, 6], everyMin: [8, 18], ids: ['little-toot'] } as const;
   const minutes = ([lo, hi]: readonly [number, number]) => (lo + Math.random() * (hi - lo)) * 60_000;
   let nextMischiefAt = Date.now() + minutes(MISCHIEF.firstMin);
   setInterval(() => {
     if (!autoEffectsEnabled || Date.now() < nextMischiefAt) return;
-    if (engine.state !== 'idle' || engine.toy || performances.active || petting.enabled) return;
+    if ((engine.state !== 'idle' && engine.state !== 'wander') || engine.toy || performances.active || petting.enabled) return;
     nextMischiefAt = Date.now() + minutes(MISCHIEF.everyMin);
     const id = MISCHIEF.ids[Math.floor(Math.random() * MISCHIEF.ids.length)];
     void invoke<boolean>('claim_auto_effect', { id }).then((ok) => { if (ok) performanceGate.play(id, true); }).catch(() => {});
