@@ -544,19 +544,29 @@ async function main() {
   });
   void listen('perform-stop', () => performances.stop());
 
-  // The cat's own small moments, from where it sits: every so often, while it is idle on its border and nobody is
-  // playing with it, a cheeky little toot in the person's direction. Only with 自动特效 on, and through the same shared
-  // cooldown as an agent's surprise (claim_auto_effect, which also logs it). Minutes between them, random. Idle or
-  // strolling: only when it happened to stand idle on a check, 14-32 minutes apart, the lively cat (mostly strolling)
-  // let nearly every turn pass ("给你惊喜这个，我现在都没咋看到").
-  const MISCHIEF = { firstMin: [3, 6], everyMin: [8, 18], ids: ['little-toot'] } as const;
+  // The cat's own surprises: every so often, while it is idle or strolling and nobody is playing with it, it picks one
+  // of its set pieces on its own. Only with 自动特效 on, and through the same shared cooldown as an agent's surprise
+  // (claim_auto_effect, which also logs it). The little toot is the everyday one; the big ones (zoomies, a kiss rush,
+  // a tantrum, peeing or pooping at you) come round less often - every set piece is a surprise, not only the toot
+  // ("原来的特效都是小惊喜"; the potty ones had never been seen, "拉屎和尿尿为啥没看到过").
+  const MISCHIEF = {
+    firstMin: [3, 6],
+    everyMin: [8, 18],
+    weights: { 'little-toot': 4, zoomies: 2, 'kiss-rush': 2, 'angry-claw': 1, 'pee-at-you': 1, 'poop-at-you': 1 },
+  } as const;
   const minutes = ([lo, hi]: readonly [number, number]) => (lo + Math.random() * (hi - lo)) * 60_000;
+  const pickMischief = () => {
+    const entries = Object.entries(MISCHIEF.weights);
+    let roll = Math.random() * entries.reduce((sum, [, w]) => sum + w, 0);
+    for (const [id, w] of entries) if ((roll -= w) < 0) return id;
+    return entries[0][0];
+  };
   let nextMischiefAt = Date.now() + minutes(MISCHIEF.firstMin);
   setInterval(() => {
     if (!autoEffectsEnabled || Date.now() < nextMischiefAt) return;
     if ((engine.state !== 'idle' && engine.state !== 'wander') || engine.toy || performances.active || petting.enabled) return;
     nextMischiefAt = Date.now() + minutes(MISCHIEF.everyMin);
-    const id = MISCHIEF.ids[Math.floor(Math.random() * MISCHIEF.ids.length)];
+    const id = pickMischief();
     void invoke<boolean>('claim_auto_effect', { id }).then((ok) => { if (ok) performanceGate.play(id, true); }).catch(() => {});
   }, 20_000);
 

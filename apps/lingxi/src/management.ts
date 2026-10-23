@@ -1413,7 +1413,7 @@ async function main() {
   const syncAutoEffects = (enabled: boolean) => {
     autoEffectsToggle.checked = enabled;
     autoEffectsStatus.textContent = enabled
-      ? '已开启：由 Agent 根据任务内容选择合适时机，偶尔给你小惊喜。'
+      ? '已开启：猫咪闲着时会自己偶尔给你小惊喜，Agent 也会挑合适时机。'
       : '已关闭：不会自动播放特效；手动特效仍可使用。';
   };
   syncAutoEffects(status.autoEffects?.enabled === true);
