@@ -58,3 +58,11 @@ test('wand contact does not starve the jump, and an active jump is never restart
   assert.equal(pickToyReaction({...input,playingClip:'hop-catch'}),null);
   assert.equal(pickToyReaction({...input,playingClip:'belly-up'}),null);
 });
+
+test('a ball or a laser dot on the floor is run down, not stalked from halfway', () => {
+  for (const kind of ['yarn', 'laser']) {
+    for (const roll of [0.1, 0.9]) {
+      assert.equal(pickToyReaction({ kind, distance: 200, toySpeed: 10, held: false }, () => roll), null);
+    }
+  }
+});

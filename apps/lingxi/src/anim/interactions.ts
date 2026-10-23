@@ -52,7 +52,9 @@ export function pickToyReaction(situation: ToySituation, random = Math.random): 
 
   // A wand held still just out of reach is the classic set-up: the cat drops, waits, and
   // springs. This is the single most recognisable thing a cat does at a toy.
-  if (distance > STRIKE_RANGE && distance < STALK_RANGE && toySpeed < 60) {
+  // Only for the wand: a ball or a laser dot on the floor is run down and batted where it lies. Crouched or
+  // pouncing halfway, the cat stopped short of it for seconds ("他应该跑到玩具然后去玩，而不应该中途停下来").
+  if (kind === 'feather' && distance > STRIKE_RANGE && distance < STALK_RANGE && toySpeed < 60) {
     return random() < 0.55 ? { clip: 'stalk-crouch', cooldownMs: 3200 } : { clip: 'pounce', cooldownMs: 2600 };
   }
 
