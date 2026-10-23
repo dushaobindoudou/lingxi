@@ -100,8 +100,8 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
 // the lid's short hairs (createLidFuzz): open, the lids are the ring round each eye, and at 1100 a lid that ring read
-// close up as bare brown skin (the user, zoomed in: "脸上太少")
-const LID_FUZZ_COUNT = 3600;
+// close up as bare brown skin (the user, zoomed in: "脸上太少"); 6000 with the lighter hairs ("眼皮没有毛")
+const LID_FUZZ_COUNT = 6000;
 // the bare lash line along a lid's free edge (world units; the cat is ~1 tall)
 const LASH_WIDTH = 0.0028;
 // Blender's Solidify on the lids is 2.2 mm thick, centred; the whole thickness outward here - at 1.1 mm the eye's
@@ -109,7 +109,10 @@ const LASH_WIDTH = 0.0028;
 const LID_SOLIDIFY_OUT = 0.0022;
 // the lids' undercoat lifted to the face coat's brightness round it (the face's vertex colours are the skin under its
 // lighter strands; the lids grow none - realistic-groom LIDS): at the skin's own colour a closed lid read as a dark pad
-const LID_UNDERCOAT_LIFT = 1.45;
+// The lid's hairs are lighter than its skin (LID_HAIR_LIFT, on the lid's paint): skin and hairs at one colour (1.45) a
+// lid read as a smooth tan disc round an open eye and on a shut one - the hairs showed only against darker skin.
+const LID_UNDERCOAT_LIFT = 1.0;
+const LID_HAIR_LIFT = 1.5;
 // Strand density follows the cat's drawn height (device pixels): all of them from this tall, never under the floor (see
 // Groom.setDensity). Since the strands are drawn at least a pixel wide (realistic-groom minimumWidthPx) fewer of them
 // cover as much: at 1200 / .12 the small desktop cat spent its frame on strands it did not need. At .28 the desktop cat
@@ -1502,7 +1505,7 @@ export function createRealisticRenderer(options: RealisticRendererOptions): Read
     for (const lid of lidFur) {
       const frames = eyeFrames(root, lid);
       const side = /\.L$/.test((lid.userData.name as string | undefined) ?? '') ? 0 : 1;
-      const fuzz = createLidFuzz(lid, LID_FUZZ_COUNT, frames?.[side].centre);
+      const fuzz = createLidFuzz(lid, LID_FUZZ_COUNT, frames?.[side].centre, LID_HAIR_LIFT);
       ownedMaterials.push(fuzz.material as THREE.Material);
       lid.parent!.add(fuzz);
     }

@@ -31,8 +31,10 @@ export function rebuildLidMorphNormals(geometry: THREE.BufferGeometry): void {
     });
     surface.dispose();
 }
-/** Fine hairs with irregular triangle-sampled roots. Shares the lid's pose and shape-key weights. */
-export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: THREE.Vector3): THREE.SkinnedMesh {
+// how much a lid hair keeps of its old lie (down an upper lid, up a lower one) over its lie out from the eye
+const RING_LEAN = 0.35;
+/** Fine hairs with irregular triangle-sampled roots. Shares the lid's pose and shape-key weights. `colourLift`: the hairs against the lid's paint. */
+export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: THREE.Vector3, colourLift = 1): THREE.SkinnedMesh {
     const g = lid.geometry, p = g.getAttribute('position'), col = g.getAttribute('color'), normals = g.getAttribute('normal');
     const joints = g.getAttribute('skinIndex'), weights = g.getAttribute('skinWeight'), ix = g.getIndex();
     const at = (i: number) => ix ? ix.getX(i) : i, areas: number[] = [];
@@ -95,7 +97,9 @@ export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: 
             normal.normalize();
             if (eyeCentre && normal.dot(a.copy(root).sub(eyeCentre)) < 0)
                 normal.negate();
-            tangent.set(lean, direction, .15);
+            // open, the lid is the ring round the eye: its hairs lie out from the eye over it, as the face's do
+            if (eyeCentre) tangent.copy(root).sub(eyeCentre).addScaledVector(normal, -normal.dot(a.copy(root).sub(eyeCentre))).normalize().addScaledVector(across.set(lean, direction, .15), RING_LEAN);
+            else tangent.set(lean, direction, .15);
             tangent.addScaledVector(normal, -tangent.dot(normal)).normalize();
             across.crossVectors(tangent, normal).normalize();
             const out: number[] = [];
@@ -112,7 +116,7 @@ export function createLidFuzz(lid: THREE.SkinnedMesh, count = 1100, eyeCentre?: 
         for (let corner = 0; corner < 4; corner++) {
             const vertex = h * 4 + corner;
             for (let component = 0; component < 3; component++)
-                colors[vertex * 3 + component] = Math.min(1, blend(col, component) * tone * (corner >= 2 ? 1.12 : .96));
+                colors[vertex * 3 + component] = Math.min(1, blend(col, component) * colourLift * tone * (corner >= 2 ? 1.12 : .96));
             skin.forEach(([joint, weight], j) => { ji[vertex * 4 + j] = joint; sw[vertex * 4 + j] = weight / weightSum; });
         }
         indices.push(h * 4, h * 4 + 1, h * 4 + 2, h * 4 + 2, h * 4 + 1, h * 4 + 3);
