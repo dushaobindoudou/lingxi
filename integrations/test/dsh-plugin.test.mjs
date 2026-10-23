@@ -218,7 +218,9 @@ test('an install already holding the machine lock is not started twice', async (
   }
 });
 
-function waitFor(read, attempts = 20) {
+// The installer runs in the background: under the full suite's parallel load it took over a second to start, and a
+// one-second wait failed the release's test run now and then.
+function waitFor(read, attempts = 100) {
   return new Promise((resolve, reject) => {
     const tick = (left) => {
       try {
