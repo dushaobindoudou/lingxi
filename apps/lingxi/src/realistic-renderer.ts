@@ -98,8 +98,8 @@ const LID_SKIN = { sectors: 24, from: 0.046, to: 0.06, depth: 0.03, softness: 0.
 // edge on a closed one. Past the eye the lids give way to the face: whole within `from` of the eye's axis, gone by `to`
 // (model units). Their free edge, the lash line over the eyeball, stays.
 // share of each ear bone's sideways offset taken in, and how far it is moved down into the skull (the head bone's +z,
-// model units). Lower and closer the ears also read younger.
-const EAR_SEAT = { inward: 0.12, down: 0.022 };
+// model units). Only a little: at .12 / .022 the head's coat buried the ears' bases ("头上的毛遮挡着耳朵了").
+const EAR_SEAT = { inward: 0.08, down: 0.008 };
 const LID_TUCK = { from: 0.044, to: 0.05 };
 const LID_UNDERCOAT_LAYERS = 3;
 // the lid's short hairs (createLidFuzz): open, the lids are the ring round each eye, and at 1100 a lid that ring read
