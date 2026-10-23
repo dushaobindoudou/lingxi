@@ -23,7 +23,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Custom-asset PNGs are handed to the webview as data URLs rather than over a file:// path.
-base64 = "0.22"
+base64 = "0.23"
 # Minimal local-only HTTP bridge so an external AI driver process can poll perception data
 # and post movement suggestions (see packages/perception-contract). Sync and tiny on purpose -
 # this app has no other need for an async runtime, and pulling in tokio/axum just for a
